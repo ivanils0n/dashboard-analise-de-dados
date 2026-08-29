@@ -17,7 +17,6 @@ const ui = {
       pageFiliais: document.getElementById("page-filiais"),
       sidebar: document.getElementById("sidebar"),
       sidebarToggle: document.getElementById("sidebarToggle"),
-      sidebarReopen: document.getElementById("sidebarReopen"),
       kpiGrid: document.getElementById("kpiGrid"),
       chartIndicatorSelect: document.getElementById("chartIndicatorSelect"),
       filterStart: document.getElementById("filterStart"),
@@ -58,22 +57,21 @@ const ui = {
       presentationLineCard: document.getElementById("presentationLineCard"),
       presentationPieCard: document.getElementById("presentationPieCard"),
       presentationLineChart: document.getElementById("presentationLineChart"),
-      presentationPieCanvas: document.getElementById("presentationPieChart")
+      presentationPieCanvas: document.getElementById("presentationPieChart"),
+      filterDrawerOverlay: document.getElementById("filterDrawerOverlay"),
+      filterDrawerClose: document.getElementById("filterDrawerClose"),
+      filterDrawerApply: document.getElementById("filterDrawerApply"),
+      filterDrawerClear: document.getElementById("filterDrawerClear")
     };
   },
 
-  /* ---------- Sidebar (ocultar / reexibir) ---------- */
+  /* ---------- Sidebar (ocultar / reexibir, mantendo os ícones) ---------- */
   initSidebar() {
-    this.els.sidebarToggle.addEventListener("click", () => this.hideSidebar());
-    this.els.sidebarReopen.addEventListener("click", () => this.showSidebar());
+    this.els.sidebarToggle.addEventListener("click", () => this.toggleSidebar());
   },
 
-  hideSidebar() {
-    document.querySelector(".layout").classList.add("is-sidebar-hidden");
-  },
-
-  showSidebar() {
-    document.querySelector(".layout").classList.remove("is-sidebar-hidden");
+  toggleSidebar() {
+    document.querySelector(".layout").classList.toggle("is-sidebar-hidden");
   },
 
   /* ---------- Dropdown de Estado ---------- */
@@ -200,11 +198,149 @@ const ui = {
   init() {
     this.cacheElements();
     this.initSidebar();
-    this.initDropdownState();
+    this.initTheme();
+    this.initFiltersDrawer();
     this.els.filterStart.value = firstDayOfMonthISO();
     this.els.filterEnd.value = lastDayOfMonthISO();
     this.populateIndicatorSelects();
     this.bindEvents();
+  },
+
+  /* ---------- Filtros (painel lateral) ---------- */
+
+  getActivePage() {
+    if (this.els.pageDashboard && !this.els.pageDashboard.hidden) return "dashboard";
+    if (this.els.pageEquipe && !this.els.pageEquipe.hidden) return "equipe";
+    if (this.els.pageFiliais && !this.els.pageFiliais.hidden) return "filiais";
+    return "dashboard";
+  },
+
+  /* Abre o painel de filtros com os valores atuais de cada página */
+  openFiltersDrawer() {
+    const page = this.getActivePage();
+
+    const estadoSel = document.getElementById("drawerEstado");
+    const startInput = document.getElementById("drawerStart");
+    const endInput = document.getElementById("drawerEnd");
+    const statusField = document.getElementById("drawerStatusField");
+    const statusSel = document.getElementById("drawerStatus");
+    const searchInput = document.getElementById("drawerSearch");
+
+    estadoSel.value = this.currentState || "todos";
+
+    // Período: apenas dashboard e equipe
+    const periodField = document.getElementById("drawerPeriodField");
+    periodField.hidden = page === "filiais";
+
+    // Status: apenas equipe
+    statusField.hidden = page !== "equipe";
+
+    if (page === "dashboard") {
+      startInput.value = this.els.filterStart.value;
+      endInput.value = this.els.filterEnd.value;
+      searchInput.value = this.els.tableSearch.value;
+    } else if (page === "equipe") {
+      startInput.value = Equipe.els.filterStart.value;
+      endInput.value = Equipe.els.filterEnd.value;
+      statusSel.value = Equipe.els.statusFilter.value;
+      searchInput.value = Equipe.els.search.value;
+    } else {
+      searchInput.value = Filiais.els.search.value;
+    }
+
+    this.els.filterDrawerOverlay.hidden = false;
+    document.body.style.overflow = "hidden";
+  },
+
+  closeFiltersDrawer() {
+    const overlay = this.els.filterDrawerOverlay;
+    if (overlay.hidden) return;
+    overlay.classList.add("is-closing");
+    setTimeout(() => {
+      overlay.hidden = true;
+      overlay.classList.remove("is-closing");
+      document.body.style.overflow = "";
+    }, 300);
+  },
+
+  /* Aplica os valores do painel nos filtros reais da página ativa */
+  async applyFiltersDrawer() {
+    const page = this.getActivePage();
+    const estado = document.getElementById("drawerEstado").value;
+    const search = document.getElementById("drawerSearch").value;
+
+    if (estado !== this.currentState) {
+      this.currentState = estado;
+      await this.ensureStateLoaded(estado);
+    }
+
+    if (page === "dashboard") {
+      this.els.filterStart.value = document.getElementById("drawerStart").value;
+      this.els.filterEnd.value = document.getElementById("drawerEnd").value;
+      this.els.tableSearch.value = search;
+      this.renderAll();
+    } else if (page === "equipe") {
+      Equipe.els.filterStart.value = document.getElementById("drawerStart").value;
+      Equipe.els.filterEnd.value = document.getElementById("drawerEnd").value;
+      Equipe.els.statusFilter.value = document.getElementById("drawerStatus").value;
+      Equipe.els.search.value = search;
+      Equipe.renderTable();
+    } else {
+      Filiais.els.search.value = search;
+      Filiais.renderTable();
+    }
+
+    this.closeFiltersDrawer();
+  },
+
+  clearFiltersDrawer() {
+    const page = this.getActivePage();
+    const estadoSel = document.getElementById("drawerEstado");
+    const startInput = document.getElementById("drawerStart");
+    const endInput = document.getElementById("drawerEnd");
+    const statusSel = document.getElementById("drawerStatus");
+    const searchInput = document.getElementById("drawerSearch");
+
+    // Volta ao padrão: mês inteiro atual e estado RO
+    estadoSel.value = "RO";
+    startInput.value = firstDayOfMonthISO();
+    endInput.value = lastDayOfMonthISO();
+    statusSel.value = "todos";
+    searchInput.value = "";
+
+    // Aplica imediatamente
+    this.applyFiltersDrawer();
+  },
+
+  initFiltersDrawer() {
+    document.querySelectorAll(".js-filters-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.openFiltersDrawer());
+    });
+    this.els.filterDrawerClose.addEventListener("click", () => this.closeFiltersDrawer());
+    this.els.filterDrawerOverlay.addEventListener("click", (e) => {
+      if (e.target === this.els.filterDrawerOverlay) this.closeFiltersDrawer();
+    });
+    this.els.filterDrawerApply.addEventListener("click", () => this.applyFiltersDrawer());
+    this.els.filterDrawerClear.addEventListener("click", () => this.clearFiltersDrawer());
+  },
+
+  /* ---------- Modo noturno ---------- */
+
+  initTheme() {
+    document.querySelectorAll(".js-theme-toggle").forEach((btn) => {
+      btn.addEventListener("click", () => this.toggleTheme());
+    });
+  },
+
+  toggleTheme() {
+    const html = document.documentElement;
+    const dark = html.getAttribute("data-theme") === "dark";
+    html.setAttribute("data-theme", dark ? "light" : "dark");
+    try { localStorage.setItem("gg-theme", dark ? "light" : "dark"); } catch (e) {}
+    if (typeof Charts !== "undefined" && Charts.applyTheme) {
+      Charts.applyTheme();
+    }
+    this.renderAll();
   },
 
   bindEvents() {
@@ -279,12 +415,16 @@ const ui = {
       if (this.presentationPie) Charts.setShowValues(this.presentationPie, show);
     });
 
-    // Fechar modal/apresentação com ESC (não interfere com o Dialog)
+    // Fechar modal/apresentação/filtros com ESC (não interfere com o Dialog)
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         const dialogOpen =
           typeof Dialog !== "undefined" && Dialog.els.overlay && !Dialog.els.overlay.hidden;
         if (dialogOpen) return;
+        if (!this.els.filterDrawerOverlay.hidden) {
+          this.closeFiltersDrawer();
+          return;
+        }
         if (!this.els.presentationOverlay.hidden) this.closePresentation();
         else this.closeModal();
       }

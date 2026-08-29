@@ -5,6 +5,22 @@
    quando options.plugins.valueLabels.display = true.
    ========================================================= */
 
+function isDarkTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark";
+}
+
+function chartPalette() {
+  const dark = isDarkTheme();
+  return {
+    grid: dark ? "#2a2a30" : "#ececec",
+    tick: dark ? "#9a9aa2" : "#6e6e73",
+    text: dark ? "#f4f4f5" : "#111113",
+    surface: dark ? "#18181b" : "#ffffff",
+    slice: dark ? "#f4f4f5" : "#111113",
+    tooltip: dark ? "#0f0f11" : "#111113"
+  };
+}
+
 const valueLabelsPlugin = {
   id: "valueLabels",
   afterDatasetsDraw(chart) {
@@ -12,6 +28,7 @@ const valueLabelsPlugin = {
     if (!opts || !opts.display) return;
 
     const { ctx } = chart;
+    const p = chartPalette();
     ctx.save();
     ctx.font = "700 12px Inter, sans-serif";
     ctx.textAlign = "center";
@@ -22,17 +39,17 @@ const valueLabelsPlugin = {
       meta.data.forEach((el, i) => {
         const val = ds.data[i];
         if (val == null) return;
-        const p = el.getProps(["x", "y", "startAngle", "endAngle", "innerRadius", "outerRadius"], true);
-        const mid = (p.startAngle + p.endAngle) / 2;
-        const r = (p.outerRadius + p.innerRadius) / 2;
-        const x = p.x + Math.cos(mid) * r;
-        const y = p.y + Math.sin(mid) * r;
-        ctx.fillStyle = ds.backgroundColor[i] === "#111113" ? "#ffffff" : "#991b1b";
+        const prop = el.getProps(["x", "y", "startAngle", "endAngle", "innerRadius", "outerRadius"], true);
+        const mid = (prop.startAngle + prop.endAngle) / 2;
+        const r = (prop.outerRadius + prop.innerRadius) / 2;
+        const x = prop.x + Math.cos(mid) * r;
+        const y = prop.y + Math.sin(mid) * r;
+        ctx.fillStyle = ds.backgroundColor[i] === p.slice ? (isDarkTheme() ? "#111113" : "#ffffff") : "#991b1b";
         ctx.textBaseline = "middle";
         ctx.fillText(String(val), x, y);
       });
     } else {
-      ctx.fillStyle = "#111113";
+      ctx.fillStyle = p.text;
       const isBar = chart.config.type === "bar";
       chart.data.datasets.forEach((ds, di) => {
         const meta = chart.getDatasetMeta(di);
@@ -77,7 +94,7 @@ const Charts = {
             valueLabels: { display: false },
             legend: { display: false },
             tooltip: {
-              backgroundColor: "#111113",
+              backgroundColor: chartPalette().tooltip,
               titleColor: "#ffffff",
               bodyColor: "#ffffff",
               padding: 12,
@@ -90,6 +107,7 @@ const Charts = {
       });
     }
 
+    const p = chartPalette();
     const barCanvas = document.getElementById("barChart");
     if (barCanvas) {
       this.barChart = new Chart(barCanvas, {
@@ -104,7 +122,7 @@ const Charts = {
             valueLabels: { display: false },
             legend: { display: false },
             tooltip: {
-              backgroundColor: "#111113",
+              backgroundColor: p.tooltip,
               titleColor: "#ffffff",
               bodyColor: "#ffffff",
               padding: 12,
@@ -115,10 +133,10 @@ const Charts = {
           scales: {
             x: {
               grid: { display: false },
-              ticks: { color: "#6e6e73", font: { size: 11 } }
+              ticks: { color: p.tick, font: { size: 11 } }
             },
             y: {
-              grid: { color: "#ececec" },
+              grid: { color: p.grid },
               border: { display: false },
               ticks: { display: false },
               beginAtZero: true,
@@ -138,8 +156,8 @@ const Charts = {
           datasets: [
             {
               data: [0, 0],
-              backgroundColor: ["#ef4444", "#111113"],
-              borderColor: "#ffffff",
+              backgroundColor: ["#ef4444", p.slice],
+              borderColor: p.surface,
               borderWidth: 3,
               hoverOffset: 8
             }
@@ -154,10 +172,10 @@ const Charts = {
             valueLabels: { display: false },
             legend: {
               position: "bottom",
-              labels: { color: "#6e6e73", font: { size: 12 }, usePointStyle: true, padding: 16 }
+              labels: { color: p.tick, font: { size: 12 }, usePointStyle: true, padding: 16 }
             },
             tooltip: {
-              backgroundColor: "#111113",
+              backgroundColor: p.tooltip,
               titleColor: "#ffffff",
               bodyColor: "#ffffff",
               padding: 12,
@@ -170,6 +188,13 @@ const Charts = {
         }
       });
     }
+  },
+
+  /* Recria os gráficos principais com as cores do tema atual */
+  applyTheme() {
+    if (this.barChart) { this.barChart.destroy(); this.barChart = null; }
+    if (this.turnoverPieChart) { this.turnoverPieChart.destroy(); this.turnoverPieChart = null; }
+    this.init();
   },
 
   /* Cria um mini gráfico de linha para ser exibido dentro do card do KPI */
@@ -197,6 +222,7 @@ const Charts = {
   },
 
   createPieChart(canvas) {
+    const p = chartPalette();
     return new Chart(canvas, {
       type: "doughnut",
       data: {
@@ -204,8 +230,8 @@ const Charts = {
         datasets: [
           {
             data: [0, 0],
-            backgroundColor: ["#ef4444", "#111113"],
-            borderColor: "#ffffff",
+            backgroundColor: ["#ef4444", p.slice],
+            borderColor: p.surface,
             borderWidth: 3,
             hoverOffset: 8
           }
@@ -220,10 +246,10 @@ const Charts = {
           valueLabels: { display: false },
           legend: {
             position: "bottom",
-            labels: { color: "#6e6e73", font: { size: 12 }, usePointStyle: true, padding: 16 }
+            labels: { color: p.tick, font: { size: 12 }, usePointStyle: true, padding: 16 }
           },
           tooltip: {
-            backgroundColor: "#111113",
+            backgroundColor: p.tooltip,
             titleColor: "#ffffff",
             bodyColor: "#ffffff",
             padding: 12,
@@ -260,24 +286,26 @@ const Charts = {
   },
 
   buildLineScales(indicator) {
+    const p = chartPalette();
     const tickFormatter = indicator
       ? (value) => formatAxisValue(indicator, value)
       : (value) => value;
     return {
       x: {
         grid: { display: false },
-        ticks: { color: "#6e6e73", maxRotation: 45, font: { size: 11 } }
+        ticks: { color: p.tick, maxRotation: 45, font: { size: 11 } }
       },
       y: {
-        grid: { color: "#ececec" },
+        grid: { color: p.grid },
         border: { display: false },
-        ticks: { color: "#6e6e73", callback: tickFormatter },
+        ticks: { color: p.tick, callback: tickFormatter },
         grace: "12%"
       }
     };
   },
 
   createLineChart(canvas) {
+    const p = chartPalette();
     return new Chart(canvas, {
       type: "line",
       data: { labels: [], datasets: [] },
@@ -291,7 +319,7 @@ const Charts = {
           valueLabels: { display: false },
           legend: { display: false },
           tooltip: {
-            backgroundColor: "#111113",
+            backgroundColor: p.tooltip,
             titleColor: "#ffffff",
             bodyColor: "#ffffff",
             padding: 12,
@@ -307,6 +335,7 @@ const Charts = {
   /* Gráfico de barras do Absenteísmo (Faltas/Atrasos/Afastamentos)
      ocupa o mesmo canvas da Evolução quando esse indicador é selecionado */
   createAbsenteismoBar(canvas) {
+    const p = chartPalette();
     return new Chart(canvas, {
       type: "bar",
       data: { labels: [], datasets: [] },
@@ -319,7 +348,7 @@ const Charts = {
           valueLabels: { display: false },
           legend: { display: false },
           tooltip: {
-            backgroundColor: "#111113",
+            backgroundColor: p.tooltip,
             titleColor: "#ffffff",
             bodyColor: "#ffffff",
             padding: 12,
@@ -330,12 +359,12 @@ const Charts = {
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: "#6e6e73", font: { size: 11 } }
+            ticks: { color: p.tick, font: { size: 11 } }
           },
           y: {
-            grid: { color: "#ececec" },
+            grid: { color: p.grid },
             border: { display: false },
-            ticks: { color: "#6e6e73" },
+            ticks: { color: p.tick },
             beginAtZero: true,
             grace: "12%"
           }
@@ -391,6 +420,7 @@ const Charts = {
 
     const labels = entries.map((e) => formatShortDate(e.date));
     const values = entries.map((e) => e.value);
+    const p = chartPalette();
 
     chart.data = {
       labels,
@@ -404,7 +434,7 @@ const Charts = {
           tension: 0.35,
           borderWidth: 2.5,
           pointBackgroundColor: "#ef4444",
-          pointBorderColor: "#ffffff",
+          pointBorderColor: p.surface,
           pointBorderWidth: 2,
           pointRadius: 4,
           pointHoverRadius: 6
@@ -430,7 +460,7 @@ const Charts = {
         {
           label: "Último valor",
           data: values,
-          backgroundColor: "#111113",
+          backgroundColor: chartPalette().slice,
           hoverBackgroundColor: "#ef4444",
           borderRadius: 6,
           barPercentage: 0.65
