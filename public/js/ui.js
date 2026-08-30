@@ -36,15 +36,11 @@ const ui = {
       modalSubmit: document.getElementById("modalSubmit"),
       entryForm: document.getElementById("entryForm"),
       entryIndicator: document.getElementById("entryIndicator"),
-      exportDropdownBtn: document.getElementById("exportDropdownBtn"),
-      exportMenu: document.getElementById("exportMenu"),
-      importDropdownBtn: document.getElementById("importDropdownBtn"),
-      importMenu: document.getElementById("importMenu"),
+      menuBtn: document.getElementById("menuBtn"),
+      menuMenu: document.getElementById("menuMenu"),
       importFile: document.getElementById("importFile"),
-      importFileTrigger: document.getElementById("importFileTrigger"),
       toast: document.getElementById("toast"),
       totalChip: document.getElementById("totalChip"),
-      presentationBtn: document.getElementById("presentationBtn"),
       presentationOverlay: document.getElementById("presentationOverlay"),
       presentationClose: document.getElementById("presentationClose"),
       presentationFilterStart: document.getElementById("presentationFilterStart"),
@@ -133,66 +129,6 @@ const ui = {
     if (typeof SupabaseDB === "undefined" || !SupabaseDB.enabled) return;
     await SupabaseDB.hydrate(state);
     if (typeof Employees !== "undefined" && Employees.syncAll) Employees.syncAll();
-  },
-
-  /* Vincula os dropdowns de exportar/importar de uma página.
-     Espera elementos com os ids: {prefixo}ExportBtn, {prefixo}ExportMenu,
-     {prefixo}ImportBtn, {prefixo}ImportMenu, {prefixo}ImportFileTrigger e
-     {prefixo}ImportFile. */
-  bindExportImport(prefix) {
-    const exportBtn = document.getElementById(prefix + "ExportBtn");
-    const exportMenu = document.getElementById(prefix + "ExportMenu");
-    const importBtn = document.getElementById(prefix + "ImportBtn");
-    const importMenu = document.getElementById(prefix + "ImportMenu");
-    const importTrigger = document.getElementById(prefix + "ImportFileTrigger");
-    const importFile = document.getElementById(prefix + "ImportFile");
-    if (!exportBtn || !exportMenu || !importBtn || !importMenu) return;
-
-    const closeAll = () => {
-      exportMenu.hidden = true;
-      importMenu.hidden = true;
-      exportBtn.setAttribute("aria-expanded", "false");
-      importBtn.setAttribute("aria-expanded", "false");
-    };
-
-    exportBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const wasOpen = !exportMenu.hidden;
-      closeAll();
-      exportMenu.hidden = wasOpen;
-      exportBtn.setAttribute("aria-expanded", String(!exportMenu.hidden));
-    });
-
-    importBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const wasOpen = !importMenu.hidden;
-      closeAll();
-      importMenu.hidden = wasOpen;
-      importBtn.setAttribute("aria-expanded", String(!importMenu.hidden));
-    });
-
-    exportMenu.querySelectorAll("[data-export]").forEach((item) => {
-      item.addEventListener("click", () => {
-        closeAll();
-        if (item.dataset.export === "xlsx") Export.toXLSX();
-        else if (item.dataset.export === "template") Export.template();
-        else Export.toCSV();
-      });
-    });
-
-    if (importTrigger && importFile) {
-      importTrigger.addEventListener("click", () => {
-        closeAll();
-        importFile.click();
-      });
-      importFile.addEventListener("change", () => {
-        const file = importFile.files && importFile.files[0];
-        if (file) Export.importFile(file);
-        importFile.value = "";
-      });
-    }
-
-    document.addEventListener("click", closeAll);
   },
 
   init() {
@@ -367,38 +303,35 @@ const ui = {
     this.els.filterEnd.addEventListener("change", () => this.renderAll());
     this.els.filterClear.addEventListener("click", () => this.clearDateFilter());
 
-    // Dropdown de exportação
-    this.els.exportDropdownBtn.addEventListener("click", (e) => {
+    // Menu hamburguer (Baixar / Importar / Apresentação)
+    this.els.menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.setDropdown("export");
+      this.els.menuMenu.hidden = !this.els.menuMenu.hidden;
+      this.els.menuBtn.setAttribute("aria-expanded", String(!this.els.menuMenu.hidden));
     });
-    this.els.exportMenu.querySelectorAll("[data-export]").forEach((item) => {
+    this.els.menuMenu.querySelectorAll("[data-menu]").forEach((item) => {
       item.addEventListener("click", () => {
-        this.closeDropdowns();
-        if (item.dataset.export === "xlsx") Export.toXLSX();
-        else if (item.dataset.export === "csv") Export.toCSV();
-        else Export.template();
+        this.els.menuMenu.hidden = true;
+        this.els.menuBtn.setAttribute("aria-expanded", "false");
+        const action = item.dataset.menu;
+        if (action === "xlsx") Export.toXLSX();
+        else if (action === "csv") Export.toCSV();
+        else if (action === "template") Export.template();
+        else if (action === "import") this.els.importFile.click();
+        else if (action === "presentation") this.openPresentation();
       });
-    });
-
-    // Dropdown de importação
-    this.els.importDropdownBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.setDropdown("import");
-    });
-    this.els.importFileTrigger.addEventListener("click", () => {
-      this.closeDropdowns();
-      this.els.importFile.click();
     });
     this.els.importFile.addEventListener("change", () => {
       const file = this.els.importFile.files && this.els.importFile.files[0];
       if (file) Export.importFile(file);
       this.els.importFile.value = "";
     });
-    document.addEventListener("click", () => this.closeDropdowns());
+    document.addEventListener("click", () => {
+      this.els.menuMenu.hidden = true;
+      this.els.menuBtn.setAttribute("aria-expanded", "false");
+    });
 
     // Apresentação
-    this.els.presentationBtn.addEventListener("click", () => this.openPresentation());
     this.els.presentationClose.addEventListener("click", () => this.closePresentation());
     this.els.presentationOverlay.addEventListener("click", (e) => {
       if (e.target === this.els.presentationOverlay) this.closePresentation();
@@ -434,25 +367,6 @@ const ui = {
     // (inclui entrada/saída do modo tela cheia — F11)
     window.addEventListener("resize", () => this.resizePresentationCharts());
     document.addEventListener("fullscreenchange", () => this.resizePresentationCharts());
-  },
-
-  setDropdown(name) {
-    if (name === "export") {
-      this.els.exportMenu.hidden = !this.els.exportMenu.hidden;
-      this.els.importMenu.hidden = true;
-    } else {
-      this.els.importMenu.hidden = !this.els.importMenu.hidden;
-      this.els.exportMenu.hidden = true;
-    }
-    this.els.exportDropdownBtn.setAttribute("aria-expanded", String(!this.els.exportMenu.hidden));
-    this.els.importDropdownBtn.setAttribute("aria-expanded", String(!this.els.importMenu.hidden));
-  },
-
-  closeDropdowns() {
-    this.els.exportMenu.hidden = true;
-    this.els.importMenu.hidden = true;
-    this.els.exportDropdownBtn.setAttribute("aria-expanded", "false");
-    this.els.importDropdownBtn.setAttribute("aria-expanded", "false");
   },
 
   /* ---------- Páginas ---------- */

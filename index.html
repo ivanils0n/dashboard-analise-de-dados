@@ -79,33 +79,22 @@
         <div class="hero-actions">
           <div class="card filter-bar">
             <div class="filter-bar-controls">
-              <!-- Exportar -->
+              <!-- Menu hamburguer (Baixar / Importar / Apresentação) -->
               <div class="dropdown">
-                <button class="btn btn-outline btn-sm" id="exportDropdownBtn" aria-haspopup="true" aria-expanded="false">
-                  Baixar <span class="arrow">↓</span>
+                <button class="btn btn-outline btn-sm menu-hamburger" id="menuBtn" aria-haspopup="true" aria-expanded="false" title="Menu de ações" aria-label="Menu de ações">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
                 </button>
-                <div class="dropdown-menu" id="exportMenu" hidden>
-                  <button type="button" class="dropdown-item" data-export="xlsx">Baixar em XLSX</button>
-                  <button type="button" class="dropdown-item" data-export="csv">Baixar em CSV</button>
-                  <button type="button" class="dropdown-item" data-export="template">Baixar template</button>
-                </div>
-              </div>
-
-              <!-- Importar -->
-              <div class="dropdown">
-                <button class="btn btn-outline btn-sm" id="importDropdownBtn" aria-haspopup="true" aria-expanded="false">
-                  Importar <span class="arrow">↑</span>
-                </button>
-                <div class="dropdown-menu" id="importMenu" hidden>
-                  <button type="button" class="dropdown-item" id="importFileTrigger">Importar planilha</button>
+                <div class="dropdown-menu" id="menuMenu" hidden>
+                  <button type="button" class="dropdown-item" data-menu="xlsx">Baixar em XLSX</button>
+                  <button type="button" class="dropdown-item" data-menu="csv">Baixar em CSV</button>
+                  <button type="button" class="dropdown-item" data-menu="template">Baixar template</button>
+                  <hr class="dropdown-sep">
+                  <button type="button" class="dropdown-item" data-menu="import">Importar planilha</button>
+                  <hr class="dropdown-sep">
+                  <button type="button" class="dropdown-item" data-menu="presentation">⛶ Apresentação</button>
                 </div>
                 <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden>
               </div>
-
-              <!-- Apresentação -->
-              <button class="btn btn-outline btn-sm" id="presentationBtn" title="Modo Apresentação (tela cheia)">
-                <span>⛶</span> Apresentação
-              </button>
             </div>
           </div>
 
@@ -122,6 +111,7 @@
       <div class="content">
 
         <!-- ===== KPIs ===== -->
+        <h2 class="section-title">Indicadores</h2>
         <section class="kpi-grid" id="kpiGrid" aria-label="Indicadores-chave"></section>
 
         <!-- ===== GRÁFICOS ===== -->
@@ -321,30 +311,6 @@
           <h1 class="page-title" id="filiaisTitle">Filiais</h1>
         </div>
         <div class="hero-actions">
-          <div class="card filter-bar">
-            <div class="filter-bar-controls">
-              <div class="dropdown">
-                <button class="btn btn-outline btn-sm" id="filiaisExportBtn" aria-haspopup="true" aria-expanded="false">
-                  Baixar <span class="arrow">↓</span>
-                </button>
-                <div class="dropdown-menu" id="filiaisExportMenu" hidden>
-                  <button type="button" class="dropdown-item" data-export="xlsx">Baixar em XLSX</button>
-                  <button type="button" class="dropdown-item" data-export="template">Baixar template</button>
-                </div>
-              </div>
-
-              <div class="dropdown">
-                <button class="btn btn-outline btn-sm" id="filiaisImportBtn" aria-haspopup="true" aria-expanded="false">
-                  Importar <span class="arrow">↑</span>
-                </button>
-                <div class="dropdown-menu" id="filiaisImportMenu" hidden>
-                  <button type="button" class="dropdown-item" id="filiaisImportFileTrigger">Importar planilha</button>
-                </div>
-                <input type="file" id="filiaisImportFile" accept=".xlsx,.xls,.csv" hidden>
-              </div>
-            </div>
-          </div>
-
           <!-- Estado real dos filtros (movidos para o painel de filtros) -->
           <div hidden>
             <input type="search" class="input input-sm" id="branchSearch" placeholder="Buscar..." aria-label="Buscar filial">

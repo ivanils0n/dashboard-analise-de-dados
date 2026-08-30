@@ -29,9 +29,6 @@ const Filiais = {
     if (typeof ui !== "undefined" && ui.bindStateFilter) {
       ui.bindStateFilter("filiaisStateButton", "filiaisStateMenu", "filiaisStateText", () => this.renderTable());
     }
-    if (typeof ui !== "undefined" && ui.bindExportImport) {
-      ui.bindExportImport("filiais");
-    }
     [this.els.name, this.els.shortName].forEach(bindUppercaseInput);
     this.resetForm();
   },
