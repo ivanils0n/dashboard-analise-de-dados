@@ -25,6 +25,8 @@ const Filiais = {
       chip: document.getElementById("branchChip"),
       summary: document.getElementById("branchSummary")
     };
+    /* Página Filiais ausente nesta rota (ex.: /dashboard): não inicializa. */
+    if (!this.els.form) return;
     this.bindEvents();
     if (typeof ui !== "undefined" && ui.bindStateFilter) {
       ui.bindStateFilter("filiaisStateButton", "filiaisStateMenu", "filiaisStateText", () => this.renderTable());
@@ -131,6 +133,7 @@ const Filiais = {
   },
 
   renderTable() {
+    if (!this.els.form || !this.els.tableBody) return;
     const query = this.els.search.value.trim().toLowerCase();
     let list = this.list(ui.currentState);
     if (query) {

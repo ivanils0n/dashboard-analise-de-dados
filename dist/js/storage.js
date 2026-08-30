@@ -72,49 +72,6 @@ const Storage = {
      A persistência real acontece via Remote (Supabase). */
   save() {},
 
-  /* Substitui toda a memória pelos dados remotos.
-     Registros que só existiam localmente são devolvidos
-     para envio ao banco antes da substituição. */
-  replaceFromRemote(remote) {
-    const prev = this._data;
-    const pushed = { entries: [], employees: [], vacancies: [], branches: [] };
-
-    prev.employees.forEach((emp) => {
-      if (!(remote.employees || []).some((r) => r.id === emp.id)) pushed.employees.push(emp);
-    });
-    prev.vacancies.forEach((vac) => {
-      if (!(remote.vacancies || []).some((r) => r.id === vac.id)) pushed.vacancies.push(vac);
-    });
-    (prev.branches || []).forEach((branch) => {
-      if (!(remote.branches || []).some((r) => r.id === branch.id)) pushed.branches.push(branch);
-    });
-    Object.entries(prev.entries || {}).forEach(([indicatorId, list]) => {
-      const remoteList = remote.entries[indicatorId];
-      list.forEach((entry) => {
-        if (!remoteList || !remoteList.some((r) => r.id === entry.id)) {
-          pushed.entries.push({ indicatorId, entry });
-        }
-      });
-    });
-
-    const entries = {};
-    Object.entries(remote.entries || {}).forEach(([indicatorId, list]) => {
-      entries[indicatorId] = list
-        .map((e) => ({ ...e }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-    });
-
-    this._data = {
-      version: 1,
-      entries,
-      employees: (remote.employees || []).map((e) => ({ ...e })),
-      vacancies: (remote.vacancies || []).map((v) => ({ ...v })),
-      branches: (remote.branches || []).map((b) => ({ ...b }))
-    };
-
-    return pushed;
-  },
-
   /* Mescla dados de um estado recém-carregado sem perder o que já está
      em memória (usado na carga sob demanda por estado). */
   mergeFromRemote(remote) {

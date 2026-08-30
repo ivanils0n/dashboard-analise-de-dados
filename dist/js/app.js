@@ -14,14 +14,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   ui.renderAll();
   Equipe.renderTable();
   Filiais.renderTable();
-
-  if (ui.els.chartIndicatorSelect) {
-    ui.els.chartIndicatorSelect.addEventListener("change", () => {
-      ui.selectedIndicatorId = ui.els.chartIndicatorSelect.value;
-      ui.renderKpis();
-      ui.updateLineChartForSelection();
-    });
-  }
-
-  ui.updateLineChartForSelection();
 });

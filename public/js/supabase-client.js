@@ -354,10 +354,7 @@ const SupabaseDB = {
     return ok;
   },
 
-  _loadedStates: {},
-  loadedStates() {
-    return STATES.filter((s) => this._loadedStates[s]);
-  }
+  _loadedStates: {}
 };
 
 /* Boot: chamado pelo app.js antes da primeira renderização */

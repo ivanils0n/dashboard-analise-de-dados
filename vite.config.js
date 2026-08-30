@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from "vite";
+import { resolve } from "path";
 
 export default defineConfig(({ mode }) => {
   // Lê TODAS as variáveis do .env (com ou sem prefixo VITE_)
@@ -18,11 +19,30 @@ export default defineConfig(({ mode }) => {
     process.env.SUPABASE_ANON_KEY ||
     "";
 
+  const root = process.cwd();
+
   return {
     // Caminhos relativos: funciona em raiz (Cloudflare) ou subpasta (GitHub Pages)
     base: "./",
     build: {
-      outDir: "dist"
+      outDir: "dist",
+      // Multi-page: cada página vira uma rota própria
+      //   /           -> index.html (redireciona para /dashboard/)
+      //   /login/     -> login/index.html (autenticação)
+      //   /dashboard/ -> dashboard/index.html
+      //   /equipe/    -> equipe/index.html
+      //   /filiais/   -> filiais/index.html
+      //   /usuarios/  -> usuarios/index.html (somente admin)
+      rollupOptions: {
+        input: {
+          root: resolve(root, "index.html"),
+          login: resolve(root, "login/index.html"),
+          dashboard: resolve(root, "dashboard/index.html"),
+          equipe: resolve(root, "equipe/index.html"),
+          filiais: resolve(root, "filiais/index.html"),
+          usuarios: resolve(root, "usuarios/index.html")
+        }
+      }
     },
     define: {
       "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(url),

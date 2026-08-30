@@ -33,6 +33,8 @@ const Equipe = {
       filterEnd: document.getElementById("equipeFilterEnd"),
       filterClear: document.getElementById("equipeFilterClear")
     };
+    /* Página Equipe ausente nesta rota (ex.: /dashboard): não inicializa. */
+    if (!this.els.form) return;
     this.bindEvents();
     if (typeof ui !== "undefined" && ui.bindStateFilter) {
       ui.bindStateFilter("equipeStateButton", "equipeStateMenu", "equipeStateText", () => this.renderTable());
@@ -147,6 +149,7 @@ const Equipe = {
   },
 
   renderTable() {
+    if (!this.els.form || !this.els.tableBody) return;
     const query = this.els.search.value.trim().toLowerCase();
     let list = Employees.list(ui.currentState);
     if (query) {

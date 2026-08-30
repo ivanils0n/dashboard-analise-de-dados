@@ -73,40 +73,9 @@ const valueLabelsPlugin = {
 };
 
 const Charts = {
-  lineChart: null,
   barChart: null,
-  turnoverPieChart: null,
-  absBarChart: null,
 
   init() {
-    const lineCanvas = document.getElementById("lineChart");
-    if (lineCanvas) {
-      this.lineChart = new Chart(lineCanvas, {
-        type: "line",
-        data: { labels: [], datasets: [] },
-        plugins: [valueLabelsPlugin],
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          layout: { padding: { top: 24 } },
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            valueLabels: { display: false },
-            legend: { display: false },
-            tooltip: {
-              backgroundColor: chartPalette().tooltip,
-              titleColor: "#ffffff",
-              bodyColor: "#ffffff",
-              padding: 12,
-              cornerRadius: 8,
-              displayColors: false
-            }
-          },
-          scales: this.buildLineScales(null)
-        }
-      });
-    }
-
     const p = chartPalette();
     const barCanvas = document.getElementById("barChart");
     if (barCanvas) {
@@ -146,54 +115,11 @@ const Charts = {
         }
       });
     }
-
-    const pieCanvas = document.getElementById("turnoverPieChart");
-    if (pieCanvas) {
-      this.turnoverPieChart = new Chart(pieCanvas, {
-        type: "doughnut",
-        data: {
-          labels: ["Entradas", "Saídas"],
-          datasets: [
-            {
-              data: [0, 0],
-              backgroundColor: ["#ef4444", p.slice],
-              borderColor: p.surface,
-              borderWidth: 3,
-              hoverOffset: 8
-            }
-          ]
-        },
-        plugins: [valueLabelsPlugin],
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          cutout: "58%",
-          plugins: {
-            valueLabels: { display: false },
-            legend: {
-              position: "bottom",
-              labels: { color: p.tick, font: { size: 12 }, usePointStyle: true, padding: 16 }
-            },
-            tooltip: {
-              backgroundColor: p.tooltip,
-              titleColor: "#ffffff",
-              bodyColor: "#ffffff",
-              padding: 12,
-              cornerRadius: 8,
-              callbacks: {
-                label: (context) => ` ${context.label}: ${context.raw}`
-              }
-            }
-          }
-        }
-      });
-    }
   },
 
   /* Recria os gráficos principais com as cores do tema atual */
   applyTheme() {
     if (this.barChart) { this.barChart.destroy(); this.barChart = null; }
-    if (this.turnoverPieChart) { this.turnoverPieChart.destroy(); this.turnoverPieChart = null; }
     this.init();
   },
 
@@ -275,14 +201,6 @@ const Charts = {
     if (!chart || !chart.options.plugins.valueLabels) return;
     chart.options.plugins.valueLabels.display = display;
     chart.update();
-  },
-
-  /* data: [{ label, value }] */
-  updateTurnoverPie(data) {
-    if (!this.turnoverPieChart || !data) return;
-    this.turnoverPieChart.data.labels = data.map((d) => d.label);
-    this.turnoverPieChart.data.datasets[0].data = data.map((d) => d.value);
-    this.turnoverPieChart.update();
   },
 
   buildLineScales(indicator) {
@@ -391,24 +309,7 @@ const Charts = {
     chart.update();
   },
 
-  /* Destrói o gráfico principal ativo (linha ou barras de absenteísmo) */
-  destroyMainChart() {
-    if (this.lineChart) {
-      this.lineChart.destroy();
-      this.lineChart = null;
-    }
-    if (this.absBarChart) {
-      this.absBarChart.destroy();
-      this.absBarChart = null;
-    }
-  },
-
-  updateLineChart(chartOrIndicator, indicatorOrEntries, entriesOrUndefined) {
-    const isChartInstance = chartOrIndicator && typeof chartOrIndicator.update === "function";
-    const chart = isChartInstance ? chartOrIndicator : this.lineChart;
-    const indicator = isChartInstance ? indicatorOrEntries : chartOrIndicator;
-    const entries = isChartInstance ? entriesOrUndefined : indicatorOrEntries;
-
+  updateLineChart(chart, indicator, entries) {
     if (!chart) return;
     chart.options.scales = this.buildLineScales(indicator);
 
@@ -422,6 +323,16 @@ const Charts = {
     const values = entries.map((e) => e.value);
     const p = chartPalette();
 
+    /* Preenchimento em degradê (gráfico de área) */
+    const ctx = chart.ctx;
+    const area = chart.chartArea || {};
+    const top = area.top !== undefined ? area.top : 0;
+    const bottom = area.bottom !== undefined ? area.bottom : chart.height || 100;
+    const gradient = ctx.createLinearGradient(0, top, 0, bottom);
+    gradient.addColorStop(0, "rgba(239, 68, 68, 0.38)");
+    gradient.addColorStop(0.55, "rgba(239, 68, 68, 0.14)");
+    gradient.addColorStop(1, "rgba(239, 68, 68, 0.02)");
+
     chart.data = {
       labels,
       datasets: [
@@ -429,7 +340,7 @@ const Charts = {
           label: indicator.name,
           data: values,
           borderColor: "#ef4444",
-          backgroundColor: "rgba(239, 68, 68, 0.12)",
+          backgroundColor: gradient,
           fill: true,
           tension: 0.35,
           borderWidth: 2.5,

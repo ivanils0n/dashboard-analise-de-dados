@@ -7,6 +7,7 @@ const ui = {
   editingVacancyId: null,
   custoSelectedEmployeeId: null,
   currentState: typeof DEFAULT_STATE !== "undefined" ? DEFAULT_STATE : "RO",
+  showKpiValues: false,
 
   els: {},
 
@@ -18,7 +19,7 @@ const ui = {
       sidebar: document.getElementById("sidebar"),
       sidebarToggle: document.getElementById("sidebarToggle"),
       kpiGrid: document.getElementById("kpiGrid"),
-      chartIndicatorSelect: document.getElementById("chartIndicatorSelect"),
+      kpiChartsValuesBtn: document.getElementById("kpiChartsValuesBtn"),
       filterStart: document.getElementById("filterStart"),
       filterEnd: document.getElementById("filterEnd"),
       filterClear: document.getElementById("filterClear"),
@@ -31,16 +32,19 @@ const ui = {
       modalOverlay: document.getElementById("modalOverlay"),
       modalClose: document.getElementById("modalClose"),
       modalCancel: document.getElementById("modalCancel"),
+      modalBack: document.getElementById("modalBack"),
+      modalSubmit: document.getElementById("modalSubmit"),
+      modalTitle: document.getElementById("modalTitle"),
+      modalSubtitle: document.getElementById("modalSubtitle"),
+      modalEnterHint: document.getElementById("modalEnterHint"),
       modalTabs: document.getElementById("modalTabs"),
       modalFormBody: document.getElementById("modalFormBody"),
-      modalSubmit: document.getElementById("modalSubmit"),
       entryForm: document.getElementById("entryForm"),
       entryIndicator: document.getElementById("entryIndicator"),
       menuBtn: document.getElementById("menuBtn"),
       menuMenu: document.getElementById("menuMenu"),
       importFile: document.getElementById("importFile"),
       toast: document.getElementById("toast"),
-      totalChip: document.getElementById("totalChip"),
       presentationOverlay: document.getElementById("presentationOverlay"),
       presentationClose: document.getElementById("presentationClose"),
       presentationFilterStart: document.getElementById("presentationFilterStart"),
@@ -63,7 +67,9 @@ const ui = {
 
   /* ---------- Sidebar (ocultar / reexibir, mantendo os ícones) ---------- */
   initSidebar() {
-    this.els.sidebarToggle.addEventListener("click", () => this.toggleSidebar());
+    if (this.els.sidebarToggle) {
+      this.els.sidebarToggle.addEventListener("click", () => this.toggleSidebar());
+    }
   },
 
   toggleSidebar() {
@@ -136,8 +142,11 @@ const ui = {
     this.initSidebar();
     this.initTheme();
     this.initFiltersDrawer();
-    this.els.filterStart.value = firstDayOfMonthISO();
-    this.els.filterEnd.value = lastDayOfMonthISO();
+    this.initKpiValuesToggle();
+    if (this.els.filterStart && this.els.filterEnd) {
+      this.els.filterStart.value = firstDayOfMonthISO();
+      this.els.filterEnd.value = lastDayOfMonthISO();
+    }
     this.populateIndicatorSelects();
     this.bindEvents();
   },
@@ -174,14 +183,14 @@ const ui = {
     if (page === "dashboard") {
       startInput.value = this.els.filterStart.value;
       endInput.value = this.els.filterEnd.value;
-      searchInput.value = this.els.tableSearch.value;
+      if (searchInput) searchInput.value = this.els.tableSearch.value;
     } else if (page === "equipe") {
       startInput.value = Equipe.els.filterStart.value;
       endInput.value = Equipe.els.filterEnd.value;
       statusSel.value = Equipe.els.statusFilter.value;
-      searchInput.value = Equipe.els.search.value;
+      if (searchInput) searchInput.value = Equipe.els.search.value;
     } else {
-      searchInput.value = Filiais.els.search.value;
+      if (searchInput) searchInput.value = Filiais.els.search.value;
     }
 
     this.els.filterDrawerOverlay.hidden = false;
@@ -203,7 +212,8 @@ const ui = {
   async applyFiltersDrawer() {
     const page = this.getActivePage();
     const estado = document.getElementById("drawerEstado").value;
-    const search = document.getElementById("drawerSearch").value;
+    const searchEl = document.getElementById("drawerSearch");
+    const search = searchEl ? searchEl.value : "";
 
     if (estado !== this.currentState) {
       this.currentState = estado;
@@ -211,18 +221,18 @@ const ui = {
     }
 
     if (page === "dashboard") {
+      // A busca do dashboard agora fica na tabela "Lançamentos recentes"
       this.els.filterStart.value = document.getElementById("drawerStart").value;
       this.els.filterEnd.value = document.getElementById("drawerEnd").value;
-      this.els.tableSearch.value = search;
       this.renderAll();
     } else if (page === "equipe") {
       Equipe.els.filterStart.value = document.getElementById("drawerStart").value;
       Equipe.els.filterEnd.value = document.getElementById("drawerEnd").value;
       Equipe.els.statusFilter.value = document.getElementById("drawerStatus").value;
-      Equipe.els.search.value = search;
+      if (searchEl) Equipe.els.search.value = search;
       Equipe.renderTable();
     } else {
-      Filiais.els.search.value = search;
+      if (searchEl) Filiais.els.search.value = search;
       Filiais.renderTable();
     }
 
@@ -242,7 +252,7 @@ const ui = {
     startInput.value = firstDayOfMonthISO();
     endInput.value = lastDayOfMonthISO();
     statusSel.value = "todos";
-    searchInput.value = "";
+    if (searchInput) searchInput.value = "";
 
     // Aplica imediatamente
     this.applyFiltersDrawer();
@@ -280,68 +290,68 @@ const ui = {
   },
 
   bindEvents() {
-    // Páginas (topbar)
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => this.switchPage(btn.dataset.page));
-    });
+    // Navegação entre páginas é feita por links reais (Dashboard / Equipe / Filiais).
 
     // Modal
-    this.els.openModalBtn.addEventListener("click", () => this.openModal());
-    this.els.modalClose.addEventListener("click", () => this.closeModal());
-    this.els.modalCancel.addEventListener("click", () => this.closeModal());
-    this.els.modalOverlay.addEventListener("click", (e) => {
+    if (this.els.openModalBtn) this.els.openModalBtn.addEventListener("click", () => this.openModal());
+    if (this.els.modalClose) this.els.modalClose.addEventListener("click", () => this.closeModal());
+    if (this.els.modalCancel) this.els.modalCancel.addEventListener("click", () => this.closeModal());
+    if (this.els.modalBack) this.els.modalBack.addEventListener("click", () => this.modalGoBack());
+    if (this.els.modalOverlay) this.els.modalOverlay.addEventListener("click", (e) => {
       if (e.target === this.els.modalOverlay) this.closeModal();
     });
-    this.els.entryIndicator.addEventListener("change", () => this.buildModalForm());
-    this.els.entryForm.addEventListener("submit", (e) => this.handleSubmit(e));
-    this.els.modalFormBody.addEventListener("keydown", (e) => this.handleModalEnter(e));
+    if (this.els.entryIndicator) this.els.entryIndicator.addEventListener("change", () => this.buildModalForm());
+    if (this.els.entryForm) this.els.entryForm.addEventListener("submit", (e) => this.handleSubmit(e));
+    if (this.els.modalFormBody) this.els.modalFormBody.addEventListener("keydown", (e) => this.handleModalEnter(e));
 
     // Tabela / filtro / dropdowns
-    this.els.tableSearch.addEventListener("input", () => this.renderTable());
-    this.els.clearAllBtn.addEventListener("click", () => this.handleClearAll());
-    this.els.filterStart.addEventListener("change", () => this.renderAll());
-    this.els.filterEnd.addEventListener("change", () => this.renderAll());
-    this.els.filterClear.addEventListener("click", () => this.clearDateFilter());
+    if (this.els.tableSearch) this.els.tableSearch.addEventListener("input", () => this.renderTable());
+    if (this.els.clearAllBtn) this.els.clearAllBtn.addEventListener("click", () => this.handleClearAll());
+    if (this.els.filterStart) this.els.filterStart.addEventListener("change", () => this.renderAll());
+    if (this.els.filterEnd) this.els.filterEnd.addEventListener("change", () => this.renderAll());
+    if (this.els.filterClear) this.els.filterClear.addEventListener("click", () => this.clearDateFilter());
 
     // Menu hamburguer (Baixar / Importar / Apresentação)
-    this.els.menuBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.els.menuMenu.hidden = !this.els.menuMenu.hidden;
-      this.els.menuBtn.setAttribute("aria-expanded", String(!this.els.menuMenu.hidden));
-    });
-    this.els.menuMenu.querySelectorAll("[data-menu]").forEach((item) => {
-      item.addEventListener("click", () => {
+    if (this.els.menuBtn && this.els.menuMenu) {
+      this.els.menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.els.menuMenu.hidden = !this.els.menuMenu.hidden;
+        this.els.menuBtn.setAttribute("aria-expanded", String(!this.els.menuMenu.hidden));
+      });
+      this.els.menuMenu.querySelectorAll("[data-menu]").forEach((item) => {
+        item.addEventListener("click", () => {
+          this.els.menuMenu.hidden = true;
+          this.els.menuBtn.setAttribute("aria-expanded", "false");
+          const action = item.dataset.menu;
+          if (action === "xlsx") Export.toXLSX();
+          else if (action === "csv") Export.toCSV();
+          else if (action === "template") Export.template();
+          else if (action === "import") this.els.importFile.click();
+          else if (action === "presentation") this.openPresentation();
+        });
+      });
+      document.addEventListener("click", () => {
         this.els.menuMenu.hidden = true;
         this.els.menuBtn.setAttribute("aria-expanded", "false");
-        const action = item.dataset.menu;
-        if (action === "xlsx") Export.toXLSX();
-        else if (action === "csv") Export.toCSV();
-        else if (action === "template") Export.template();
-        else if (action === "import") this.els.importFile.click();
-        else if (action === "presentation") this.openPresentation();
       });
-    });
-    this.els.importFile.addEventListener("change", () => {
+    }
+    if (this.els.importFile) this.els.importFile.addEventListener("change", () => {
       const file = this.els.importFile.files && this.els.importFile.files[0];
       if (file) Export.importFile(file);
       this.els.importFile.value = "";
     });
-    document.addEventListener("click", () => {
-      this.els.menuMenu.hidden = true;
-      this.els.menuBtn.setAttribute("aria-expanded", "false");
-    });
 
     // Apresentação
-    this.els.presentationClose.addEventListener("click", () => this.closePresentation());
-    this.els.presentationOverlay.addEventListener("click", (e) => {
+    if (this.els.presentationClose) this.els.presentationClose.addEventListener("click", () => this.closePresentation());
+    if (this.els.presentationOverlay) this.els.presentationOverlay.addEventListener("click", (e) => {
       if (e.target === this.els.presentationOverlay) this.closePresentation();
     });
-    this.els.presentationFilterStart.addEventListener("change", () => this.updatePresentationCharts());
-    this.els.presentationFilterEnd.addEventListener("change", () => this.updatePresentationCharts());
-    this.els.presentationFilterClear.addEventListener("click", () => this.clearPresentationFilter());
-    this.els.presentationPrev.addEventListener("click", () => this.navigatePresentationIndicator(-1));
-    this.els.presentationNext.addEventListener("click", () => this.navigatePresentationIndicator(1));
-    this.els.presentationShowValues.addEventListener("change", () => {
+    if (this.els.presentationFilterStart) this.els.presentationFilterStart.addEventListener("change", () => this.updatePresentationCharts());
+    if (this.els.presentationFilterEnd) this.els.presentationFilterEnd.addEventListener("change", () => this.updatePresentationCharts());
+    if (this.els.presentationFilterClear) this.els.presentationFilterClear.addEventListener("click", () => this.clearPresentationFilter());
+    if (this.els.presentationPrev) this.els.presentationPrev.addEventListener("click", () => this.navigatePresentationIndicator(-1));
+    if (this.els.presentationNext) this.els.presentationNext.addEventListener("click", () => this.navigatePresentationIndicator(1));
+    if (this.els.presentationShowValues) this.els.presentationShowValues.addEventListener("change", () => {
       const show = this.els.presentationShowValues.checked;
       if (this.presentationLineChart) Charts.setShowValues(this.presentationLineChart, show);
       if (this.presentationAbsBar) Charts.setShowValues(this.presentationAbsBar, show);
@@ -354,12 +364,12 @@ const ui = {
         const dialogOpen =
           typeof Dialog !== "undefined" && Dialog.els.overlay && !Dialog.els.overlay.hidden;
         if (dialogOpen) return;
-        if (!this.els.filterDrawerOverlay.hidden) {
+        if (this.els.filterDrawerOverlay && !this.els.filterDrawerOverlay.hidden) {
           this.closeFiltersDrawer();
           return;
         }
-        if (!this.els.presentationOverlay.hidden) this.closePresentation();
-        else this.closeModal();
+        if (this.els.presentationOverlay && !this.els.presentationOverlay.hidden) this.closePresentation();
+        else if (this.els.modalOverlay && !this.els.modalOverlay.hidden) this.closeModal();
       }
     });
 
@@ -369,24 +379,13 @@ const ui = {
     document.addEventListener("fullscreenchange", () => this.resizePresentationCharts());
   },
 
-  /* ---------- Páginas ---------- */
-
-  switchPage(page) {
-    document.querySelectorAll(".tab-btn").forEach((b) => {
-      b.classList.toggle("is-active", b.dataset.page === page);
-    });
-    this.els.pageDashboard.hidden = page !== "dashboard";
-    this.els.pageEquipe.hidden = page !== "equipe";
-    this.els.pageFiliais.hidden = page !== "filiais";
-    if (page === "dashboard") this.renderAll();
-    if (page === "equipe" && typeof Equipe !== "undefined") Equipe.renderTable();
-    if (page === "filiais" && typeof Filiais !== "undefined") Filiais.renderTable();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  },
-
   /* ---------- Modal ---------- */
 
   openModal(preSelectedId) {
+    if (typeof Auth !== "undefined" && !Auth.canEditData()) {
+      this.toast("Seu perfil tem acesso somente leitura.");
+      return;
+    }
     const target = preSelectedId || MANUAL_INDICATORS[0].id;
     this.els.entryIndicator.value = target;
     this.buildModalForm();
@@ -537,7 +536,7 @@ const ui = {
 
   /* Redimensiona os gráficos ativos para o novo tamanho da janela */
   resizePresentationCharts() {
-    if (this.els.presentationOverlay.hidden) return;
+    if (!this.els.presentationOverlay || this.els.presentationOverlay.hidden) return;
     requestAnimationFrame(() => {
       if (this.presentationLineChart && !this.els.presentationLineCard.hidden) {
         this.presentationLineChart.resize();
@@ -562,7 +561,10 @@ const ui = {
     return `<div class="modal-tabs" role="tablist">${tabs
       .map(
         (t, i) =>
-          `<button type="button" class="modal-tab${i === 0 ? " is-active" : ""}" data-tab="${t.id}">${t.label}</button>`
+          `<button type="button" class="modal-tab${i === 0 ? " is-active" : ""}" data-tab="${t.id}">
+            <span class="tab-num">${i + 1}</span>
+            <span>${t.label}</span>
+          </button>`
       )
       .join("")}</div>`;
   },
@@ -598,13 +600,49 @@ const ui = {
 
     this.els.modalTabs.innerHTML = tabs ? this.tabsHtml(tabs) : "";
     this.els.modalTabs.hidden = !tabs;
-    this.els.modalFormBody.innerHTML = this.stateFieldHtml() + html;
+    this.els.modalFormBody.innerHTML = this.indicatorPanelHtml(ind) + html + this.stateFieldHtml();
     this.els.modalSubmit.textContent = submitLabel;
+    if (this.els.modalSubtitle) this.els.modalSubtitle.textContent = ind.desc || "Preencha os dados do indicador escolhido.";
+    if (this.els.modalEnterHint) this.els.modalEnterHint.hidden = !tabs || tabs.length < 2;
     this.editingVacancyId = null;
     this.custoSelectedEmployeeId = null;
 
     this.bindModalTabs();
     this.bindModalFormEvents(ind);
+    this.updateModalNav();
+  },
+
+  indicatorPanelHtml(ind) {
+    return `
+      <div class="indicator-panel">
+        <span class="indicator-panel-ico">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+        </span>
+        <div class="indicator-panel-body">
+          <strong>${escapeHtml(ind.name)}</strong>
+          <span>${escapeHtml(ind.desc || "")}</span>
+        </div>
+      </div>`;
+  },
+
+  updateModalNav() {
+    const tabs = this.els.modalTabs;
+    const back = this.els.modalBack;
+    if (!back) return;
+    const panels = this.els.modalFormBody.querySelectorAll(".modal-panel");
+    const multiStep = tabs && !tabs.hidden && tabs.querySelectorAll(".modal-tab").length > 1;
+    if (!multiStep || !panels.length) {
+      back.hidden = true;
+      return;
+    }
+    const active = Array.from(panels).findIndex((p) => !p.hidden);
+    back.hidden = active <= 0;
+  },
+
+  modalGoBack() {
+    const panels = Array.from(this.els.modalFormBody.querySelectorAll(".modal-panel"));
+    const active = panels.findIndex((p) => !p.hidden);
+    if (active > 0) this.switchModalTab(panels[active - 1].dataset.panel);
   },
 
   bindModalTabs() {
@@ -615,6 +653,7 @@ const ui = {
         this.els.modalFormBody.querySelectorAll(".modal-panel").forEach((p) => {
           p.hidden = p.dataset.panel !== btn.dataset.tab;
         });
+        this.updateModalNav();
       });
     });
   },
@@ -637,6 +676,7 @@ const ui = {
     const active = panels.findIndex((p) => !p.hidden);
     if (active >= 0 && active < panels.length - 1) {
       this.switchModalTab(panels[active + 1].dataset.panel);
+      this.updateModalNav();
       return;
     }
 
@@ -689,32 +729,48 @@ const ui = {
   absenteismoForm() {
     return `
       <div class="modal-panel" data-panel="periodo">
-        <div class="form-grid">
-          <div class="field">
-            <label for="absInicio">Data início</label>
-            <input type="date" id="absInicio" class="input" value="${firstDayOfMonthISO()}" required>
+        <div class="form-section">
+          <div class="form-section-head">
+            <span class="step-chip">1</span>
+            <div>
+              <strong>Período das ocorrências</strong>
+              <p>Informe o intervalo de datas considerado.</p>
+            </div>
           </div>
-          <div class="field">
-            <label for="absFim">Data fim</label>
-            <input type="date" id="absFim" class="input" value="${todayISO()}" required>
+          <div class="form-grid">
+            <div class="field">
+              <label for="absInicio">Data início</label>
+              <input type="date" id="absInicio" class="input" value="${firstDayOfMonthISO()}" required>
+            </div>
+            <div class="field">
+              <label for="absFim">Data fim</label>
+              <input type="date" id="absFim" class="input" value="${todayISO()}" required>
+            </div>
           </div>
         </div>
-        <p class="field-hint">Período das ocorrências lançadas.</p>
       </div>
       <div class="modal-panel" data-panel="ocorrencia" hidden>
-        <div class="field">
-          <label for="absTipo">Tipo de ocorrência</label>
-          <select id="absTipo" class="select">
-            <option value="falta">Falta</option>
-            <option value="atraso">Atraso</option>
-            <option value="afastamento">Afastamento</option>
-          </select>
+        <div class="form-section">
+          <div class="form-section-head">
+            <span class="step-chip">2</span>
+            <div>
+              <strong>Ocorrência</strong>
+              <p>Qual o tipo e quantas ocorrências no período?</p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="absTipo">Tipo de ocorrência</label>
+            <select id="absTipo" class="select">
+              <option value="falta">Falta</option>
+              <option value="atraso">Atraso</option>
+              <option value="afastamento">Afastamento</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="absQtd">Quantidade</label>
+            <input type="number" min="1" step="1" id="absQtd" class="input" value="1" required>
+          </div>
         </div>
-        <div class="field">
-          <label for="absQtd">Quantidade</label>
-          <input type="number" min="1" step="1" id="absQtd" class="input" value="1" required>
-        </div>
-        <p class="field-hint">Total de ocorrências no período.</p>
       </div>`;
   },
 
@@ -741,28 +797,46 @@ const ui = {
   vagaForm() {
     return `
       <div class="modal-panel" data-panel="nova">
-        <div class="field">
-          <label for="vagaNome">Nome da vaga</label>
-          <input type="text" id="vagaNome" class="input" required placeholder="Ex.: Analista de RH">
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label for="vagaData">Data de abertura</label>
-            <input type="date" id="vagaData" class="input" required>
+        <div class="form-section">
+          <div class="form-section-head">
+            <span class="step-chip">1</span>
+            <div>
+              <strong>Nova vaga</strong>
+              <p>Cadastre a vaga e marque a abertura.</p>
+            </div>
           </div>
           <div class="field">
-            <label for="vagaHora">Hora</label>
-            <input type="time" id="vagaHora" class="input" required>
+            <label for="vagaNome">Nome da vaga</label>
+            <input type="text" id="vagaNome" class="input" required placeholder="Ex.: Analista de RH">
           </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="vagaData">Data de abertura</label>
+              <input type="date" id="vagaData" class="input" required>
+            </div>
+            <div class="field">
+              <label for="vagaHora">Hora</label>
+              <input type="time" id="vagaHora" class="input" required>
+            </div>
+          </div>
+          <div class="vaga-actions">
+            <button type="button" class="btn btn-outline" id="vagaIniciar">Abrir Vaga</button>
+            <button type="button" class="btn btn-primary" id="vagaAdd">+ Adicionar vaga</button>
+          </div>
+          <p class="field-hint">Ao adicionar, a vaga fica “em aberto” no histórico. Use “Fechar” quando for contratado.</p>
         </div>
-        <div class="vaga-actions">
-          <button type="button" class="btn btn-outline" id="vagaIniciar">Abrir Vaga</button>
-          <button type="button" class="btn btn-primary" id="vagaAdd">+ Adicionar vaga</button>
-        </div>
-        <p class="field-hint">Ao adicionar, a vaga fica “em aberto” no histórico. Use “Fechar” quando for contratado.</p>
       </div>
       <div class="modal-panel" data-panel="historico" hidden>
-        <div class="vacancy-list" id="vacancyList"></div>
+        <div class="form-section">
+          <div class="form-section-head">
+            <span class="step-chip">2</span>
+            <div>
+              <strong>Histórico de vagas</strong>
+              <p>Acompanhe aberturas, fechamentos e edite ou exclua vagas.</p>
+            </div>
+          </div>
+          <div class="vacancy-list" id="vacancyList"></div>
+        </div>
       </div>`;
   },
 
@@ -877,23 +951,40 @@ const ui = {
   custoForm() {
     return `
       <div class="modal-panel" data-panel="colaborador">
-        <div class="field">
-          <label for="custoSearch">Buscar colaborador</label>
-          <input type="search" id="custoSearch" class="input" placeholder="Nome, setor ou usuário...">
+        <div class="form-section">
+          <div class="form-section-head">
+            <span class="step-chip">1</span>
+            <div>
+              <strong>Colaborador</strong>
+              <p>Busque e selecione quem foi contratado.</p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="custoSearch">Buscar colaborador</label>
+            <input type="search" id="custoSearch" class="input" placeholder="Nome, setor ou usuário...">
+          </div>
+          <div class="employee-picker" id="custoResults"></div>
         </div>
-        <div class="employee-picker" id="custoResults"></div>
-        <p class="field-hint">Selecione um colaborador cadastrado na aba Equipe.</p>
       </div>
       <div class="modal-panel" data-panel="custo" hidden>
-        <div class="field">
-          <label for="custoSelected">Colaborador selecionado</label>
-          <input type="text" id="custoSelected" class="input" readonly placeholder="Nenhum selecionado">
+        <div class="form-section">
+          <div class="form-section-head">
+            <span class="step-chip">2</span>
+            <div>
+              <strong>Custo de contratação</strong>
+              <p>Informe o valor investido na contratação.</p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="custoSelected">Colaborador selecionado</label>
+            <input type="text" id="custoSelected" class="input" readonly placeholder="Nenhum selecionado">
+          </div>
+          <div class="field">
+            <label for="custoValue">Custo de contratação (R$)</label>
+            <input type="number" min="0" step="any" id="custoValue" class="input" required placeholder="0,00">
+          </div>
+          <p class="field-hint" id="custoExistingHint"></p>
         </div>
-        <div class="field">
-          <label for="custoValue">Custo de contratação (R$)</label>
-          <input type="number" min="0" step="any" id="custoValue" class="input" required placeholder="0,00">
-        </div>
-        <p class="field-hint" id="custoExistingHint"></p>
       </div>`;
   },
 
@@ -987,8 +1078,8 @@ const ui = {
   /* ---------- Filtro de período ---------- */
 
   getDateFilter() {
-    let start = this.els.filterStart.value || null;
-    let end = this.els.filterEnd.value || null;
+    let start = this.els.filterStart ? this.els.filterStart.value || null : null;
+    let end = this.els.filterEnd ? this.els.filterEnd.value || null : null;
     if (start && end && start > end) {
       const tmp = start;
       start = end;
@@ -1039,10 +1130,10 @@ const ui = {
     }
     const entries = this.filteredEntries(ind, filter);
     if (!entries.length) return null;
-    /* Absenteísmo: média entre faltas, atrasos e afastamentos do período */
+    /* Absenteísmo: média dos valores lançados no período */
     if (ind.id === "absenteismo") {
-      const totals = this.absenteismoTypeTotals(filter);
-      return (totals.falta + totals.atraso + totals.afastamento) / 3;
+      const sum = entries.reduce((s, e) => s + e.value, 0);
+      return sum / entries.length;
     }
     if (ind.id === "custo_contratacao") {
       const sum = entries.reduce((s, e) => s + e.value, 0);
@@ -1054,6 +1145,7 @@ const ui = {
   /* ---------- KPIs ---------- */
 
   renderKpis() {
+    if (!this.els.kpiGrid) return;
     const filter = this.getDateFilter();
     
     // Filtra indicadores, excluindo saidas
@@ -1199,7 +1291,7 @@ const ui = {
       const select = () => {
         this.selectedIndicatorId = card.dataset.indicator;
         this.renderKpis();
-        this.updateLineChartForSelection();
+        this.scrollToKpiChart(card.dataset.indicator);
       };
       card.addEventListener("click", select);
       card.addEventListener("keydown", (e) => {
@@ -1211,26 +1303,129 @@ const ui = {
     });
   },
 
-  /* Gráfico principal do card "Evolução do indicador" (REMOVIDO):
-     barras por tipo para Absenteísmo; linha para os demais. */
-  renderMainChart() {
-    return;
-    const filter = this.getDateFilter();
-    const selected = getIndicatorById(this.els.chartIndicatorSelect.value) || INDICATORS[0];
-    const canvas = document.getElementById("lineChart");
-    // ... rest of original code ...
+  /* ---------- Faixa de gráficos por indicador (evolução) ---------- */
+
+  _kpiChartInstances: [],
+
+  /* Mostra/oculta os números sobre os gráficos de evolução */
+  initKpiValuesToggle() {
+    try {
+      this.showKpiValues = localStorage.getItem("gg-kpi-values") === "1";
+    } catch (e) {}
+    const btn = this.els.kpiChartsValuesBtn;
+    if (!btn) return;
+    btn.textContent = this.showKpiValues ? "Ocultar valores" : "Mostrar valores";
+    btn.addEventListener("click", () => this.toggleKpiValues());
   },
 
-  updateLineChartForSelection() {
-    if (!this.els.chartIndicatorSelect) return;
-    const indicatorId = this.selectedIndicatorId || this.els.chartIndicatorSelect.value;
-    this.els.chartIndicatorSelect.value = indicatorId;
-    // this.renderMainChart();
+  toggleKpiValues() {
+    this.showKpiValues = !this.showKpiValues;
+    try {
+      localStorage.setItem("gg-kpi-values", this.showKpiValues ? "1" : "0");
+    } catch (e) {}
+    const btn = this.els.kpiChartsValuesBtn;
+    if (btn) btn.textContent = this.showKpiValues ? "Ocultar valores" : "Mostrar valores";
+    (this._kpiChartInstances || []).forEach((c) => {
+      if (c) Charts.setShowValues(c, this.showKpiValues);
+    });
+  },
+
+  renderKpiCharts() {
+    const scroll = document.getElementById("kpiChartsScroll");
+    if (!scroll) return;
+    const filter = this.getDateFilter();
+    const visible = INDICATORS.filter((ind) => ind.id !== "turnover_saidas");
+
+    (this._kpiChartInstances || []).forEach((c) => {
+      if (c && typeof c.destroy === "function") c.destroy();
+    });
+    this._kpiChartInstances = [];
+
+    scroll.innerHTML = visible
+      .map((ind) => {
+        if (ind.id === "turnover_entradas") {
+          return `
+          <div class="card chart-card kpi-chart-card" data-indicator-card="turnover_entradas">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Turnover</h2>
+                <span class="card-sub">Entradas vs Saídas</span>
+              </div>
+            </div>
+            <div class="chart-wrap chart-wrap-pie">
+              <canvas id="kpiChart-turnover_entradas" role="img" aria-label="Turnover — entradas vs saídas"></canvas>
+            </div>
+          </div>`;
+        }
+        return `
+          <div class="card chart-card kpi-chart-card" data-indicator-card="${ind.id}">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">${escapeHtml(ind.name)}</h2>
+                <span class="card-sub">Evolução no período</span>
+              </div>
+              <span class="badge badge-accent">${escapeHtml(ind.unit || "")}</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="kpiChart-${ind.id}" role="img" aria-label="Evolução de ${escapeHtml(ind.name)}"></canvas>
+            </div>
+          </div>`;
+      })
+      .join("");
+
+    requestAnimationFrame(() => {
+      visible.forEach((ind) => {
+        if (typeof Charts === "undefined") return;
+        if (ind.id === "turnover_entradas") {
+          const canvas = document.getElementById("kpiChart-turnover_entradas");
+          if (!canvas) return;
+          const chart = Charts.createPieChart(canvas);
+          const entradas = this.indicatorCurrentValue(getIndicatorById("turnover_entradas"), filter) || 0;
+          const saidas = this.indicatorCurrentValue(getIndicatorById("turnover_saidas"), filter) || 0;
+          Charts.updatePieChart(chart, [
+            { label: "Entradas", value: entradas },
+            { label: "Saídas", value: saidas }
+          ]);
+          if (this.showKpiValues) Charts.setShowValues(chart, true);
+          this._kpiChartInstances.push(chart);
+          return;
+        }
+        const canvas = document.getElementById(`kpiChart-${ind.id}`);
+        if (!canvas) return;
+        const chart = Charts.createLineChart(canvas);
+        Charts.updateLineChart(chart, ind, this.filteredEntries(ind, filter));
+        if (this.showKpiValues) Charts.setShowValues(chart, true);
+        this._kpiChartInstances.push(chart);
+      });
+    });
+  },
+
+  /* Rola a faixa de gráficos até o card do indicador, centraliza e
+     destaca o card por um momento (com animação suave horizontal). */
+  scrollToKpiChart(indicatorId) {
+    const scroll = document.getElementById("kpiChartsScroll");
+    if (!scroll) return;
+    let targetId = indicatorId;
+    if (targetId === "turnover_total") targetId = "turnover_entradas";
+    const card = scroll.querySelector(`[data-indicator-card="${targetId}"]`);
+    if (!card) return;
+
+    scroll.scrollTo({
+      left: card.offsetLeft - (scroll.clientWidth - card.offsetWidth) / 2,
+      behavior: "smooth"
+    });
+
+    card.classList.remove("is-flash");
+    void card.offsetWidth; // reinicia a animação
+    card.classList.add("is-flash");
+    clearTimeout(this._kpiFlashTimer);
+    this._kpiFlashTimer = setTimeout(() => card.classList.remove("is-flash"), 1800);
   },
 
   /* ---------- Tabela de lançamentos ---------- */
 
   renderTable() {
+    if (!this.els.entriesTableBody || !this.els.entriesTable) return;
     const query = this.els.tableSearch.value.trim().toLowerCase();
     const filter = this.getDateFilter();
     const all = Storage.getAllEntries();
@@ -1262,6 +1457,7 @@ const ui = {
 
     this.els.entriesTable.hidden = false;
     this.els.emptyState.hidden = true;
+    const canEdit = typeof Auth === "undefined" || Auth.canEditData();
 
     this.els.entriesTableBody.innerHTML = filtered
       .map(({ entry, ind }) => {
@@ -1278,9 +1474,9 @@ const ui = {
           <td>${escapeHtml(formatDate(entry.date))}</td>
           <td><span class="badge">${escapeHtml(ind.name)}</span></td>
           <td class="row-value">${valueCell}</td>
-          <td class="col-action">
+          ${canEdit ? `<td class="col-action">
             <button class="btn-icon" data-remove="${entry.id}" data-indicator="${ind.id}" aria-label="Excluir lançamento">&times;</button>
-          </td>
+          </td>` : ""}
         </tr>`;
       })
       .join("");
@@ -1298,6 +1494,10 @@ const ui = {
   /* ---------- Ações ---------- */
 
   async handleClearAll() {
+    if (typeof Auth !== "undefined" && !Auth.canEditData()) {
+      this.toast("Seu perfil tem acesso somente leitura.");
+      return;
+    }
     const ok = await Dialog.confirm({
       title: "Apagar todos os lançamentos?",
       message: "Todos os registros serão removidos. Essa ação não pode ser desfeita.",
@@ -1314,20 +1514,10 @@ const ui = {
   renderAll() {
     const filter = this.getDateFilter();
     this.renderKpis();
+    this.renderKpiCharts();
     this.renderTable();
-    this.updateTotalChip();
 
-    // this.renderMainChart();
-
-    // 1. Turnover: Pizza (Entradas vs Saídas)
-    const entradas = this.indicatorCurrentValue(getIndicatorById("turnover_entradas"), filter) || 0;
-    const saidas = this.indicatorCurrentValue(getIndicatorById("turnover_saidas"), filter) || 0;
-    Charts.updateTurnoverPie([
-      { label: "Entradas", value: entradas },
-      { label: "Saídas", value: saidas }
-    ]);
-
-    // 2. Panorama Principal (Barras e novos gráficos)
+    // Panorama Principal (Barras)
     const panorama = INDICATORS.filter((ind) =>
       ind.id !== "turnover_entradas" && ind.id !== "turnover_saidas" && ind.id !== "custo_contratacao"
     )
@@ -1350,19 +1540,9 @@ const ui = {
         }];
       })
       .flat();
-    Charts.updateBarChart(panorama);
-  },
-
-  updateTotalChip() {
-    const filter = this.getDateFilter();
-    let total = 0;
-    INDICATORS.forEach((ind) => {
-      total += this.filteredEntries(ind, filter).length;
-    });
-    const label = filter.start || filter.end
-      ? `${total} lançamento(s) no período`
-      : total === 1 ? "1 lançamento" : `${total} lançamentos`;
-    if (this.els.totalChip) this.els.totalChip.textContent = label;
+    if (typeof Charts !== "undefined" && Charts.updateBarChart) {
+      Charts.updateBarChart(panorama);
+    }
   },
 
   stateFieldHtml() {
@@ -1373,7 +1553,10 @@ const ui = {
       .join("");
     return `
       <div class="field field-estado">
-        <label for="entryEstado">Estado do lançamento</label>
+        <div class="field-estado-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9z"/><path d="M6 15v6h12v-6"/></svg>
+          <span>Estado do lançamento</span>
+        </div>
         <select id="entryEstado" class="select">${options}</select>
         <p class="field-hint">O lançamento será vinculado ao estado selecionado e usado nos filtros por estado.</p>
       </div>`;
@@ -1387,29 +1570,9 @@ const ui = {
       .join("");
     if (this.els.entryIndicator) this.els.entryIndicator.innerHTML = manualOptions;
 
-    // Turnover Entradas/Saídas ficam no gráfico de pizza — fora da evolução
-    const allOptions = INDICATORS
-      .filter((ind) => ind.id !== "turnover_entradas" && ind.id !== "turnover_saidas")
-      .map((ind) => `<option value="${ind.id}">${escapeHtml(ind.name)}</option>`)
-      .join("");
-    if (this.els.chartIndicatorSelect) this.els.chartIndicatorSelect.innerHTML = allOptions;
-
-    const chartableIndicators = INDICATORS.filter(
-      (ind) => ind.id !== "turnover_entradas" && ind.id !== "turnover_saidas"
-    );
-
-    if (chartableIndicators.length > 0 && this.els.chartIndicatorSelect) {
-      let best = chartableIndicators[0];
-      let bestCount = -1;
-      chartableIndicators.forEach((ind) => {
-        const count = Storage.getEntriesFor(ind.id).length;
-        if (count > bestCount) {
-          bestCount = count;
-          best = ind;
-        }
-      });
-      this.els.chartIndicatorSelect.value = best.id;
-      this.selectedIndicatorId = best.id;
+    if (!this.selectedIndicatorId) {
+      const best = MANUAL_INDICATORS[0];
+      if (best) this.selectedIndicatorId = best.id;
     }
   },
 

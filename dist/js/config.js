@@ -118,6 +118,10 @@ const COMPUTED_INDICATORS = INDICATORS.filter((i) => i.computed);
 const STATES = ["RO", "AM", "PA"];
 const DEFAULT_STATE = "RO";
 
+/* Domínio usado no login: o usuário digita apenas o "usuário"
+   (ex.: ivan) e o e-mail completo vira ivan@gente.gestao. */
+const AUTH_EMAIL_DOMAIN = "gente.gestao";
+
 function getIndicatorById(id) {
   return INDICATORS.find((ind) => ind.id === id) || null;
 }
