@@ -331,6 +331,16 @@ const Auth = {
     return !!(p && (p.perfil === "admin" || p.perfil === "analista"));
   },
 
+  /* Oculta a tela de carregamento após a verificação de autenticação.
+     Usa dois rAF para garantir que o overlay foi pintado antes do fade. */
+  hideLoading() {
+    const el = document.getElementById("authLoading");
+    if (!el) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => el.classList.add("is-hidden"));
+    });
+  },
+
   /* ---------- Guardas ---------- */
 
   requireAuth() {
@@ -655,10 +665,13 @@ function watchSupabaseAuthState() {
 document.addEventListener("DOMContentLoaded", async () => {
   if (authIsLoginPage()) return;
   watchSupabaseAuthState();
+  const loadingFallback = setTimeout(() => Auth.hideLoading(), 6000);
   await Auth.ensureProfile();
+  clearTimeout(loadingFallback);
   Auth.requireAuth();
   Auth.renderUserMenu();
   Auth.applyRoleUI();
   Auth._scheduleExpiryLogout();
   prefetchTabs();
+  Auth.hideLoading();
 });
