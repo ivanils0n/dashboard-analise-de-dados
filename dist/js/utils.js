@@ -114,3 +114,34 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+/* Grava no localStorage com fallback para limite de capacidade.
+   Se a gravação falhar por QuotaExceededError, limpa TODO o localStorage
+   e tenta gravar novamente a chave no storage limpo. */
+function safeSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    const isQuota =
+      err &&
+      (err.name === "QuotaExceededError" ||
+        err.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+        err.code === 22 ||
+        err.code === 1014);
+    if (isQuota) {
+      console.warn("[storage] QuotaExceededError — limpando localStorage e regravando:", key);
+      try {
+        localStorage.clear();
+      } catch (e) {}
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (e2) {
+        console.warn("[storage] Falha ao gravar mesmo após limpar o localStorage:", key);
+        return false;
+      }
+    }
+    return false;
+  }
+}

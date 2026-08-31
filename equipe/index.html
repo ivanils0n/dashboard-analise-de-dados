@@ -66,6 +66,10 @@
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9z"/><path d="M6 15v6h12v-6"/></svg>
         <span class="tab-label">Filiais</span>
       </a>
+      <a class="tab-btn" data-page="departamentos" href="../departamentos/" title="Departamentos">
+        <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        <span class="tab-label">Departamentos</span>
+      </a>
       <a class="tab-btn" data-page="usuarios" href="../usuarios/" title="Usuários">
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span class="tab-label">Usuários</span>
@@ -114,8 +118,17 @@
               <input type="text" id="employeeName" class="input" required placeholder="Nome completo">
             </div>
             <div class="field">
-              <label for="employeeSector">Setor</label>
-              <input type="text" id="employeeSector" class="input" required placeholder="Ex.: Recursos Humanos">
+              <label for="employeeSector">Setor (Departamento)</label>
+              <select id="employeeSector" class="select" required>
+                <option value="">— Selecione —</option>
+              </select>
+              <p class="field-hint">Os departamentos são cadastrados na aba Departamentos.</p>
+            </div>
+            <div class="field">
+              <label for="employeeBranch">Filial</label>
+              <input type="text" id="employeeBranch" class="input" list="filiaisDatalist" placeholder="Digite a sigla da filial..." autocomplete="off">
+              <datalist id="filiaisDatalist"></datalist>
+              <p class="field-hint">Busque e selecione pela sigla (nome abreviado) da filial.</p>
             </div>
             <div class="field">
               <label for="employeeUser">Usuário</label>
@@ -153,10 +166,6 @@
                 <option value="PA">PA</option>
               </select>
             </div>
-            <label class="checkbox-field">
-              <input type="checkbox" id="employeeCountsTurnover">
-              <span>Contar no índice de turnover</span>
-            </label>
             <div class="equipe-form-actions">
               <button type="button" class="btn btn-ghost" id="employeeClear">Limpar</button>
               <button type="submit" class="btn btn-primary">Salvar colaborador</button>
@@ -171,14 +180,14 @@
               <h2 class="card-title">Colaboradores</h2>
               <p class="card-sub" id="teamSummary"></p>
             </div>
-            <div class="table-tools" hidden>
+            <div class="table-tools">
               <select id="employeeStatusFilter" class="select select-sm" aria-label="Filtrar por status">
                 <option value="todos">Status: Todos</option>
                 <option value="ativo">Status: Ativos</option>
                 <option value="desligado">Status: Desligados</option>
                 <option value="afastado">Status: Afastados</option>
               </select>
-              <input type="search" class="input input-sm" id="employeeSearch" placeholder="Buscar..." aria-label="Buscar colaborador">
+              <input type="search" class="input input-sm" id="employeeSearch" placeholder="Buscar colaborador..." aria-label="Buscar colaborador">
             </div>
           </div>
           <div class="table-wrap">
@@ -187,6 +196,7 @@
                 <tr>
                   <th>Colaborador</th>
                   <th>Setor</th>
+                  <th>Filial</th>
                   <th>Usuário</th>
                   <th>Status</th>
                   <th>Tipo</th>
@@ -255,6 +265,13 @@
           </select>
         </div>
 
+        <div class="field" id="drawerDepartmentField" hidden>
+          <label for="drawerDepartment">Departamento</label>
+          <select id="drawerDepartment" class="select">
+            <option value="todos">Departamentos: Todos</option>
+          </select>
+        </div>
+
         <div class="field">
           <label for="drawerSearch">Buscar</label>
           <input type="search" id="drawerSearch" class="input" placeholder="Buscar..." aria-label="Buscar">
@@ -298,6 +315,7 @@
   <script src="../js/utils.js"></script>
   <script src="../js/dialog.js"></script>
   <script src="../js/env.js"></script>
+  <script src="../js/cache.js"></script>
   <script src="../js/supabase-client.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/storage.js"></script>
@@ -307,6 +325,7 @@
   <script src="../js/ui.js"></script>
   <script src="../js/equipe.js"></script>
   <script src="../js/filiais.js"></script>
+  <script src="../js/departamentos.js"></script>
   <script src="../js/app.js"></script>
 </body>
 </html>

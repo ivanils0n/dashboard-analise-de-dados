@@ -2250,3 +2250,25 @@ html[data-theme="dark"] .auth-loading-logo {
     height: 320px;
   }
 }
+
+/* ===================== DEPARTAMENTOS ===================== */
+
+/* Filtro por filial (inline) na aba Departamentos */
+.hero .filter-bar .filter-bar-controls .select {
+  min-width: 240px;
+}
+
+/* Combobox (datalist) de filial no formulário da Equipe */
+.field .input[list]::-webkit-calendar-picker-indicator {
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+/* Coluna de métricas numéricas centralizada */
+#departmentTable td:nth-child(4),
+#departmentTable td:nth-child(5),
+#departmentTable td:nth-child(6),
+#departmentTable td:nth-child(7) {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

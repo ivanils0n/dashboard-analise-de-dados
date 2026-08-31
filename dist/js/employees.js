@@ -50,6 +50,8 @@ const Employees = {
       status: employeeData.status,
       type: employeeData.type,
       countsTurnover: !!employeeData.countsTurnover,
+      departmentId: employeeData.departmentId || null,
+      filialId: employeeData.filialId || null,
       createdAt: now,
       updatedAt: now,
       firedAt: employeeData.firedAt || null
@@ -61,6 +63,63 @@ const Employees = {
   remove(id) {
     Storage.deleteEmployee(id);
     this.syncAll();
+  },
+
+  /* ---------- Departamentos & Filiais ---------- */
+
+  departments(state) {
+    const all = Storage.getDepartments();
+    if (state && state !== "todos") {
+      return all.filter((d) => (d.estado || null) === state);
+    }
+    return all.slice();
+  },
+
+  /* Métricas de um departamento (opcionalmente segmentadas por filial e por
+     período de entrada): total, ativos (headcount), entradas e saídas —
+     mesmas regras do turnover. O filtro de datas usa a data de entrada,
+     igual ao filtro da aba Equipe. */
+  departmentMetrics(department, state, filialId, dateRange) {
+    if (!department) return { total: 0, ativos: 0, entradas: 0, saidas: 0 };
+    let list = this.list(state).filter((e) => e.sector === department.name);
+    /* No modo "todos", restringe ao estado do departamento para não
+       misturar departamentos homônimos de estados diferentes. */
+    if ((!state || state === "todos") && department.estado) {
+      list = list.filter((e) => e.estado === department.estado);
+    }
+    if (filialId) {
+      list = list.filter((e) => e.filialId === filialId);
+    }
+    list = this._filterByEntryDate(list, dateRange);
+    return this._metricsFrom(list);
+  },
+
+  /* Filtra colaboradores pela data de entrada (hiredAt), igual à Equipe. */
+  _filterByEntryDate(list, dateRange) {
+    if (!dateRange || (!dateRange.start && !dateRange.end)) return list;
+    return list.filter((e) => {
+      const d = e.hiredAt ? e.hiredAt.split("T")[0] : "";
+      if (dateRange.start && (!d || d < dateRange.start)) return false;
+      if (dateRange.end && (!d || d > dateRange.end)) return false;
+      return true;
+    });
+  },
+
+  /* Métricas de uma filial (todas as regras de turnover aplicadas). */
+  filialMetrics(filial, state) {
+    if (!filial) return { total: 0, ativos: 0, entradas: 0, saidas: 0 };
+    const list = this.list(state).filter((e) => e.filialId === filial.id);
+    return this._metricsFrom(list);
+  },
+
+  _metricsFrom(list) {
+    const m = { total: list.length, ativos: 0, entradas: 0, saidas: 0 };
+    list.forEach((e) => {
+      if (e.status === "ativo") m.ativos += 1;
+      if (e.type === "efetivado" && e.countsTurnover && e.status === "ativo") m.entradas += 1;
+      if (e.type === "efetivado" && e.countsTurnover && e.status === "desligado") m.saidas += 1;
+    });
+    return m;
   },
 
   /* ---------- Cálculos ---------- */

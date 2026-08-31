@@ -9,9 +9,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   ui.init();
   Equipe.init();
   Filiais.init();
+  Departamentos.init();
   Charts.init();
   Employees.syncAll();
   ui.renderAll();
   Equipe.renderTable();
   Filiais.renderTable();
+  Departamentos.renderTable();
 });

@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
           dashboard: resolve(root, "dashboard/index.html"),
           equipe: resolve(root, "equipe/index.html"),
           filiais: resolve(root, "filiais/index.html"),
+          departamentos: resolve(root, "departamentos/index.html"),
           usuarios: resolve(root, "usuarios/index.html")
         }
       }

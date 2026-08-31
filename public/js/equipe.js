@@ -5,6 +5,7 @@
 const Equipe = {
   els: {},
   editingId: null,
+  departmentFilter: "todos",
 
   init() {
     this.els = {
@@ -13,6 +14,8 @@ const Equipe = {
       id: document.getElementById("employeeId"),
       name: document.getElementById("employeeName"),
       sector: document.getElementById("employeeSector"),
+      branch: document.getElementById("employeeBranch"),
+      branchList: document.getElementById("filiaisDatalist"),
       user: document.getElementById("employeeUser"),
       hiredAt: document.getElementById("employeeHiredAt"),
       status: document.getElementById("employeeStatus"),
@@ -20,7 +23,6 @@ const Equipe = {
       firedAtField: document.getElementById("employeeFiredAtField"),
       type: document.getElementById("employeeType"),
       estado: document.getElementById("employeeEstado"),
-      countsTurnover: document.getElementById("employeeCountsTurnover"),
       clearBtn: document.getElementById("employeeClear"),
       search: document.getElementById("employeeSearch"),
       statusFilter: document.getElementById("employeeStatusFilter"),
@@ -39,7 +41,12 @@ const Equipe = {
     if (typeof ui !== "undefined" && ui.bindStateFilter) {
       ui.bindStateFilter("equipeStateButton", "equipeStateMenu", "equipeStateText", () => this.renderTable());
     }
-    [this.els.name, this.els.sector].forEach(bindUppercaseInput);
+    [this.els.name].forEach(bindUppercaseInput);
+    this.els.estado.addEventListener("change", () => {
+      const state = this.els.estado.value || ui.currentState || DEFAULT_STATE;
+      this.populateSectorOptions(state);
+      this.populateBranchDatalist(state);
+    });
     this.resetForm();
   },
 
@@ -58,6 +65,60 @@ const Equipe = {
     });
   },
 
+  /* ---------- Departamentos (setor) e filiais no formulário ---------- */
+
+  populateSectorOptions(state) {
+    if (!this.els.sector) return;
+    const deps = Employees.departments(state);
+    if (!deps.length) {
+      this.els.sector.innerHTML =
+        '<option value="">— Cadastre um departamento (aba Departamentos) —</option>';
+      return;
+    }
+    const current = this.els.sector.value;
+    this.els.sector.innerHTML =
+      '<option value="">— Selecione —</option>' +
+      deps
+        .map(
+          (d) =>
+            `<option value="${escapeHtml(d.name)}" data-department-id="${escapeHtml(d.id)}">${escapeHtml(d.name)}${d.shortName ? " (" + escapeHtml(d.shortName) + ")" : ""}</option>`
+        )
+        .join("");
+    if (current) this.els.sector.value = current;
+  },
+
+  setSector(value) {
+    const opts = Array.from(this.els.sector.options);
+    const match = opts.find((o) => o.value === value);
+    if (match) {
+      this.els.sector.value = value;
+      return;
+    }
+    const opt = document.createElement("option");
+    opt.value = value || "";
+    opt.textContent = value ? value + " (não cadastrado)" : "";
+    this.els.sector.appendChild(opt);
+    this.els.sector.value = value || "";
+  },
+
+  populateBranchDatalist(state) {
+    if (!this.els.branchList) return;
+    const filiais = (typeof Filiais !== "undefined" && Filiais.list) ? Filiais.list(state) : [];
+    /* Exibe apenas o nome abreviado (sigla) da filial para busca/seleção. */
+    this.els.branchList.innerHTML = filiais
+      .map((f) => `<option value="${escapeHtml(f.shortName)}"></option>`)
+      .join("");
+  },
+
+  /* Resolve a filial digitada/selecionada pela sigla (nome abreviado). */
+  resolveBranch(value) {
+    const v = String(value || "").trim();
+    if (!v) return null;
+    const state = this.els.estado.value || ui.currentState || DEFAULT_STATE;
+    const filiais = Filiais.list(state);
+    return filiais.find((f) => f.shortName === v) || null;
+  },
+
   toggleFiredAtField() {
     const isDesligado = this.els.status.value === "desligado";
     this.els.firedAtField.hidden = !isDesligado;
@@ -73,9 +134,10 @@ const Equipe = {
     this.els.hiredAt.value = todayISO();
     this.els.firedAt.value = "";
     this.els.firedAtField.hidden = true;
-    this.els.countsTurnover.checked = true;
     const defaultEstado = ui && ui.currentState && ui.currentState !== "todos" ? ui.currentState : DEFAULT_STATE;
     this.els.estado.value = defaultEstado;
+    this.populateSectorOptions(defaultEstado);
+    this.populateBranchDatalist(defaultEstado);
     this.els.formTitle.textContent = "Novo colaborador";
   },
 
@@ -83,7 +145,6 @@ const Equipe = {
     this.editingId = employee.id;
     this.els.id.value = employee.id;
     this.els.name.value = employee.name;
-    this.els.sector.value = employee.sector;
     this.els.user.value = employee.user;
     this.els.hiredAt.value = employee.hiredAt ? employee.hiredAt.split("T")[0] : "";
     this.els.status.value = employee.status;
@@ -91,24 +152,36 @@ const Equipe = {
     this.toggleFiredAtField();
     this.els.type.value = employee.type;
     this.els.estado.value = employee.estado || "";
-    this.els.countsTurnover.checked = !!employee.countsTurnover;
+    this.populateSectorOptions(employee.estado || ui.currentState || DEFAULT_STATE);
+    this.setSector(employee.sector);
+    this.populateBranchDatalist(employee.estado || ui.currentState || DEFAULT_STATE);
+    const filial = employee.filialId ? Storage.getBranchById(employee.filialId) : null;
+    this.els.branch.value = filial ? filial.shortName : "";
     this.els.formTitle.textContent = "Editar colaborador";
     this.els.form.scrollIntoView({ behavior: "smooth", block: "start" });
   },
 
   handleSubmit(e) {
     e.preventDefault();
+    const sectorOption = this.els.sector.selectedIndex >= 0
+      ? this.els.sector.options[this.els.sector.selectedIndex]
+      : null;
+    const filial = this.resolveBranch(this.els.branch ? this.els.branch.value : "");
     const data = {
       id: this.els.id.value || undefined,
       name: this.els.name.value.trim(),
       sector: this.els.sector.value.trim(),
+      departmentId: sectorOption && sectorOption.dataset.departmentId ? sectorOption.dataset.departmentId : null,
+      filialId: filial ? filial.id : null,
       user: this.els.user.value.trim(),
       hiredAt: this.els.hiredAt.value || null,
       status: this.els.status.value,
       type: this.els.type.value,
-      estado: this.els.estado.value || null,
-      countsTurnover: this.els.countsTurnover.checked
+      estado: this.els.estado.value || null
     };
+    /* Turnover automático: novos colaboradores entram no cálculo; em edições
+       o valor atual do colaborador é preservado. */
+    if (!data.id) data.countsTurnover = true;
 
     if (data.status === "desligado" && this.els.firedAt.value) {
       data.firedAt = this.els.firedAt.value + "T00:00:00";
@@ -153,8 +226,17 @@ const Equipe = {
     const query = this.els.search.value.trim().toLowerCase();
     let list = Employees.list(ui.currentState);
     if (query) {
+      list = list.filter((e) => {
+        const filial = e.filialId ? Storage.getBranchById(e.filialId) : null;
+        const filialText = filial ? `${filial.shortName} ${filial.name}` : "";
+        return `${e.name} ${e.sector} ${e.user} ${filialText}`.toLowerCase().includes(query);
+      });
+    }
+    if (this.departmentFilter && this.departmentFilter !== "todos") {
+      const dep = Storage.getDepartmentById(this.departmentFilter);
+      const depName = dep ? dep.name : null;
       list = list.filter((e) =>
-        `${e.name} ${e.sector} ${e.user}`.toLowerCase().includes(query)
+        e.departmentId === this.departmentFilter || (depName && e.sector === depName)
       );
     }
     const statusFilter = this.els.statusFilter ? this.els.statusFilter.value : "todos";
@@ -193,10 +275,12 @@ const Equipe = {
     this.els.tableBody.innerHTML = list
       .map((e) => {
         const statusClass = e.status === "desligado" ? "badge-dark" : e.status === "afastado" ? "badge-muted" : "badge";
+        const filial = e.filialId ? Storage.getBranchById(e.filialId) : null;
         return `
         <tr>
           <td><strong>${escapeHtml(e.name)}</strong></td>
           <td>${escapeHtml(e.sector)}</td>
+          <td>${filial ? `<span class="badge badge-muted">${escapeHtml(filial.shortName)}</span>` : "—"}</td>
           <td>${escapeHtml(e.user)}</td>
           <td><span class="${statusClass}">${STATUS_LABELS[e.status] || e.status}</span></td>
           <td>${TYPE_LABELS[e.type] || e.type}</td>

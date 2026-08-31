@@ -39,7 +39,7 @@ function currentPage() {
 /* Pré-carrega as demais abas (HTML fica no cache do navegador), sem
    executar o JS delas — os dados do Supabase só carregam ao clicar. */
 function prefetchTabs() {
-  const pages = ["dashboard", "equipe", "filiais", "usuarios"];
+  const pages = ["dashboard", "equipe", "filiais", "departamentos", "usuarios"];
   const here = currentPage();
   if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(() => doPrefetch(pages, here), { timeout: 3000 });
@@ -61,8 +61,15 @@ function doPrefetch(pages, here) {
 
 let _authClient = null;
 
+/* Reutiliza o mesmo cliente do supabase-client.js (sharedSupabaseClient).
+   Isso evita múltiplas instâncias do GoTrueClient no mesmo storageKey —
+   e ao recarregar a página o token ativo é reaproveitado automaticamente. */
 function authSupabaseClient() {
   if (_authClient) return _authClient;
+  if (typeof sharedSupabaseClient === "function") {
+    _authClient = sharedSupabaseClient();
+    return _authClient;
+  }
   const url = window.ENV && window.ENV.SUPABASE_URL;
   const key = window.ENV && window.ENV.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
@@ -105,9 +112,7 @@ const Auth = {
   },
 
   _write(data) {
-    try {
-      localStorage.setItem(this.key, JSON.stringify(data));
-    } catch (e) {}
+    safeSetItem(this.key, JSON.stringify(data));
   },
 
   _clear() {
@@ -211,7 +216,8 @@ const Auth = {
   },
 
   /* Garante que o perfil esteja disponível e atualizado.
-     Busca no Supabase; se falhar, mantém o perfil salvo. */
+     Busca no Supabase; se falhar e houver sessão ativa, notifica o usuário
+     e pede novo login (token inválido/perfil indisponível). */
   async ensureProfile() {
     const stored = this.getProfile();
     const data = this._read();
@@ -220,6 +226,9 @@ const Auth = {
     const client = authSupabaseClient();
     const fetched = await this.loadProfile(client, userId, email);
     console.info("[Auth] ensureProfile ->", fetched ? fetched.perfil : "sem perfil (usando salvo)");
+    if (!fetched && (userId || email)) {
+      this.handleSessionExpired("Não foi possível carregar seu perfil. Faça login novamente.");
+    }
     return fetched || stored;
   },
 
@@ -237,17 +246,42 @@ const Auth = {
   },
 
   /* Agenda o logout automático exatamente no momento em que a sessão
-     expira (6 horas), deslogando e indo para a tela de login. */
+     expira (6 horas), notificando o usuário antes de ir para o login. */
   _scheduleExpiryLogout() {
     clearTimeout(this._expiryTimer);
     const data = this._read();
     if (!data || !data.expiresAt) return;
     const remaining = data.expiresAt - Date.now();
     if (remaining <= 0) {
-      this.logout();
+      this.handleSessionExpired();
       return;
     }
-    this._expiryTimer = setTimeout(() => this.logout(), remaining);
+    this._expiryTimer = setTimeout(() => this.handleSessionExpired(), remaining);
+  },
+
+  /* Notifica (toast) que a sessão/token expirou e redireciona ao login.
+     Reutilizável para token inválido e SIGNED_OUT. Guarda com _expiredHandled
+     para não exibir duas vezes. */
+  handleSessionExpired(message) {
+    if (this._expiredHandled) return;
+    this._expiredHandled = true;
+    this._clear();
+    this._clearSupabaseKeys();
+
+    /* O signOut e a notificação rodam quando o DOM/ENV está pronto (o guard
+       pode disparar no parse do script, antes do env.build.js ser executado). */
+    const show = () => {
+      const client = authSupabaseClient();
+      if (client) client.auth.signOut().catch(() => {});
+      this.hideLoading();
+      this.notify(message || "Tempo limite da sessão atingido. Faça login novamente.");
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", show, { once: true });
+    } else {
+      show();
+    }
+    setTimeout(() => location.replace(authRel("login")), 2000);
   },
 
   async login(identifier, password) {
@@ -266,9 +300,17 @@ const Auth = {
     }
 
     console.info("[Auth] Login OK (user:", data.session.user.id, ")");
+
+    /* Carrega o perfil ANTES de salvar a sessão: se falhar, não prende o
+       usuário num token sem perfil — notifica e pede novo login. */
+    const profile = await this.loadProfile(client, data.session.user.id, data.session.user.email);
+    if (!profile) {
+      await client.auth.signOut().catch(() => {});
+      return { error: { message: "Não foi possível carregar o perfil. Faça login novamente." } };
+    }
+
     this.saveSession(data.session);
-    await this.loadProfile(client, data.session.user.id, data.session.user.email);
-    console.info("[Auth] Login concluído. Perfil:", this.getProfile());
+    console.info("[Auth] Login concluído. Perfil:", profile);
     return { data };
   },
 
@@ -344,8 +386,18 @@ const Auth = {
   /* ---------- Guardas ---------- */
 
   requireAuth() {
+    /* Captura a existência de sessão ANTES de isAuthenticated() limpar a sessão
+       expirada — assim só notificamos quando havia uma sessão que expirou. */
+    const hadSession = !!this._read();
     if (!this.isAuthenticated()) {
-      location.replace(authRel("login"));
+      if (this._expiredHandled) {
+        /* Expiração já tratada (notificação + redirect agendado): não dispara
+           um redirect imediato que sobreporia o toast. */
+      } else if (hadSession) {
+        this.handleSessionExpired("Sua sessão expirou ou o token é inválido. Faça login novamente.");
+      } else {
+        location.replace(authRel("login"));
+      }
       return false;
     }
     const page = currentPage();
@@ -381,7 +433,7 @@ const Auth = {
     });
 
     if (profile.perfil === "visitante") {
-      document.querySelectorAll('[data-page="equipe"], [data-page="filiais"]').forEach((a) => {
+      document.querySelectorAll('[data-page="equipe"], [data-page="filiais"], [data-page="departamentos"]').forEach((a) => {
         a.hidden = true;
       });
     }
@@ -501,7 +553,14 @@ const Auth = {
     document.body.style.overflow = "hidden";
   },
 
+  /* Notificação pública via toast (reutilizada na expiração de sessão e
+     em erros de autenticação). */
+  notify(message) {
+    this._toast(message);
+  },
+
   _toast(message) {
+    if (!document.body) return; // DOM ainda não pronto (ex.: guard no boot)
     let el = document.getElementById("gg-toast");
     if (!el) {
       el = document.createElement("div");
@@ -640,22 +699,22 @@ const Auth = {
 })();
 
 /* Expiração em tempo real: mesmo com a aba aberta, após as 6 horas
-   a sessão é invalidada e um novo login é solicitado. */
+   a sessão é invalidada, o usuário é notificado e vai para o login. */
 setInterval(() => {
   if (authIsLoginPage()) return;
-  if (!Auth.isAuthenticated()) location.replace(authRel("login"));
+  if (!Auth.isAuthenticated()) {
+    Auth.handleSessionExpired("Tempo limite da sessão atingido. Faça login novamente.");
+  }
 }, 30 * 1000);
 
 /* Reage à perda de sessão no lado do Supabase (ex.: token de refresh
-   inválido/expirado): desloga e volta para a tela de login. */
+   inválido/expirado): notifica, desloga e volta para a tela de login. */
 function watchSupabaseAuthState() {
   const client = authSupabaseClient();
   if (!client) return;
   client.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT" && !authIsLoginPage()) {
-      Auth._clear();
-      Auth._clearSupabaseKeys();
-      location.replace(authRel("login"));
+      Auth.handleSessionExpired("Sua sessão foi encerrada ou o token é inválido. Faça login novamente.");
     }
   });
 }

@@ -16,6 +16,7 @@ const ui = {
       pageDashboard: document.getElementById("page-dashboard"),
       pageEquipe: document.getElementById("page-equipe"),
       pageFiliais: document.getElementById("page-filiais"),
+      pageDepartamentos: document.getElementById("page-departamentos"),
       sidebar: document.getElementById("sidebar"),
       sidebarToggle: document.getElementById("sidebarToggle"),
       kpiGrid: document.getElementById("kpiGrid"),
@@ -157,7 +158,18 @@ const ui = {
     if (this.els.pageDashboard && !this.els.pageDashboard.hidden) return "dashboard";
     if (this.els.pageEquipe && !this.els.pageEquipe.hidden) return "equipe";
     if (this.els.pageFiliais && !this.els.pageFiliais.hidden) return "filiais";
+    if (this.els.pageDepartamentos && !this.els.pageDepartamentos.hidden) return "departamentos";
     return "dashboard";
+  },
+
+  /* Preenche o select de departamento do painel de filtros. */
+  populateDrawerDepartments(state) {
+    const el = document.getElementById("drawerDepartment");
+    if (!el) return;
+    const deps = (typeof Employees !== "undefined" && Employees.departments) ? Employees.departments(state) : [];
+    el.innerHTML =
+      '<option value="todos">Departamentos: Todos</option>' +
+      deps.map((d) => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`).join("");
   },
 
   /* Abre o painel de filtros com os valores atuais de cada página */
@@ -169,16 +181,32 @@ const ui = {
     const endInput = document.getElementById("drawerEnd");
     const statusField = document.getElementById("drawerStatusField");
     const statusSel = document.getElementById("drawerStatus");
+    const deptField = document.getElementById("drawerDepartmentField");
+    const branchField = document.getElementById("drawerBranchField");
     const searchInput = document.getElementById("drawerSearch");
 
     estadoSel.value = this.currentState || "todos";
 
-    // Período: apenas dashboard e equipe
+    // Período: dashboard e equipe
     const periodField = document.getElementById("drawerPeriodField");
-    periodField.hidden = page === "filiais";
+    periodField.hidden = page === "filiais" || page === "departamentos";
 
     // Status: apenas equipe
     statusField.hidden = page !== "equipe";
+
+    // Departamento: apenas equipe
+    if (deptField) {
+      deptField.hidden = page !== "equipe";
+      if (page === "equipe") this.populateDrawerDepartments(this.currentState);
+    }
+
+    // Filial: apenas departamentos
+    if (branchField) {
+      branchField.hidden = page !== "departamentos";
+      if (page === "departamentos" && typeof Departamentos !== "undefined") {
+        Departamentos.populateBranchFilter(this.currentState);
+      }
+    }
 
     if (page === "dashboard") {
       startInput.value = this.els.filterStart.value;
@@ -189,6 +217,16 @@ const ui = {
       endInput.value = Equipe.els.filterEnd.value;
       statusSel.value = Equipe.els.statusFilter.value;
       if (searchInput) searchInput.value = Equipe.els.search.value;
+      const drawerDepartment = document.getElementById("drawerDepartment");
+      if (drawerDepartment && Equipe.departmentFilter) {
+        drawerDepartment.value = Equipe.departmentFilter;
+      }
+    } else if (page === "departamentos") {
+      const drawerBranch = document.getElementById("drawerBranch");
+      if (drawerBranch && Departamentos.branchFilter) {
+        drawerBranch.value = Departamentos.branchFilter;
+      }
+      if (searchInput) searchInput.value = Departamentos.els.search.value;
     } else {
       if (searchInput) searchInput.value = Filiais.els.search.value;
     }
@@ -229,8 +267,20 @@ const ui = {
       Equipe.els.filterStart.value = document.getElementById("drawerStart").value;
       Equipe.els.filterEnd.value = document.getElementById("drawerEnd").value;
       Equipe.els.statusFilter.value = document.getElementById("drawerStatus").value;
+      const drawerDepartment = document.getElementById("drawerDepartment");
+      if (drawerDepartment) Equipe.departmentFilter = drawerDepartment.value;
       if (searchEl) Equipe.els.search.value = search;
       Equipe.renderTable();
+    } else if (page === "departamentos") {
+      Departamentos.populateBranchFilter(estado);
+      const drawerBranch = document.getElementById("drawerBranch");
+      if (drawerBranch) {
+        drawerBranch.value = Departamentos.branchFilter;
+        Departamentos.branchFilter = drawerBranch.value || "todos";
+        if (Departamentos.els.branchFilter) Departamentos.els.branchFilter.value = Departamentos.branchFilter;
+      }
+      if (searchEl) Departamentos.els.search.value = search;
+      Departamentos.renderTable();
     } else {
       if (searchEl) Filiais.els.search.value = search;
       Filiais.renderTable();
@@ -252,6 +302,10 @@ const ui = {
     startInput.value = firstDayOfMonthISO();
     endInput.value = lastDayOfMonthISO();
     statusSel.value = "todos";
+    const deptSel = document.getElementById("drawerDepartment");
+    if (deptSel) deptSel.value = "todos";
+    const branchSel = document.getElementById("drawerBranch");
+    if (branchSel) branchSel.value = "todos";
     if (searchInput) searchInput.value = "";
 
     // Aplica imediatamente
@@ -259,15 +313,35 @@ const ui = {
   },
 
   initFiltersDrawer() {
+    /* Páginas sem o painel de filtros (ex.: Departamentos/Filiais) têm o botão
+       "Filtro" substituído pelo "Filtro por Estado" — aqui apenas garantimos
+       que a ausência do drawer não quebre a inicialização. */
+    const { filterDrawerOverlay, filterDrawerClose, filterDrawerApply, filterDrawerClear } = this.els;
     document.querySelectorAll(".js-filters-btn").forEach((btn) => {
       btn.addEventListener("click", () => this.openFiltersDrawer());
     });
-    this.els.filterDrawerClose.addEventListener("click", () => this.closeFiltersDrawer());
-    this.els.filterDrawerOverlay.addEventListener("click", (e) => {
-      if (e.target === this.els.filterDrawerOverlay) this.closeFiltersDrawer();
-    });
-    this.els.filterDrawerApply.addEventListener("click", () => this.applyFiltersDrawer());
-    this.els.filterDrawerClear.addEventListener("click", () => this.clearFiltersDrawer());
+    if (filterDrawerClose) filterDrawerClose.addEventListener("click", () => this.closeFiltersDrawer());
+    if (filterDrawerOverlay) {
+      filterDrawerOverlay.addEventListener("click", (e) => {
+        if (e.target === filterDrawerOverlay) this.closeFiltersDrawer();
+      });
+    }
+    if (filterDrawerApply) filterDrawerApply.addEventListener("click", () => this.applyFiltersDrawer());
+    if (filterDrawerClear) filterDrawerClear.addEventListener("click", () => this.clearFiltersDrawer());
+
+    // Ao trocar o estado no painel, atualiza os selects de departamento/filial
+    const drawerEstado = document.getElementById("drawerEstado");
+    if (drawerEstado) {
+      drawerEstado.addEventListener("change", () => {
+        const page = this.getActivePage();
+        const deptField = document.getElementById("drawerDepartmentField");
+        if (deptField && !deptField.hidden) this.populateDrawerDepartments(drawerEstado.value);
+        const branchField = document.getElementById("drawerBranchField");
+        if (branchField && !branchField.hidden && typeof Departamentos !== "undefined") {
+          Departamentos.populateBranchFilter(drawerEstado.value);
+        }
+      });
+    }
   },
 
   /* ---------- Modo noturno ---------- */
@@ -282,7 +356,7 @@ const ui = {
     const html = document.documentElement;
     const dark = html.getAttribute("data-theme") === "dark";
     html.setAttribute("data-theme", dark ? "light" : "dark");
-    try { localStorage.setItem("gg-theme", dark ? "light" : "dark"); } catch (e) {}
+    safeSetItem("gg-theme", dark ? "light" : "dark");
     if (typeof Charts !== "undefined" && Charts.applyTheme) {
       Charts.applyTheme();
     }
@@ -1185,8 +1259,9 @@ const ui = {
       if (ind.id === "turnover_entradas") {
         const entradas = this.indicatorCurrentValue(getIndicatorById("turnover_entradas"), filter) || 0;
         const saidas = this.indicatorCurrentValue(getIndicatorById("turnover_saidas"), filter) || 0;
+        const turnoverSelected = this.selectedIndicatorId === "turnover_total" ? " is-selected" : "";
         return `
-        <article class="kpi-card is-turnover" data-indicator="turnover_total" role="button" tabindex="0">
+        <article class="kpi-card is-turnover${turnoverSelected}" data-indicator="turnover_total" role="button" tabindex="0">
           <div class="kpi-top">
             <span class="kpi-name">Turnover</span>
           </div>
@@ -1203,8 +1278,9 @@ const ui = {
         const val = this.indicatorCurrentValue(ind, filter) || 0;
         const total = this.indicatorCurrentValue(getIndicatorById("headcount"), filter) || 1;
         // Gráfico donut simplificado para experiência: desligados vs restantes
+        const expSelected = this.selectedIndicatorId === "turnover_experiencia" ? " is-selected" : "";
         return `
-        <article class="kpi-card is-turnover" data-indicator="turnover_experiencia" role="button" tabindex="0">
+        <article class="kpi-card is-turnover${expSelected}" data-indicator="turnover_experiencia" role="button" tabindex="0">
           <div class="kpi-top">
             <span class="kpi-name">Turnover (Exp)</span>
           </div>
@@ -1268,20 +1344,21 @@ const ui = {
             this._kpiCharts.push(chart);
         }
 
-        // Gráfico de pizza do turnover experiência no KPI
+        // Gráfico de pizza do turnover experiência no KPI (entradas vs saídas)
         const expPieCanvas = document.getElementById("experienciaKpiPie");
         if (expPieCanvas) {
-            const desligadosExp = this.indicatorCurrentValue(getIndicatorById("turnover_experiencia"), filter) || 0;
-            const ativosExp = Employees.list().filter(e => e.type === 'experiencia' && e.status === 'ativo').length || 0;
-            
+            const saidasExp = this.indicatorCurrentValue(getIndicatorById("turnover_experiencia"), filter) || 0;
+            const entradasExp = Employees.list(this.currentState)
+              .filter((e) => e.type === "experiencia" && e.status === "ativo").length || 0;
+
             const chart = Charts.createPieChart(expPieCanvas);
             // Ajusta a legenda para horizontal
             chart.options.plugins.legend.position = "bottom";
             chart.options.plugins.legend.labels.boxWidth = 12;
-            
+
             Charts.updatePieChart(chart, [
-                { label: "Desligados", value: desligadosExp },
-                { label: "Ativos", value: ativosExp }
+                { label: "Entradas", value: entradasExp },
+                { label: "Saídas", value: saidasExp }
             ]);
             this._kpiCharts.push(chart);
         }
@@ -1320,9 +1397,7 @@ const ui = {
 
   toggleKpiValues() {
     this.showKpiValues = !this.showKpiValues;
-    try {
-      localStorage.setItem("gg-kpi-values", this.showKpiValues ? "1" : "0");
-    } catch (e) {}
+    safeSetItem("gg-kpi-values", this.showKpiValues ? "1" : "0");
     const btn = this.els.kpiChartsValuesBtn;
     if (btn) btn.textContent = this.showKpiValues ? "Ocultar valores" : "Mostrar valores";
     (this._kpiChartInstances || []).forEach((c) => {
@@ -1357,6 +1432,20 @@ const ui = {
             </div>
           </div>`;
         }
+        if (ind.id === "turnover_experiencia") {
+          return `
+          <div class="card chart-card kpi-chart-card" data-indicator-card="turnover_experiencia">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">${escapeHtml(ind.name)}</h2>
+                <span class="card-sub">Entradas vs Saídas</span>
+              </div>
+            </div>
+            <div class="chart-wrap chart-wrap-pie">
+              <canvas id="kpiChart-turnover_experiencia" role="img" aria-label="Turnover experiência — entradas vs saídas"></canvas>
+            </div>
+          </div>`;
+        }
         return `
           <div class="card chart-card kpi-chart-card" data-indicator-card="${ind.id}">
             <div class="card-header">
@@ -1382,6 +1471,21 @@ const ui = {
           const chart = Charts.createPieChart(canvas);
           const entradas = this.indicatorCurrentValue(getIndicatorById("turnover_entradas"), filter) || 0;
           const saidas = this.indicatorCurrentValue(getIndicatorById("turnover_saidas"), filter) || 0;
+          Charts.updatePieChart(chart, [
+            { label: "Entradas", value: entradas },
+            { label: "Saídas", value: saidas }
+          ]);
+          if (this.showKpiValues) Charts.setShowValues(chart, true);
+          this._kpiChartInstances.push(chart);
+          return;
+        }
+        if (ind.id === "turnover_experiencia") {
+          const canvas = document.getElementById("kpiChart-turnover_experiencia");
+          if (!canvas) return;
+          const chart = Charts.createPieChart(canvas);
+          const saidas = this.indicatorCurrentValue(getIndicatorById("turnover_experiencia"), filter) || 0;
+          const entradas = Employees.list(this.currentState)
+            .filter((e) => e.type === "experiencia" && e.status === "ativo").length || 0;
           Charts.updatePieChart(chart, [
             { label: "Entradas", value: entradas },
             { label: "Saídas", value: saidas }

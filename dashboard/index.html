@@ -66,6 +66,10 @@
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9z"/><path d="M6 15v6h12v-6"/></svg>
         <span class="tab-label">Filiais</span>
       </a>
+      <a class="tab-btn" data-page="departamentos" href="../departamentos/" title="Departamentos">
+        <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        <span class="tab-label">Departamentos</span>
+      </a>
       <a class="tab-btn" data-page="usuarios" href="../usuarios/" title="Usuários">
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span class="tab-label">Usuários</span>
@@ -230,6 +234,20 @@
             <option value="afastado">Status: Afastados</option>
           </select>
         </div>
+
+        <div class="field" id="drawerDepartmentField" hidden>
+          <label for="drawerDepartment">Departamento</label>
+          <select id="drawerDepartment" class="select">
+            <option value="todos">Departamentos: Todos</option>
+          </select>
+        </div>
+
+        <div class="field" id="drawerBranchField" hidden>
+          <label for="drawerBranch">Filial</label>
+          <select id="drawerBranch" class="select">
+            <option value="todos">Filiais: Todas</option>
+          </select>
+        </div>
       </div>
       <div class="filter-drawer-footer">
         <button type="button" class="btn btn-ghost" id="filterDrawerClear">Limpar filtros</button>
@@ -347,6 +365,7 @@
   <script src="../js/utils.js"></script>
   <script src="../js/dialog.js"></script>
   <script src="../js/env.js"></script>
+  <script src="../js/cache.js"></script>
   <script src="../js/supabase-client.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/storage.js"></script>
@@ -356,6 +375,7 @@
   <script src="../js/ui.js"></script>
   <script src="../js/equipe.js"></script>
   <script src="../js/filiais.js"></script>
+  <script src="../js/departamentos.js"></script>
   <script src="../js/app.js"></script>
 </body>
 </html>

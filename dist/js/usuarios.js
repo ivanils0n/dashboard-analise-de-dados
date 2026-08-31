@@ -41,7 +41,7 @@ const Usuarios = {
         const html = document.documentElement;
         const dark = html.getAttribute("data-theme") === "dark";
         html.setAttribute("data-theme", dark ? "light" : "dark");
-        try { localStorage.setItem("gg-theme", dark ? "light" : "dark"); } catch (e) {}
+        safeSetItem("gg-theme", dark ? "light" : "dark");
       });
     });
   },

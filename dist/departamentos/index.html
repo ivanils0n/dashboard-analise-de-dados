@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Cadastro e gestão de filiais — Gente e Gestão (RH).">
-  <meta name="gg-page" content="filiais">
-  <title>Gente &amp; Gestão — Filiais</title>
+  <meta name="description" content="Cadastro e gestão de departamentos — Gente e Gestão (RH).">
+  <meta name="gg-page" content="departamentos">
+  <title>Gente &amp; Gestão — Departamentos</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -34,10 +34,10 @@
     </div>
     <div class="topbar-right">
       <div class="state-filter-dropdown">
-        <button type="button" class="btn btn-outline btn-sm" id="filiaisStateButton" aria-haspopup="true" aria-expanded="false" title="Filtro por Estado">
-          <span id="filiaisStateText">RO</span>
+        <button type="button" class="btn btn-outline btn-sm" id="departamentosStateButton" aria-haspopup="true" aria-expanded="false" title="Filtro por Estado">
+          <span id="departamentosStateText">RO</span>
         </button>
-        <div class="dropdown-menu" id="filiaisStateMenu" hidden>
+        <div class="dropdown-menu" id="departamentosStateMenu" hidden>
           <button type="button" class="dropdown-item" data-state-value="todos">Todos Estados</button>
           <button type="button" class="dropdown-item" data-state-value="RO">RO</button>
           <button type="button" class="dropdown-item" data-state-value="AM">AM</button>
@@ -70,11 +70,11 @@
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span class="tab-label">Equipe</span>
       </a>
-      <a class="tab-btn is-active" data-page="filiais" href="../filiais/" title="Filiais">
+      <a class="tab-btn" data-page="filiais" href="../filiais/" title="Filiais">
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9z"/><path d="M6 15v6h12v-6"/></svg>
         <span class="tab-label">Filiais</span>
       </a>
-      <a class="tab-btn" data-page="departamentos" href="../departamentos/" title="Departamentos">
+      <a class="tab-btn is-active" data-page="departamentos" href="../departamentos/" title="Departamentos">
         <svg class="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
         <span class="tab-label">Departamentos</span>
       </a>
@@ -91,17 +91,17 @@
 
   <main class="main">
 
-    <!-- ============ PÁGINA: FILIAIS ============ -->
-    <section id="page-filiais">
+    <!-- ============ PÁGINA: DEPARTAMENTOS ============ -->
+    <section id="page-departamentos">
 
       <div class="hero">
         <div class="hero-info">
-          <h1 class="page-title" id="filiaisTitle">Filiais</h1>
+          <h1 class="page-title" id="departamentosTitle">Departamentos</h1>
         </div>
         <div class="hero-actions">
-          <!-- Barra de pesquisa das filiais cadastradas -->
+          <!-- Filtro por Estado fica na topbar, no lugar do botão "Filtros" -->
         </div>
-        <span class="hero-chip" id="branchChip">0 filiais</span>
+        <span class="hero-chip" id="deptChip">0 departamentos</span>
       </div>
 
       <div class="content">
@@ -110,35 +110,23 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h2 class="card-title" id="branchFormTitle">Nova filial</h2>
-              <p class="card-sub">Cadastre as filiais e associe cada uma ao estado correspondente.</p>
+              <h2 class="card-title" id="departmentFormTitle">Novo departamento</h2>
+              <p class="card-sub">Cadastre os departamentos (setores) e associe cada um ao estado correspondente.</p>
             </div>
           </div>
-          <form id="branchForm" class="equipe-form" novalidate>
-            <input type="hidden" id="branchId">
+          <form id="departmentForm" class="equipe-form" novalidate>
+            <input type="hidden" id="departmentId">
             <div class="field">
-              <label for="branchIdFilial">Id Filial</label>
-              <input type="text" id="branchIdFilial" class="input" required placeholder="Ex.: 8">
+              <label for="departmentName">Nome do departamento</label>
+              <input type="text" id="departmentName" class="input" required placeholder="Ex.: RECURSOS HUMANOS">
             </div>
             <div class="field">
-              <label for="branchCnpj">CNPJ Filial</label>
-              <input type="text" id="branchCnpj" class="input" required placeholder="00.000.000/0000-00">
+              <label for="departmentShort">Sigla</label>
+              <input type="text" id="departmentShort" class="input" placeholder="Ex.: RH">
             </div>
             <div class="field">
-              <label for="branchName">Nome Filial</label>
-              <input type="text" id="branchName" class="input" required placeholder="Ex.: DROGARIA ULTRA POPULAR  PVH1">
-            </div>
-            <div class="field">
-              <label for="branchShort">Filial Abreviado</label>
-              <input type="text" id="branchShort" class="input" required placeholder="Ex.: PVH 1">
-            </div>
-            <div class="field">
-              <label for="branchManager">Gerente</label>
-              <input type="text" id="branchManager" class="input" placeholder="Opcional">
-            </div>
-            <div class="field">
-              <label for="branchEstado">Estado</label>
-              <select id="branchEstado" class="select">
+              <label for="departmentEstado">Estado</label>
+              <select id="departmentEstado" class="select">
                 <option value="">—</option>
                 <option value="RO">RO</option>
                 <option value="AM">AM</option>
@@ -146,8 +134,8 @@
               </select>
             </div>
             <div class="equipe-form-actions">
-              <button type="button" class="btn btn-ghost" id="branchClear">Limpar</button>
-              <button type="submit" class="btn btn-primary">Salvar filial</button>
+              <button type="button" class="btn btn-ghost" id="departmentClear">Limpar</button>
+              <button type="submit" class="btn btn-primary">Salvar departamento</button>
             </div>
           </form>
         </section>
@@ -156,31 +144,38 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h2 class="card-title">Filiais cadastradas</h2>
-              <p class="card-sub" id="branchSummary"></p>
+              <h2 class="card-title">Departamentos cadastrados</h2>
+              <p class="card-sub" id="deptSummary"></p>
             </div>
             <div class="table-tools">
-              <input type="search" class="input input-sm" id="branchSearch" placeholder="Buscar filial..." aria-label="Buscar filial">
+              <input type="search" class="input input-sm" id="departmentSearch" placeholder="Buscar departamento..." aria-label="Buscar departamento">
+              <input type="text" class="input input-sm" id="deptBranchFilter" list="deptFiliaisList" placeholder="Filtrar por filial (sigla)..." aria-label="Filtrar por filial" autocomplete="off">
+              <datalist id="deptFiliaisList"></datalist>
+              <span class="filter-sep">Período</span>
+              <input type="date" class="input input-sm" id="deptFilterStart" aria-label="Data início" title="Data de entrada (início)">
+              <span class="filter-sep">até</span>
+              <input type="date" class="input input-sm" id="deptFilterEnd" aria-label="Data fim" title="Data de entrada (fim)">
             </div>
           </div>
           <div class="table-wrap">
-            <table class="table" id="branchTable">
+            <table class="table" id="departmentTable">
               <thead>
                 <tr>
-                  <th>Id</th>
-                  <th>CNPJ</th>
-                  <th>Nome</th>
-                  <th>Abreviado</th>
-                  <th>Gerente</th>
+                  <th>Departamento</th>
+                  <th>Sigla</th>
                   <th>Estado</th>
+                  <th>Ativos</th>
+                  <th>Entradas</th>
+                  <th>Saídas</th>
+                  <th>Total</th>
                   <th class="col-action"></th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
-            <div class="empty-state" id="branchEmpty" hidden>
-              <p class="empty-title">Nenhuma filial cadastrada</p>
-              <p class="empty-text">Preencha o formulário acima para cadastrar sua primeira filial.</p>
+            <div class="empty-state" id="departmentEmpty" hidden>
+              <p class="empty-title">Nenhum departamento cadastrado</p>
+              <p class="empty-text">Preencha o formulário acima para cadastrar seu primeiro departamento.</p>
             </div>
           </div>
         </section>

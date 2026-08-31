@@ -53,11 +53,17 @@ const Remote = {
   },
   branchRemoved(id, estado) {
     if (this.ok()) this.db().deleteBranch(id, estado);
+  },
+  departmentSaved(department) {
+    if (this.ok()) this.db().upsertDepartment(department);
+  },
+  departmentRemoved(id, estado) {
+    if (this.ok()) this.db().deleteDepartment(id, estado);
   }
 };
 
 function emptyData() {
-  return { version: 1, entries: {}, employees: [], vacancies: [], branches: [] };
+  return { version: 1, entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
 }
 
 const Storage = {
@@ -72,6 +78,25 @@ const Storage = {
      A persistência real acontece via Remote (Supabase). */
   save() {},
 
+  /* Esvazia a memória — usado ao invalidar o cache e recarregar tudo. */
+  reset() {
+    this._data = emptyData();
+  },
+
+  /* Substitui a memória por uma foto vinda do cache local (localStorage).
+     Aceita apenas os formatos já conhecidos; campos ausentes viram vazios. */
+  replaceFromCache(cached) {
+    const d = emptyData();
+    if (cached && typeof cached === "object") {
+      d.entries = cached.entries && typeof cached.entries === "object" ? cached.entries : {};
+      d.employees = Array.isArray(cached.employees) ? cached.employees : [];
+      d.vacancies = Array.isArray(cached.vacancies) ? cached.vacancies : [];
+      d.branches = Array.isArray(cached.branches) ? cached.branches : [];
+      d.departments = Array.isArray(cached.departments) ? cached.departments : [];
+    }
+    this._data = d;
+  },
+
   /* Mescla dados de um estado recém-carregado sem perder o que já está
      em memória (usado na carga sob demanda por estado). */
   mergeFromRemote(remote) {
@@ -85,7 +110,7 @@ const Storage = {
       });
       data.entries[indicatorId].sort((a, b) => a.date.localeCompare(b.date));
     });
-    ["employees", "vacancies", "branches"].forEach((key) => {
+    ["employees", "vacancies", "branches", "departments"].forEach((key) => {
       (remote[key] || []).forEach((item) => {
         if (!data[key].some((x) => x.id === item.id)) data[key].push({ ...item });
       });
@@ -290,5 +315,32 @@ const Storage = {
 
   getBranchById(id) {
     return this.getBranches().find((b) => b.id === id) || null;
+  },
+
+  /* ---------- Departamentos ---------- */
+
+  getDepartments() {
+    return this._data.departments;
+  },
+
+  upsertDepartment(department) {
+    const data = this.load();
+    const idx = data.departments.findIndex((d) => d.id === department.id);
+    if (idx >= 0) data.departments[idx] = department;
+    else data.departments.push(department);
+    this.save();
+    Remote.departmentSaved(department);
+  },
+
+  deleteDepartment(id) {
+    const data = this.load();
+    const dep = data.departments.find((d) => d.id === id);
+    data.departments = data.departments.filter((d) => d.id !== id);
+    this.save();
+    Remote.departmentRemoved(id, dep ? dep.estado : null);
+  },
+
+  getDepartmentById(id) {
+    return this.getDepartments().find((d) => d.id === id) || null;
   }
 };

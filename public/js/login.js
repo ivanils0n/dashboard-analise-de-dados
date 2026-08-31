@@ -41,6 +41,9 @@ document.addEventListener("DOMContentLoaded", () => {
           ? "Usuário ou senha inválidos."
           : error.message;
       showError(friendly);
+      if (typeof Auth !== "undefined" && Auth.notify) {
+        Auth.notify(friendly);
+      }
       return;
     }
 
