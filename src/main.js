@@ -4,13 +4,14 @@ import App from "./App.vue";
 import router from "./router";
 import { bootstrapSupabase } from "./lib/supabase";
 import { syncAll } from "./lib/employees";
-import { getProfile, watchSupabaseAuthState, startAuthPolling } from "./lib/auth";
+import { isAuthenticated, getProfile, watchSupabaseAuthState, startAuthPolling } from "./lib/auth";
 
 async function bootstrap() {
+  const authed = isAuthenticated();
   // Dados + sincronização (Supabase com cache local via delta sync)
   await bootstrapSupabase();
-  // Recalcula os snapshots dos indicadores calculados a partir da equipe
-  syncAll();
+  // Recalcula os snapshots dos indicadores calculados somente com sessão ativa
+  if (authed) syncAll();
   // Perfil do usuário autenticado (se houver sessão ativa)
   getProfile();
   watchSupabaseAuthState();

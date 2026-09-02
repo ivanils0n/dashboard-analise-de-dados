@@ -43,7 +43,7 @@ export const INDICATORS = [
   {
     id: "absenteismo",
     name: "Absenteísmo",
-    desc: "Faltas, atrasos e afastamentos",
+    desc: "Faltas, atestados e acidentes",
     type: "number",
     unit: "ocorrências",
     decimals: 0,
@@ -128,9 +128,12 @@ export const STATUS_LABELS = { ativo: "Ativo", afastado: "Afastado", desligado: 
 export const TYPE_LABELS = { efetivado: "Efetivado", experiencia: "Em experiência" };
 export const ABSENTEEISM_TYPES = {
   falta: "Falta",
-  atraso: "Atraso",
-  afastamento: "Afastamento"
+  atraso: "Atestado",
+  afastamento: "Acidente"
 };
+
+/* Motivo do submodal de ocorrência do Absenteísmo (ordem exibida). */
+export const ABSENTEEISM_OPTIONS = ["falta", "atraso", "afastamento"];
 
 export function getIndicatorById(id) {
   return INDICATORS.find((ind) => ind.id === id) || null;

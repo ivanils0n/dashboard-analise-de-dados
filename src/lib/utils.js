@@ -32,6 +32,13 @@ export function formatRawValue(indicator, value) {
   return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+export function formatCurrency(value) {
+  if (value === null || value === undefined || value === "" || isNaN(Number(value))) {
+    return "—";
+  }
+  return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 export function formatAxisValue(indicator, value) {
   if (indicator.type === "currency") {
     return "R$ " + Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 0 });

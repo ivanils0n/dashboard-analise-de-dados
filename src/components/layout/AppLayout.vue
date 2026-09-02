@@ -1,13 +1,21 @@
 <script setup>
+import { computed } from "vue";
+import { getProfile } from "@/lib/auth";
 import TopBar from "./TopBar.vue";
 import SideBar from "./SideBar.vue";
+
+/* O visitante tem acesso somente leitura ao dashboard e não exibe a sidebar. */
+const isVisitor = computed(() => {
+  const p = getProfile();
+  return !!(p && p.perfil === "visitante");
+});
 </script>
 
 <template>
   <div class="min-h-screen bg-ice text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <TopBar />
     <div class="flex min-h-[calc(100vh-4rem)] items-start">
-      <SideBar />
+      <SideBar v-if="!isVisitor" />
       <main class="min-w-0 flex-1 px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <router-view />
         <footer class="mt-10 border-t border-zinc-200 pt-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
@@ -10,6 +11,7 @@ import { getDepartmentById, getBranchById } from "@/lib/store";
 import { listDepartments, departmentMetrics } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { saveDepartment, deleteDepartmentRecord, nameInUse } from "@/lib/departamentos";
+import { hydrateState } from "@/lib/supabase";
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
@@ -25,8 +27,7 @@ const form = reactive({
 const search = ref("");
 const branchInput = ref("");
 const branchFilterId = ref("todos");
-const rangeStart = ref("");
-const rangeEnd = ref("");
+const range = reactive({ start: "", end: "" });
 
 const tableList = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -41,9 +42,23 @@ const total = computed(() => listDepartments(filters.current).length);
 
 const branchOptions = computed(() => listBranches(filters.current));
 
+/* Garante que os dados do estado selecionado estejam carregados ao abrir a aba. */
+onMounted(() => {
+  hydrateState(filters.current).catch(() => {});
+});
+
+/* Ao trocar de estado, limpa o filtro de filial (sigla pode não existir lá). */
+watch(
+  () => filters.current,
+  () => {
+    branchFilterId.value = "todos";
+    branchInput.value = "";
+  }
+);
+
 const dateRange = computed(() => {
-  let start = rangeStart.value || null;
-  let end = rangeEnd.value || null;
+  let start = range.start || null;
+  let end = range.end || null;
   if (start && end && start > end) {
     const tmp = start;
     start = end;
@@ -199,10 +214,7 @@ function metrics(d) {
           <datalist id="deptFiliaisList">
             <option v-for="f in branchOptions" :key="f.id" :value="f.shortName"></option>
           </datalist>
-          <span class="text-sm text-zinc-400 dark:text-zinc-400">Período</span>
-          <input v-model="rangeStart" type="date" class="input-sm" aria-label="Data início" title="Data de entrada (início)" />
-          <span class="text-sm text-zinc-400 dark:text-zinc-400">até</span>
-          <input v-model="rangeEnd" type="date" class="input-sm" aria-label="Data fim" title="Data de entrada (fim)" />
+          <DateRangeFilter :range="range" title="Período" />
         </div>
       </div>
 

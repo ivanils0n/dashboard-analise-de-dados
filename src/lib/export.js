@@ -1,7 +1,7 @@
 /* =========================================================
    Exportação / Importação — SheetJS
    ---------------------------------------------------------
-   toXLSX()   : arquivo .xlsx com 4 planilhas
+   toXLSX()   : arquivo .xlsx com 5 planilhas
    toCSV()    : planilha de lançamentos em .csv
    template() : modelo .xlsx para importação
    importFile(file, onResult) : importa planilha verificando duplicados
@@ -13,9 +13,11 @@ import {
   getEntriesFor,
   getEmployees,
   getBranches,
+  getDepartments,
   getLatestForMeta,
   upsertEmployee,
   upsertBranch,
+  upsertDepartment,
   addEntry
 } from "./store";
 import { INDICATORS, STATES, STATUS_LABELS, TYPE_LABELS } from "./config";
@@ -69,7 +71,7 @@ export function toXLSX() {
 
   // ---- Planilha 3: Equipe ----
   const employeeRows = [
-    ["Colaborador", "Setor", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Estado"]
+    ["Colaborador", "Setor", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Estado"]
   ];
   getEmployees().forEach((e) => {
     const cost = getLatestForMeta("custo_contratacao", "employeeId", e.id);
@@ -84,11 +86,12 @@ export function toXLSX() {
       e.createdAt,
       e.updatedAt,
       cost ? Number(cost.value) : null,
+      e.salario != null ? Number(e.salario) : null,
       e.estado || ""
     ]);
   });
   const sheetEmployees = XLSX.utils.aoa_to_sheet(employeeRows);
-  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 8 }];
+  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 8 }];
   XLSX.utils.book_append_sheet(workbook, sheetEmployees, "Equipe");
 
   // ---- Planilha 4: Filiais ----
@@ -99,6 +102,15 @@ export function toXLSX() {
   const sheetBranches = XLSX.utils.aoa_to_sheet(branchRows);
   sheetBranches["!cols"] = [{ wch: 14 }, { wch: 22 }, { wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheetBranches, "Filiais");
+
+  // ---- Planilha 5: Departamentos ----
+  const departmentRows = [["Departamento", "Sigla", "Estado"]];
+  getDepartments().forEach((d) => {
+    departmentRows.push([d.name, d.shortName || "", d.estado || ""]);
+  });
+  const sheetDepartments = XLSX.utils.aoa_to_sheet(departmentRows);
+  sheetDepartments["!cols"] = [{ wch: 32 }, { wch: 12 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheetDepartments, "Departamentos");
 
   XLSX.writeFile(workbook, `gente-gestao-dados_${todayISO()}.xlsx`);
 }
@@ -122,8 +134,8 @@ export function downloadTemplate() {
   XLSX.utils.book_append_sheet(workbook, entriesSheet, "Lançamentos");
 
   const teamSheet = XLSX.utils.aoa_to_sheet([
-    ["Colaborador", "Setor", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Estado"],
-    ["Maria Silva", "RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, "RO"]
+    ["Colaborador", "Setor", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Estado"],
+    ["Maria Silva", "RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, "RO"]
   ]);
   XLSX.utils.book_append_sheet(workbook, teamSheet, "Equipe");
 
@@ -134,6 +146,15 @@ export function downloadTemplate() {
   ]);
   filiaisSheet["!cols"] = [{ wch: 14 }, { wch: 22 }, { wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, filiaisSheet, "Filiais");
+
+  const departamentosSheet = XLSX.utils.aoa_to_sheet([
+    ["Departamento", "Sigla", "Estado"],
+    ["RECURSOS HUMANOS", "RH", "RO"],
+    ["TECNOLOGIA DA INFORMAÇÃO", "TI", "AM"],
+    ["OPERAÇÕES", "OPS", "PA"]
+  ]);
+  departamentosSheet["!cols"] = [{ wch: 32 }, { wch: 12 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, departamentosSheet, "Departamentos");
 
   XLSX.writeFile(workbook, `gente-gestao-template_${todayISO()}.xlsx`);
 }
@@ -158,7 +179,12 @@ export function importFile(file, onResult) {
 }
 
 export function importWorkbook(wb, currentState) {
-  const summary = { imported: 0, duplicates: 0, invalid: 0, importedEmployees: 0, duplicateEmployees: 0, importedBranches: 0, duplicateBranches: 0 };
+  const summary = {
+    imported: 0, duplicates: 0, invalid: 0,
+    importedEmployees: 0, duplicateEmployees: 0,
+    importedBranches: 0, duplicateBranches: 0,
+    importedDepartments: 0, duplicateDepartments: 0
+  };
 
   const entriesSheet = wb.Sheets["Lançamentos"];
   if (entriesSheet) {
@@ -216,6 +242,7 @@ export function importWorkbook(wb, currentState) {
     const iCreated = findCol("registro");
     const iUpdated = findCol("última atualização", "ultima atualizacao");
     const iCost = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("custo"));
+    const iSalary = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("sal"));
     const iEstado = findCol("estado");
 
     for (let i = 1; i < rows.length; i++) {
@@ -240,6 +267,8 @@ export function importWorkbook(wb, currentState) {
       const countsTurnover = normalizeBool(cellAt(row, iTurnover));
       const createdAt = normalizeDateTime(cellAt(row, iCreated)) || nowLocalISO();
       const updatedAt = normalizeDateTime(cellAt(row, iUpdated)) || createdAt;
+      const salaryRaw = cellAt(row, iSalary);
+      const salario = salaryRaw !== "" && !isNaN(Number(salaryRaw)) ? Number(salaryRaw) : null;
 
       const employee = {
         id: createId(),
@@ -247,6 +276,7 @@ export function importWorkbook(wb, currentState) {
         sector,
         user,
         estado,
+        salario,
         hiredAt: hiredAt ? hiredAt + "T00:00:00" : null,
         status,
         type,
@@ -317,6 +347,47 @@ export function importWorkbook(wb, currentState) {
         updatedAt: now
       });
       summary.importedBranches++;
+    }
+  }
+
+  const departamentosSheet = wb.Sheets["Departamentos"];
+  if (departamentosSheet) {
+    const rows = XLSX.utils.sheet_to_json(departamentosSheet, { header: 1 });
+    const headerRow = rows[0] || [];
+    const findCol = (...names) => {
+      const targets = names.map((n) => n.toLowerCase());
+      return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
+    };
+    const iName = findCol("departamento", "nome do departamento");
+    const iShort = findCol("sigla");
+    const iEstado = findCol("estado");
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row.length) continue;
+      const name = String(cellAt(row, iName)).trim();
+      const shortName = String(cellAt(row, iShort)).trim();
+      const estado = String(cellAt(row, iEstado)).trim().toUpperCase();
+      if (!name || !STATES.includes(estado)) {
+        summary.invalid++;
+        continue;
+      }
+
+      const existing = getDepartments().find(
+        (d) => d.name.toUpperCase() === name.toUpperCase() && d.estado === estado
+      );
+      if (existing) { summary.duplicateDepartments++; continue; }
+
+      const now = nowLocalISO();
+      upsertDepartment({
+        id: createId(),
+        name,
+        shortName: shortName || null,
+        estado,
+        createdAt: now,
+        updatedAt: now
+      });
+      summary.importedDepartments++;
     }
   }
 

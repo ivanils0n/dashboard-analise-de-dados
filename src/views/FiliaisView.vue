@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { useToast } from "@/composables/useToast";
@@ -9,10 +9,16 @@ import { STATES } from "@/lib/config";
 import { getBranches } from "@/lib/store";
 import { listBranches, saveBranch, deleteBranchRecord } from "@/lib/filiais";
 import { DEFAULT_STATE } from "@/lib/config";
+import { hydrateState } from "@/lib/supabase";
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
+
+/* Garante que os dados do estado selecionado estejam carregados ao abrir a aba. */
+onMounted(() => {
+  hydrateState(filters.current).catch(() => {});
+});
 
 const form = reactive({
   id: null,

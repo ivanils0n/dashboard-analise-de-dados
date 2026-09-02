@@ -4,6 +4,7 @@ import Modal from "@/components/ui/Modal.vue";
 import LineChart from "@/components/charts/LineChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import AbsenteismoBar from "@/components/charts/AbsenteismoBar.vue";
+import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import { INDICATORS, getIndicatorById } from "@/lib/config";
 import { getEntriesFor } from "@/lib/store";
 import { firstDayOfMonthISO, lastDayOfMonthISO } from "@/lib/utils";
@@ -72,9 +73,9 @@ function barData() {
     if (type in totals) totals[type] += e.value || 0;
   });
   return [
-    { label: "Faltas", value: totals.falta },
-    { label: "Atrasos", value: totals.atraso },
-    { label: "Afastamentos", value: totals.afastamento }
+    { label: "Falta", value: totals.falta },
+    { label: "Atestado", value: totals.atraso },
+    { label: "Acidente", value: totals.afastamento }
   ];
 }
 
@@ -92,11 +93,6 @@ const slideSub = computed(() => {
   if (slide.value.type === "pie") return "Distribuição no período";
   return "Período selecionado";
 });
-
-function clearRange() {
-  range.start = "";
-  range.end = "";
-}
 </script>
 
 <template>
@@ -108,14 +104,9 @@ function clearRange() {
     @close="emit('close')"
   >
     <div class="flex h-full flex-col gap-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="flex items-center gap-2">
-          <input v-model="range.start" type="date" class="input-field" aria-label="Data início" />
-          <span class="text-sm text-zinc-500 dark:text-zinc-400">até</span>
-          <input v-model="range.end" type="date" class="input-field" aria-label="Data fim" />
-          <button type="button" class="btn-ghost btn-sm" @click="clearRange">↺</button>
-        </div>
-        <div class="ml-auto flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-3">
+          <DateRangeFilter :range="range" title="Período" align="left" />
+          <div class="ml-auto flex items-center gap-2">
           <button type="button" class="icon-btn" aria-label="Indicador anterior" @click="nav(-1)">‹</button>
           <span class="min-w-[140px] text-center text-sm font-semibold text-zinc-700 dark:text-zinc-200">
             {{ index + 1 }} / {{ slides.length }}
@@ -138,34 +129,6 @@ function clearRange() {
 </template>
 
 <style scoped>
-.input-field {
-  border-radius: 0.5rem;
-  border: 1px solid rgb(212 212 216);
-  background-color: #fff;
-  padding: 0.375rem 0.5rem;
-  font-size: 0.875rem;
-  color: rgb(24 24 27);
-  outline: none;
-}
-:global(.dark) .input-field {
-  border-color: rgb(63 63 70);
-  background-color: rgb(9 9 11);
-  color: rgb(244 244 245);
-}
-.btn-ghost {
-  border-radius: 0.5rem;
-  border: 1px solid rgb(212 212 216);
-  padding: 0.375rem 0.65rem;
-  font-size: 0.875rem;
-  color: rgb(63 63 70);
-}
-:global(.dark) .btn-ghost {
-  border-color: rgb(63 63 70);
-  color: rgb(228 228 231);
-}
-.btn-sm {
-  padding: 0.25rem 0.5rem;
-}
 .icon-btn {
   display: flex;
   height: 2rem;
@@ -187,5 +150,6 @@ function clearRange() {
 }
 :global(.dark) .icon-btn:hover {
   background-color: rgb(39 39 42);
+  color: rgb(244 244 245);
 }
 </style>

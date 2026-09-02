@@ -9,7 +9,11 @@ const props = defineProps({
   selected: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["select"]);
+const emit = defineEmits(["select", "context"]);
+
+/* Para indicadores onde "menor é melhor" (ex.: Absenteísmo), um aumento
+   é ruim (vermelho) e uma queda é boa (verde). */
+const goodWhenUp = computed(() => props.kpi.higherIsBetter !== false);
 
 const deltaLabel = computed(() => {
   const d = props.kpi.delta;
@@ -21,10 +25,10 @@ const deltaLabel = computed(() => {
 
 const deltaTone = computed(() => {
   const d = props.kpi.delta;
-  if (!d) return "text-zinc-400";
-  if (d.diff > 0) return "text-green-600 dark:text-green-400";
-  if (d.diff < 0) return "text-red-600 dark:text-red-400";
-  return "text-zinc-400";
+  if (!d || d.diff === 0) return "text-zinc-400";
+  const up = d.diff > 0;
+  const good = goodWhenUp.value ? up : !up;
+  return good ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
 });
 
 const indicator = computed(() => ({ type: props.kpi.type, decimals: props.kpi.decimals ?? 1 }));
@@ -52,6 +56,7 @@ function onKeydown(e) {
     tabindex="0"
     :title="kpi.desc"
     @click="emit('select', kpi.id)"
+    @contextmenu.prevent="emit('context', kpi.id)"
     @keydown="onKeydown"
   >
     <div class="flex items-center justify-between gap-2">
@@ -72,6 +77,10 @@ function onKeydown(e) {
         <span :class="deltaTone">{{ deltaLabel }}</span>
         <span class="text-zinc-400">{{ kpi.countText }}</span>
       </div>
+    </div>
+
+    <div v-if="kpi.id === 'headcount'" class="mt-2 border-t border-zinc-100 pt-2 text-right text-[10px] uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+      Botão direito: detalhes de salários
     </div>
   </article>
 </template>

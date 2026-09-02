@@ -2,8 +2,10 @@
    Cliente Supabase + sincronização
    ---------------------------------------------------------
    O Supabase é a única fonte de verdade:
-   - hydrate(): baixa TODAS as tabelas a cada abertura e
-     substitui a memória (sem cache local intermediário)
+   - carga usa cache local (localStorage, item a item) + delta sync:
+     na primeira vez baixa o estado por completo; depois disso restaura
+     do cache e pede apenas as alterações (gg_delta_sync)
+   - hydrateState(): carrega um estado priorizando cache + delta
    - escritas entram numa fila com debounce e vão em lote
      (1 requisição por tabela) direto para o banco
    ========================================================= */
@@ -86,6 +88,7 @@ function employeeToRow(emp) {
     setor: emp.sector ?? "",
     usuario: String(emp.user ?? ""),
     estado_sigla: emp.estado ?? null,
+    salario: emp.salario != null ? Number(emp.salario) : null,
     entrada_em: emp.hiredAt ? String(emp.hiredAt).split("T")[0] : null,
     status: emp.status || "ativo",
     tipo: emp.type || "efetivado",
@@ -273,6 +276,7 @@ function mapRemoteEmployee(row, impliedState) {
     sector: row.setor ?? "",
     user: row.usuario != null ? String(row.usuario) : "",
     estado: row.estado_sigla || impliedState || null,
+    salario: row.salario != null ? Number(row.salario) : null,
     hiredAt: row.entrada_em ? row.entrada_em + "T00:00:00" : null,
     status: row.status || "ativo",
     type: row.tipo || "efetivado",
@@ -354,9 +358,14 @@ export async function hydrate(state) {
       fetchTable(`filiais_${suffix}`, "*"),
       fetchTable(`departamentos_${suffix}`, "*")
     ]);
-    [lan, vac, col, fil, dep].forEach((res) => {
-      if (res && res.error) console.error("[Supabase]", res.error.message);
-    });
+    const errored = [lan, vac, col, fil, dep].filter((res) => res && res.error);
+    if (errored.length) {
+      // Não marca o estado como carregado quando a consulta falha (ex.: sem
+      // sessão autenticada ainda). Assim o estado é baixado novamente no
+      // próximo acesso — evita telas vazias por estado "marcado" sem dados.
+      errored.forEach((res) => console.error("[Supabase]", res.error.message));
+      return false;
+    }
 
     const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
     const rowsLan = rowsOf(lan);
@@ -387,6 +396,103 @@ export async function hydrate(state) {
   }
   console.info(`[Supabase] Dados carregados: ${states.join(", ")}.`);
   return true;
+}
+
+/* ---------- Carga incremental por estado (cache local + delta) ---------- */
+
+const STATE_TABLES = ["lancamentos_", "vagas_", "colaboradores_", "filiais_", "departamentos_"];
+
+function stateCachedKeys(suffix) {
+  const out = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || key.indexOf("ggd:") !== 0) continue;
+    const tabela = key.slice("ggd:".length).split(":")[0] || "";
+    if (STATE_TABLES.some((p) => tabela.indexOf(p + suffix) === 0)) out.push(key);
+  }
+  return out;
+}
+
+/* Reconstrói em memória (merge, sem apagar o resto) o estado a partir das
+   chaves do localStorage. Reusa os mesmos mapeamentos do download. */
+function mergeStateFromCache(suffix, state) {
+  const payload = { entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
+  stateCachedKeys(suffix).forEach((key) => {
+    const item = DataCache.readItem(key);
+    if (!item || !item.id) return;
+    const tabela = key.slice("ggd:".length).split(":")[0] || "";
+    if (tabela.indexOf("lancamentos_") === 0) {
+      const ind = item.indicador_id || "headcount";
+      if (!payload.entries[ind]) payload.entries[ind] = [];
+      payload.entries[ind].push({
+        id: item.id,
+        date: item.data,
+        value: Number(item.valor),
+        meta: item.meta || null
+      });
+    } else if (tabela.indexOf("colaboradores_") === 0) {
+      payload.employees.push(mapRemoteEmployee(item, state));
+    } else if (tabela.indexOf("vagas_") === 0) {
+      payload.vacancies.push(mapRemoteVacancy(item, state));
+    } else if (tabela.indexOf("filiais_") === 0) {
+      payload.branches.push(mapRemoteBranch(item, state));
+    } else if (tabela.indexOf("departamentos_") === 0) {
+      payload.departments.push(mapRemoteDepartment(item, state));
+    }
+  });
+  Object.keys(payload.entries).forEach((k) => payload.entries[k].sort((a, b) => a.date.localeCompare(b.date)));
+  mergeFromRemote(payload);
+}
+
+/* Carrega estado(s) priorizando o cache local + delta sync (egress mínimo):
+   1. se o estado já está em memória, nada é baixado;
+   2. se há itens dele no cache local, reconstrói a memória e aplica apenas o
+      delta desde a última versão;
+   3. senão, faz o download completo do estado (que é então guardado no cache). */
+export async function hydrateState(next) {
+  const client = supabaseClient();
+  if (!client) return false;
+  const states = next === "todos" ? STATES.slice() : [next];
+  const pending = states.filter((s) => !_loadedStates[s]);
+  if (!pending.length) return true;
+
+  const versao = DataCache.getVersion();
+  let usedCache = false;
+  if (versao > 0) {
+    const allCached = pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0);
+    if (allCached) {
+      pending.forEach((s) => {
+        mergeStateFromCache(s.toLowerCase(), s);
+        _loadedStates[s] = true;
+      });
+      usedCache = true;
+    }
+  }
+
+  if (usedCache) {
+    const delta = await fetchDelta(versao);
+    if (delta) {
+      if (delta.changes && delta.changes.length) {
+        // Snapshot dos estados realmente carregados: o applyDelta marca como
+        // carregado todo estado citado no delta, o que marcaria indevidamente
+        // estados que ainda não tiveram o conjunto completo de dados em memória.
+        const loadedBefore = new Set(Object.keys(_loadedStates));
+        applyDelta(delta.changes);
+        Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+        pending.forEach((s) => (_loadedStates[s] = true));
+        loadedBefore.forEach((s) => {
+          if (!_loadedStates[s]) _loadedStates[s] = true;
+        });
+        DataCache.setVersion(delta.versaoAtual);
+      }
+      console.info(`[Supabase] Estados restaurados do cache local: ${pending.join(", ")}.`);
+      return true;
+    }
+    // Delta indisponível: recarrega por completo para não exibir dados velhos.
+    pending.forEach((s) => delete _loadedStates[s]);
+  }
+
+  return hydrate(pending.length === 1 ? pending[0] : "todos");
 }
 
 /* ---------- Delta Sync (localStorage por item + payload do banco) ---------- */
@@ -588,7 +694,21 @@ export async function hydrateWithDelta(state) {
 /* Boot: chamado pelo main.js antes da montagem do app. */
 export async function bootstrapSupabase() {
   registerRemote();
-  if (!supabaseClient()) return;
+  const client = supabaseClient();
+  if (!client) return;
+  // Sem sessão autenticada as consultas falham (RLS exige login) e poderiam
+  // marcar estados como carregados/vazios ou limpar o cache. Só hidrata
+  // depois do login (LoginView chama hydrateState + syncAll).
+  try {
+    const { data } = await client.auth.getSession();
+    if (!data || !data.session) {
+      console.info("[Supabase] Sem sessão ativa — dados serão carregados após o login.");
+      return;
+    }
+  } catch (err) {
+    console.warn("[Supabase] Não foi possível confirmar a sessão:", err);
+    return;
+  }
   await hydrateWithDelta(DEFAULT_STATE);
 }
 

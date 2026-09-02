@@ -1,12 +1,16 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
+import EmployeePicker from "@/components/dashboard/EmployeePicker.vue";
+import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
 import {
   MANUAL_INDICATORS,
   ABSENTEEISM_TYPES,
+  ABSENTEEISM_OPTIONS,
   STATES,
   STATE_NAMES,
+  DEFAULT_STATE,
   getIndicatorById
 } from "@/lib/config";
 import {
@@ -14,9 +18,11 @@ import {
   updateEntry,
   getLatestForMeta,
   getEmployeeById,
-  getVacancyById
+  getVacancyById,
+  getEmployees
 } from "@/lib/store";
 import {
+  saveEmployee,
   addVacancy,
   updateVacancy,
   closeVacancy,
@@ -24,7 +30,7 @@ import {
   listVacancies,
   formatVacancyTempo
 } from "@/lib/employees";
-import { todayISO, firstDayOfMonthISO, formatDateTime, formatValue } from "@/lib/utils";
+import { todayISO, firstDayOfMonthISO, formatDateTime, formatValue, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
@@ -38,11 +44,25 @@ const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
 
+/* "Salário dos Colaboradores" entra no menu de lançamentos sem virar um
+   indicador/KPI — a remuneração é gravada no próprio colaborador. */
+const SALARIO_OPTION = {
+  id: "salario_colaborador",
+  name: "Salário dos Colaboradores",
+  desc: "Preenchimento e edição da remuneração individual de cada colaborador",
+  form: "salario",
+  type: "currency",
+  decimals: 2
+};
+
 const indicatorId = ref(MANUAL_INDICATORS[0].id);
 const activeTab = ref("");
 
-/* ---------- Absenteísmo ---------- */
-const abs = reactive({ inicio: "", fim: "", tipo: "falta", qtd: 1 });
+const indicatorOptions = computed(() => [...MANUAL_INDICATORS, SALARIO_OPTION]);
+
+const indicator = computed(() =>
+  indicatorId.value === SALARIO_OPTION.id ? SALARIO_OPTION : getIndicatorById(indicatorId.value)
+);
 
 /* ---------- Vaga ---------- */
 const vaga = reactive({ nome: "", data: "", hora: "" });
@@ -52,9 +72,12 @@ const editingVacancyId = ref(null);
 const custo = reactive({ query: "", employeeId: null, value: "" });
 const custoExisting = ref(null);
 
-const estado = ref("");
+/* ---------- Absenteísmo (ocorrência) ---------- */
+const sub = reactive({ kind: null, employee: null }); // kind: "ocorrencia" | "salario"
+const occ = reactive({ motivo: "falta", inicio: "", fim: "" });
+const salario = reactive({ value: "" });
 
-const indicator = computed(() => getIndicatorById(indicatorId.value));
+const estado = ref("");
 
 const stateOptions = computed(() => ["todos", ...STATES]);
 
@@ -71,14 +94,13 @@ watch(
 
 function initModal() {
   indicatorId.value = MANUAL_INDICATORS[0].id;
-  estado.value = filters.current === "todos" ? "RO" : filters.current;
+  estado.value = filters.current === "todos" ? DEFAULT_STATE : filters.current;
   editingVacancyId.value = null;
   custo.employeeId = null;
   custo.query = "";
   custo.value = "";
   custoExisting.value = null;
-  abs.inicio = firstDayOfMonthISO();
-  abs.fim = todayISO();
+  closeSub();
   vaga.nome = "";
   vaga.data = "";
   vaga.hora = "";
@@ -90,11 +112,6 @@ onMounted(initModal);
 const tabs = computed(() => {
   if (!indicator.value) return [];
   switch (indicator.value.form) {
-    case "absenteismo":
-      return [
-        { id: "periodo", label: "Período" },
-        { id: "ocorrencia", label: "Ocorrência" }
-      ];
     case "vaga":
       return [
         { id: "nova", label: "Nova vaga" },
@@ -112,6 +129,11 @@ const tabs = computed(() => {
 
 const submitLabel = computed(() => (indicator.value && indicator.value.form === "vaga" ? "Concluir" : "Salvar lançamento"));
 
+const canSubmitForm = computed(() => {
+  const f = indicator.value && indicator.value.form;
+  return f === "vaga" || f === "custo";
+});
+
 function buildForm() {
   activeTab.value = tabs.value.length ? tabs.value[0].id : "";
 }
@@ -120,23 +142,87 @@ function showTab(id) {
   activeTab.value = id;
 }
 
-/* ---------- Absenteísmo ---------- */
+/* ---------- Absenteísmo (evento por colaborador) ---------- */
 
-function submitAbsenteismo() {
-  if (!abs.inicio || !abs.fim) return toast("Informe o período das ocorrências.");
-  if (abs.fim < abs.inicio) return toast("A data fim deve ser posterior à data início.");
-  if (!abs.qtd || abs.qtd < 1) return toast("Informe a quantidade de ocorrências.");
+const pickerDefaultState = computed(() =>
+  filters.current === "todos" ? DEFAULT_STATE : filters.current
+);
 
+function openOccurrence(employee) {
+  if (!employee) return;
+  sub.employee = employee;
+  occ.motivo = "falta";
+  occ.inicio = firstDayOfMonthISO();
+  occ.fim = todayISO();
+  sub.kind = "ocorrencia";
+}
+
+function closeSub() {
+  sub.kind = null;
+  sub.employee = null;
+}
+
+function saveOccurrence() {
+  const emp = sub.employee;
+  if (!emp) return toast("Selecione um colaborador na lista.");
+  if (!occ.inicio || !occ.fim) return toast("Informe o período da ocorrência.");
+  if (occ.fim < occ.inicio) return toast("A data fim deve ser posterior à data início.");
+
+  const state = emp.estado || null;
   addEntry("absenteismo", {
-    date: abs.inicio,
-    value: abs.qtd,
-    state: estado.value,
-    meta: { periodEnd: abs.fim, type: abs.tipo }
+    date: occ.inicio,
+    value: 1,
+    state,
+    meta: {
+      type: occ.motivo,
+      periodEnd: occ.fim,
+      employeeId: emp.id,
+      employeeName: emp.name
+    }
   });
   emit("saved");
-  const estadoLabel = estado.value && estado.value !== "todos" ? ` · ${estado.value}` : "";
-  toast(`Absenteísmo lançado — ${ABSENTEEISM_TYPES[abs.tipo]}, ${abs.qtd} ocorrência(s).${estadoLabel}`);
-  close();
+  const motivo = ABSENTEEISM_TYPES[occ.motivo] || occ.motivo;
+  toast(`Ocorrência registrada para ${emp.name} (${motivo}).`);
+  closeSub();
+}
+
+/* ---------- Salário dos Colaboradores ---------- */
+
+function openSalary(employee) {
+  if (!employee) return;
+  sub.employee = employee;
+  salario.value = employee.salario != null ? String(employee.salario) : "";
+  sub.kind = "salario";
+}
+
+function saveSalary() {
+  const emp = sub.employee;
+  if (!emp) return toast("Selecione um colaborador na lista.");
+  const raw = String(salario.value).trim();
+  if (raw === "" || isNaN(Number(raw)) || Number(raw) < 0) {
+    return toast("Informe um salário mensal válido (R$).");
+  }
+  const value = Number(raw);
+
+  saveEmployee({ id: emp.id, salario: value });
+
+  /* Registra o lançamento do salário (um por colaborador) para aparecer
+     em "Lançamentos recentes", como os demais lançamentos manuais. */
+  const existing = getLatestForMeta("salario_colaborador", "employeeId", emp.id);
+  if (existing) {
+    updateEntry("salario_colaborador", existing.id, { value, date: todayISO() });
+  } else {
+    addEntry("salario_colaborador", {
+      date: todayISO(),
+      value,
+      state: emp.estado || null,
+      meta: { employeeId: emp.id, employeeName: emp.name }
+    });
+  }
+
+  emit("saved");
+  toast(`Salário atualizado para ${emp.name}: ${formatCurrency(value)}.`);
+  closeSub();
 }
 
 /* ---------- Vaga ---------- */
@@ -160,7 +246,12 @@ function handleVacancyAdd() {
     editingVacancyId.value = null;
     toast("Vaga atualizada.");
   } else {
-    const st = estado.value === "todos" ? filters.current : estado.value;
+    const st =
+      estado.value === "todos"
+        ? filters.current !== "todos"
+          ? filters.current
+          : DEFAULT_STATE
+        : estado.value;
     addVacancy({ name, openAt, estado: st });
     toast(`Vaga adicionada — aguardando fechamento.${st ? ` (${st})` : ""}`);
   }
@@ -247,7 +338,7 @@ function submitCusto() {
     return;
   }
 
-  const st = estado.value === "todos" ? (emp.estado || null) : estado.value;
+  const st = emp.estado || null;
   addEntry("custo_contratacao", {
     date: todayISO(),
     value,
@@ -263,14 +354,34 @@ function submitCusto() {
 
 function handleSubmit() {
   if (!indicator.value) return;
-  if (indicator.value.form === "absenteismo") return submitAbsenteismo();
-  if (indicator.value.form === "custo") return submitCusto();
-  if (indicator.value.form === "vaga") emit("close");
+  const form = indicator.value.form;
+  if (form === "absenteismo" || form === "salario") return; // ações nos submodais
+  if (form === "custo") return submitCusto();
+  if (form === "vaga") emit("close");
 }
 
 function close() {
   emit("close");
 }
+
+/* Impede que o Escape feche o modal principal enquanto um submodal está aberto. */
+function onSubKeydown(e) {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    closeSub();
+  }
+}
+
+watch(
+  () => sub.kind,
+  (kind) => {
+    if (kind) window.addEventListener("keydown", onSubKeydown, true);
+    else window.removeEventListener("keydown", onSubKeydown, true);
+  }
+);
+
+onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
 </script>
 
 <template>
@@ -280,7 +391,7 @@ function close() {
     :open="open"
     @close="close"
   >
-    <form class="flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
+    <form v-if="indicator" class="flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
       <div class="flex flex-col gap-1.5">
         <label for="entryIndicator" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Indicador</label>
         <select
@@ -289,7 +400,7 @@ function close() {
           class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
           @change="buildForm"
         >
-          <option v-for="ind in MANUAL_INDICATORS" :key="ind.id" :value="ind.id">{{ ind.name }}</option>
+          <option v-for="ind in indicatorOptions" :key="ind.id" :value="ind.id">{{ ind.name }}</option>
         </select>
       </div>
 
@@ -311,33 +422,25 @@ function close() {
       </div>
 
       <!-- ===== ABSENTEÍSMO ===== -->
-      <template v-if="indicator && indicator.form === 'absenteismo'">
-        <div v-show="activeTab === 'periodo'" class="grid gap-4 sm:grid-cols-2">
-          <div class="flex flex-col gap-1.5">
-            <label for="absInicio" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data início</label>
-            <input id="absInicio" v-model="abs.inicio" type="date" class="input-field" />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label for="absFim" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data fim</label>
-            <input id="absFim" v-model="abs.fim" type="date" class="input-field" />
-          </div>
-        </div>
-        <div v-show="activeTab === 'ocorrencia'" class="grid gap-4 sm:grid-cols-2">
-          <div class="flex flex-col gap-1.5">
-            <label for="absTipo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de ocorrência</label>
-            <select id="absTipo" v-model="abs.tipo" class="input-field">
-              <option v-for="(label, key) in ABSENTEEISM_TYPES" :key="key" :value="key">{{ label }}</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label for="absQtd" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Quantidade</label>
-            <input id="absQtd" v-model.number="abs.qtd" type="number" min="1" step="1" class="input-field" />
-          </div>
-        </div>
+      <template v-if="indicator.form === 'absenteismo'">
+        <EmployeePicker
+          :default-state="pickerDefaultState"
+          helper="Clique em um colaborador para registrar a ocorrência (motivo e período)."
+          @select="openOccurrence"
+        />
+      </template>
+
+      <!-- ===== SALÁRIO DOS COLABORADORES ===== -->
+      <template v-if="indicator.form === 'salario'">
+        <SalaryPicker
+          :default-state="pickerDefaultState"
+          helper="Clique em um colaborador para preencher ou editar a remuneração individual."
+          @select="openSalary"
+        />
       </template>
 
       <!-- ===== VAGA ===== -->
-      <template v-if="indicator && indicator.form === 'vaga'">
+      <template v-if="indicator.form === 'vaga'">
         <div v-show="activeTab === 'nova'" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
             <label for="vagaNome" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Nome da vaga</label>
@@ -391,7 +494,7 @@ function close() {
       </template>
 
       <!-- ===== CUSTO ===== -->
-      <template v-if="indicator && indicator.form === 'custo'">
+      <template v-if="indicator.form === 'custo'">
         <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
           <div class="flex flex-col gap-1.5">
             <label for="custoSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
@@ -434,8 +537,8 @@ function close() {
         </div>
       </template>
 
-      <!-- ===== ESTADO ===== -->
-      <div class="flex flex-col gap-1.5">
+      <!-- ===== ESTADO (somente quando o lançamento não está atrelado a um colaborador) ===== -->
+      <div v-if="indicator.form === 'vaga'" class="flex flex-col gap-1.5">
         <label for="entryEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado do lançamento</label>
         <select id="entryEstado" v-model="estado" class="input-field">
           <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
@@ -447,9 +550,90 @@ function close() {
 
       <div class="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
         <button type="button" class="btn-ghost" @click="close">Cancelar</button>
-        <button type="submit" class="btn-primary">{{ submitLabel }}</button>
+        <button v-if="canSubmitForm" type="submit" class="btn-primary">{{ submitLabel }}</button>
       </div>
     </form>
+
+    <!-- ===== Submodal: ocorrência de Absenteísmo ===== -->
+    <Teleport to="body">
+      <div
+        v-if="sub.kind === 'ocorrencia' && sub.employee"
+        class="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 py-10"
+        @click.self="closeSub"
+      >
+        <form class="slide-up w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900" novalidate @submit.prevent="saveOccurrence">
+          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <div>
+              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Registrar ocorrência</h3>
+              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                {{ sub.employee.name }} · {{ sub.employee.sector }}
+              </p>
+            </div>
+            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="closeSub">&times;</button>
+          </div>
+
+          <div class="flex flex-col gap-4 px-6 py-5">
+            <div class="flex flex-col gap-1.5">
+              <label for="occMotivo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Motivo</label>
+              <select id="occMotivo" v-model="occ.motivo" class="input-field">
+                <option v-for="key in ABSENTEEISM_OPTIONS" :key="key" :value="key">{{ ABSENTEEISM_TYPES[key] }}</option>
+              </select>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="flex flex-col gap-1.5">
+                <label for="occInicio" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data início</label>
+                <input id="occInicio" v-model="occ.inicio" type="date" class="input-field" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="occFim" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data fim</label>
+                <input id="occFim" v-model="occ.fim" type="date" class="input-field" />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <button type="button" class="btn-ghost" @click="closeSub">Cancelar</button>
+            <button type="submit" class="btn-primary">Salvar ocorrência</button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
+
+    <!-- ===== Submodal: Salário do colaborador ===== -->
+    <Teleport to="body">
+      <div
+        v-if="sub.kind === 'salario' && sub.employee"
+        class="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 py-10"
+        @click.self="closeSub"
+      >
+        <form class="slide-up w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900" novalidate @submit.prevent="saveSalary">
+          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <div>
+              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Remuneração do colaborador</h3>
+              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                {{ sub.employee.name }} · {{ sub.employee.sector }}
+              </p>
+            </div>
+            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="closeSub">&times;</button>
+          </div>
+
+          <div class="flex flex-col gap-4 px-6 py-5">
+            <div class="flex flex-col gap-1.5">
+              <label for="salValue" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Salário mensal (R$)</label>
+              <input id="salValue" v-model="salario.value" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
+            </div>
+            <p v-if="sub.employee.salario != null" class="text-xs text-amber-600 dark:text-amber-400">
+              Salário atual: {{ formatCurrency(sub.employee.salario) }}. Salvar substituirá o valor.
+            </p>
+          </div>
+
+          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <button type="button" class="btn-ghost" @click="closeSub">Cancelar</button>
+            <button type="submit" class="btn-primary">Salvar salário</button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
   </Modal>
 </template>
 

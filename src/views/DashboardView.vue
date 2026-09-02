@@ -4,12 +4,14 @@ import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import PresentationModal from "@/components/dashboard/PresentationModal.vue";
-import FilterDrawer from "@/components/dashboard/FilterDrawer.vue";
+import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
+import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
+import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
@@ -17,10 +19,10 @@ import { getIndicatorById } from "@/lib/config";
 import { removeEntry, clearEntries } from "@/lib/store";
 import { syncAll } from "@/lib/employees";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
-import { reloadData } from "@/lib/supabase";
-import { firstDayOfMonthISO, lastDayOfMonthISO } from "@/lib/utils";
+import { reloadData, hydrateState } from "@/lib/supabase";
 
 const { dateFilter: df } = useDateFilter();
+const { state: filters } = useFilters();
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 
@@ -42,6 +44,7 @@ const {
 
 const launchOpen = ref(false);
 const presentationOpen = ref(false);
+const headcountOpen = ref(false);
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const showValues = ref(false);
@@ -106,6 +109,8 @@ function onImportFile(e) {
       if (summary.duplicateEmployees) parts.push(`${summary.duplicateEmployees} colaborador(es) duplicado(s)`);
       if (summary.importedBranches) parts.push(`${summary.importedBranches} filial(ais) importada(s)`);
       if (summary.duplicateBranches) parts.push(`${summary.duplicateBranches} filial(ais) duplicada(s)`);
+      if (summary.importedDepartments) parts.push(`${summary.importedDepartments} departamento(s) importado(s)`);
+      if (summary.duplicateDepartments) parts.push(`${summary.duplicateDepartments} departamento(s) duplicado(s)`);
       toast("Importação concluída — " + parts.join(" · "));
     });
   }
@@ -134,14 +139,14 @@ async function handleClearAll() {
   toast("Todos os dados foram removidos.");
 }
 
-function resetDateFilter() {
-  df.start = firstDayOfMonthISO();
-  df.end = lastDayOfMonthISO();
-}
-
 function onSelectKpi(id) {
   selectKpi(id);
   nextTick(() => scrollToKpiChart(id));
+}
+
+/* Clique direito no cartão de Headcount abre o modal detalhado de salários. */
+function onKpiContext(id) {
+  if (id === "headcount") headcountOpen.value = true;
 }
 
 /* Rola a faixa de gráficos até o card do indicador e o destaca. */
@@ -164,7 +169,12 @@ function onDocumentClick() {
   menuOpen.value = false;
 }
 
-onMounted(() => document.addEventListener("click", onDocumentClick));
+onMounted(() => {
+  document.addEventListener("click", onDocumentClick);
+  /* Garante que o estado selecionado está carregado ao abrir o Dashboard
+     (navegação pode chegar antes de um carregamento iniciado em outra aba). */
+  hydrateState(filters.current).catch(() => {});
+});
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClick);
   clearTimeout(flashTimer);
@@ -173,8 +183,6 @@ onUnmounted(() => {
 
 <template>
   <div class="fade-in">
-    <FilterDrawer page="dashboard" />
-
     <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
@@ -191,7 +199,10 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="relative" @click.stop>
+      <div class="flex items-center gap-2">
+        <DateRangeFilter :range="df" title="Período" />
+
+        <div class="relative" @click.stop>
         <button
           type="button"
           class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
@@ -212,17 +223,20 @@ onUnmounted(() => {
           v-if="menuOpen"
           class="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
         >
+        <template v-if="canEdit">
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('xlsx')">Baixar em XLSX</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('csv')">Baixar em CSV</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('template')">Baixar template</button>
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
-          <button v-if="canEdit" type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('import')">Importar planilha</button>
-          <div v-if="canEdit" class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
-          <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('reload')">Recarregar Dados</button>
+          <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('import')">Importar planilha</button>
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
-          <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('presentation')">⛶ Apresentação</button>
+        </template>
+        <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('reload')">Recarregar Dados</button>
+        <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
+        <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('presentation')">⛶ Apresentação</button>
         </div>
         <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden @change="onImportFile" />
+        </div>
       </div>
     </div>
 
@@ -235,6 +249,7 @@ onUnmounted(() => {
         :kpi="kpi"
         :selected="selectedKpiId === kpi.id"
         @select="onSelectKpi"
+        @context="onKpiContext"
       />
     </section>
 
@@ -281,12 +296,7 @@ onUnmounted(() => {
           <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Lançamentos recentes</h2>
           <p class="text-xs text-zinc-400 dark:text-zinc-400">Todos os registros cadastrados e calculados</p>
         </div>
-        <div class="flex items-center gap-2">
-          <div class="flex items-center gap-2">
-            <input v-model="df.start" type="date" class="input-sm" aria-label="Data início" />
-            <input v-model="df.end" type="date" class="input-sm" aria-label="Data fim" />
-            <button type="button" class="icon-btn-sm" aria-label="Redefinir filtro para o mês atual" title="Redefinir filtro para o mês atual" @click="resetDateFilter">↺</button>
-          </div>
+        <div class="flex flex-wrap items-center gap-2">
           <input v-model="tableSearch" type="search" class="input-sm" placeholder="Buscar lançamento..." aria-label="Buscar lançamento" />
           <button v-if="canEdit" type="button" class="btn-ghost-sm" @click="handleClearAll">Limpar tudo</button>
         </div>
@@ -332,6 +342,7 @@ onUnmounted(() => {
 
     <LaunchModal v-if="launchOpen" :open="launchOpen" @close="closeLaunch" @saved="onSaved" />
     <PresentationModal v-if="presentationOpen" :open="presentationOpen" @close="presentationOpen = false" />
+    <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
   </div>
 </template>
 

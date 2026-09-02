@@ -1,19 +1,21 @@
 -- =========================================================
 -- Gente & Gestão — Dashboard RH · Schema Supabase (Postgres)
--- Execute este script no SQL Editor do Supabase.
--- Tabelas e colunas em português.
--- Seguro para rodar mais de uma vez: cria apenas o que
--- ainda não existe.
---
--- ESTRUTURA POR ESTADO:
--- Não existem mais tabelas "base". Cada estado (RO, AM, PA)
--- possui tabelas dedicadas para lançamentos, vagas,
--- colaboradores e filiais:
---   lancamentos_{ro,am,pa}  ·  vagas_{ro,am,pa}
---   colaboradores_{ro,am,pa} ·  filiais_{ro,am,pa}
--- Cada informação fica vinculada ao seu estado na própria
--- tabela (coluna estado_sigla ou meta.estado).
 -- =========================================================
+-- ARQUIVO ÚNICO E CONSOLIDADO (antigos schema.sql + 01..05):
+--   • base (estados, tabelas por estado, RLS, funções de perfil)
+--   • departamentos, relacionamentos colaborador→departamento/filial
+--   • views de resumo (departamento/filial)
+--   • gg_dados_hash() (hash de revalidação de cache)
+--   • delta sync (changelog, triggers e RPCs gg_delta_*)
+--
+-- Idempotente: pode ser executado quantas vezes for necessário no
+-- SQL Editor do Supabase (cria apenas o que ainda não existe e
+-- adiciona colunas/policies ausentes sem destruir dados).
+-- Estrutura por estado (sufixo _ro/_am/_pa), como consumida pelo app.
+-- Usuário inicial criado: APENAS o admin.
+-- =========================================================
+
+create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------
 -- 1) TABELA DE ESTADOS (Mestre)
@@ -30,9 +32,8 @@ insert into public.estados (sigla, nome) values
 on conflict (sigla) do nothing;
 
 -- ---------------------------------------------------------
--- 2) TABELAS POR ESTADO
---    Cria as 12 tabelas (4 entidades × 3 estados) de forma
---    idempotente, com índices e chaves estrangeiras.
+-- 2) TABELAS POR ESTADO (5 entidades × 3 estados = 15)
+--    Colaboradores guardam salario, department_id e filial_id.
 -- ---------------------------------------------------------
 do $$
 declare
@@ -70,6 +71,9 @@ begin
       setor          text not null,
       usuario        text not null,
       estado_sigla   text references public.estados(sigla),
+      salario        numeric(12,2),
+      department_id  text,
+      filial_id      text,
       entrada_em     date,
       status         text not null check (status in (''ativo'', ''desligado'', ''afastado'')),
       tipo           text not null check (tipo in (''efetivado'', ''experiencia'')),
@@ -94,15 +98,27 @@ begin
       atualizado_em timestamptz
     )', 'filiais_' || e);
 
+    -- Departamentos (aba Departamentos)
+    execute format('create table if not exists public.%I (
+      id            text primary key,
+      nome          text not null,
+      sigla         text,
+      estado_sigla  text references public.estados(sigla),
+      criado_em     timestamptz not null default now(),
+      atualizado_em timestamptz
+    )', 'departamentos_' || e);
+    execute format('create index if not exists %I on public.%I (estado_sigla)',
+      'departamentos_' || e || '_estado_idx', 'departamentos_' || e);
+
   end loop;
 end $$;
 
 -- ---------------------------------------------------------
--- SINCRONIZAÇÃO DE COLUNAS
+-- 3) SINCRONIZAÇÃO DE COLUNAS
+--    Tabelas criadas por versões anteriores podem não ter
+--    todas as colunas esperadas pelo app. Adiciona as colunas
+--    e os índices faltantes sem destruir os dados existentes.
 -- ---------------------------------------------------------
--- Tabelas criadas por versões anteriores podem não ter todas
--- as colunas esperadas pelo app (ex.: estado_sigla). Este bloco
--- adiciona as colunas faltantes sem destruir os dados existentes.
 do $$
 declare
   e text;
@@ -127,6 +143,9 @@ begin
     execute format('alter table public.%I add column if not exists setor text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists usuario text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists estado_sigla text references public.estados(sigla)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists salario numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists department_id text', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists filial_id text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists entrada_em date', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists status text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists tipo text', 'colaboradores_' || e);
@@ -145,23 +164,24 @@ begin
     execute format('alter table public.%I add column if not exists criado_em timestamptz', 'filiais_' || e);
     execute format('alter table public.%I add column if not exists atualizado_em timestamptz', 'filiais_' || e);
 
+    -- Departamentos
+    execute format('alter table public.%I add column if not exists nome text', 'departamentos_' || e);
+    execute format('alter table public.%I add column if not exists sigla text', 'departamentos_' || e);
+    execute format('alter table public.%I add column if not exists estado_sigla text references public.estados(sigla)', 'departamentos_' || e);
+    execute format('alter table public.%I add column if not exists criado_em timestamptz', 'departamentos_' || e);
+    execute format('alter table public.%I add column if not exists atualizado_em timestamptz', 'departamentos_' || e);
+
+    -- Índices de relacionamento dos colaboradores
+    execute format('create index if not exists %I on public.%I (department_id)',
+      'colaboradores_' || e || '_department_idx', 'colaboradores_' || e);
+    execute format('create index if not exists %I on public.%I (filial_id)',
+      'colaboradores_' || e || '_filial_idx', 'colaboradores_' || e);
+
   end loop;
 end $$;
--- ---------------------------------------------------------
--- O acesso agora exige login (Supabase Auth). Cada usuário tem
--- um perfil em public.usuarios com um dos perfis:
---   admin     : tudo + gestão de usuários
---   analista  : tudo (dados), sem gestão de usuários
---   visitante : somente leitura do dashboard
---
--- LOGIN: o usuário digita apenas o "usuário" (ex.: admin); o
--- e-mail completo é construído como <usuario>@gente.gestao.
--- =========================================================
-
-create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------
--- 3) TABELA DE USUÁRIOS (PERFIS)
+-- 4) TABELA DE USUÁRIOS (PERFIS)
 -- ---------------------------------------------------------
 create table if not exists public.usuarios (
   id        uuid primary key references auth.users(id) on delete cascade,
@@ -175,9 +195,7 @@ create table if not exists public.usuarios (
 
 -- ---------------------------------------------------------
 -- FUNÇÃO DE PERFIL (security definer evita recursão no RLS)
--- Resolve pelo id do JWT OU pelo e-mail do JWT — assim o perfil
--- continua funcionando mesmo se houver divergência entre
--- auth.uid() e a linha de perfil (ex.: seed rodado antes).
+-- Resolve pelo id do JWT OU pelo e-mail do JWT.
 -- ---------------------------------------------------------
 create or replace function public.user_perfil()
 returns text
@@ -390,20 +408,20 @@ drop policy if exists "estados_leitura_autenticada" on public.estados;
 create policy "estados_leitura_autenticada" on public.estados
   for select to authenticated using (true);
 
--- ---- tabelas por estado (12 tabelas) ----
--- Leitura para qualquer usuário autenticado; escrita somente
--- para admin/analista (visitante é somente leitura).
--- Remove as antigas policies públicas (acesso anon).
+-- ---- tabelas por estado (15 tabelas) ----
+-- Leitura para qualquer usuário autenticado; escrita somente para
+-- admin/analista (visitante é somente leitura).
 do $$
 declare
   t text;
   p text;
 begin
   foreach t in array array[
-    'lancamentos_ro', 'lancamentos_am', 'lancamentos_pa',
-    'vagas_ro', 'vagas_am', 'vagas_pa',
-    'colaboradores_ro', 'colaboradores_am', 'colaboradores_pa',
-    'filiais_ro', 'filiais_am', 'filiais_pa'
+    'lancamentos_ro',    'lancamentos_am',    'lancamentos_pa',
+    'vagas_ro',          'vagas_am',          'vagas_pa',
+    'colaboradores_ro',  'colaboradores_am',  'colaboradores_pa',
+    'filiais_ro',        'filiais_am',        'filiais_pa',
+    'departamentos_ro',  'departamentos_am',  'departamentos_pa'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);
@@ -432,21 +450,18 @@ begin
 end $$;
 
 -- ---------------------------------------------------------
--- USUÁRIOS INICIAIS (admin, analista, visitante)
+-- USUÁRIO INICIAL (somente o admin)
 -- ---------------------------------------------------------
--- Cria os três usuários se ainda não existirem. As senhas abaixo
--- são apenas para o primeiro acesso — troque pelo menu do usuário
--- (avatar no canto superior direito) após logar.
--- Idempotente: reexecutar o script não duplica nem quebra nada.
+-- Cria o usuário admin se ainda não existir. A senha abaixo é apenas
+-- para o primeiro acesso — troque pelo menu do usuário (avatar no
+-- canto superior direito) após logar. Idempotente.
 do $$
 declare
   v_id uuid;
   u record;
 begin
   for u in select * from (values
-    ('admin@gente.gestao',      'admin',      'Administrador', 'admin',      'Admin@123'),
-    ('analista@gente.gestao',   'analista',   'Analista',      'analista',   'Analista@123'),
-    ('visitante@gente.gestao',  'visitante',  'Visitante',     'visitante',  'Visitante@123')
+    ('admin@gente.gestao', 'admin', 'Administrador', 'admin', 'Admin@123')
   ) as t(email, usuario, nome, perfil, senha)
   loop
     -- 1) Garante o usuário no Supabase Auth (cria se ainda não existir)
@@ -476,8 +491,7 @@ begin
     end if;
 
     -- 2) Garante o perfil em public.usuarios, reconciliando registros
-    --    duplicados/órfãos de execuções anteriores (mesmo usuário ou e-mail
-    --    ligado a outro registro). Remove apenas o registro inconsistente.
+    --    duplicados/órfãos de execuções anteriores.
     delete from public.usuarios
      where (usuario = u.usuario or email = u.email)
        and not (usuario = u.usuario and email = u.email);
@@ -492,3 +506,210 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ---------------------------------------------------------
+-- VIEWS — contagens de colaboradores por departamento/filial
+-- Regras iguais às dos indicadores de turnover:
+--   entradas = ativos "efetivado" que contam no turnover
+--   saidas   = desligados "efetivado" que contam no turnover
+--   ativos   = status "ativo" (headcount)
+-- ---------------------------------------------------------
+do $$
+declare
+  e text; -- sufixo: ro, am, pa
+begin
+  foreach e in array array['ro', 'am', 'pa'] loop
+
+    execute format($view$
+      create or replace view public.v_resumo_departamentos_%1$s as
+      select
+        d.id                                                      as departamento_id,
+        d.nome                                                    as departamento,
+        d.sigla,
+        d.estado_sigla,
+        count(c.id)                                               as total_colaboradores,
+        count(c.id) filter (where c.status = 'ativo')             as total_ativos,
+        count(c.id) filter (
+          where c.status = 'ativo' and c.tipo = 'efetivado' and c.conta_turnover
+        )                                                         as entradas,
+        count(c.id) filter (
+          where c.status = 'desligado' and c.tipo = 'efetivado' and c.conta_turnover
+        )                                                         as saidas
+      from public.departamentos_%1$s d
+      left join public.colaboradores_%1$s c on c.department_id = d.id
+      group by d.id, d.nome, d.sigla, d.estado_sigla;
+    $view$, e);
+
+    execute format($view$
+      create or replace view public.v_resumo_filiais_%1$s as
+      select
+        f.id                                                      as filial_id,
+        f.id_filial,
+        f.nome                                                    as filial,
+        f.abreviado                                               as sigla,
+        f.estado_sigla,
+        count(c.id)                                               as total_colaboradores,
+        count(c.id) filter (where c.status = 'ativo')             as total_ativos,
+        count(c.id) filter (
+          where c.status = 'ativo' and c.tipo = 'efetivado' and c.conta_turnover
+        )                                                         as entradas,
+        count(c.id) filter (
+          where c.status = 'desligado' and c.tipo = 'efetivado' and c.conta_turnover
+        )                                                         as saidas
+      from public.filiais_%1$s f
+      left join public.colaboradores_%1$s c on c.filial_id = f.id
+      group by f.id, f.id_filial, f.nome, f.abreviado, f.estado_sigla;
+    $view$, e);
+
+  end loop;
+end $$;
+
+grant select on
+  v_resumo_departamentos_ro, v_resumo_departamentos_am, v_resumo_departamentos_pa,
+  v_resumo_filiais_ro,       v_resumo_filiais_am,       v_resumo_filiais_pa
+  to authenticated;
+
+-- ---------------------------------------------------------
+-- gg_dados_hash() — RPC de revalidação leve do cache (utilitário)
+-- Retorna um hash (md5) de todos os dados relevantes, calculado no banco.
+-- ---------------------------------------------------------
+create or replace function public.gg_dados_hash()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  tables text[] := array[
+    'lancamentos_ro',    'lancamentos_am',    'lancamentos_pa',
+    'vagas_ro',          'vagas_am',          'vagas_pa',
+    'colaboradores_ro',  'colaboradores_am',  'colaboradores_pa',
+    'filiais_ro',        'filiais_am',        'filiais_pa',
+    'departamentos_ro',  'departamentos_am',  'departamentos_pa'
+  ];
+  t      text;
+  r      text;
+  parts  text[] := array[]::text[];
+begin
+  foreach t in array tables loop
+    if to_regclass('public.' || t) is not null then
+      execute format(
+        $q$
+          select coalesce(
+            md5(string_agg(linha.ct::text, ';' order by linha.ct::text)),
+            ''
+          )
+          from (select t as ct from public.%I t) linha
+        $q$,
+        t
+      ) into r;
+      parts := parts || (t || '=' || r);
+    end if;
+  end loop;
+
+  return md5(array_to_string(parts, '|'));
+end;
+$$;
+
+revoke all on function public.gg_dados_hash() from public;
+grant execute on function public.gg_dados_hash() to authenticated, anon, service_role;
+
+-- ---------------------------------------------------------
+-- DELTA SYNC — sincronização incremental (economia de egress)
+-- O frontend guarda cada registro em sua própria chave do localStorage
+-- (ggd:<tabela>:<id>) e recebe apenas as alterações desde a última
+-- versão (outbox/CDC com changelog + triggers nas 15 tabelas).
+-- ---------------------------------------------------------
+
+create table if not exists public.registro_alteracoes (
+  id           bigint generated always as identity primary key,
+  tabela       text not null,
+  registro_id  text not null,
+  operacao     text not null check (operacao in ('upsert', 'delete')),
+  dados        jsonb,
+  criado_em    timestamptz not null default now()
+);
+
+create index if not exists idx_registro_alteracoes_id on public.registro_alteracoes (id);
+
+create or replace function public.registrar_alteracao()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tabela text := TG_TABLE_NAME;
+begin
+  if TG_OP = 'DELETE' then
+    insert into public.registro_alteracoes (tabela, registro_id, operacao, dados)
+    values (v_tabela, OLD.id::text, 'delete', null);
+    return OLD;
+  end if;
+
+  insert into public.registro_alteracoes (tabela, registro_id, operacao, dados)
+  values (v_tabela, NEW.id::text, 'upsert', to_jsonb(NEW));
+
+  return NEW;
+end;
+$$;
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'lancamentos_ro',    'lancamentos_am',    'lancamentos_pa',
+    'vagas_ro',          'vagas_am',          'vagas_pa',
+    'colaboradores_ro',  'colaboradores_am',  'colaboradores_pa',
+    'filiais_ro',        'filiais_am',        'filiais_pa',
+    'departamentos_ro',  'departamentos_am',  'departamentos_pa'
+  ] loop
+    execute format('drop trigger if exists %I on public.%I', 'trg_alteracao_' || t, t);
+    execute format('create trigger %I after insert or update or delete on public.%I
+      for each row execute function public.registrar_alteracao()',
+      'trg_alteracao_' || t, t);
+  end loop;
+end $$;
+
+create or replace function public.gg_delta_sync(p_versao bigint default 0)
+returns table (versao_atual bigint, tabela text, registro_id text, operacao text, dados jsonb)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_atual bigint;
+begin
+  select coalesce(max(id), 0) into v_atual from public.registro_alteracoes;
+  return query
+    select v_atual, r.tabela, r.registro_id, r.operacao, r.dados
+      from public.registro_alteracoes r
+     where r.id > p_versao
+     order by r.id;
+end;
+$$;
+
+create or replace function public.gg_delta_versao()
+returns bigint
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select coalesce(max(id), 0) from public.registro_alteracoes;
+$$;
+
+revoke all on function public.gg_delta_sync(bigint) from public;
+grant execute on function public.gg_delta_sync(bigint) to authenticated;
+
+revoke all on function public.gg_delta_versao() from public;
+grant execute on function public.gg_delta_versao() to authenticated;
+
+-- ---------------------------------------------------------
+-- NOTA DE RETENÇÃO DO CHANGELOG
+-- O changelog cresce conforme há escritas (irrelevante para poucos
+-- registros). Para podar o histórico antigo com segurança:
+--   delete from public.registro_alteracoes
+--    where id < (select coalesce(max(id), 0) from public.registro_alteracoes) - 10000;
+-- ---------------------------------------------------------

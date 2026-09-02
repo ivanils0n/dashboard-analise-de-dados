@@ -5,6 +5,16 @@ import { computedSnapshot, listEmployees } from "@/lib/employees";
 import { formatValue, formatDate } from "@/lib/utils";
 import { useFilters } from "./useFilters";
 
+/* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
+   mas aparece em "Lançamentos recentes" com formatação de moeda. */
+const SALARY_IND = {
+  id: "salario_colaborador",
+  name: "Salário dos Colaboradores",
+  type: "currency",
+  decimals: 2,
+  form: "salario"
+};
+
 /* Centraliza o cálculo dos dados exibidos no dashboard a partir do
    filtro de período (reactive { start, end }) e do estado selecionado. */
 export function useDashboardData(filter) {
@@ -41,17 +51,26 @@ export function useDashboardData(filter) {
     return absTotalsFromEntries(filteredEntries(ind));
   }
 
+  /* Valor de um indicador para uma lista de lançamentos:
+     absenteísmo soma as ocorrências (cada evento = 1); custo usa a média;
+     os demais usam o último valor do período. */
+  function aggregateList(ind, list) {
+    if (!list || !list.length) return null;
+    if (ind.id === "absenteismo") {
+      return list.reduce((s, e) => s + e.value, 0);
+    }
+    if (ind.id === "custo_contratacao") {
+      const sum = list.reduce((s, e) => s + e.value, 0);
+      return sum / list.length;
+    }
+    return list[list.length - 1].value;
+  }
+
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
       return computedSnapshot(ind.id, currentState());
     }
-    const entries = filteredEntries(ind);
-    if (!entries.length) return null;
-    if (ind.id === "absenteismo" || ind.id === "custo_contratacao") {
-      const sum = entries.reduce((s, e) => s + e.value, 0);
-      return sum / entries.length;
-    }
-    return entries[entries.length - 1].value;
+    return aggregateList(ind, filteredEntries(ind));
   }
 
   /* ---------- KPIs ---------- */
@@ -66,7 +85,7 @@ export function useDashboardData(filter) {
       let prev = null;
       if (filter.start && allEntries.length) {
         const before = allEntries.filter((e) => e.date < filter.start);
-        prev = before.length ? before[before.length - 1].value : null;
+        prev = before.length ? aggregateList(ind, before) : null;
       } else if (!filter.start && entries.length > 1) {
         prev = entries[entries.length - 2].value;
       }
@@ -121,6 +140,7 @@ export function useDashboardData(filter) {
         name: ind.name,
         desc: ind.desc,
         type: ind.type,
+        higherIsBetter: ind.higherIsBetter !== false,
         current,
         prev,
         delta,
@@ -194,9 +214,9 @@ export function useDashboardData(filter) {
         if (ind.id === "absenteismo") {
           const t = absenteismoTypeTotals();
           return [
-            { label: "Faltas", value: t.falta, tooltip: `Faltas: ${t.falta}` },
-            { label: "Atrasos", value: t.atraso, tooltip: `Atrasos: ${t.atraso}` },
-            { label: "Afastamentos", value: t.afastamento, tooltip: `Afastamentos: ${t.afastamento}` }
+            { label: "Falta", value: t.falta, tooltip: `Falta: ${t.falta}` },
+            { label: "Atestado", value: t.atraso, tooltip: `Atestado: ${t.atraso}` },
+            { label: "Acidente", value: t.afastamento, tooltip: `Acidente: ${t.afastamento}` }
           ];
         }
         const value = indicatorCurrentValue(ind);
@@ -225,6 +245,12 @@ export function useDashboardData(filter) {
         rows.push({ entry: e, ind });
       });
     });
+    (all[SALARY_IND.id] || []).forEach((e) => {
+      if (filter.start && e.date < filter.start) return;
+      if (filter.end && e.date > filter.end) return;
+      if (currentState() !== "todos" && !(e.meta && e.meta.estado === currentState())) return;
+      rows.push({ entry: e, ind: SALARY_IND });
+    });
     rows.sort((a, b) => b.entry.date.localeCompare(a.entry.date));
 
     if (!q) return rows;
@@ -233,6 +259,9 @@ export function useDashboardData(filter) {
 
   function formatEntryValue(ind, entry) {
     if (ind.form === "custo" && entry.meta && entry.meta.employeeName) {
+      return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
+    }
+    if (ind.form === "salario" && entry.meta && entry.meta.employeeName) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
     if (ind.form === "absenteismo" && entry.meta) {

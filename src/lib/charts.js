@@ -6,7 +6,7 @@
    ========================================================= */
 
 import { Chart, registerables } from "chart.js";
-import { formatAxisValue, formatShortDate } from "./utils";
+import { formatValue, formatAxisValue, formatShortDate } from "./utils";
 
 Chart.register(...registerables);
 
@@ -82,6 +82,41 @@ const valueLabelsPlugin = {
     ctx.restore();
   }
 };
+
+/* Linha tracejada da média do período (usada p/ Tempo médio de contratação).
+   updateLineChart define chart.__meanLine = { value, label }. */
+const meanLinePlugin = {
+  id: "meanLine",
+  afterDatasetsDraw(chart) {
+    const m = chart.__meanLine;
+    if (!m || m.value === null || m.value === undefined) return;
+    const area = chart.chartArea;
+    const yScale = chart.scales && chart.scales.y;
+    if (!area || !yScale) return;
+    const y = yScale.getPixelForValue(m.value);
+    if (y < area.top || y > area.bottom) return;
+    const p = chartPalette();
+    const { ctx } = chart;
+    ctx.save();
+    ctx.strokeStyle = p.tick;
+    ctx.globalAlpha = 0.55;
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(area.left, y);
+    ctx.lineTo(area.right, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.font = "600 11px Inter, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillStyle = p.tick;
+    ctx.fillText(m.label, area.right - 4, y - 6);
+    ctx.restore();
+  }
+};
+
+Chart.register(meanLinePlugin);
 
 export function createMiniLineChart(canvas) {
   return new Chart(canvas, {
@@ -208,7 +243,7 @@ export function createLineChart(canvas) {
   });
 }
 
-/* Barras do Absenteísmo (Faltas/Atrasos/Afastamentos) */
+/* Barras do Absenteísmo (Falta/Atestado/Acidente) */
 export function createAbsenteismoBar(canvas) {
   const p = chartPalette();
   return new Chart(canvas, {
@@ -269,9 +304,15 @@ export function updateAbsenteismoBar(chart, data) {
 export function updateLineChart(chart, indicator, entries) {
   if (!chart) return;
   chart.options.scales = buildLineScales(indicator);
+  if (chart.options.plugins && chart.options.plugins.tooltip) {
+    chart.options.plugins.tooltip.callbacks = {
+      label: (ctx) => ` ${formatValue(indicator, ctx.parsed.y)}`
+    };
+  }
 
   if (!entries || !entries.length) {
     chart.data = { labels: [], datasets: [] };
+    chart.__meanLine = null;
     chart.update();
     return;
   }
@@ -279,6 +320,20 @@ export function updateLineChart(chart, indicator, entries) {
   const labels = entries.map((e) => formatShortDate(e.date));
   const values = entries.map((e) => e.value);
   const p = chartPalette();
+
+  /* Tempo médio de contratação: destaca a média do período em dias. */
+  if (indicator && indicator.id === "tempo_contratacao") {
+    const valid = values.filter((v) => !isNaN(Number(v)));
+    const mean = valid.length
+      ? valid.reduce((s, v) => s + Number(v), 0) / valid.length
+      : null;
+    chart.__meanLine =
+      mean !== null
+        ? { value: Number(mean.toFixed(2)), label: `Média: ${formatValue(indicator, mean)}` }
+        : null;
+  } else {
+    chart.__meanLine = null;
+  }
 
   const ctx = chart.ctx;
   const area = chart.chartArea || {};

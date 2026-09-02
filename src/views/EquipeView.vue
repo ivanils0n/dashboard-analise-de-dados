@@ -2,7 +2,7 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
-import FilterDrawer from "@/components/dashboard/FilterDrawer.vue";
+import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
@@ -15,6 +15,7 @@ import {
 } from "@/lib/store";
 import { listDepartments, saveEmployee, removeEmployee, syncAll, listEmployees } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
+import { hydrateState } from "@/lib/supabase";
 import { todayISO, formatDate, formatDateTime } from "@/lib/utils";
 
 const { show: toast } = useToast();
@@ -39,6 +40,9 @@ const departmentOptions = computed(() => {
   const state = form.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
   return listDepartments(state);
 });
+
+/* Departamentos disponíveis para o filtro da listagem (estado atual). */
+const deptFilterOptions = computed(() => listDepartments(filters.current));
 
 const branchOptions = computed(() => {
   const state = form.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
@@ -73,7 +77,7 @@ const tableList = computed(() => {
       return true;
     });
   }
-  return list.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return list.slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 });
 
 const total = computed(() => listEmployees(filters.current).length);
@@ -93,7 +97,19 @@ function resetForm() {
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
 }
 
-onMounted(resetForm);
+onMounted(() => {
+  resetForm();
+  hydrateState(filters.current).catch(() => {});
+});
+
+/* Ao trocar de estado, o departamento selecionado pode não existir no novo
+   estado — limpa o filtro de departamento da listagem. */
+watch(
+  () => filters.current,
+  () => {
+    ef.department = "todos";
+  }
+);
 
 watch(
   () => form.status,
@@ -183,12 +199,13 @@ function statusTone(status) {
 
 <template>
   <div class="fade-in">
-    <FilterDrawer page="equipe" />
-
     <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Equipe</h1>
-      <Badge tone="accent">{{ total === 1 ? "1 colaborador" : `${total} colaboradores` }}</Badge>
+      <div class="flex flex-wrap items-center gap-2">
+        <DateRangeFilter :range="ef" title="Período" />
+        <Badge tone="accent">{{ total === 1 ? "1 colaborador" : `${total} colaboradores` }}</Badge>
+      </div>
     </div>
 
     <!-- ===== CADASTRO ===== -->
@@ -291,6 +308,10 @@ function statusTone(status) {
           <p class="text-xs text-zinc-400 dark:text-zinc-400">{{ ativos }} ativos · {{ desligados }} desligados</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <select v-model="ef.department" class="input-sm" aria-label="Filtrar por departamento">
+            <option value="todos">Departamento: Todos</option>
+            <option v-for="d in deptFilterOptions" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
           <select v-model="ef.status" class="input-sm" aria-label="Filtrar por status">
             <option value="todos">Status: Todos</option>
             <option value="ativo">Status: Ativos</option>

@@ -55,6 +55,7 @@ export function saveEmployee(employeeData) {
     sector: employeeData.sector,
     user: employeeData.user,
     estado: employeeData.estado || null,
+    salario: employeeData.salario != null ? Number(employeeData.salario) : null,
     hiredAt: employeeData.hiredAt || null,
     status: employeeData.status,
     type: employeeData.type,

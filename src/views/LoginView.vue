@@ -2,6 +2,9 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { login } from "@/lib/auth";
+import { DEFAULT_STATE } from "@/lib/config";
+import { hydrateState } from "@/lib/supabase";
+import { syncAll } from "@/lib/employees";
 
 const router = useRouter();
 const usuario = ref("");
@@ -25,6 +28,14 @@ async function handleSubmit() {
         : err.message;
     error.value = friendly;
     return;
+  }
+  /* Só depois de autenticar é seguro baixar os dados: carrega o estado padrão
+     (e demais quando o usuário trocar o filtro) priorizando cache + delta. */
+  try {
+    await hydrateState(DEFAULT_STATE);
+    syncAll();
+  } catch (e) {
+    console.warn("[Login] Falha ao carregar dados:", e);
   }
   router.replace("/dashboard");
 }
