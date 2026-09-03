@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory } from "vue-router";
-import { isAuthenticated, getProfile } from "@/lib/auth";
+import { isAuthenticated, ensureProfile } from "@/lib/auth";
 import AppLayout from "@/components/layout/AppLayout.vue";
 
 const routes = [
@@ -61,18 +61,26 @@ const router = createRouter({
    - login -> sem sessão volta para o dashboard
    - internas -> sem sessão válida vai para o login
    - visitante -> só dashboard
-   - usuarios -> só admin */
-router.beforeEach((to) => {
+   - usuarios -> só admin
+
+   Rotas restritas (adminOnly/editOnly) revalidam o perfil no servidor
+   (ensureProfile) antes de liberar: não confiam apenas no perfil salvo no
+   cliente, que pode estar desatualizado (ex.: usuário rebaixado no banco).
+   A autorização real de dados é RLS no Postgres — este guard é apenas UX. */
+router.beforeEach(async (to) => {
   if (to.meta.public) {
     if (isAuthenticated()) return { name: "dashboard" };
     return true;
   }
   if (to.meta.requiresAuth) {
-    if (!isAuthenticated()) return { name: "login" };
-    const profile = getProfile();
-    if (profile) {
-      if (to.meta.adminOnly && profile.perfil !== "admin") return { name: "dashboard" };
-      if (to.meta.editOnly && profile.perfil === "visitante") return { name: "dashboard" };
+    if (!isAuthenticated()) return { name: "login", query: { redirect: to.fullPath } };
+    if (to.meta.adminOnly || to.meta.editOnly) {
+      const profile = await ensureProfile();
+      if (!isAuthenticated()) return { name: "login" };
+      if (profile) {
+        if (to.meta.adminOnly && profile.perfil !== "admin") return { name: "dashboard" };
+        if (to.meta.editOnly && profile.perfil === "visitante") return { name: "dashboard" };
+      }
     }
   }
   return true;

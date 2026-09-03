@@ -51,6 +51,22 @@ export function useDashboardData(filter) {
     return absTotalsFromEntries(filteredEntries(ind));
   }
 
+  /* Série diária do Absenteísmo para o gráfico de evolução: soma as
+     ocorrências do dia (agregação total, sem visão individual).
+     Ex.: 1 falta + 1 atestado no mesmo dia => um único ponto com valor 2. */
+  function absenteismoDailySeries() {
+    const ind = getIndicatorById("absenteismo");
+    if (!ind) return [];
+    const byDay = new Map();
+    filteredEntries(ind).forEach((e) => {
+      const day = e.date;
+      byDay.set(day, (byDay.get(day) || 0) + (Number(e.value) || 0));
+    });
+    return [...byDay.entries()]
+      .map(([date, value]) => ({ date, value }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   /* Valor de um indicador para uma lista de lançamentos:
      absenteísmo soma as ocorrências (cada evento = 1); custo usa a média;
      os demais usam o último valor do período. */
@@ -251,7 +267,9 @@ export function useDashboardData(filter) {
       if (currentState() !== "todos" && !(e.meta && e.meta.estado === currentState())) return;
       rows.push({ entry: e, ind: SALARY_IND });
     });
-    rows.sort((a, b) => b.entry.date.localeCompare(a.entry.date));
+    // Ordenação cronológica decrescente: o lançamento mais recente no topo.
+    // Desempate por id (criações mais novas primeiro) para o mesmo dia.
+    rows.sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.entry.id.localeCompare(a.entry.id));
 
     if (!q) return rows;
     return rows.filter((r) => r.ind.name.toLowerCase().includes(q));
@@ -274,6 +292,7 @@ export function useDashboardData(filter) {
   return {
     filteredEntries,
     absenteismoTypeTotals,
+    absenteismoDailySeries,
     indicatorCurrentValue,
     kpis,
     selectedKpiId,

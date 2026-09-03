@@ -162,6 +162,12 @@ function closeSub() {
   sub.employee = null;
 }
 
+/* Define o período da ocorrência como o dia de hoje. */
+function setOccurrenceToday() {
+  occ.inicio = todayISO();
+  occ.fim = todayISO();
+}
+
 function saveOccurrence() {
   const emp = sub.employee;
   if (!emp) return toast("Selecione um colaborador na lista.");
@@ -579,15 +585,16 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
                 <option v-for="key in ABSENTEEISM_OPTIONS" :key="key" :value="key">{{ ABSENTEEISM_TYPES[key] }}</option>
               </select>
             </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div class="flex flex-col gap-1.5">
+            <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
+              <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
                 <label for="occInicio" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data início</label>
                 <input id="occInicio" v-model="occ.inicio" type="date" class="input-field" />
               </div>
-              <div class="flex flex-col gap-1.5">
+              <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
                 <label for="occFim" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data fim</label>
                 <input id="occFim" v-model="occ.fim" type="date" class="input-field" />
               </div>
+              <button type="button" class="btn-ghost" @click="setOccurrenceToday">Hoje</button>
             </div>
           </div>
 

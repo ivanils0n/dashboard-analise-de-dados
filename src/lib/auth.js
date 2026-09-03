@@ -3,8 +3,12 @@
    ---------------------------------------------------------
    - login(): valida usuário (ex.: "ivan" -> ivan@gente.gestao)
      + senha via signInWithPassword
-   - O token da sessão fica salvo no localStorage por 6 horas;
-     após esse prazo (ou sem sessão), um novo login é exigido.
+   - A sessão fica salva no sessionStorage (e os tokens do supabase-js
+     também); nada de tokens em localStorage/em disco. Ao fechar a aba
+     a sessão é descartada; por padrão a sessão dura 6 horas.
+   - Logout/expiração executam uma purga completa (resetLocalState):
+     memória reativa, cache em sessionStorage e fila de escrita são
+     zerados — o próximo usuário nunca herda dados do anterior.
    - O perfil (nome, usuário, perfil) é salvo junto com a sessão
      e usado para controlar o acesso por perfil:
        admin     : tudo + gestão de usuários
@@ -14,8 +18,8 @@
 
 import { reactive } from "vue";
 import { AUTH_EMAIL_DOMAIN } from "./config";
-import { safeSetItem } from "./utils";
-import { supabaseClient } from "./supabase";
+import { safeSetItem, sessionStore, localStore } from "./utils";
+import { supabaseClient, resetLocalState } from "./supabase";
 
 const AUTH_STORAGE_KEY = "gg-auth";
 const AUTH_DURATION_MS = 6 * 60 * 60 * 1000; // 6 horas
@@ -40,11 +44,11 @@ export function buildLoginEmail(value) {
   return v.toLowerCase() + "@" + AUTH_EMAIL_DOMAIN;
 }
 
-/* ---------- Persistência da sessão ---------- */
+/* ---------- Persistência da sessão (sessionStorage) ---------- */
 
 function readSession() {
   try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    const raw = sessionStore.getItem(AUTH_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
     return null;
@@ -52,37 +56,59 @@ function readSession() {
 }
 
 function writeSession(data) {
-  safeSetItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+  safeSetItem(sessionStore, AUTH_STORAGE_KEY, JSON.stringify(data));
 }
 
 function clearSession() {
   try {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    sessionStore.removeItem(AUTH_STORAGE_KEY);
   } catch (e) {}
 }
 
-/* Remove a sessão gravada pelo supabase-js (chaves sb-*-auth-token) */
+/* Remove os tokens gravados pelo supabase-js (chaves sb-*-auth-token).
+   Varre sessionStorage e também o localStorage (para limpar resíduos de
+   versões antigas que persistiam tokens em disco). */
 function clearSupabaseKeys() {
-  try {
-    const toRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.indexOf("sb-") === 0 && k.indexOf("-auth-token") !== -1) {
-        toRemove.push(k);
+  const scan = (store) => {
+    try {
+      const toRemove = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k && k.indexOf("sb-") === 0 && k.indexOf("-auth-token") !== -1) {
+          toRemove.push(k);
+        }
       }
-    }
-    toRemove.forEach((k) => localStorage.removeItem(k));
-  } catch (e) {}
+      toRemove.forEach((k) => store.removeItem(k));
+    } catch (e) {}
+  };
+  scan(sessionStore);
+  scan(localStore);
 }
 
 let _expiredHandled = false;
+
+/* Rota da Cloudflare Pages Function que guarda o refresh token em cookie
+   HttpOnly (invisível ao JS/XSS). Usada só como espelho/restauração.
+
+   Recurso é OPCIONAL e fica DESLIGADO por padrão: GitHub Pages (deploy atual)
+   não executa Pages Functions — ativar sem função gera "fetch request failed"
+   no login. Habilite SOMENTE ao publicar no Cloudflare Pages com a função
+   functions/api/auth.js, definindo no build:
+     VITE_GG_SESSION_COOKIE=true  */
+const AUTH_COOKIE_ENDPOINT = "/api/auth/session";
+const SESSION_COOKIE_ENABLED = import.meta.env.VITE_GG_SESSION_COOKIE === "true";
+
+/* Revalidação de perfil no servidor: com TTL, não chama a RPC meu_perfil a
+   cada troca de rota/aba. Após o TTL a validação volta a acontecer. */
+const PROFILE_CHECK_TTL_MS = 60 * 1000;
+let _lastProfileCheck = 0;
 
 export function getToken() {
   const data = readSession();
   if (!data || !data.token) return null;
   if (!data.expiresAt || Date.now() > data.expiresAt) {
-    clearSession();
-    clearSupabaseKeys();
+    // Sessão vencida: purga completa (memória + cache + timers).
+    handleSessionExpired();
     return null;
   }
   return data.token;
@@ -147,7 +173,7 @@ export async function loadProfile(client, userId, email) {
   }
 
   if (!data) {
-    console.warn("[Auth] Perfil não encontrado no banco (userId:", userId, ")");
+    console.warn("[Auth] Perfil não encontrado no banco.");
     return null;
   }
 
@@ -161,25 +187,36 @@ export async function loadProfile(client, userId, email) {
   const prev = readSession() || {};
   writeSession({ ...prev, profile });
   authState.profile = profile;
-  console.info("[Auth] Perfil carregado:", profile);
   return profile;
 }
 
 export async function ensureProfile() {
   const stored = getProfile();
+  const now = Date.now();
+  // Perfil já validado no servidor há pouco tempo: evita bater na API
+  // meu_perfil a cada navegação/aba (TTL de 60s).
+  if (stored && now - _lastProfileCheck < PROFILE_CHECK_TTL_MS) {
+    return stored;
+  }
   const data = readSession();
   const userId = data && data.user ? data.user.id : null;
   const email = data && data.user ? data.user.email : null;
   const client = supabaseClient();
   const fetched = await loadProfile(client, userId, email);
-  console.info("[Auth] ensureProfile ->", fetched ? fetched.perfil : "sem perfil (usando salvo)");
+  // Estampa o momento da tentativa mesmo em falha: sem isso, uma RPC
+  // indisponível seria chamada em toda navegação (uma vez por segundo nada,
+  // uma vez por aba — desnecessário).
+  _lastProfileCheck = Date.now();
   if (!fetched && (userId || email)) {
-    handleSessionExpired("Não foi possível carregar seu perfil. Faça login novamente.");
+    handleSessionExpired();
+    return null;
   }
   return fetched || stored;
 }
 
 function saveSession(session) {
+  _expiredHandled = false;
+  _lastProfileCheck = 0;
   const prev = readSession() || {};
   writeSession({
     token: session.access_token,
@@ -188,12 +225,78 @@ function saveSession(session) {
     expiresAt: Date.now() + AUTH_DURATION_MS
   });
   scheduleExpiryLogout();
+  mirrorSessionToCookie(session && session.refresh_token);
+}
+
+/* ---------- Cookie HttpOnly (Cloudflare Pages Function) ---------- */
+
+/* Espelha o refresh_token atual no cookie (após login/refresh local). Só
+   roda quando o recurso está habilitado (Cloudflare Pages) — em GitHub Pages
+   não há função e a chamada falharia toda vez no login. */
+function mirrorSessionToCookie(refreshToken) {
+  if (!SESSION_COOKIE_ENABLED || !refreshToken) return;
+  fetch(AUTH_COOKIE_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ refresh_token: refreshToken })
+  }).catch(() => {});
+}
+
+function clearSessionCookie() {
+  if (!SESSION_COOKIE_ENABLED) return;
+  fetch(AUTH_COOKIE_ENDPOINT, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
+}
+
+/* Tenta restaurar a sessão a partir do refresh token em cookie HttpOnly
+   (invisível ao JS). O servidor troca o refresh por um novo par de tokens e
+   devolve apenas aqui, em memória — nada de refresh token persistido no
+   navegador em formato legível por script. Retorna true se restaurou. */
+export async function restoreSessionFromCookie() {
+  if (!SESSION_COOKIE_ENABLED) return false;
+  try {
+    const res = await fetch(AUTH_COOKIE_ENDPOINT, { method: "GET", credentials: "same-origin" });
+    if (!res.ok) return false;
+    const s = await res.json();
+    if (!s || !s.access_token || !s.refresh_token) return false;
+
+    const client = supabaseClient();
+    if (!client) return false;
+
+    const user = s.user && s.user.id ? s.user : null;
+    if (!user) return false;
+
+    const { error } = await client.auth.setSession({
+      access_token: s.access_token,
+      refresh_token: s.refresh_token
+    });
+    if (error) return false;
+
+    // Valida o perfil no banco (RLS) antes de aceitar a sessão restaurada.
+    const profile = await loadProfile(client, user.id, user.email);
+    if (!profile) {
+      await client.auth.signOut().catch(() => {});
+      return false;
+    }
+
+    saveSession({ access_token: s.access_token, refresh_token: s.refresh_token, user });
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 let _expiryTimer = null;
 
+export function clearExpiryTimer() {
+  if (_expiryTimer) {
+    clearTimeout(_expiryTimer);
+    _expiryTimer = null;
+  }
+}
+
 function scheduleExpiryLogout() {
-  clearTimeout(_expiryTimer);
+  clearExpiryTimer();
   const data = readSession();
   if (!data || !data.expiresAt) return;
   const remaining = data.expiresAt - Date.now();
@@ -211,11 +314,9 @@ export async function login(identifier, password) {
   }
   const email = buildLoginEmail(identifier);
   if (!email) return { error: { message: "Informe o usuário." } };
-  console.info("[Auth] Tentando login com e-mail:", email);
 
   const { data, error } = await client.auth.signInWithPassword({ email, password });
   if (error) {
-    console.warn("[Auth] Login rejeitado:", error.message);
     return { error };
   }
 
@@ -226,7 +327,9 @@ export async function login(identifier, password) {
   }
 
   saveSession(data.session);
-  console.info("[Auth] Login concluído. Perfil:", profile);
+  // Estado sempre limpo antes de carregar dados: nenhum resíduo da sessão
+  // anterior (memória/cache/fila) é visível para o novo usuário.
+  resetLocalState();
   return { data };
 }
 
@@ -264,42 +367,69 @@ export async function changeName(newName) {
 }
 
 export function logout() {
+  _expiredHandled = true;
+  clearExpiryTimer();
+  stopAuthPolling();
   clearSession();
   clearSupabaseKeys();
+  clearSessionCookie();
   authState.profile = null;
+  resetLocalState();
   const client = supabaseClient();
   if (client) client.auth.signOut().catch(() => {});
 }
 
-export function handleSessionExpired(message) {
+export function handleSessionExpired() {
   if (_expiredHandled) return;
   _expiredHandled = true;
+  clearExpiryTimer();
+  stopAuthPolling();
   clearSession();
   clearSupabaseKeys();
+  clearSessionCookie();
   authState.profile = null;
+  resetLocalState();
   const client = supabaseClient();
   if (client) client.auth.signOut().catch(() => {});
-  console.info("[Auth] Sessão expirada/encerrada.");
 }
 
 /* Reage à perda de sessão no lado do Supabase (ex.: token de refresh
-   inválido/expirado): invalida a sessão local e redireciona ao login. */
+   inválido/expirado): invalida a sessão local e redireciona ao login.
+   Também mantém o cookie HttpOnly sincronizado quando o supabase-js
+   rotaciona o refresh token em segundo plano. */
 export function watchSupabaseAuthState() {
   const client = supabaseClient();
   if (!client) return;
-  client.auth.onAuthStateChange((event) => {
+  client.auth.onAuthStateChange((event, session) => {
     if (event === "SIGNED_OUT") {
-      handleSessionExpired("Sua sessão foi encerrada ou o token é inválido. Faça login novamente.");
+      handleSessionExpired();
+    } else if (
+      (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+      session &&
+      session.refresh_token
+    ) {
+      mirrorSessionToCookie(session.refresh_token);
     }
   });
 }
 
 /* Expiração em tempo real: mesmo com a aba aberta, após as 6 horas
-   a sessão é invalidada. */
+   a sessão é invalidada. O intervalo é rastreado para ser encerrado
+   no logout (não pode continuar rodando após a sessão terminar). */
+let _pollTimer = null;
+
 export function startAuthPolling() {
-  setInterval(() => {
+  stopAuthPolling();
+  _pollTimer = setInterval(() => {
     if (!isAuthenticated()) {
-      handleSessionExpired("Tempo limite da sessão atingido. Faça login novamente.");
+      handleSessionExpired();
     }
   }, 30 * 1000);
+}
+
+export function stopAuthPolling() {
+  if (_pollTimer) {
+    clearInterval(_pollTimer);
+    _pollTimer = null;
+  }
 }

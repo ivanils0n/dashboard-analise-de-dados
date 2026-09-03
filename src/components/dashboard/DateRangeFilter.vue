@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
-import { firstDayOfMonthISO, lastDayOfMonthISO, formatDate } from "@/lib/utils";
+import { firstDayOfMonthISO, lastDayOfMonthISO, todayISO, formatDate } from "@/lib/utils";
 
 /* Filtro de período compacto: um único campo "01/01/2026 - 31/01/2026".
    Ao clicar, abre um dropdown com os seletores de data.
@@ -55,6 +55,13 @@ function setThisMonth() {
   draft.end = lastDayOfMonthISO();
 }
 
+/* Seleciona o dia de hoje (início = fim = hoje) e aplica na hora. */
+function setToday() {
+  draft.start = todayISO();
+  draft.end = todayISO();
+  apply();
+}
+
 function onDocClick() {
   open.value = false;
 }
@@ -104,6 +111,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       </div>
 
       <div class="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+        <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
         <button type="button" class="btn-ghost btn-sm" @click="setThisMonth">Mês atual</button>
         <div class="flex items-center gap-2">
           <button type="button" class="btn-ghost btn-sm" @click="clear">Limpar</button>

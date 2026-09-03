@@ -37,7 +37,7 @@ export function useData() {
 let remote = null;
 
 /* O supabase.js registra o adaptador de escrita quando habilitado;
-   sem remote, o app opera apenas em memória/localStorage. */
+   sem remote, o app opera apenas em memória/sessionStorage. */
 export function bindRemote(adapter) {
   remote = adapter;
 }

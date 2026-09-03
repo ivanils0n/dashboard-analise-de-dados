@@ -24,6 +24,21 @@ import { INDICATORS, STATES, STATUS_LABELS, TYPE_LABELS } from "./config";
 import { activeStates, syncAll } from "./employees";
 import { createId, nowLocalISO, todayISO } from "./utils";
 
+/* Previne "formula injection" (CSV/Excel): valores de texto que começam com
+   = + - @ são prefixados com ' para o Excel/Sheets tratá-los como texto puro
+   e nunca executá-los como fórmula. Aplicado a células geradas de dados do
+   usuário (nomes, CNPJ, setores etc.). */
+const FORMULA_LEAD = /^[=+\-@]/;
+
+function sheetSafe(v) {
+  if (typeof v === "string" && FORMULA_LEAD.test(v)) return "'" + v;
+  return v;
+}
+
+function safeRows(rows) {
+  return rows.map((row) => row.map(sheetSafe));
+}
+
 function buildEntryRows() {
   const rows = [["Data", "Indicador", "Valor", "Unidade", "Estado"]];
   const all = getAllEntries();
@@ -60,12 +75,12 @@ export function toXLSX() {
       ]);
     });
   });
-  const sheetIndicators = XLSX.utils.aoa_to_sheet(indicatorRows);
+  const sheetIndicators = XLSX.utils.aoa_to_sheet(safeRows(indicatorRows));
   sheetIndicators["!cols"] = [{ wch: 32 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(workbook, sheetIndicators, "Indicadores");
 
   // ---- Planilha 2: Lançamentos ----
-  const sheetEntries = XLSX.utils.aoa_to_sheet(buildEntryRows());
+  const sheetEntries = XLSX.utils.aoa_to_sheet(safeRows(buildEntryRows()));
   sheetEntries["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheetEntries, "Lançamentos");
 
@@ -90,7 +105,7 @@ export function toXLSX() {
       e.estado || ""
     ]);
   });
-  const sheetEmployees = XLSX.utils.aoa_to_sheet(employeeRows);
+  const sheetEmployees = XLSX.utils.aoa_to_sheet(safeRows(employeeRows));
   sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 8 }];
   XLSX.utils.book_append_sheet(workbook, sheetEmployees, "Equipe");
 
@@ -99,7 +114,7 @@ export function toXLSX() {
   getBranches().forEach((b) => {
     branchRows.push([b.branchId, b.cnpj, b.name, b.shortName, b.manager || "", b.estado || ""]);
   });
-  const sheetBranches = XLSX.utils.aoa_to_sheet(branchRows);
+  const sheetBranches = XLSX.utils.aoa_to_sheet(safeRows(branchRows));
   sheetBranches["!cols"] = [{ wch: 14 }, { wch: 22 }, { wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheetBranches, "Filiais");
 
@@ -108,7 +123,7 @@ export function toXLSX() {
   getDepartments().forEach((d) => {
     departmentRows.push([d.name, d.shortName || "", d.estado || ""]);
   });
-  const sheetDepartments = XLSX.utils.aoa_to_sheet(departmentRows);
+  const sheetDepartments = XLSX.utils.aoa_to_sheet(safeRows(departmentRows));
   sheetDepartments["!cols"] = [{ wch: 32 }, { wch: 12 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheetDepartments, "Departamentos");
 
@@ -117,7 +132,7 @@ export function toXLSX() {
 
 export function toCSV() {
   const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet(buildEntryRows());
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows(buildEntryRows()));
   sheet["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Lançamentos");
   XLSX.writeFile(workbook, `gente-gestao-dados_${todayISO()}.csv`, { bookType: "csv" });

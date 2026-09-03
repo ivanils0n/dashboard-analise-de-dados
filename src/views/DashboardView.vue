@@ -56,6 +56,16 @@ const canEdit = canEditData();
 
 const tableRows = computed(() => dashboard.tableRows(tableSearch.value));
 
+/* Entradas da linha do gráfico "Evolução no período". O Absenteísmo usa a
+   série agregada por dia (total de ocorrências do dia, sem visão individual);
+   os demais indicadores usam os lançamentos do período como estão. */
+function lineEntries(card) {
+  if (card.kind !== "line") return [];
+  const ind = getIndicatorById(card.id);
+  if (ind && ind.id === "absenteismo") return dashboard.absenteismoDailySeries();
+  return filteredEntries(ind);
+}
+
 function openLaunch() {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -117,7 +127,18 @@ function onImportFile(e) {
   e.target.value = "";
 }
 
-function removeEntryRow(indicatorId, entryId) {
+async function removeEntryRowConfirmed(indicatorId, entryId) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Excluir lançamento?",
+    message: "O registro será removido definitivamente e os totais do gráfico serão recalculados.",
+    confirmText: "Excluir",
+    danger: true
+  });
+  if (!ok) return;
   removeEntry(indicatorId, entryId);
   toast("Lançamento excluído.");
 }
@@ -272,7 +293,7 @@ onUnmounted(() => {
           v-for="card in kpiChartCards"
           :key="card.id"
           :card="card"
-          :entries="card.kind === 'line' ? filteredEntries(getIndicatorById(card.id)) : []"
+          :entries="lineEntries(card)"
           :pie-data="card.kind === 'pie' ? chartPieData(card.id) : []"
           :show-values="showValues"
           :data-indicator-card="card.id"
@@ -322,7 +343,7 @@ onUnmounted(() => {
                   type="button"
                   class="icon-btn-sm"
                   aria-label="Excluir lançamento"
-                  @click="removeEntryRow(ind.id, entry.id)"
+                  @click="removeEntryRowConfirmed(ind.id, entry.id)"
                 >
                   &times;
                 </button>

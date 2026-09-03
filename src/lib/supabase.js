@@ -2,18 +2,23 @@
    Cliente Supabase + sincronização
    ---------------------------------------------------------
    O Supabase é a única fonte de verdade:
-   - carga usa cache local (localStorage, item a item) + delta sync:
+   - carga usa cache local (sessionStorage, item a item) + delta sync:
      na primeira vez baixa o estado por completo; depois disso restaura
      do cache e pede apenas as alterações (gg_delta_sync)
    - hydrateState(): carrega um estado priorizando cache + delta
    - escritas entram numa fila com debounce e vão em lote
      (1 requisição por tabela) direto para o banco
+
+   Sessão e cache vivem em sessionStorage (sem persistência em disco):
+   fechar a aba/navegador remove tokens e PII. O logout purga também a
+   memória reativa (resetLocalState).
    ========================================================= */
 
 import { createClient } from "@supabase/supabase-js";
 import { STATES, DEFAULT_STATE } from "./config";
 import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData, upsertInList, useData } from "./store";
+import { sessionStore } from "./utils";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
 
@@ -52,7 +57,16 @@ function createSupabaseClient() {
     return null;
   }
   try {
-    return createClient(url, key);
+    return createClient(url, key, {
+      auth: {
+        // Sessão em memória do navegador apenas: nada de tokens em disco.
+        storage: sessionStore,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce"
+      }
+    });
   } catch (err) {
     console.error("[Supabase] Falha ao criar o client:", err);
     return null;
@@ -404,17 +418,15 @@ const STATE_TABLES = ["lancamentos_", "vagas_", "colaboradores_", "filiais_", "d
 
 function stateCachedKeys(suffix) {
   const out = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key || key.indexOf("ggd:") !== 0) continue;
+  DataCache.keys().forEach((key) => {
     const tabela = key.slice("ggd:".length).split(":")[0] || "";
     if (STATE_TABLES.some((p) => tabela.indexOf(p + suffix) === 0)) out.push(key);
-  }
+  });
   return out;
 }
 
 /* Reconstrói em memória (merge, sem apagar o resto) o estado a partir das
-   chaves do localStorage. Reusa os mesmos mapeamentos do download. */
+   chaves do sessionStorage. Reusa os mesmos mapeamentos do download. */
 function mergeStateFromCache(suffix, state) {
   const payload = { entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
   stateCachedKeys(suffix).forEach((key) => {
@@ -452,6 +464,8 @@ function mergeStateFromCache(suffix, state) {
 export async function hydrateState(next) {
   const client = supabaseClient();
   if (!client) return false;
+  // Limpa (uma vez) resíduos de PII de versões antigas gravados em localStorage.
+  DataCache.removeLegacy();
   const states = next === "todos" ? STATES.slice() : [next];
   const pending = states.filter((s) => !_loadedStates[s]);
   if (!pending.length) return true;
@@ -495,7 +509,7 @@ export async function hydrateState(next) {
   return hydrate(pending.length === 1 ? pending[0] : "todos");
 }
 
-/* ---------- Delta Sync (localStorage por item + payload do banco) ---------- */
+/* ---------- Delta Sync (sessionStorage por item + payload do banco) ---------- */
 
 async function deltaVersao() {
   const client = supabaseClient();
@@ -649,7 +663,7 @@ function loadLocalIntoMemory() {
 }
 
 /* Boot com Delta Sync:
-   1) reconstrói a memória a partir do localStorage (renderização rápida);
+   1) reconstrói a memória a partir do sessionStorage (renderização rápida);
    2) se não houver cache -> download completo + semeadura item a item;
    3) se houver cache -> pede apenas os itens alterados/deletados desde a
       última versão e aplica via setItem/removeItem. */
@@ -661,7 +675,7 @@ export async function hydrateWithDelta(state) {
 
   const hasLocal = loadLocalIntoMemory();
   if (hasLocal) {
-    console.info("[Supabase] Cache local restaurado do localStorage.");
+    console.info("[Supabase] Cache local restaurado do sessionStorage.");
   }
 
   if (!hasLocal) {
@@ -712,28 +726,34 @@ export async function bootstrapSupabase() {
   await hydrateWithDelta(DEFAULT_STATE);
 }
 
-/* "Recarregar Dados": limpa todo o localStorage preservando estritamente a
-   sessão (gg-auth e tokens sb-*-auth-token), zera a memória e busca os dados
-   atualizados diretamente do banco. */
-export async function reloadData() {
-  const keep = new Set();
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k && (k === "gg-auth" || (k.indexOf("sb-") === 0 && k.indexOf("-auth-token") !== -1))) {
-      keep.add(k);
-    }
+/* Descarta escritas locais ainda pendentes (fila com debounce). Usado no
+   logout/expiração: sem isso, edições do usuário anterior poderiam ser
+   enviadas ao banco com a sessão do próximo usuário. */
+export function discardPendingWrites() {
+  if (_flushTimer) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
   }
-  const saved = {};
-  keep.forEach((k) => (saved[k] = localStorage.getItem(k)));
-  try {
-    localStorage.clear();
-  } catch (e) {}
-  keep.forEach((k) => {
-    try {
-      localStorage.setItem(k, saved[k]);
-    } catch (e) {}
-  });
+  Object.keys(_clearQueue).forEach((k) => delete _clearQueue[k]);
+  Object.keys(_queue).forEach((k) => _queue[k].clear());
+}
 
+/* Purga completa de dados sensíveis ao encerrar a sessão:
+   fila de escrita + memória reativa + cache em sessionStorage. */
+export function resetLocalState() {
+  discardPendingWrites();
+  resetData();
+  Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+  DataCache.resetAll();
+}
+
+/* "Recarregar Dados": limpa cache e memória, remove resíduos antigos do
+   localStorage e busca os dados atualizados direto do banco. A sessão
+   (gg-auth e tokens sb-*) vive em sessionStorage e é preservada (as chaves
+   ggd:* são as únicas apagadas). */
+export async function reloadData() {
+  DataCache.removeLegacy();
+  DataCache.resetAll();
   resetData();
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
 

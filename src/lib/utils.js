@@ -105,12 +105,12 @@ export function createId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-/* Grava no localStorage com fallback para limite de capacidade.
-   Se a gravação falhar por QuotaExceededError, limpa TODO o localStorage
-   e tenta gravar novamente a chave no storage limpo. */
-export function safeSetItem(key, value) {
+/* Grava no storage informado (session/local) com fallback para limite de
+   capacidade. Se a gravação falhar por QuotaExceededError, limpa TODO o
+   storage e tenta gravar novamente a chave no storage limpo. */
+export function safeSetItem(storage, key, value) {
   try {
-    localStorage.setItem(key, value);
+    storage.setItem(key, value);
     return true;
   } catch (err) {
     const isQuota =
@@ -120,18 +120,50 @@ export function safeSetItem(key, value) {
         err.code === 22 ||
         err.code === 1014);
     if (isQuota) {
-      console.warn("[storage] QuotaExceededError — limpando localStorage e regravando:", key);
       try {
-        localStorage.clear();
+        storage.clear();
       } catch (e) {}
       try {
-        localStorage.setItem(key, value);
+        storage.setItem(key, value);
         return true;
       } catch (e2) {
-        console.warn("[storage] Falha ao gravar mesmo após limpar o localStorage:", key);
         return false;
       }
     }
     return false;
   }
 }
+
+/* Armazenamentos web com fallback seguro — nunca lançam exceção (ex.:
+   modo privado com storage bloqueado). Retornam uma Storage "noop" se o
+   navegador não disponibilizar o storage. */
+function createWebStore(name) {
+  try {
+    const store = window[name];
+    const probe = "__gg_probe__";
+    store.setItem(probe, "1");
+    store.removeItem(probe);
+    return store;
+  } catch (e) {
+    return {
+      get length() {
+        return 0;
+      },
+      clear() {},
+      getItem() {
+        return null;
+      },
+      key() {
+        return null;
+      },
+      removeItem() {},
+      setItem() {}
+    };
+  }
+}
+
+/* Dados sensíveis (sessão + cache) usam sessionStorage: nada sobrevive ao
+   fechamento da aba/navegador. localStore é usado apenas para limpar
+   resíduos de versões anteriores que gravavam em localStorage. */
+export const sessionStore = createWebStore("sessionStorage");
+export const localStore = createWebStore("localStorage");
