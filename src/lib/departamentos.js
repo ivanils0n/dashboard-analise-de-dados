@@ -1,6 +1,4 @@
-/* =========================================================
-   Domínio de Departamentos
-   ========================================================= */
+// Domínio de Departamentos.
 
 import { upsertDepartment, deleteDepartment, getDepartments } from "./store";
 import { createId, nowLocalISO } from "./utils";

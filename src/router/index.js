@@ -52,21 +52,12 @@ const routes = [
   }
 ];
 
-const router = createRouter({
-  history: createWebHashHistory(),
-  routes
-});
+const router = createRouter({ history: createWebHashHistory(), routes });
 
-/* Guardas de acesso por perfil:
-   - login -> sem sessão volta para o dashboard
-   - internas -> sem sessão válida vai para o login
-   - visitante -> só dashboard
-   - usuarios -> só admin
-
-   Rotas restritas (adminOnly/editOnly) revalidam o perfil no servidor
-   (ensureProfile) antes de liberar: não confiam apenas no perfil salvo no
-   cliente, que pode estar desatualizado (ex.: usuário rebaixado no banco).
-   A autorização real de dados é RLS no Postgres — este guard é apenas UX. */
+/* Login: sem sessão volta ao dashboard. Rotas internas sem sessão vão ao
+   login (guardando ?redirect). adminOnly/editOnly revalidam o perfil no
+   servidor (ensureProfile) antes de liberar. Segurança de dados = RLS; o
+   guard é apenas UX. */
 router.beforeEach(async (to) => {
   if (to.meta.public) {
     if (isAuthenticated()) return { name: "dashboard" };

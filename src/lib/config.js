@@ -1,10 +1,4 @@
-/* =========================================================
-   Configuração dos indicadores de Gente & Gestão (RH)
-   ---------------------------------------------------------
-   manual  : aparece no modal "Lançar dados" (entrada manual)
-   computed: calculado automaticamente a partir da aba Equipe
-   form    : tipo de formulário do modal (para indicadores manuais)
-   ========================================================= */
+/* Indicadores e constantes de Gente & Gestão. */
 
 export const INDICATORS = [
   {
@@ -114,14 +108,12 @@ export const INDICATORS = [
 export const MANUAL_INDICATORS = INDICATORS.filter((i) => i.manual);
 export const COMPUTED_INDICATORS = INDICATORS.filter((i) => i.computed);
 
-/* Estados disponíveis e estado padrão do filtro (RO) */
 export const STATES = ["RO", "AM", "PA"];
 export const DEFAULT_STATE = "RO";
 
 export const STATE_NAMES = { RO: "Rondônia", AM: "Amazonas", PA: "Pará" };
 
-/* Domínio usado no login: o usuário digita apenas o "usuário"
-   (ex.: ivan) e o e-mail completo vira ivan@gente.gestao. */
+// Login: o usuário digita o nome e o domínio completa o e-mail.
 export const AUTH_EMAIL_DOMAIN = "gente.gestao";
 
 export const STATUS_LABELS = { ativo: "Ativo", afastado: "Afastado", desligado: "Desligado" };
@@ -131,8 +123,6 @@ export const ABSENTEEISM_TYPES = {
   atraso: "Atestado",
   afastamento: "Acidente"
 };
-
-/* Motivo do submodal de ocorrência do Absenteísmo (ordem exibida). */
 export const ABSENTEEISM_OPTIONS = ["falta", "atraso", "afastamento"];
 
 export function getIndicatorById(id) {

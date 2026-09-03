@@ -39,20 +39,10 @@ function apply() {
   props.range.end = draft.end;
   open.value = false;
 }
-
-function clear() {
-  if (props.range) {
-    props.range.start = "";
-    props.range.end = "";
-  }
-  draft.start = "";
-  draft.end = "";
-  open.value = false;
-}
-
 function setThisMonth() {
   draft.start = firstDayOfMonthISO();
   draft.end = lastDayOfMonthISO();
+  apply();
 }
 
 /* Seleciona o dia de hoje (início = fim = hoje) e aplica na hora. */
@@ -110,13 +100,10 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
         </div>
       </div>
 
-      <div class="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+      <div class="flex items-center justify-end gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
         <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
         <button type="button" class="btn-ghost btn-sm" @click="setThisMonth">Mês atual</button>
-        <div class="flex items-center gap-2">
-          <button type="button" class="btn-ghost btn-sm" @click="clear">Limpar</button>
-          <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
-        </div>
+        <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
       </div>
     </div>
   </div>

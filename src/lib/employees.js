@@ -1,12 +1,5 @@
-/* =========================================================
-   Domínio da Equipe e indicadores calculados
-   ---------------------------------------------------------
-   A partir dos colaboradores e das vagas, recalcula e grava
-   snapshots (por dia) dos indicadores computados:
-   headcount, turnover, tempo de permanência,
-   turnover no período de experiência e retenção.
-   Também administra as vagas do Tempo médio de contratação.
-   ========================================================= */
+/* Domínio da Equipe: recalcula e grava snapshots diários dos indicadores
+   computados (headcount, turnover, permanência, retenção) e administra vagas. */
 
 import { COMPUTED_INDICATORS, STATES } from "./config";
 import {

@@ -1,21 +1,6 @@
-/* =========================================================
-   Autenticação — login com credenciais do Supabase Auth
-   ---------------------------------------------------------
-   - login(): valida usuário (ex.: "ivan" -> ivan@gente.gestao)
-     + senha via signInWithPassword
-   - A sessão fica salva no sessionStorage (e os tokens do supabase-js
-     também); nada de tokens em localStorage/em disco. Ao fechar a aba
-     a sessão é descartada; por padrão a sessão dura 6 horas.
-   - Logout/expiração executam uma purga completa (resetLocalState):
-     memória reativa, cache em sessionStorage e fila de escrita são
-     zerados — o próximo usuário nunca herda dados do anterior.
-   - O perfil (nome, usuário, perfil) é salvo junto com a sessão
-     e usado para controlar o acesso por perfil:
-       admin     : tudo + gestão de usuários
-       analista  : tudo (dados), sem gestão de usuários
-       visitante : somente leitura do dashboard
-   ========================================================= */
-
+/* Autenticação (Supabase Auth): sessão e perfil em sessionStorage (sem tokens
+   em disco); logout/expiração purgam memória+cache+fila; RBAC por perfil
+   admin/analista/visitante; perfil validado via RPC meu_perfil. */
 import { reactive } from "vue";
 import { AUTH_EMAIL_DOMAIN } from "./config";
 import { safeSetItem, sessionStore, localStore } from "./utils";
@@ -35,8 +20,7 @@ export const authState = reactive({
   loading: true
 });
 
-/* Constrói o e-mail completo a partir do usuário digitado.
-   Aceita "ivan" ou um e-mail completo "ivan@gente.gestao". */
+/* Constrói o e-mail completo (aceita "ivan" ou "ivan@gente.gestao") */
 export function buildLoginEmail(value) {
   const v = String(value || "").trim();
   if (!v) return "";
@@ -44,8 +28,7 @@ export function buildLoginEmail(value) {
   return v.toLowerCase() + "@" + AUTH_EMAIL_DOMAIN;
 }
 
-/* ---------- Persistência da sessão (sessionStorage) ---------- */
-
+// ---------- Sessão (sessionStorage) ----------
 function readSession() {
   try {
     const raw = sessionStore.getItem(AUTH_STORAGE_KEY);
@@ -65,9 +48,8 @@ function clearSession() {
   } catch (e) {}
 }
 
-/* Remove os tokens gravados pelo supabase-js (chaves sb-*-auth-token).
-   Varre sessionStorage e também o localStorage (para limpar resíduos de
-   versões antigas que persistiam tokens em disco). */
+// Remove tokens do supabase-js (sb-*-auth-token) no sessionStorage e em
+// resíduos do localStorage.
 function clearSupabaseKeys() {
   const scan = (store) => {
     try {
@@ -87,19 +69,13 @@ function clearSupabaseKeys() {
 
 let _expiredHandled = false;
 
-/* Rota da Cloudflare Pages Function que guarda o refresh token em cookie
-   HttpOnly (invisível ao JS/XSS). Usada só como espelho/restauração.
-
-   Recurso é OPCIONAL e fica DESLIGADO por padrão: GitHub Pages (deploy atual)
-   não executa Pages Functions — ativar sem função gera "fetch request failed"
-   no login. Habilite SOMENTE ao publicar no Cloudflare Pages com a função
-   functions/api/auth.js, definindo no build:
-     VITE_GG_SESSION_COOKIE=true  */
+// Refresh em cookie HttpOnly via Pages Function. OPCIONAL e desligado por
+// padrão (GitHub Pages não executa Functions); habilitar no Cloudflare com
+// VITE_GG_SESSION_COOKIE=true.
 const AUTH_COOKIE_ENDPOINT = "/api/auth/session";
 const SESSION_COOKIE_ENABLED = import.meta.env.VITE_GG_SESSION_COOKIE === "true";
 
-/* Revalidação de perfil no servidor: com TTL, não chama a RPC meu_perfil a
-   cada troca de rota/aba. Após o TTL a validação volta a acontecer. */
+// Revalida o perfil no servidor com TTL (evita chamar a RPC a cada navegação).
 const PROFILE_CHECK_TTL_MS = 60 * 1000;
 let _lastProfileCheck = 0;
 
@@ -135,9 +111,7 @@ export function canEditData() {
   return !!(p && (p.perfil === "admin" || p.perfil === "analista"));
 }
 
-/* Carrega o perfil do usuário logado (public.usuarios) e salva na sessão.
-   Usa a RPC meu_perfil (security definer) — resolve por id ou e-mail — e
-   cai para a consulta direta apenas se a função ainda não existir. */
+// Carrega o perfil (RPC meu_perfil / security definer) e salva na sessão.
 export async function loadProfile(client, userId, email) {
   if (!client || !userId) return null;
   let data = null;
@@ -193,19 +167,12 @@ export async function loadProfile(client, userId, email) {
 export async function ensureProfile() {
   const stored = getProfile();
   const now = Date.now();
-  // Perfil já validado no servidor há pouco tempo: evita bater na API
-  // meu_perfil a cada navegação/aba (TTL de 60s).
-  if (stored && now - _lastProfileCheck < PROFILE_CHECK_TTL_MS) {
-    return stored;
-  }
+  if (stored && now - _lastProfileCheck < PROFILE_CHECK_TTL_MS) return stored;
   const data = readSession();
   const userId = data && data.user ? data.user.id : null;
   const email = data && data.user ? data.user.email : null;
   const client = supabaseClient();
   const fetched = await loadProfile(client, userId, email);
-  // Estampa o momento da tentativa mesmo em falha: sem isso, uma RPC
-  // indisponível seria chamada em toda navegação (uma vez por segundo nada,
-  // uma vez por aba — desnecessário).
   _lastProfileCheck = Date.now();
   if (!fetched && (userId || email)) {
     handleSessionExpired();
@@ -228,11 +195,8 @@ function saveSession(session) {
   mirrorSessionToCookie(session && session.refresh_token);
 }
 
-/* ---------- Cookie HttpOnly (Cloudflare Pages Function) ---------- */
-
-/* Espelha o refresh_token atual no cookie (após login/refresh local). Só
-   roda quando o recurso está habilitado (Cloudflare Pages) — em GitHub Pages
-   não há função e a chamada falharia toda vez no login. */
+// ---------- Cookie HttpOnly (Cloudflare Pages Function) ----------
+// Espelha o refresh no cookie após login/refresh local.
 function mirrorSessionToCookie(refreshToken) {
   if (!SESSION_COOKIE_ENABLED || !refreshToken) return;
   fetch(AUTH_COOKIE_ENDPOINT, {
@@ -248,10 +212,8 @@ function clearSessionCookie() {
   fetch(AUTH_COOKIE_ENDPOINT, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
 }
 
-/* Tenta restaurar a sessão a partir do refresh token em cookie HttpOnly
-   (invisível ao JS). O servidor troca o refresh por um novo par de tokens e
-   devolve apenas aqui, em memória — nada de refresh token persistido no
-   navegador em formato legível por script. Retorna true se restaurou. */
+// Restaura a sessão: o servidor troca o refresh (HttpOnly) por um novo par e
+// devolve só em memória.
 export async function restoreSessionFromCookie() {
   if (!SESSION_COOKIE_ENABLED) return false;
   try {
@@ -272,7 +234,7 @@ export async function restoreSessionFromCookie() {
     });
     if (error) return false;
 
-    // Valida o perfil no banco (RLS) antes de aceitar a sessão restaurada.
+    // Valida o perfil (RLS) antes de aceitar a sessão restaurada.
     const profile = await loadProfile(client, user.id, user.email);
     if (!profile) {
       await client.auth.signOut().catch(() => {});
@@ -327,8 +289,7 @@ export async function login(identifier, password) {
   }
 
   saveSession(data.session);
-  // Estado sempre limpo antes de carregar dados: nenhum resíduo da sessão
-  // anterior (memória/cache/fila) é visível para o novo usuário.
+  // Sessão nova = estado zerado (nada do usuário anterior em memória/cache).
   resetLocalState();
   return { data };
 }
@@ -366,8 +327,7 @@ export async function changeName(newName) {
   return { data: true };
 }
 
-export function logout() {
-  _expiredHandled = true;
+function performFullCleanup() {
   clearExpiryTimer();
   stopAuthPolling();
   clearSession();
@@ -377,26 +337,21 @@ export function logout() {
   resetLocalState();
   const client = supabaseClient();
   if (client) client.auth.signOut().catch(() => {});
+}
+
+export function logout() {
+  _expiredHandled = true;
+  performFullCleanup();
 }
 
 export function handleSessionExpired() {
   if (_expiredHandled) return;
   _expiredHandled = true;
-  clearExpiryTimer();
-  stopAuthPolling();
-  clearSession();
-  clearSupabaseKeys();
-  clearSessionCookie();
-  authState.profile = null;
-  resetLocalState();
-  const client = supabaseClient();
-  if (client) client.auth.signOut().catch(() => {});
+  performFullCleanup();
 }
 
-/* Reage à perda de sessão no lado do Supabase (ex.: token de refresh
-   inválido/expirado): invalida a sessão local e redireciona ao login.
-   Também mantém o cookie HttpOnly sincronizado quando o supabase-js
-   rotaciona o refresh token em segundo plano. */
+// Encerra a sessão quando o Supabase sinaliza SIGNED_OUT; mantém o cookie
+// sincronizado quando o refresh token é rotacionado em segundo plano.
 export function watchSupabaseAuthState() {
   const client = supabaseClient();
   if (!client) return;
@@ -413,9 +368,7 @@ export function watchSupabaseAuthState() {
   });
 }
 
-/* Expiração em tempo real: mesmo com a aba aberta, após as 6 horas
-   a sessão é invalidada. O intervalo é rastreado para ser encerrado
-   no logout (não pode continuar rodando após a sessão terminar). */
+// Expiração em tempo real (6h): intervalo rastreado e encerrado no logout.
 let _pollTimer = null;
 
 export function startAuthPolling() {

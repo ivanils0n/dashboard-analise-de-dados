@@ -1,6 +1,4 @@
-/* =========================================================
-   Utilitários de formatação de valores, datas e horas
-   ========================================================= */
+/* Utilitários de formatação e de storage web seguro. */
 
 export function formatValue(indicator, value) {
   if (value === null || value === undefined || value === "" || isNaN(Number(value))) {
@@ -105,9 +103,7 @@ export function createId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-/* Grava no storage informado (session/local) com fallback para limite de
-   capacidade. Se a gravação falhar por QuotaExceededError, limpa TODO o
-   storage e tenta gravar novamente a chave no storage limpo. */
+// Grava no storage; em QuotaExceededError, limpa o storage e regrava.
 export function safeSetItem(storage, key, value) {
   try {
     storage.setItem(key, value);
@@ -134,9 +130,7 @@ export function safeSetItem(storage, key, value) {
   }
 }
 
-/* Armazenamentos web com fallback seguro — nunca lançam exceção (ex.:
-   modo privado com storage bloqueado). Retornam uma Storage "noop" se o
-   navegador não disponibilizar o storage. */
+// Cria uma Storage web que nunca lança (noop se indisponível/bloqueada).
 function createWebStore(name) {
   try {
     const store = window[name];
@@ -162,8 +156,7 @@ function createWebStore(name) {
   }
 }
 
-/* Dados sensíveis (sessão + cache) usam sessionStorage: nada sobrevive ao
-   fechamento da aba/navegador. localStore é usado apenas para limpar
-   resíduos de versões anteriores que gravavam em localStorage. */
+// Dados sensíveis (sessão + cache) só em sessionStorage; localStore limpa
+// resíduos de versões antigas.
 export const sessionStore = createWebStore("sessionStorage");
 export const localStore = createWebStore("localStorage");

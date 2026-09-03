@@ -1,10 +1,6 @@
-/* =========================================================
-   Gráficos — Chart.js (linha, barras e pizza)
-   As funções recebem as entradas já filtradas pela ui.
-   Plugin "valueLabels": desenha os números nos gráficos
-   quando options.plugins.valueLabels.display = true.
-   ========================================================= */
-
+/* Gráficos Chart.js (linha, barras e pizza). As funções recebem as entradas
+   já filtradas pela UI; o plugin valueLabels desenha os números quando
+   options.plugins.valueLabels.display = true. */
 import { Chart, registerables } from "chart.js";
 import { formatValue, formatAxisValue, formatShortDate } from "./utils";
 

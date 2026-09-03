@@ -1,6 +1,4 @@
-/* =========================================================
-   Domínio de Filiais
-   ========================================================= */
+// Domínio de Filiais.
 
 import { getBranches, upsertBranch, deleteBranch } from "./store";
 import { createId, nowLocalISO } from "./utils";

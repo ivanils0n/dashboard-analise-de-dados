@@ -1,19 +1,5 @@
-/* =========================================================
-   Cliente Supabase + sincronização
-   ---------------------------------------------------------
-   O Supabase é a única fonte de verdade:
-   - carga usa cache local (sessionStorage, item a item) + delta sync:
-     na primeira vez baixa o estado por completo; depois disso restaura
-     do cache e pede apenas as alterações (gg_delta_sync)
-   - hydrateState(): carrega um estado priorizando cache + delta
-   - escritas entram numa fila com debounce e vão em lote
-     (1 requisição por tabela) direto para o banco
-
-   Sessão e cache vivem em sessionStorage (sem persistência em disco):
-   fechar a aba/navegador remove tokens e PII. O logout purga também a
-   memória reativa (resetLocalState).
-   ========================================================= */
-
+/* Cliente Supabase + data layer: cache por item (sessionStorage) + delta sync,
+   escritas em fila com debounce, sessão/purga via resetLocalState. */
 import { createClient } from "@supabase/supabase-js";
 import { STATES, DEFAULT_STATE } from "./config";
 import { DataCache } from "./cache";
@@ -45,8 +31,6 @@ function envTimestamp(localIso) {
   return `${localIso}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
-/* ---------- Cliente ---------- */
-
 let _client;
 
 function createSupabaseClient() {
@@ -77,8 +61,6 @@ export function supabaseClient() {
   if (_client === undefined) _client = createSupabaseClient();
   return _client;
 }
-
-/* ---------- Mapeamento JS -> tabela ---------- */
 
 function stateTable(base, state) {
   const map = { RO: `${base}_ro`, AM: `${base}_am`, PA: `${base}_pa` };
@@ -150,8 +132,6 @@ function departmentToRow(department) {
   };
 }
 
-/* ---------- Fila de escrita (batching com debounce) ---------- */
-
 const _queue = {};
 const _clearQueue = {};
 let _flushTimer = null;
@@ -216,8 +196,6 @@ export async function flush() {
   });
 }
 
-/* ---------- Adaptador de escrita registrado no store ---------- */
-
 export function registerRemote() {
   const client = supabaseClient();
   if (!client) {
@@ -266,8 +244,6 @@ export function registerRemote() {
     }
   });
 }
-
-/* ---------- Mapeamento tabela -> JS ---------- */
 
 function mapRemoteEntries(rows) {
   const mapped = {};
@@ -337,8 +313,6 @@ function mapRemoteDepartment(row, impliedState) {
     updatedAt: row.atualizado_em
   };
 }
-
-/* ---------- Carga (Supabase -> memória) ---------- */
 
 const _loadedStates = {};
 
@@ -411,8 +385,6 @@ export async function hydrate(state) {
   console.info(`[Supabase] Dados carregados: ${states.join(", ")}.`);
   return true;
 }
-
-/* ---------- Carga incremental por estado (cache local + delta) ---------- */
 
 const STATE_TABLES = ["lancamentos_", "vagas_", "colaboradores_", "filiais_", "departamentos_"];
 
@@ -508,8 +480,6 @@ export async function hydrateState(next) {
 
   return hydrate(pending.length === 1 ? pending[0] : "todos");
 }
-
-/* ---------- Delta Sync (sessionStorage por item + payload do banco) ---------- */
 
 async function deltaVersao() {
   const client = supabaseClient();

@@ -1,11 +1,4 @@
-/* =========================================================
-   Exportação / Importação — SheetJS
-   ---------------------------------------------------------
-   toXLSX()   : arquivo .xlsx com 5 planilhas
-   toCSV()    : planilha de lançamentos em .csv
-   template() : modelo .xlsx para importação
-   importFile(file, onResult) : importa planilha verificando duplicados
-   ========================================================= */
+/* Exportação/importação via SheetJS (xlsx/csv/template). */
 
 import * as XLSX from "xlsx";
 import {
@@ -24,10 +17,8 @@ import { INDICATORS, STATES, STATUS_LABELS, TYPE_LABELS } from "./config";
 import { activeStates, syncAll } from "./employees";
 import { createId, nowLocalISO, todayISO } from "./utils";
 
-/* Previne "formula injection" (CSV/Excel): valores de texto que começam com
-   = + - @ são prefixados com ' para o Excel/Sheets tratá-los como texto puro
-   e nunca executá-los como fórmula. Aplicado a células geradas de dados do
-   usuário (nomes, CNPJ, setores etc.). */
+/* Previne "formula injection": texto iniciado com = + - @ vira texto puro
+   (prefixo ') para nunca executar fórmula em planilha. */
 const FORMULA_LEAD = /^[=+\-@]/;
 
 function sheetSafe(v) {
@@ -38,6 +29,12 @@ function sheetSafe(v) {
 function safeRows(rows) {
   return rows.map((row) => row.map(sheetSafe));
 }
+
+/* Localiza colunas pelo cabeçalho (vários nomes aceitos). */
+const colIndex = (headerRow) => (...names) => {
+  const targets = names.map((n) => n.toLowerCase());
+  return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
+};
 
 function buildEntryRows() {
   const rows = [["Data", "Indicador", "Valor", "Unidade", "Estado"]];
@@ -174,8 +171,6 @@ export function downloadTemplate() {
   XLSX.writeFile(workbook, `gente-gestao-template_${todayISO()}.xlsx`);
 }
 
-/* ---------- Importação ---------- */
-
 export function importFile(file, onResult) {
   if (!file) return;
   const reader = new FileReader();
@@ -205,10 +200,7 @@ export function importWorkbook(wb, currentState) {
   if (entriesSheet) {
     const rows = XLSX.utils.sheet_to_json(entriesSheet, { header: 1 });
     const headerRow = rows[0] || [];
-    const findCol = (...names) => {
-      const targets = names.map((n) => n.toLowerCase());
-      return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
-    };
+    const findCol = colIndex(headerRow);
     const iData = findCol("data");
     const iInd = findCol("indicador");
     const iVal = findCol("valor");
@@ -243,10 +235,7 @@ export function importWorkbook(wb, currentState) {
   if (teamSheet) {
     const rows = XLSX.utils.sheet_to_json(teamSheet, { header: 1 });
     const headerRow = rows[0] || [];
-    const findCol = (...names) => {
-      const targets = names.map((n) => n.toLowerCase());
-      return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
-    };
+    const findCol = colIndex(headerRow);
     const iName = findCol("colaborador");
     const iSector = findCol("setor");
     const iUser = findCol("usuário", "usuario");
@@ -319,10 +308,7 @@ export function importWorkbook(wb, currentState) {
   if (filiaisSheet) {
     const rows = XLSX.utils.sheet_to_json(filiaisSheet, { header: 1 });
     const headerRow = rows[0] || [];
-    const findCol = (...names) => {
-      const targets = names.map((n) => n.toLowerCase());
-      return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
-    };
+    const findCol = colIndex(headerRow);
     const iBranchId = findCol("id filial");
     const iCnpj = findCol("cnpj");
     const iName = findCol("nome filial", "nome");
@@ -369,10 +355,7 @@ export function importWorkbook(wb, currentState) {
   if (departamentosSheet) {
     const rows = XLSX.utils.sheet_to_json(departamentosSheet, { header: 1 });
     const headerRow = rows[0] || [];
-    const findCol = (...names) => {
-      const targets = names.map((n) => n.toLowerCase());
-      return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
-    };
+    const findCol = colIndex(headerRow);
     const iName = findCol("departamento", "nome do departamento");
     const iShort = findCol("sigla");
     const iEstado = findCol("estado");
@@ -409,7 +392,7 @@ export function importWorkbook(wb, currentState) {
   return summary;
 }
 
-/* ---------- Normalizadores de importação ---------- */
+// ---- Normalizadores de importação ----
 
 function cellAt(row, index) {
   if (index === undefined || index === null || index < 0 || index >= row.length) return "";

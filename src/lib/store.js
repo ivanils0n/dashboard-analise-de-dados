@@ -1,23 +1,5 @@
-/* =========================================================
-   Store — camada de dados reativa (Vue 3)
-   ---------------------------------------------------------
-   O estado vive em memória dentro de um objeto `reactive`, que é
-   a fonte consumida por toda a UI. As escritas são espelhadas no
-   Supabase via um "remote" registrado pelo módulo supabase.js
-   (write-through em lote com debounce).
-
-   Estrutura em memória:
-   {
-     entries:    { "headcount": [ { id, date, value, meta }, ... ], ... },
-     employees:  [ { id, name, sector, user, hiredAt, status, type,
-                     countsTurnover, createdAt, updatedAt, firedAt }, ... ],
-     vacancies:  [ { id, name, openAt, closeAt }, ... ],
-     branches:   [ { id, branchId, cnpj, name, shortName, manager,
-                     estado, createdAt, updatedAt }, ... ],
-     departments:[ { id, name, shortName, estado, createdAt, updatedAt }, ... ]
-   }
-   ========================================================= */
-
+/* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada no
+   Supabase via adaptador "remote" (write-through em lote com debounce). */
 import { reactive } from "vue";
 import { createId } from "./utils";
 
@@ -27,24 +9,19 @@ export function emptyData() {
 
 const data = reactive(emptyData());
 
-/* Acesso reativo à camada de dados a partir de qualquer componente */
+/* Acesso reativo aos dados por qualquer componente */
 export function useData() {
   return data;
 }
 
-/* ---------- Remote (escritas no Supabase) ---------- */
-
+/* Adaptador de escrita no Supabase (registrado pelo supabase.js) */
 let remote = null;
 
-/* O supabase.js registra o adaptador de escrita quando habilitado;
-   sem remote, o app opera apenas em memória/sessionStorage. */
 export function bindRemote(adapter) {
   remote = adapter;
 }
 
 const ok = () => remote != null;
-
-/* ---------- Entradas dos indicadores ---------- */
 
 export function getAllEntries() {
   return data.entries;
@@ -141,8 +118,6 @@ export function clearEntries() {
   if (ok()) remote.entriesCleared();
 }
 
-/* ---------- Colaboradores (Equipe) ---------- */
-
 export function getEmployees() {
   return data.employees;
 }
@@ -163,8 +138,6 @@ export function deleteEmployee(id) {
 export function getEmployeeById(id) {
   return getEmployees().find((e) => e.id === id) || null;
 }
-
-/* ---------- Vagas (Tempo médio de contratação) ---------- */
 
 export function getVacancies() {
   return data.vacancies;
@@ -187,8 +160,6 @@ export function getVacancyById(id) {
   return getVacancies().find((v) => v.id === id) || null;
 }
 
-/* ---------- Filiais ---------- */
-
 export function getBranches() {
   return data.branches;
 }
@@ -210,8 +181,6 @@ export function getBranchById(id) {
   return getBranches().find((b) => b.id === id) || null;
 }
 
-/* ---------- Departamentos ---------- */
-
 export function getDepartments() {
   return data.departments;
 }
@@ -232,8 +201,6 @@ export function deleteDepartment(id) {
 export function getDepartmentById(id) {
   return getDepartments().find((d) => d.id === id) || null;
 }
-
-/* ---------- Carga / merge (usado pelo supabase.js) ---------- */
 
 export function resetData() {
   Object.assign(data, emptyData());

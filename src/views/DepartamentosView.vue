@@ -99,6 +99,15 @@ function applyBranchFilter(onlyIfMatch) {
   branchFilterId.value = match ? match.id : "todos";
 }
 
+/* Limpa todos os filtros da listagem (busca, filial e período). */
+function clearFilters() {
+  search.value = "";
+  branchInput.value = "";
+  branchFilterId.value = "todos";
+  range.start = "";
+  range.end = "";
+}
+
 function handleSubmit() {
   const data = {
     id: form.id || undefined,
@@ -215,6 +224,7 @@ function metrics(d) {
             <option v-for="f in branchOptions" :key="f.id" :value="f.shortName"></option>
           </datalist>
           <DateRangeFilter :range="range" title="Período" />
+          <button type="button" class="btn-ghost-sm" @click="clearFilters">Limpar filtro</button>
         </div>
       </div>
 

@@ -1,18 +1,6 @@
-/* =========================================================
-   Cache local (sessionStorage) — sincronização delta por item
-   ---------------------------------------------------------
-   Em vez de guardar uma "foto" única (um blob gigante), cada
-   registro é armazenado na própria chave do sessionStorage:
-
-     ggd:<tabela>:<id>   ->  JSON do registro (payload do banco)
-     ggd:meta            ->  { versao, savedAt } da última sincronização
-
-   Na revalidação, o banco retorna SOMENTE os itens alterados
-   (upsert) ou removidos (delete) desde a última versão.
-
-   Por que sessionStorage: os registros incluem dados sensíveis
-   (salários, CPF/CNPJ). Nada de PII sobrevive ao fechamento da aba.
-   ========================================================= */
+/* Cache local (sessionStorage) para delta sync por item:
+   ggd:<tabela>:<id> = JSON do registro, ggd:meta = versão/savedAt.
+   sessionStorage evita persistir PII em disco. */
 
 import { safeSetItem, sessionStore, localStore } from "./utils";
 
@@ -21,8 +9,7 @@ const META_KEY = "ggd:meta";
 const LEGACY_KEY = "gg-data-cache";
 
 export const DataCache = {
-  /* ---------- Meta (versão da última sincronização) ---------- */
-
+  /* ---- Meta ---- */
   getVersion() {
     try {
       const raw = sessionStore.getItem(META_KEY);
@@ -38,8 +25,7 @@ export const DataCache = {
     safeSetItem(sessionStore, META_KEY, JSON.stringify({ versao: Number(versao) || 0, savedAt: Date.now() }));
   },
 
-  /* ---------- Itens individuais ---------- */
-
+  /* ---- Itens ---- */
   keyFor(tabela, id) {
     return PREFIX + tabela + ":" + id;
   },
@@ -63,8 +49,7 @@ export const DataCache = {
     } catch (e) {}
   },
 
-  /* ---------- Varredura ---------- */
-
+  /* ---- Varredura ---- */
   keys() {
     const out = [];
     for (let i = 0; i < sessionStore.length; i++) {
@@ -78,8 +63,7 @@ export const DataCache = {
     this.keys().forEach((k) => sessionStore.removeItem(k));
   },
 
-  /* Remove resíduos de versões antigas que gravavam PII em localStorage
-     (ggd:* item a item e o blob legado gg-data-cache). */
+  // Remove resíduos legados (ggd:* e gg-data-cache) que ficaram em localStorage.
   removeLegacy() {
     try {
       const stale = [];

@@ -6,7 +6,7 @@ import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
-import { useEquipeFilters, equipeFilter } from "@/composables/useEquipeFilters";
+import { useEquipeFilters } from "@/composables/useEquipeFilters";
 import { DEFAULT_STATE, STATES, STATUS_LABELS, TYPE_LABELS } from "@/lib/config";
 import {
   getEmployeeById,
@@ -21,7 +21,7 @@ import { todayISO, formatDate, formatDateTime } from "@/lib/utils";
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
-const { equipeFilter: ef } = useEquipeFilters();
+const { equipeFilter: ef, reset: resetEquipeFilters } = useEquipeFilters();
 
 const form = reactive({
   id: null,
@@ -203,7 +203,6 @@ function statusTone(status) {
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Equipe</h1>
       <div class="flex flex-wrap items-center gap-2">
-        <DateRangeFilter :range="ef" title="Período" />
         <Badge tone="accent">{{ total === 1 ? "1 colaborador" : `${total} colaboradores` }}</Badge>
       </div>
     </div>
@@ -319,6 +318,8 @@ function statusTone(status) {
             <option value="afastado">Status: Afastados</option>
           </select>
           <input v-model="ef.search" type="search" class="input-sm" placeholder="Buscar colaborador..." aria-label="Buscar colaborador" />
+          <DateRangeFilter :range="ef" title="Período" />
+          <button type="button" class="btn-ghost-sm" @click="resetEquipeFilters">Limpar filtro</button>
         </div>
       </div>
 
