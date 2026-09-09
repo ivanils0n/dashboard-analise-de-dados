@@ -48,6 +48,7 @@ const presentationOpen = ref(false);
 const headcountOpen = ref(false);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
+const custosEntriesOpen = ref(false);
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const showValues = ref(false);
@@ -79,6 +80,15 @@ const treinamentoColumns = [
   { label: "Valor pago", meta: "valorPago", money: true }
 ];
 
+const custosColumns = [
+  { label: "Data", date: true },
+  { label: "Filial CNPJ", meta: "cnpj" },
+  { label: "Razão Social", meta: "razaoSocial" },
+  { label: "Estado", meta: "estado" },
+  { label: "Custos", value: true },
+  { label: "%", meta: "percent", percent: true }
+];
+
 const scrollRef = ref(null);
 let flashTimer = null;
 
@@ -98,10 +108,11 @@ function lineEntries(card) {
   return filteredEntries(ind);
 }
 
-/* Gráfico de barras por filial do indicador de Treinamento. */
+/* Gráfico de barras por filial dos indicadores de Treinamento e Custos Totais. */
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "treinamento") return dashboard.treinamentoBarByFilial();
+  if (card.id === "custo_total") return dashboard.custosBarByFilial();
   return [];
 }
 
@@ -205,11 +216,13 @@ function onSelectKpi(id) {
 }
 
 /* Clique direito em um KPI abre o modal correspondente:
-   Headcount → detalhes de salários/custos; Diárias e Treinamento → registros. */
+   Headcount → detalhes de salários/custos; Diárias, Treinamento e
+   Custos Totais → registros. */
 function onKpiContext(id) {
   if (id === "headcount") headcountOpen.value = true;
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "treinamento") treinamentoEntriesOpen.value = true;
+  else if (id === "custo_total") custosEntriesOpen.value = true;
 }
 
 /* Rola a faixa de gráficos até o card do indicador e o destaca. */
@@ -424,6 +437,15 @@ onUnmounted(() => {
       subtitle="Registros de treinamento por colaborador (cargo, loja, tema, carga horária e modalidade)"
       :columns="treinamentoColumns"
       @close="treinamentoEntriesOpen = false"
+    />
+    <IndicatorEntriesModal
+      v-if="custosEntriesOpen"
+      :open="custosEntriesOpen"
+      indicator-id="custo_total"
+      title="Custos Totais — Lançamentos"
+      subtitle="Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)"
+      :columns="custosColumns"
+      @close="custosEntriesOpen = false"
     />
   </div>
 </template>

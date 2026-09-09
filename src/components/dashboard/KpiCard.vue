@@ -47,6 +47,8 @@ const contextHint = computed(() => {
       return "Botão direito: lançamentos de diárias";
     case "treinamento":
       return "Botão direito: lançamentos de treinamento";
+    case "custo_total":
+      return "Botão direito: lançamentos de custos";
     default:
       return "";
   }

@@ -57,7 +57,9 @@ function filteredEntriesFor(ind) {
 
 function lineEntriesFor(ind) {
   const list = filteredEntriesFor(ind);
-  if (ind && (ind.id === "custo_diaria" || ind.id === "treinamento")) return aggregateByDay(list);
+  if (ind && (ind.id === "custo_diaria" || ind.id === "treinamento" || ind.id === "custo_total")) {
+    return aggregateByDay(list);
+  }
   return list;
 }
 

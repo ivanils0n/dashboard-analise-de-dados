@@ -4,6 +4,8 @@ import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmployeePicker from "@/components/dashboard/EmployeePicker.vue";
 import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
+import { listBranches } from "@/lib/filiais";
+import { hydrateState } from "@/lib/supabase";
 import {
   MANUAL_INDICATORS,
   ABSENTEEISM_TYPES,
@@ -105,6 +107,16 @@ const treinamento = reactive({
   valorPago: ""
 });
 
+/* ---------- Custos Totais (por filial) ---------- */
+const custosTot = reactive({
+  estado: filters.current !== "todos" ? filters.current : "todos",
+  query: "",
+  branchId: null,
+  data: todayISO(),
+  custos: "",
+  percent: ""
+});
+
 /* ---------- Absenteísmo (ocorrência) ---------- */
 const sub = reactive({ kind: null, employee: null }); // kind: "ocorrencia" | "salario"
 const occ = reactive({ motivo: "falta", inicio: "", fim: "" });
@@ -136,6 +148,7 @@ function initModal() {
   closeSub();
   resetDiaria();
   resetTreinamento();
+  resetCustosTot();
   vaga.nome = "";
   vaga.data = "";
   vaga.hora = "";
@@ -169,6 +182,29 @@ function resetTreinamento() {
   treinamento.valorPago = "";
 }
 
+function resetCustosTot() {
+  custosTot.estado = filters.current !== "todos" ? filters.current : "todos";
+  custosTot.query = "";
+  custosTot.branchId = null;
+  custosTot.data = todayISO();
+  custosTot.custos = "";
+  custosTot.percent = "";
+}
+
+/* Carrega os dados do estado escolhido para listar suas filiais. */
+watch(
+  () => custosTot.estado,
+  async (state) => {
+    custosTot.branchId = null;
+    custosTot.query = "";
+    try {
+      await hydrateState(state === "todos" ? "todos" : state);
+    } catch (err) {
+      console.warn("[LaunchModal] Falha ao carregar filiais do estado:", err);
+    }
+  }
+);
+
 onMounted(initModal);
 
 const tabs = computed(() => {
@@ -194,6 +230,11 @@ const tabs = computed(() => {
         { id: "colaborador", label: "Colaborador" },
         { id: "treinamento", label: "Treinamento" }
       ];
+    case "custo_total":
+      return [
+        { id: "filial", label: "Filial" },
+        { id: "custos", label: "Custos" }
+      ];
     default:
       return [];
   }
@@ -208,6 +249,8 @@ const submitLabel = computed(() => {
       return "Salvar diária";
     case "treinamento":
       return "Salvar treinamento";
+    case "custo_total":
+      return "Salvar custos";
     default:
       return "Salvar lançamento";
   }
@@ -215,7 +258,7 @@ const submitLabel = computed(() => {
 
 const canSubmitForm = computed(() => {
   const f = indicator.value && indicator.value.form;
-  return f === "vaga" || f === "custo" || f === "diaria" || f === "treinamento";
+  return f === "vaga" || f === "custo" || f === "diaria" || f === "treinamento" || f === "custo_total";
 });
 
 function buildForm() {
@@ -602,6 +645,85 @@ function submitTreinamento() {
   fillTreinamentoContext(emp);
 }
 
+/* ---------- Custos Totais (por filial) ---------- */
+
+const custosTotResults = computed(() => {
+  const q = custosTot.query.trim().toLowerCase();
+  let list = listBranches(custosTot.estado);
+  if (q) {
+    list = list.filter((b) =>
+      `${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }
+  return list.slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+});
+
+const custosTotBranch = computed(() =>
+  custosTot.branchId ? getBranchById(custosTot.branchId) : null
+);
+
+const custosTotSelectedLabel = computed(() => {
+  const b = custosTotBranch.value;
+  return b ? `${b.name} · ${b.cnpj}` : "";
+});
+
+function pickCustosTotBranch(b) {
+  custosTot.branchId = b.id;
+  showTab("custos");
+}
+
+function setCustosTotToday() {
+  custosTot.data = todayISO();
+}
+
+function submitCustosTotal() {
+  const b = custosTotBranch.value;
+  if (!b) return toast("Selecione uma filial na aba Filial.");
+  if (!custosTot.data) return toast("Informe a data dos custos.");
+
+  const custosRaw = String(custosTot.custos).trim();
+  if (custosRaw === "" || isNaN(Number(custosRaw)) || Number(custosRaw) < 0) {
+    return toast("Informe o valor dos custos (R$).");
+  }
+  const custos = Number(custosRaw);
+
+  let percent = null;
+  const percentRaw = String(custosTot.percent).trim();
+  if (percentRaw !== "") {
+    const p = Number(percentRaw.replace(",", "."));
+    if (isNaN(p) || p < 0) {
+      return toast("Informe um percentual (%) válido ou deixe em branco.");
+    }
+    percent = p;
+  }
+
+  addEntry("custo_total", {
+    date: custosTot.data,
+    value: custos,
+    state: b.estado || null,
+    meta: {
+      filialId: b.id,
+      branchId: b.branchId || null,
+      cnpj: b.cnpj || null,
+      razaoSocial: b.name || null,
+      shortName: b.shortName || null,
+      filial: [b.shortName, b.name].filter(Boolean).join(" ").trim() || null,
+      percent
+    }
+  });
+
+  emit("saved");
+  toast(`Custos lançados para ${b.name}: ${formatCurrency(custos)}.`);
+
+  /* Mantém a filial selecionada para o próximo lançamento, limpando apenas
+     os dados específicos do custo. */
+  custosTot.data = todayISO();
+  custosTot.custos = "";
+  custosTot.percent = "";
+}
+
 /* ---------- Submit ---------- */
 
 function handleSubmit() {
@@ -611,6 +733,7 @@ function handleSubmit() {
   if (form === "custo") return submitCusto();
   if (form === "diaria") return submitDiaria();
   if (form === "treinamento") return submitTreinamento();
+  if (form === "custo_total") return submitCustosTotal();
   if (form === "vaga") emit("close");
 }
 
@@ -960,6 +1083,93 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
               <input id="trValor" v-model="treinamento.valorPago" type="number" min="0" step="any" class="input-field" placeholder="0,00 (opcional)" />
             </div>
           </div>
+        </div>
+      </template>
+
+      <!-- ===== CUSTOS TOTAIS (por filial) ===== -->
+      <template v-if="indicator.form === 'custo_total'">
+        <div v-show="activeTab === 'filial'" class="flex flex-col gap-3">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label for="ctEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <select id="ctEstado" v-model="custosTot.estado" class="input-field">
+                <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="ctSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar filial</label>
+              <input id="ctSearch" v-model="custosTot.query" type="search" class="input-field" placeholder="CNPJ, razão social ou abreviado..." />
+            </div>
+          </div>
+          <div class="flex max-h-56 flex-col gap-1 overflow-y-auto">
+            <p v-if="!custosTotResults.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
+              Nenhuma filial encontrada. Cadastre filiais na aba Filiais.
+            </p>
+            <button
+              v-for="b in custosTotResults"
+              :key="b.id"
+              type="button"
+              class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              :class="custosTot.branchId === b.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              @click="pickCustosTotBranch(b)"
+            >
+              <span class="flex min-w-0 flex-col">
+                <strong class="truncate text-sm text-zinc-900 dark:text-zinc-100">{{ b.name }}</strong>
+                <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ b.cnpj }}</span>
+              </span>
+              <span class="flex shrink-0 items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                <Badge v-if="b.shortName" tone="muted">{{ b.shortName }}</Badge>
+                <span>{{ b.estado || "—" }}</span>
+                <span aria-hidden="true">→</span>
+              </span>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Ao selecionar, CNPJ, razão social e estado serão preenchidos do cadastro da filial.
+          </p>
+        </div>
+
+        <div v-show="activeTab === 'custos'" class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="ctSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial selecionada</label>
+            <input id="ctSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custosTotSelectedLabel" placeholder="Nenhuma filial selecionada" />
+            <p v-if="custosTot.branchId" class="text-xs">
+              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('filial')">Trocar filial</button>
+            </p>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="ctCnpj" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial CNPJ</label>
+              <input id="ctCnpj" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custosTotBranch?.cnpj || ''" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="ctRazao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Razão Social</label>
+              <input id="ctRazao" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custosTotBranch?.name || ''" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="ctEstadoInfo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <input id="ctEstadoInfo" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custosTotBranch?.estado || ''" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="ctData" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data dos custos</label>
+              <input id="ctData" v-model="custosTot.data" type="date" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="ctCustos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Custos (R$)</label>
+              <input id="ctCustos" v-model="custosTot.custos" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="ctPercent" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">%</label>
+              <input id="ctPercent" v-model="custosTot.percent" type="number" min="0" step="any" class="input-field" placeholder="0,00 (informativo)" />
+            </div>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            O campo % é informativo (ex.: participação da filial) e aparece nos registros do indicador.
+          </p>
         </div>
       </template>
 

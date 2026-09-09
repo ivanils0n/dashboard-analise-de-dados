@@ -16,6 +16,7 @@ import { canEditData } from "@/lib/auth";
      { label, meta }              texto de entry.meta[meta]
      { label, meta, money }       valor monetário de entry.meta[meta]
      { label, meta, hours }       horas de entry.meta[meta]
+     { label, meta, percent }     percentual de entry.meta[meta]
      { label, period: [a, b] }    período a–b em entry.meta
      { label, date }              data do lançamento
      { label, value }             valor do lançamento formatado pelo indicador
@@ -98,6 +99,11 @@ function cellText(entry, col) {
   if (v === undefined || v === null || v === "") return "—";
   if (col.money) return formatCurrency(v);
   if (col.hours) return hoursLabel(v);
+  if (col.percent) {
+    const n = Number(v);
+    if (isNaN(n)) return "—";
+    return n.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + "%";
+  }
   return String(v);
 }
 

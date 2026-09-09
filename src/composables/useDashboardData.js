@@ -76,12 +76,17 @@ export function useDashboardData(filter) {
   }
 
   /* Valor de um indicador para uma lista de lançamentos:
-     absenteísmo soma as ocorrências (cada evento = 1); diárias e treinamento
-     somam o valor/horas no período; custo usa a média; os demais usam o
-     último valor. */
+     absenteísmo soma as ocorrências (cada evento = 1); diárias, treinamento
+     e custos totais somam o valor/horas no período; custo usa a média; os
+     demais usam o último valor. */
   function aggregateList(ind, list) {
     if (!list || !list.length) return null;
-    if (ind.id === "absenteismo" || ind.id === "custo_diaria" || ind.id === "treinamento") {
+    if (
+      ind.id === "absenteismo" ||
+      ind.id === "custo_diaria" ||
+      ind.id === "treinamento" ||
+      ind.id === "custo_total"
+    ) {
       return list.reduce((s, e) => s + e.value, 0);
     }
     if (ind.id === "custo_contratacao") {
@@ -102,6 +107,26 @@ export function useDashboardData(filter) {
       const filial = meta.filial || "Sem filial";
       const valor = meta.valorPago != null ? Number(meta.valorPago) : 0;
       byFilial.set(filial, (byFilial.get(filial) || 0) + valor);
+    });
+    return [...byFilial.entries()]
+      .map(([label, value]) => ({
+        label,
+        value,
+        tooltip: `${label}: ${formatCurrency(value)}`
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+
+  /* Agregação para o gráfico de barras dos Custos Totais: soma os custos
+     lançados por filial (razão social) no período filtrado. */
+  function custosBarByFilial() {
+    const ind = getIndicatorById("custo_total");
+    if (!ind) return [];
+    const byFilial = new Map();
+    filteredEntries(ind).forEach((e) => {
+      const meta = e.meta || {};
+      const filial = meta.filial || meta.razaoSocial || "Sem filial";
+      byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
     return [...byFilial.entries()]
       .map(([label, value]) => ({
@@ -236,6 +261,15 @@ export function useDashboardData(filter) {
           unit: "R$"
         };
       }
+      if (ind.id === "custo_total") {
+        return {
+          id: "custo_total",
+          kind: "bar",
+          title: "Custos Totais",
+          sub: "Custo por filial",
+          unit: "R$"
+        };
+      }
       return { id: ind.id, kind: "line", title: ind.name, sub: "Evolução no período", unit: ind.unit };
     });
   });
@@ -336,6 +370,9 @@ export function useDashboardData(filter) {
     if (ind.form === "custo" && entry.meta && entry.meta.employeeName) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
+    if (ind.form === "custo_total" && entry.meta && entry.meta.razaoSocial) {
+      return `${formatValue(ind, entry.value)} · ${entry.meta.razaoSocial}`;
+    }
     if (ind.form === "salario" && entry.meta && entry.meta.employeeName) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
@@ -353,6 +390,7 @@ export function useDashboardData(filter) {
     diariaDailySeries,
     trainingDailySeries,
     treinamentoBarByFilial,
+    custosBarByFilial,
     indicatorCurrentValue,
     kpis,
     selectedKpiId,

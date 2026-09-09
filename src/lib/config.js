@@ -126,6 +126,18 @@ export const INDICATORS = [
     computed: false,
     manual: true,
     form: "treinamento"
+  },
+  {
+    id: "custo_total",
+    name: "Custos Totais",
+    desc: "Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)",
+    type: "currency",
+    unit: "R$",
+    decimals: 2,
+    higherIsBetter: false,
+    computed: false,
+    manual: true,
+    form: "custo_total"
   }
 ];
 
