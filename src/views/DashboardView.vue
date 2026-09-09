@@ -5,6 +5,7 @@ import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import PresentationModal from "@/components/dashboard/PresentationModal.vue";
 import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
+import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
@@ -45,9 +46,38 @@ const {
 const launchOpen = ref(false);
 const presentationOpen = ref(false);
 const headcountOpen = ref(false);
+const diariaEntriesOpen = ref(false);
+const treinamentoEntriesOpen = ref(false);
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const showValues = ref(false);
+
+/* Colunas exibidas no modal de registros (clique direito no KPI). */
+const diariaColumns = [
+  { label: "Data", date: true },
+  { label: "Colaborador", meta: "employeeName" },
+  { label: "Departamento", meta: "departamento" },
+  { label: "Filial", meta: "filial" },
+  { label: "Líder imediato", meta: "liderImediato" },
+  { label: "Gerente regional", meta: "gerenteRegional" },
+  { label: "Regional", meta: "regional" },
+  { label: "Pagamento", meta: "pagamento" },
+  { label: "Período", period: ["inicio", "fim"] },
+  { label: "Motivo", meta: "motivo" },
+  { label: "Valor pago", value: true }
+];
+
+const treinamentoColumns = [
+  { label: "Data", date: true },
+  { label: "Colaborador", meta: "employeeName" },
+  { label: "Cargo", meta: "cargo" },
+  { label: "Loja", meta: "filial" },
+  { label: "Estado", meta: "estado" },
+  { label: "Tema do treinamento", meta: "tema" },
+  { label: "Carga horária", meta: "cargaHoraria", hours: true },
+  { label: "Modalidade", meta: "modalidade" },
+  { label: "Valor pago", meta: "valorPago", money: true }
+];
 
 const scrollRef = ref(null);
 let flashTimer = null;
@@ -56,14 +86,23 @@ const canEdit = canEditData();
 
 const tableRows = computed(() => dashboard.tableRows(tableSearch.value));
 
-/* Entradas da linha do gráfico "Evolução no período". O Absenteísmo usa a
-   série agregada por dia (total de ocorrências do dia, sem visão individual);
-   os demais indicadores usam os lançamentos do período como estão. */
+/* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
+   treinamento usam a série agregada por dia (total do dia, sem visão
+   individual); os demais indicadores usam os lançamentos do período. */
 function lineEntries(card) {
   if (card.kind !== "line") return [];
   const ind = getIndicatorById(card.id);
   if (ind && ind.id === "absenteismo") return dashboard.absenteismoDailySeries();
+  if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries();
+  if (ind && ind.id === "treinamento") return dashboard.trainingDailySeries();
   return filteredEntries(ind);
+}
+
+/* Gráfico de barras por filial do indicador de Treinamento. */
+function chartBarData(card) {
+  if (card.kind !== "bar") return [];
+  if (card.id === "treinamento") return dashboard.treinamentoBarByFilial();
+  return [];
 }
 
 function openLaunch() {
@@ -165,9 +204,12 @@ function onSelectKpi(id) {
   nextTick(() => scrollToKpiChart(id));
 }
 
-/* Clique direito no cartão de Headcount abre o modal detalhado de salários. */
+/* Clique direito em um KPI abre o modal correspondente:
+   Headcount → detalhes de salários/custos; Diárias e Treinamento → registros. */
 function onKpiContext(id) {
   if (id === "headcount") headcountOpen.value = true;
+  else if (id === "custo_diaria") diariaEntriesOpen.value = true;
+  else if (id === "treinamento") treinamentoEntriesOpen.value = true;
 }
 
 /* Rola a faixa de gráficos até o card do indicador e o destaca. */
@@ -295,6 +337,7 @@ onUnmounted(() => {
           :card="card"
           :entries="lineEntries(card)"
           :pie-data="card.kind === 'pie' ? chartPieData(card.id) : []"
+          :bar-data="chartBarData(card)"
           :show-values="showValues"
           :data-indicator-card="card.id"
         />
@@ -364,6 +407,24 @@ onUnmounted(() => {
     <LaunchModal v-if="launchOpen" :open="launchOpen" @close="closeLaunch" @saved="onSaved" />
     <PresentationModal v-if="presentationOpen" :open="presentationOpen" @close="presentationOpen = false" />
     <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
+    <IndicatorEntriesModal
+      v-if="diariaEntriesOpen"
+      :open="diariaEntriesOpen"
+      indicator-id="custo_diaria"
+      title="Custo da diária geral — Lançamentos"
+      subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, pagamento, período e motivo"
+      :columns="diariaColumns"
+      @close="diariaEntriesOpen = false"
+    />
+    <IndicatorEntriesModal
+      v-if="treinamentoEntriesOpen"
+      :open="treinamentoEntriesOpen"
+      indicator-id="treinamento"
+      title="Treinamentos — Lançamentos"
+      subtitle="Registros de treinamento por colaborador (cargo, loja, tema, carga horária e modalidade)"
+      :columns="treinamentoColumns"
+      @close="treinamentoEntriesOpen = false"
+    />
   </div>
 </template>
 

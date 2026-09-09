@@ -68,11 +68,23 @@ begin
       id             text primary key,
       nome           text not null,
       setor          text not null,
+      cargo          text,
       usuario        text not null,
       estado_sigla   text references public.estados(sigla),
       salario        numeric(12,2),
       department_id  text,
       filial_id      text,
+      lider_imediato    text,
+      gerente_regional  text,
+      regional          text,
+      vale_transporte   numeric(12,2),
+      vale_alimentacao  numeric(12,2),
+      inss              numeric(12,2),
+      fgts              numeric(12,2),
+      irrf              numeric(12,2),
+      premio_art_62     numeric(12,2),
+      premio_loja       numeric(12,2),
+      comissao          numeric(12,2),
       entrada_em     date,
       status         text not null check (status in (''ativo'', ''desligado'', ''afastado'')),
       tipo           text not null check (tipo in (''efetivado'', ''experiencia'')),
@@ -140,11 +152,23 @@ begin
     -- Colaboradores
     execute format('alter table public.%I add column if not exists nome text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists setor text', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists cargo text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists usuario text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists estado_sigla text references public.estados(sigla)', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists salario numeric(12,2)', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists department_id text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists filial_id text', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists lider_imediato text', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists gerente_regional text', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists regional text', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists vale_transporte numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists vale_alimentacao numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists inss numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists fgts numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists irrf numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists premio_art_62 numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists premio_loja numeric(12,2)', 'colaboradores_' || e);
+    execute format('alter table public.%I add column if not exists comissao numeric(12,2)', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists entrada_em date', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists status text', 'colaboradores_' || e);
     execute format('alter table public.%I add column if not exists tipo text', 'colaboradores_' || e);

@@ -7,7 +7,7 @@ import AbsenteismoBar from "@/components/charts/AbsenteismoBar.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import { INDICATORS, getIndicatorById } from "@/lib/config";
 import { getEntriesFor } from "@/lib/store";
-import { firstDayOfMonthISO, lastDayOfMonthISO } from "@/lib/utils";
+import { firstDayOfMonthISO, lastDayOfMonthISO, aggregateByDay } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 
 const props = defineProps({ open: { type: Boolean, default: false } });
@@ -53,6 +53,12 @@ function filteredEntriesFor(ind) {
     if (range.end && e.date > range.end) return false;
     return true;
   });
+}
+
+function lineEntriesFor(ind) {
+  const list = filteredEntriesFor(ind);
+  if (ind && (ind.id === "custo_diaria" || ind.id === "treinamento")) return aggregateByDay(list);
+  return list;
 }
 
 function pieData() {
@@ -122,7 +128,7 @@ const slideSub = computed(() => {
       <div class="flex flex-1 items-center">
         <PieChart v-if="slide.type === 'pie'" class="w-full" :data="pieData()" :show-values="showValues" height="h-[60vh]" />
         <AbsenteismoBar v-else-if="slide.type === 'bar'" class="w-full" :data="barData()" :show-values="showValues" height="h-[60vh]" />
-        <LineChart v-else class="w-full" :indicator="slide.ind" :entries="filteredEntriesFor(slide.ind)" :show-values="showValues" height="h-[60vh]" />
+        <LineChart v-else class="w-full" :indicator="slide.ind" :entries="lineEntriesFor(slide.ind)" :show-values="showValues" height="h-[60vh]" />
       </div>
     </div>
   </Modal>

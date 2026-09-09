@@ -38,6 +38,20 @@ const valueText = computed(() =>
     : "—"
 );
 
+/* Dica de interação (clique direito) para KPIs com modal de detalhe. */
+const contextHint = computed(() => {
+  switch (props.kpi.id) {
+    case "headcount":
+      return "Botão direito: detalhes de custos";
+    case "custo_diaria":
+      return "Botão direito: lançamentos de diárias";
+    case "treinamento":
+      return "Botão direito: lançamentos de treinamento";
+    default:
+      return "";
+  }
+});
+
 function onKeydown(e) {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
@@ -79,8 +93,8 @@ function onKeydown(e) {
       </div>
     </div>
 
-    <div v-if="kpi.id === 'headcount'" class="mt-2 border-t border-zinc-100 pt-2 text-right text-[10px] uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-      Botão direito: detalhes de salários
+    <div v-if="contextHint" class="mt-2 border-t border-zinc-100 pt-2 text-right text-[10px] uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+      {{ contextHint }}
     </div>
   </article>
 </template>

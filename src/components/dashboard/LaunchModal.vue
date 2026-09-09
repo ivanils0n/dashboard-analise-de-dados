@@ -11,6 +11,8 @@ import {
   STATES,
   STATE_NAMES,
   DEFAULT_STATE,
+  PAGAMENTO_OPTIONS,
+  MODALIDADE_OPTIONS,
   getIndicatorById
 } from "@/lib/config";
 import {
@@ -19,7 +21,9 @@ import {
   getLatestForMeta,
   getEmployeeById,
   getVacancyById,
-  getEmployees
+  getEmployees,
+  getDepartmentById,
+  getBranchById
 } from "@/lib/store";
 import {
   saveEmployee,
@@ -72,6 +76,35 @@ const editingVacancyId = ref(null);
 const custo = reactive({ query: "", employeeId: null, value: "" });
 const custoExisting = ref(null);
 
+/* ---------- Diária ---------- */
+const diaria = reactive({
+  query: "",
+  employeeId: null,
+  departamento: "",
+  filial: "",
+  liderImediato: "",
+  gerenteRegional: "",
+  regional: "",
+  inicio: "",
+  fim: "",
+  pagamento: "",
+  motivo: "",
+  value: ""
+});
+
+/* ---------- Treinamento ---------- */
+const treinamento = reactive({
+  query: "",
+  employeeId: null,
+  cargo: "",
+  filial: "",
+  data: "",
+  tema: "",
+  cargaHoraria: "",
+  modalidade: "presencial",
+  valorPago: ""
+});
+
 /* ---------- Absenteísmo (ocorrência) ---------- */
 const sub = reactive({ kind: null, employee: null }); // kind: "ocorrencia" | "salario"
 const occ = reactive({ motivo: "falta", inicio: "", fim: "" });
@@ -101,10 +134,39 @@ function initModal() {
   custo.value = "";
   custoExisting.value = null;
   closeSub();
+  resetDiaria();
+  resetTreinamento();
   vaga.nome = "";
   vaga.data = "";
   vaga.hora = "";
   buildForm();
+}
+
+function resetDiaria() {
+  diaria.query = "";
+  diaria.employeeId = null;
+  diaria.departamento = "";
+  diaria.filial = "";
+  diaria.liderImediato = "";
+  diaria.gerenteRegional = "";
+  diaria.regional = "";
+  diaria.inicio = todayISO();
+  diaria.fim = todayISO();
+  diaria.pagamento = "";
+  diaria.motivo = "";
+  diaria.value = "";
+}
+
+function resetTreinamento() {
+  treinamento.query = "";
+  treinamento.employeeId = null;
+  treinamento.cargo = "";
+  treinamento.filial = "";
+  treinamento.data = todayISO();
+  treinamento.tema = "";
+  treinamento.cargaHoraria = "";
+  treinamento.modalidade = "presencial";
+  treinamento.valorPago = "";
 }
 
 onMounted(initModal);
@@ -122,16 +184,38 @@ const tabs = computed(() => {
         { id: "colaborador", label: "Colaborador" },
         { id: "custo", label: "Custo" }
       ];
+    case "diaria":
+      return [
+        { id: "colaborador", label: "Colaborador" },
+        { id: "diaria", label: "Diária" }
+      ];
+    case "treinamento":
+      return [
+        { id: "colaborador", label: "Colaborador" },
+        { id: "treinamento", label: "Treinamento" }
+      ];
     default:
       return [];
   }
 });
 
-const submitLabel = computed(() => (indicator.value && indicator.value.form === "vaga" ? "Concluir" : "Salvar lançamento"));
+const submitLabel = computed(() => {
+  if (!indicator.value) return "Salvar lançamento";
+  switch (indicator.value.form) {
+    case "vaga":
+      return "Concluir";
+    case "diaria":
+      return "Salvar diária";
+    case "treinamento":
+      return "Salvar treinamento";
+    default:
+      return "Salvar lançamento";
+  }
+});
 
 const canSubmitForm = computed(() => {
   const f = indicator.value && indicator.value.form;
-  return f === "vaga" || f === "custo";
+  return f === "vaga" || f === "custo" || f === "diaria" || f === "treinamento";
 });
 
 function buildForm() {
@@ -356,6 +440,168 @@ function submitCusto() {
   close();
 }
 
+/* ---------- Diária ---------- */
+
+const diariaResults = computed(() => {
+  const q = diaria.query.trim().toLowerCase();
+  const employees = getEmployees();
+  if (!q) return employees;
+  return employees.filter((e) => `${e.name} ${e.sector} ${e.user}`.toLowerCase().includes(q));
+});
+
+const diariaEmployeeName = computed(() => {
+  if (!diaria.employeeId) return "";
+  const emp = getEmployeeById(diaria.employeeId);
+  return emp ? `${emp.name} · ${emp.sector}` : "";
+});
+
+function pickDiariaEmployee(e) {
+  diaria.employeeId = e.id;
+  fillDiariaContext(e);
+  showTab("diaria");
+}
+
+/* Preenche o contexto organizacional automaticamente a partir do cadastro do
+   colaborador (departamento, filial e líder). O "regional" é o estado. */
+function fillDiariaContext(emp) {
+  const dep = emp.departmentId ? getDepartmentById(emp.departmentId) : null;
+  diaria.departamento = dep ? dep.name : emp.sector || "";
+  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
+  diaria.filial = filial ? `${filial.shortName} ${filial.name}`.trim() : "";
+  diaria.liderImediato = emp.liderImediato || "";
+  diaria.gerenteRegional = emp.gerenteRegional || "";
+  diaria.regional = emp.estado || "";
+}
+
+function setDiariaToday() {
+  diaria.inicio = todayISO();
+  diaria.fim = todayISO();
+}
+
+function submitDiaria() {
+  const emp = diaria.employeeId ? getEmployeeById(diaria.employeeId) : null;
+  if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
+  if (!diaria.inicio) return toast("Informe o período da diária.");
+  if (diaria.fim && diaria.fim < diaria.inicio) {
+    return toast("A data fim deve ser posterior à data início.");
+  }
+  const valueRaw = String(diaria.value).trim();
+  if (valueRaw === "" || isNaN(Number(valueRaw)) || Number(valueRaw) < 0) {
+    return toast("Informe o valor pago na diária (R$).");
+  }
+  const value = Number(valueRaw);
+
+  addEntry("custo_diaria", {
+    date: diaria.inicio,
+    value,
+    state: emp.estado || null,
+    meta: {
+      employeeId: emp.id,
+      employeeName: emp.name,
+      departamento: diaria.departamento.trim() || null,
+      filial: diaria.filial.trim() || null,
+      liderImediato: diaria.liderImediato.trim() || null,
+      gerenteRegional: diaria.gerenteRegional.trim() || null,
+      regional: diaria.regional.trim() || null,
+      pagamento: diaria.pagamento.trim() || null,
+      motivo: diaria.motivo.trim() || null,
+      inicio: diaria.inicio,
+      fim: diaria.fim || diaria.inicio
+    }
+  });
+
+  emit("saved");
+  toast(`Diária lançada para ${emp.name}: ${formatCurrency(value)}.`);
+
+  /* Mantém o colaborador selecionado para o próximo lançamento, apenas
+     limpando os dados específicos da diária. */
+  diaria.value = "";
+  diaria.pagamento = "";
+  diaria.motivo = "";
+  diaria.inicio = todayISO();
+  diaria.fim = todayISO();
+  fillDiariaContext(emp);
+}
+
+/* ---------- Treinamento ---------- */
+
+const treinamentoResults = computed(() => {
+  const q = treinamento.query.trim().toLowerCase();
+  const employees = getEmployees();
+  if (!q) return employees;
+  return employees.filter((e) => `${e.name} ${e.cargo || ""} ${e.sector} ${e.user}`.toLowerCase().includes(q));
+});
+
+const treinamentoEmployeeName = computed(() => {
+  if (!treinamento.employeeId) return "";
+  const emp = getEmployeeById(treinamento.employeeId);
+  return emp ? `${emp.name} · ${emp.cargo || emp.sector}` : "";
+});
+
+function pickTreinamentoEmployee(e) {
+  treinamento.employeeId = e.id;
+  fillTreinamentoContext(e);
+  showTab("treinamento");
+}
+
+/* Preenche cargo, loja (filial) e estado automaticamente do colaborador. */
+function fillTreinamentoContext(emp) {
+  treinamento.cargo = emp.cargo || "";
+  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
+  treinamento.filial = filial ? `${filial.shortName} ${filial.name}`.trim() : "";
+}
+
+function submitTreinamento() {
+  const emp = treinamento.employeeId ? getEmployeeById(treinamento.employeeId) : null;
+  if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
+  if (!treinamento.data) return toast("Informe a data do treinamento.");
+  const cargaRaw = String(treinamento.cargaHoraria).trim();
+  if (cargaRaw === "" || isNaN(Number(cargaRaw)) || Number(cargaRaw) < 0) {
+    return toast("Informe a carga horária do treinamento (horas).");
+  }
+  const carga = Number(cargaRaw);
+
+  let valorPago = null;
+  const valorRaw = String(treinamento.valorPago).trim();
+  if (valorRaw !== "") {
+    if (isNaN(Number(valorRaw)) || Number(valorRaw) < 0) {
+      return toast("Informe um valor pago válido (R$) ou deixe em branco.");
+    }
+    valorPago = Number(valorRaw);
+  }
+
+  const filial = treinamento.filial.trim() || null;
+  const mod =
+    (MODALIDADE_OPTIONS.find((o) => o.value === treinamento.modalidade) || {}).label ||
+    treinamento.modalidade;
+  addEntry("treinamento", {
+    date: treinamento.data,
+    value: carga,
+    state: emp.estado || null,
+    meta: {
+      employeeId: emp.id,
+      employeeName: emp.name,
+      cargo: treinamento.cargo.trim() || null,
+      filial,
+      tema: treinamento.tema.trim() || null,
+      cargaHoraria: carga,
+      modalidade: mod,
+      valorPago
+    }
+  });
+
+  emit("saved");
+  toast(`Treinamento lançado para ${emp.name}: ${carga} h.`);
+
+  /* Mantém o colaborador selecionado, limpando os dados do treinamento. */
+  treinamento.data = todayISO();
+  treinamento.tema = "";
+  treinamento.cargaHoraria = "";
+  treinamento.modalidade = "presencial";
+  treinamento.valorPago = "";
+  fillTreinamentoContext(emp);
+}
+
 /* ---------- Submit ---------- */
 
 function handleSubmit() {
@@ -363,6 +609,8 @@ function handleSubmit() {
   const form = indicator.value.form;
   if (form === "absenteismo" || form === "salario") return; // ações nos submodais
   if (form === "custo") return submitCusto();
+  if (form === "diaria") return submitDiaria();
+  if (form === "treinamento") return submitTreinamento();
   if (form === "vaga") emit("close");
 }
 
@@ -540,6 +788,178 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
           <p v-if="custoExisting" class="text-xs text-amber-600 dark:text-amber-400">
             Já existe um lançamento. Salvar substituirá o valor anterior.
           </p>
+        </div>
+      </template>
+
+      <!-- ===== DIÁRIA ===== -->
+      <template v-if="indicator.form === 'diaria'">
+        <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label for="diariaSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
+            <input id="diariaSearch" v-model="diaria.query" type="search" class="input-field" placeholder="Nome, setor ou usuário..." />
+          </div>
+          <div class="flex max-h-56 flex-col gap-1 overflow-y-auto">
+            <p v-if="!diariaResults.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
+              Nenhum colaborador encontrado.
+            </p>
+            <button
+              v-for="e in diariaResults"
+              :key="e.id"
+              type="button"
+              class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              :class="diaria.employeeId === e.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              @click="pickDiariaEmployee(e)"
+            >
+              <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ e.sector }}</span>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Ao selecionar, departamento, filial e líder são preenchidos do cadastro do colaborador; o regional é o estado.
+          </p>
+        </div>
+
+        <div v-show="activeTab === 'diaria'" class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="diariaSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
+            <input id="diariaSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="diariaEmployeeName" placeholder="Nenhum selecionado" />
+            <p v-if="diaria.employeeId" class="text-xs">
+              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('colaborador')">Trocar colaborador</button>
+            </p>
+          </div>
+
+          <fieldset class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+            <legend class="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Contexto do colaborador (auto-preenchido)</legend>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="flex flex-col gap-1.5">
+                <label for="diariaDep" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Departamento</label>
+                <input id="diariaDep" v-model="diaria.departamento" type="text" class="input-field" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="diariaFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+                <input id="diariaFilial" v-model="diaria.filial" type="text" class="input-field" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="diariaLider" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Líder imediato</label>
+                <input id="diariaLider" v-model="diaria.liderImediato" type="text" class="input-field" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="diariaGerente" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente regional</label>
+                <input id="diariaGerente" v-model="diaria.gerenteRegional" type="text" class="input-field" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="diariaRegional" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Regional</label>
+                <input id="diariaRegional" v-model="diaria.regional" type="text" class="input-field" />
+              </div>
+            </div>
+          </fieldset>
+
+          <div class="flex flex-wrap items-end gap-4">
+            <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
+              <label for="diariaInicio" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Período — início</label>
+              <input id="diariaInicio" v-model="diaria.inicio" type="date" class="input-field" />
+            </div>
+            <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
+              <label for="diariaFim" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Período — fim</label>
+              <input id="diariaFim" v-model="diaria.fim" type="date" class="input-field" />
+            </div>
+            <button type="button" class="btn-ghost" @click="setDiariaToday">Hoje</button>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label for="diariaPagamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Pagamento</label>
+              <input id="diariaPagamento" v-model="diaria.pagamento" type="text" list="diariaPagamentoList" class="input-field" placeholder="Ex.: Diária, Alimentação..." />
+              <datalist id="diariaPagamentoList">
+                <option v-for="opt in PAGAMENTO_OPTIONS" :key="opt" :value="opt"></option>
+              </datalist>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="diariaMotivo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Motivo da diária</label>
+              <input id="diariaMotivo" v-model="diaria.motivo" type="text" class="input-field" placeholder="Ex.: Visita à loja..." />
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label for="diariaValue" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Valor pago na diária (R$)</label>
+            <input id="diariaValue" v-model="diaria.value" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
+          </div>
+        </div>
+      </template>
+
+      <!-- ===== TREINAMENTO ===== -->
+      <template v-if="indicator.form === 'treinamento'">
+        <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label for="trSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
+            <input id="trSearch" v-model="treinamento.query" type="search" class="input-field" placeholder="Nome, cargo, setor ou usuário..." />
+          </div>
+          <div class="flex max-h-56 flex-col gap-1 overflow-y-auto">
+            <p v-if="!treinamentoResults.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
+              Nenhum colaborador encontrado.
+            </p>
+            <button
+              v-for="e in treinamentoResults"
+              :key="e.id"
+              type="button"
+              class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              :class="treinamento.employeeId === e.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              @click="pickTreinamentoEmployee(e)"
+            >
+              <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ e.cargo || e.sector }}</span>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Ao selecionar, cargo e loja (filial) são preenchidos automaticamente do cadastro do colaborador.
+          </p>
+        </div>
+
+        <div v-show="activeTab === 'treinamento'" class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="trSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
+            <input id="trSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="treinamentoEmployeeName" placeholder="Nenhum selecionado" />
+            <p v-if="treinamento.employeeId" class="text-xs">
+              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('colaborador')">Trocar colaborador</button>
+            </p>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="trCargo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Cargo</label>
+              <input id="trCargo" v-model="treinamento.cargo" type="text" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Loja (Filial)</label>
+              <input id="trFilial" v-model="treinamento.filial" type="text" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trData" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data do treinamento</label>
+              <input id="trData" v-model="treinamento.data" type="date" class="input-field" />
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label for="trTema" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tema do treinamento</label>
+            <input id="trTema" v-model="treinamento.tema" type="text" class="input-field" placeholder="Ex.: Excel, Atendimento, NR 35..." />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="trCarga" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Carga horária (horas)</label>
+              <input id="trCarga" v-model="treinamento.cargaHoraria" type="number" min="0" step="any" class="input-field" placeholder="0" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trModalidade" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Modalidade</label>
+              <select id="trModalidade" v-model="treinamento.modalidade" class="input-field">
+                <option v-for="m in MODALIDADE_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trValor" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Valor pago (R$)</label>
+              <input id="trValor" v-model="treinamento.valorPago" type="number" min="0" step="any" class="input-field" placeholder="0,00 (opcional)" />
+            </div>
+          </div>
         </div>
       </template>
 

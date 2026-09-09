@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, ABSENTEEISM_TYPES } from "@/lib/config";
 import { getEntriesFor, getAllEntries } from "@/lib/store";
 import { computedSnapshot, listEmployees } from "@/lib/employees";
-import { formatValue, formatDate } from "@/lib/utils";
+import { formatValue, formatDate, formatCurrency, aggregateByDay } from "@/lib/utils";
 import { useFilters } from "./useFilters";
 
 /* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
@@ -57,22 +57,31 @@ export function useDashboardData(filter) {
   function absenteismoDailySeries() {
     const ind = getIndicatorById("absenteismo");
     if (!ind) return [];
-    const byDay = new Map();
-    filteredEntries(ind).forEach((e) => {
-      const day = e.date;
-      byDay.set(day, (byDay.get(day) || 0) + (Number(e.value) || 0));
-    });
-    return [...byDay.entries()]
-      .map(([date, value]) => ({ date, value }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    return aggregateByDay(filteredEntries(ind));
+  }
+
+  /* Série diária das diárias: soma o valor pago por dia (vários lançamentos
+     podem ocorrer na mesma data). */
+  function diariaDailySeries() {
+    const ind = getIndicatorById("custo_diaria");
+    if (!ind) return [];
+    return aggregateByDay(filteredEntries(ind));
+  }
+
+  /* Série diária do Treinamento: soma a carga horária por dia. */
+  function trainingDailySeries() {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    return aggregateByDay(filteredEntries(ind));
   }
 
   /* Valor de um indicador para uma lista de lançamentos:
-     absenteísmo soma as ocorrências (cada evento = 1); custo usa a média;
-     os demais usam o último valor do período. */
+     absenteísmo soma as ocorrências (cada evento = 1); diárias e treinamento
+     somam o valor/horas no período; custo usa a média; os demais usam o
+     último valor. */
   function aggregateList(ind, list) {
     if (!list || !list.length) return null;
-    if (ind.id === "absenteismo") {
+    if (ind.id === "absenteismo" || ind.id === "custo_diaria" || ind.id === "treinamento") {
       return list.reduce((s, e) => s + e.value, 0);
     }
     if (ind.id === "custo_contratacao") {
@@ -80,6 +89,27 @@ export function useDashboardData(filter) {
       return sum / list.length;
     }
     return list[list.length - 1].value;
+  }
+
+  /* Agregação para o gráfico de barras do Treinamento: soma o valor pago
+     por filial (loja) no período filtrado. */
+  function treinamentoBarByFilial() {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    const byFilial = new Map();
+    filteredEntries(ind).forEach((e) => {
+      const meta = e.meta || {};
+      const filial = meta.filial || "Sem filial";
+      const valor = meta.valorPago != null ? Number(meta.valorPago) : 0;
+      byFilial.set(filial, (byFilial.get(filial) || 0) + valor);
+    });
+    return [...byFilial.entries()]
+      .map(([label, value]) => ({
+        label,
+        value,
+        tooltip: `${label}: ${formatCurrency(value)}`
+      }))
+      .sort((a, b) => b.value - a.value);
   }
 
   function indicatorCurrentValue(ind) {
@@ -197,6 +227,15 @@ export function useDashboardData(filter) {
           unit: ""
         };
       }
+      if (ind.id === "treinamento") {
+        return {
+          id: "treinamento",
+          kind: "bar",
+          title: "Treinamento",
+          sub: "Valor pago por filial",
+          unit: "R$"
+        };
+      }
       return { id: ind.id, kind: "line", title: ind.name, sub: "Evolução no período", unit: ind.unit };
     });
   });
@@ -224,7 +263,11 @@ export function useDashboardData(filter) {
 
   const panorama = computed(() => {
     return INDICATORS.filter(
-      (ind) => ind.id !== "turnover_entradas" && ind.id !== "turnover_saidas" && ind.id !== "custo_contratacao"
+      (ind) =>
+        ind.id !== "turnover_entradas" &&
+        ind.id !== "turnover_saidas" &&
+        ind.id !== "custo_contratacao" &&
+        ind.id !== "treinamento"
     )
       .map((ind) => {
         if (ind.id === "absenteismo") {
@@ -272,10 +315,24 @@ export function useDashboardData(filter) {
     rows.sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.entry.id.localeCompare(a.entry.id));
 
     if (!q) return rows;
-    return rows.filter((r) => r.ind.name.toLowerCase().includes(q));
+    return rows.filter((r) => {
+      if (r.ind.name.toLowerCase().includes(q)) return true;
+      const meta = r.entry.meta;
+      if (!meta || typeof meta !== "object") return false;
+      return Object.values(meta).some((v) => typeof v === "string" && v.toLowerCase().includes(q));
+    });
   }
 
   function formatEntryValue(ind, entry) {
+    if (ind.form === "treinamento" && entry.meta) {
+      const parts = [entry.meta.employeeName || "", entry.meta.tema || ""].filter(Boolean);
+      return `${formatValue(ind, entry.value)} · ${parts.join(" — ")}`;
+    }
+    if (ind.form === "diaria" && entry.meta && entry.meta.employeeName) {
+      const parts = [entry.meta.employeeName];
+      if (entry.meta.pagamento) parts.push(entry.meta.pagamento);
+      return `${formatValue(ind, entry.value)} · ${parts.join(" — ")}`;
+    }
     if (ind.form === "custo" && entry.meta && entry.meta.employeeName) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
@@ -293,6 +350,9 @@ export function useDashboardData(filter) {
     filteredEntries,
     absenteismoTypeTotals,
     absenteismoDailySeries,
+    diariaDailySeries,
+    trainingDailySeries,
+    treinamentoBarByFilial,
     indicatorCurrentValue,
     kpis,
     selectedKpiId,

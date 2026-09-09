@@ -36,6 +36,25 @@ const colIndex = (headerRow) => (...names) => {
   return headerRow.findIndex((h) => targets.includes(String(h ?? "").trim().toLowerCase()));
 };
 
+/* Localiza colunas por trecho do nome (ignora acentos e caracteres especiais).
+   Aceita tokens a incluir e tokens a excluir (evita falsos positivos). */
+const normHeader = (s) =>
+  String(s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const headFind = (headerRow, tokens, exclude = []) => {
+  const inc = tokens.map(normHeader);
+  const exc = exclude.map(normHeader);
+  return headerRow.findIndex((h) => {
+    const n = normHeader(h);
+    if (exc.some((x) => x && n.includes(x))) return false;
+    return inc.some((x) => x && n.includes(x));
+  });
+};
+
 function buildEntryRows() {
   const rows = [["Data", "Indicador", "Valor", "Unidade", "Estado"]];
   const all = getAllEntries();
@@ -83,13 +102,14 @@ export function toXLSX() {
 
   // ---- Planilha 3: Equipe ----
   const employeeRows = [
-    ["Colaborador", "Setor", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Estado"]
+    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado"]
   ];
   getEmployees().forEach((e) => {
     const cost = getLatestForMeta("custo_contratacao", "employeeId", e.id);
     employeeRows.push([
       e.name,
       e.sector,
+      e.cargo || "",
       e.user,
       e.hiredAt ? String(e.hiredAt).split("T")[0] : null,
       STATUS_LABELS[e.status] || e.status,
@@ -99,11 +119,21 @@ export function toXLSX() {
       e.updatedAt,
       cost ? Number(cost.value) : null,
       e.salario != null ? Number(e.salario) : null,
+      e.valeTransporte != null ? Number(e.valeTransporte) : null,
+      e.valeAlimentacao != null ? Number(e.valeAlimentacao) : null,
+      e.inss != null ? Number(e.inss) : null,
+      e.fgts != null ? Number(e.fgts) : null,
+      e.irrf != null ? Number(e.irrf) : null,
+      e.premioArt62 != null ? Number(e.premioArt62) : null,
+      e.premioLoja != null ? Number(e.premioLoja) : null,
+      e.comissao != null ? Number(e.comissao) : null,
+      e.liderImediato || "",
+      e.gerenteRegional || "",
       e.estado || ""
     ]);
   });
   const sheetEmployees = XLSX.utils.aoa_to_sheet(safeRows(employeeRows));
-  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 8 }];
+  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }];
   XLSX.utils.book_append_sheet(workbook, sheetEmployees, "Equipe");
 
   // ---- Planilha 4: Filiais ----
@@ -146,8 +176,8 @@ export function downloadTemplate() {
   XLSX.utils.book_append_sheet(workbook, entriesSheet, "Lançamentos");
 
   const teamSheet = XLSX.utils.aoa_to_sheet([
-    ["Colaborador", "Setor", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Estado"],
-    ["Maria Silva", "RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, "RO"]
+    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado"],
+    ["Maria Silva", "RH", "Analista de RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, 200, 400, 350, 280, 0, 150, 0, 300, "João Souza", "Carlos Lima", "RO"]
   ]);
   XLSX.utils.book_append_sheet(workbook, teamSheet, "Equipe");
 
@@ -238,6 +268,7 @@ export function importWorkbook(wb, currentState) {
     const findCol = colIndex(headerRow);
     const iName = findCol("colaborador");
     const iSector = findCol("setor");
+    const iCargo = findCol("cargo");
     const iUser = findCol("usuário", "usuario");
     const iHired = findCol("entrada");
     const iStatus = findCol("status");
@@ -247,6 +278,16 @@ export function importWorkbook(wb, currentState) {
     const iUpdated = findCol("última atualização", "ultima atualizacao");
     const iCost = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("custo"));
     const iSalary = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("sal"));
+    const iValeT = headFind(headerRow, ["valetransporte", "vale transporte", "vt"]);
+    const iValeA = headFind(headerRow, ["valealimentacao", "vale alimentacao", "va"]);
+    const iInss = headFind(headerRow, ["inss"]);
+    const iFgts = headFind(headerRow, ["fgts"]);
+    const iIrrf = headFind(headerRow, ["irrf"]);
+    const iPremioArt = headFind(headerRow, ["art62", "artigo62"]);
+    const iPremioLoja = headFind(headerRow, ["loja"]);
+    const iComissao = headFind(headerRow, ["comiss"]);
+    const iLider = headFind(headerRow, ["lider"]);
+    const iGerente = headFind(headerRow, ["gerente"]);
     const iEstado = findCol("estado");
 
     for (let i = 1; i < rows.length; i++) {
@@ -272,15 +313,26 @@ export function importWorkbook(wb, currentState) {
       const createdAt = normalizeDateTime(cellAt(row, iCreated)) || nowLocalISO();
       const updatedAt = normalizeDateTime(cellAt(row, iUpdated)) || createdAt;
       const salaryRaw = cellAt(row, iSalary);
-      const salario = salaryRaw !== "" && !isNaN(Number(salaryRaw)) ? Number(salaryRaw) : null;
+      const salario = moneyNum(salaryRaw);
 
       const employee = {
         id: createId(),
         name,
         sector,
+        cargo: textOrNull(cellAt(row, iCargo)),
         user,
         estado,
         salario,
+        valeTransporte: moneyNum(cellAt(row, iValeT)),
+        valeAlimentacao: moneyNum(cellAt(row, iValeA)),
+        inss: moneyNum(cellAt(row, iInss)),
+        fgts: moneyNum(cellAt(row, iFgts)),
+        irrf: moneyNum(cellAt(row, iIrrf)),
+        premioArt62: moneyNum(cellAt(row, iPremioArt)),
+        premioLoja: moneyNum(cellAt(row, iPremioLoja)),
+        comissao: moneyNum(cellAt(row, iComissao)),
+        liderImediato: textOrNull(cellAt(row, iLider)),
+        gerenteRegional: textOrNull(cellAt(row, iGerente)),
         hiredAt: hiredAt ? hiredAt + "T00:00:00" : null,
         status,
         type,
@@ -292,11 +344,11 @@ export function importWorkbook(wb, currentState) {
       upsertEmployee(employee);
       summary.importedEmployees++;
 
-      const costRaw = cellAt(row, iCost);
-      if (costRaw !== "" && !isNaN(Number(costRaw))) {
+      const costValue = moneyNum(cellAt(row, iCost));
+      if (costValue !== null) {
         addEntry("custo_contratacao", {
           date: todayISO(),
-          value: Number(costRaw),
+          value: costValue,
           state: estado,
           meta: { employeeId: employee.id, employeeName: employee.name }
         });
@@ -398,6 +450,25 @@ function cellAt(row, index) {
   if (index === undefined || index === null || index < 0 || index >= row.length) return "";
   const value = row[index];
   return value === undefined || value === null ? "" : value;
+}
+
+/* Converte célula em número monetário (null quando vazia/inválida). */
+function moneyNum(raw) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw === "number") return isNaN(raw) ? null : raw;
+  let s = String(raw).trim().replace(/[R$\s]/g, "");
+  if (!s) return null;
+  if (s.indexOf(",") !== -1) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+
+/* Converte célula em texto opcional (null quando vazia). */
+function textOrNull(raw) {
+  const s = String(raw ?? "").trim();
+  return s || null;
 }
 
 function normalizeDate(raw) {

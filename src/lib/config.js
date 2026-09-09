@@ -102,6 +102,30 @@ export const INDICATORS = [
     higherIsBetter: true,
     computed: true,
     manual: false
+  },
+  {
+    id: "custo_diaria",
+    name: "Custo da diária geral",
+    desc: "Valor pago em diárias (colaborador, departamento, filial, líder, regional, pagamento, período e motivo)",
+    type: "currency",
+    unit: "R$",
+    decimals: 2,
+    higherIsBetter: false,
+    computed: false,
+    manual: true,
+    form: "diaria"
+  },
+  {
+    id: "treinamento",
+    name: "Treinamento",
+    desc: "Carga horária e valor pago em treinamentos (colaborador, cargo, loja, tema, modalidade)",
+    type: "hours",
+    unit: "horas",
+    decimals: 1,
+    higherIsBetter: true,
+    computed: false,
+    manual: true,
+    form: "treinamento"
   }
 ];
 
@@ -128,3 +152,40 @@ export const ABSENTEEISM_OPTIONS = ["falta", "atraso", "afastamento"];
 export function getIndicatorById(id) {
   return INDICATORS.find((ind) => ind.id === id) || null;
 }
+
+/* Custos de pessoal mensais registrados por colaborador (salário é a base e
+   fica no próprio colaborador). Usados no detalhe do funcionário no Headcount. */
+export const PERSONNEL_COST_FIELDS = [
+  { key: "valeTransporte", label: "Vale-transporte" },
+  { key: "valeAlimentacao", label: "Vale-alimentação" },
+  { key: "inss", label: "INSS" },
+  { key: "fgts", label: "FGTS" },
+  { key: "irrf", label: "IRRF" },
+  { key: "premioArt62", label: "Premiação art. 62" },
+  { key: "premioLoja", label: "Premiação loja" },
+  { key: "comissao", label: "Comissão" }
+];
+
+/* Campos organizacionais usados para enriquecer o lançamento de diárias. */
+export const HIERARCHY_FIELDS = [
+  { key: "liderImediato", label: "Líder imediato" },
+  { key: "gerenteRegional", label: "Gerente regional" }
+];
+
+/* Sugestões para o campo "Pagamento" da diária (texto livre com sugestões). */
+export const PAGAMENTO_OPTIONS = [
+  "Diária",
+  "Alimentação",
+  "Hospedagem",
+  "Combustível",
+  "Pedágio",
+  "Deslocamento",
+  "Estacionamento",
+  "Outros"
+];
+
+/* Modalidades do lançamento de treinamento. */
+export const MODALIDADE_OPTIONS = [
+  { value: "presencial", label: "Presencial" },
+  { value: "online", label: "Online" }
+];

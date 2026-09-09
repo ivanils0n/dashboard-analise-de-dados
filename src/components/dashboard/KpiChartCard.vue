@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import LineChart from "@/components/charts/LineChart.vue";
+import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import { getIndicatorById } from "@/lib/config";
@@ -9,6 +10,7 @@ const props = defineProps({
   card: { type: Object, required: true },
   entries: { type: Array, default: () => [] },
   pieData: { type: Array, default: () => [] },
+  barData: { type: Array, default: () => [] },
   showValues: { type: Boolean, default: false }
 });
 
@@ -37,6 +39,7 @@ onMounted(() => {
     </div>
 
     <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" height="h-52" />
+    <BarChart v-else-if="card.kind === 'bar'" :data="barData" />
     <LineChart v-else :indicator="indicator" :entries="entries" :show-values="showValues" />
   </div>
 </template>

@@ -27,6 +27,35 @@ export function listEmployees(state) {
   return all;
 }
 
+/* Converte valor monetário opcional em número (null quando vazio). */
+function toMoneyOrNull(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const num = Number(value);
+  return isNaN(num) ? null : num;
+}
+
+export function moneyOrNull(value) {
+  return toMoneyOrNull(value);
+}
+
+/* Soma salário + encargos/benefícios/premiações/comissão do colaborador:
+   custo mensal total de pessoal (0 quando nada foi informado). */
+export function employeeMonthlyCost(employee) {
+  if (!employee) return 0;
+  const fields = [
+    employee.salario,
+    employee.valeTransporte,
+    employee.valeAlimentacao,
+    employee.inss,
+    employee.fgts,
+    employee.irrf,
+    employee.premioArt62,
+    employee.premioLoja,
+    employee.comissao
+  ];
+  return fields.reduce((sum, v) => sum + (toMoneyOrNull(v) || 0), 0);
+}
+
 export function saveEmployee(employeeData) {
   const existing = employeeData.id ? getEmployeeById(employeeData.id) : null;
   const now = nowLocalISO();
@@ -47,6 +76,7 @@ export function saveEmployee(employeeData) {
     name: employeeData.name,
     sector: employeeData.sector,
     user: employeeData.user,
+    cargo: employeeData.cargo != null ? String(employeeData.cargo) : null,
     estado: employeeData.estado || null,
     salario: employeeData.salario != null ? Number(employeeData.salario) : null,
     hiredAt: employeeData.hiredAt || null,
@@ -55,6 +85,16 @@ export function saveEmployee(employeeData) {
     countsTurnover: !!employeeData.countsTurnover,
     departmentId: employeeData.departmentId || null,
     filialId: employeeData.filialId || null,
+    liderImediato: employeeData.liderImediato != null ? String(employeeData.liderImediato) : null,
+    gerenteRegional: employeeData.gerenteRegional != null ? String(employeeData.gerenteRegional) : null,
+    valeTransporte: toMoneyOrNull(employeeData.valeTransporte),
+    valeAlimentacao: toMoneyOrNull(employeeData.valeAlimentacao),
+    inss: toMoneyOrNull(employeeData.inss),
+    fgts: toMoneyOrNull(employeeData.fgts),
+    irrf: toMoneyOrNull(employeeData.irrf),
+    premioArt62: toMoneyOrNull(employeeData.premioArt62),
+    premioLoja: toMoneyOrNull(employeeData.premioLoja),
+    comissao: toMoneyOrNull(employeeData.comissao),
     createdAt: now,
     updatedAt: now,
     firedAt: employeeData.firedAt || null

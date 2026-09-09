@@ -26,6 +26,7 @@ const { equipeFilter: ef, reset: resetEquipeFilters } = useEquipeFilters();
 const form = reactive({
   id: null,
   name: "",
+  cargo: "",
   sector: "",
   user: "",
   branch: "",
@@ -33,7 +34,9 @@ const form = reactive({
   status: "ativo",
   firedAt: "",
   type: "experiencia",
-  estado: ""
+  estado: "",
+  liderImediato: "",
+  gerenteRegional: ""
 });
 
 const departmentOptions = computed(() => {
@@ -87,6 +90,7 @@ const desligados = computed(() => listEmployees(filters.current).filter((e) => e
 function resetForm() {
   form.id = null;
   form.name = "";
+  form.cargo = "";
   form.sector = "";
   form.user = "";
   form.branch = "";
@@ -95,6 +99,8 @@ function resetForm() {
   form.firedAt = "";
   form.type = "experiencia";
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+  form.liderImediato = "";
+  form.gerenteRegional = "";
 }
 
 onMounted(() => {
@@ -127,7 +133,10 @@ function fillForm(employee) {
   form.status = employee.status;
   form.firedAt = employee.firedAt ? employee.firedAt.split("T")[0] : "";
   form.type = employee.type;
+  form.cargo = employee.cargo || "";
   form.estado = employee.estado || "";
+  form.liderImediato = employee.liderImediato || "";
+  form.gerenteRegional = employee.gerenteRegional || "";
   const filial = employee.filialId ? getBranchById(employee.filialId) : null;
   form.branch = filial ? filial.shortName : "";
 }
@@ -151,7 +160,10 @@ function handleSubmit() {
     hiredAt: form.hiredAt || null,
     status: form.status,
     type: form.type,
-    estado: form.estado || null
+    cargo: form.cargo.trim() || null,
+    estado: form.estado || null,
+    liderImediato: form.liderImediato.trim() || null,
+    gerenteRegional: form.gerenteRegional.trim() || null
   };
 
   if (departmentOptions.value.length) {
@@ -224,6 +236,11 @@ function statusTone(status) {
         </div>
 
         <div class="flex flex-col gap-1.5">
+          <label for="employeeCargo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Cargo</label>
+          <input id="employeeCargo" v-model="form.cargo" type="text" class="input-field uppercase" placeholder="Ex.: Vendedor" />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
           <label for="employeeSector" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Setor (Departamento)</label>
           <select id="employeeSector" v-model="form.sector" class="input-field" required>
             <option v-if="!departmentOptions.length" value="">— Cadastre um departamento (aba Departamentos) —</option>
@@ -290,6 +307,16 @@ function statusTone(status) {
             <option value="">—</option>
             <option v-for="s in STATES" :key="s" :value="s">{{ s }}</option>
           </select>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="employeeLider" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Líder imediato</label>
+          <input id="employeeLider" v-model="form.liderImediato" type="text" class="input-field" placeholder="Nome do líder" />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="employeeGerente" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente regional</label>
+          <input id="employeeGerente" v-model="form.gerenteRegional" type="text" class="input-field" placeholder="Nome do gerente regional" />
         </div>
 
         <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-3">

@@ -16,6 +16,8 @@ export function formatValue(indicator, value) {
       return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " dias";
     case "months":
       return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " meses";
+    case "hours":
+      return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " h";
     default:
       return num.toLocaleString("pt-BR", { maximumFractionDigits: decimals });
   }
@@ -26,6 +28,9 @@ export function formatRawValue(indicator, value) {
   const decimals = indicator.decimals ?? 1;
   if (indicator.type === "currency") {
     return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+  if (indicator.type === "hours") {
+    return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " h";
   }
   return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
@@ -40,6 +45,9 @@ export function formatCurrency(value) {
 export function formatAxisValue(indicator, value) {
   if (indicator.type === "currency") {
     return "R$ " + Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+  }
+  if (indicator.type === "hours") {
+    return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "h";
   }
   const decimals = indicator.decimals ?? 1;
   return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: decimals });
@@ -90,6 +98,19 @@ export function lastDayOfMonthISO() {
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
   const pad = (n) => String(n).padStart(2, "0");
   return `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`;
+}
+
+/* Agrega lançamentos por dia (soma dos valores na mesma data), usado na
+   evolução de indicadores com múltiplos registros por dia (ex.: diárias). */
+export function aggregateByDay(entries) {
+  const byDay = new Map();
+  (entries || []).forEach((e) => {
+    const day = e.date;
+    byDay.set(day, (byDay.get(day) || 0) + (Number(e.value) || 0));
+  });
+  return [...byDay.entries()]
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function daysBetween(startIso, endIso) {
