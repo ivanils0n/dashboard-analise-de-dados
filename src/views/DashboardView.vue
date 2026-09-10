@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import PresentationModal from "@/components/dashboard/PresentationModal.vue";
 import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
+import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
@@ -17,7 +18,8 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 import { getIndicatorById } from "@/lib/config";
-import { removeEntry, clearEntries } from "@/lib/store";
+import { removeEntry, removeEntries } from "@/lib/store";
+import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore } from "@/lib/utils";
 import { syncAll } from "@/lib/employees";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
 import { reloadData, hydrateState } from "@/lib/supabase";
@@ -39,6 +41,7 @@ const {
   chartPieData,
   filteredEntries,
   panorama,
+  usingFeedback,
   formatEntryValue,
   formatDate
 } = dashboard;
@@ -51,7 +54,13 @@ const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
 const menuOpen = ref(false);
 const tableSearch = ref("");
-const showValues = ref(false);
+const SHOW_VALUES_KEY = "gg-show-values";
+const storedShowValues = localStore.getItem(SHOW_VALUES_KEY);
+const showValues = ref(storedShowValues === null ? true : storedShowValues === "1");
+watch(showValues, (v) => safeSetItem(localStore, SHOW_VALUES_KEY, v ? "1" : "0"));
+const custosChartRef = ref(null);
+const editingRow = ref(null);
+const editTarget = ref(null);
 
 /* Colunas exibidas no modal de registros (clique direito no KPI). */
 const diariaColumns = [
@@ -62,9 +71,8 @@ const diariaColumns = [
   { label: "Líder imediato", meta: "liderImediato" },
   { label: "Gerente regional", meta: "gerenteRegional" },
   { label: "Regional", meta: "regional" },
-  { label: "Pagamento", meta: "pagamento" },
   { label: "Período", period: ["inicio", "fim"] },
-  { label: "Motivo", meta: "motivo" },
+  { label: "Diária", meta: "motivo" },
   { label: "Valor pago", value: true }
 ];
 
@@ -76,8 +84,7 @@ const treinamentoColumns = [
   { label: "Estado", meta: "estado" },
   { label: "Tema do treinamento", meta: "tema" },
   { label: "Carga horária", meta: "cargaHoraria", hours: true },
-  { label: "Modalidade", meta: "modalidade" },
-  { label: "Valor pago", meta: "valorPago", money: true }
+  { label: "Modalidade", meta: "modalidade" }
 ];
 
 const custosColumns = [
@@ -96,6 +103,55 @@ const canEdit = canEditData();
 
 const tableRows = computed(() => dashboard.tableRows(tableSearch.value));
 
+/* ---------- Seleção múltipla / exclusão em lote (Lançamentos Recentes) ---------- */
+const selectedKeys = ref(new Set());
+
+const selectedRows = computed(() =>
+  tableRows.value.filter((r) => selectedKeys.value.has(r.entry.id))
+);
+
+const allVisibleSelected = computed(
+  () => tableRows.value.length > 0 && tableRows.value.every((r) => selectedKeys.value.has(r.entry.id))
+);
+
+function toggleRow(id) {
+  const next = new Set(selectedKeys.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedKeys.value = next;
+}
+
+function toggleSelectAll() {
+  if (allVisibleSelected.value) {
+    selectedKeys.value = new Set();
+  } else {
+    selectedKeys.value = new Set(tableRows.value.map((r) => r.entry.id));
+  }
+}
+
+async function handleBulkDelete() {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  const rows = selectedRows.value;
+  const n = rows.length;
+  if (!n) return;
+  const ok = await confirm({
+    title: `Excluir ${n} lançamento(s)?`,
+    message: "Os lançamentos selecionados serão removidos definitivamente e os totais serão recalculados.",
+    confirmText: `Excluir ${n}`,
+    danger: true
+  });
+  if (!ok) return;
+  removeEntries(rows.map((r) => ({ indicatorId: r.ind.id, entry: r.entry })));
+  selectedKeys.value = new Set();
+  toast(`${n} lançamento(s) excluído(s).`);
+}
+
+/* Dados do gráfico de barras dos Custos Totais em largura total. */
+const custosBarData = computed(() => dashboard.custosBarByFilial());
+
 /* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
    treinamento usam a série agregada por dia (total do dia, sem visão
    individual); os demais indicadores usam os lançamentos do período. */
@@ -111,6 +167,7 @@ function lineEntries(card) {
 /* Gráfico de barras por filial dos indicadores de Treinamento e Custos Totais. */
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
+  if (card.id === "headcount") return dashboard.headcountBarByState();
   if (card.id === "treinamento") return dashboard.treinamentoBarByFilial();
   if (card.id === "custo_total") return dashboard.custosBarByFilial();
   return [];
@@ -121,11 +178,27 @@ function openLaunch() {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
+  editTarget.value = null;
   launchOpen.value = true;
 }
 
 function closeLaunch() {
   launchOpen.value = false;
+  editTarget.value = null;
+}
+
+/* Editar um lançamento vindo do modal de registros (botão direito no KPI):
+   abre o modal de lançamento de dados em modo edição. */
+function onEntriesEdit({ indicatorId, entry }) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  diariaEntriesOpen.value = false;
+  treinamentoEntriesOpen.value = false;
+  custosEntriesOpen.value = false;
+  editTarget.value = { indicatorId, entry };
+  launchOpen.value = true;
 }
 
 function onSaved() {
@@ -193,26 +266,65 @@ async function removeEntryRowConfirmed(indicatorId, entryId) {
   toast("Lançamento excluído.");
 }
 
+function openEditEntry(row) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  editingRow.value = row;
+}
+
+/* "Limpar tudo" remove SOMENTE os lançamentos do período atualmente
+   filtrado (ex.: o mês Ago/2026), respeitando o estado selecionado.
+   Lançamentos de outros períodos nunca são afetados. */
 async function handleClearAll() {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
+  if (!df.start && !df.end) {
+    toast("Selecione um período (ex.: um mês) antes de usar “Limpar tudo”.");
+    return;
+  }
+  const monthScope = singleMonthOfRange(df.start, df.end);
+  const scopeLabel = monthScope
+    ? ymLabel(monthScope)
+    : `entre ${formatDate(df.start)} e ${formatDate(df.end)}`;
+  const stateScope =
+    filters.current === "todos"
+      ? "todos os estados"
+      : `o estado ${filters.current}`;
+
+  const targets = dashboard.tableRows("");
+
+  if (!targets.length) {
+    toast(`Nenhum lançamento encontrado em ${scopeLabel} (${stateScope}).`);
+    return;
+  }
+
   const ok = await confirm({
-    title: "Apagar todos os lançamentos?",
-    message: "Todos os registros serão removidos. Essa ação não pode ser desfeita.",
-    confirmText: "Apagar tudo",
+    title: `Apagar lançamentos de ${scopeLabel}?`,
+    message: `Serão removidos ${targets.length} lançamento(s) de ${scopeLabel} (${stateScope}). Lançamentos de outros períodos não serão afetados. Essa ação não pode ser desfeita.`,
+    confirmText: `Apagar ${scopeLabel}`,
     danger: true
   });
   if (!ok) return;
-  clearEntries();
+
+  removeEntries(targets.map((r) => ({ indicatorId: r.ind.id, entry: r.entry })));
+  selectedKeys.value = new Set();
   syncAll();
-  toast("Todos os dados foram removidos.");
+  toast(`${targets.length} lançamento(s) de ${scopeLabel} removido(s).`);
 }
 
 function onSelectKpi(id) {
   selectKpi(id);
-  nextTick(() => scrollToKpiChart(id));
+  nextTick(() => {
+    if (id === "custo_total") {
+      custosChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    scrollToKpiChart(id);
+  });
 }
 
 /* Clique direito em um KPI abre o modal correspondente:
@@ -317,7 +429,16 @@ onUnmounted(() => {
     </div>
 
     <!-- ===== KPIs ===== -->
-    <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+    <div class="mb-3 flex flex-wrap items-center gap-2">
+      <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+      <span
+        v-if="usingFeedback"
+        class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
+        title="O período selecionado é um mês anterior ao vigente; os totais usam o consolidado mensal (Feedback)."
+      >
+        Histórico · consolidado mensal
+      </span>
+    </div>
     <section class="flex gap-4 overflow-x-auto pb-2" aria-label="Indicadores-chave">
       <KpiCard
         v-for="kpi in kpis"
@@ -363,7 +484,25 @@ onUnmounted(() => {
         <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Panorama atual</h2>
         <span class="text-xs text-zinc-400 dark:text-zinc-400">Último valor por indicador</span>
       </div>
-      <BarChart :data="panorama" />
+      <BarChart :data="panorama" :show-values="showValues" />
+    </section>
+
+    <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
+    <section
+      ref="custosChartRef"
+      class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div class="mb-4">
+        <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custos Totais — Evolução dos Indicadores</h2>
+        <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
+      </div>
+      <BarChart v-if="custosBarData.length" :data="custosBarData" :show-values="showValues" value-format="currency" />
+      <div v-else class="p-6">
+        <EmptyState
+          title="Sem custos no período"
+          text="Use o botão “Lançar dados” (Custos Totais) para registrar os custos do período ou ajuste o filtro."
+        />
+      </div>
     </section>
 
     <!-- ===== LANÇAMENTOS ===== -->
@@ -374,15 +513,30 @@ onUnmounted(() => {
           <p class="text-xs text-zinc-400 dark:text-zinc-400">Todos os registros cadastrados e calculados</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <template v-if="canEdit && selectedRows.length">
+            <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+              {{ selectedRows.length }} selecionado(s)
+            </span>
+            <button type="button" class="btn-danger-solid-sm" @click="handleBulkDelete">Excluir selecionados</button>
+          </template>
           <input v-model="tableSearch" type="search" class="input-sm" placeholder="Buscar lançamento..." aria-label="Buscar lançamento" />
           <button v-if="canEdit" type="button" class="btn-ghost-sm" @click="handleClearAll">Limpar tudo</button>
         </div>
       </div>
 
       <div v-if="tableRows.length" class="max-h-[400px] overflow-auto">
-        <table class="w-full text-left text-sm">
+        <table class="w-full min-w-max text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
+              <th v-if="canEdit" class="w-10 px-4 py-3 font-semibold">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  :checked="allVisibleSelected"
+                  aria-label="Selecionar todos os lançamentos visíveis"
+                  @change="toggleSelectAll"
+                />
+              </th>
               <th class="px-5 py-3 font-semibold">Data</th>
               <th class="px-5 py-3 font-semibold">Indicador</th>
               <th class="px-5 py-3 font-semibold">Valor</th>
@@ -390,19 +544,45 @@ onUnmounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="{ entry, ind } in tableRows" :key="entry.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
-              <td class="px-5 py-3 text-zinc-700 dark:text-zinc-300">{{ formatDate(entry.date) }}</td>
+            <tr
+              v-for="{ entry, ind } in tableRows"
+              :key="entry.id"
+              class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+              :class="selectedKeys.has(entry.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+            >
+              <td v-if="canEdit" class="px-4 py-3">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  :checked="selectedKeys.has(entry.id)"
+                  :aria-label="`Selecionar lançamento de ${ind.name}`"
+                  @change="toggleRow(entry.id)"
+                />
+              </td>
+              <td class="px-5 py-3 text-zinc-700 dark:text-zinc-300">
+                {{ ind.form === "custo_total" ? ymShortLabel(entry.date) : formatDate(entry.date) }}
+              </td>
               <td class="px-5 py-3"><Badge>{{ ind.name }}</Badge></td>
               <td class="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{{ formatEntryValue(ind, entry) }}</td>
               <td v-if="canEdit" class="px-5 py-3 text-right">
-                <button
-                  type="button"
-                  class="icon-btn-sm"
-                  aria-label="Excluir lançamento"
-                  @click="removeEntryRowConfirmed(ind.id, entry.id)"
-                >
-                  &times;
-                </button>
+                <div class="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    class="btn-ghost-sm"
+                    aria-label="Editar lançamento"
+                    @click="openEditEntry({ entry, ind })"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    class="icon-btn-sm"
+                    aria-label="Excluir lançamento"
+                    @click="removeEntryRowConfirmed(ind.id, entry.id)"
+                  >
+                    &times;
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -417,7 +597,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <LaunchModal v-if="launchOpen" :open="launchOpen" @close="closeLaunch" @saved="onSaved" />
+    <LaunchModal v-if="launchOpen" :open="launchOpen" :edit-entry="editTarget" @close="closeLaunch" @saved="onSaved" />
     <PresentationModal v-if="presentationOpen" :open="presentationOpen" @close="presentationOpen = false" />
     <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
     <IndicatorEntriesModal
@@ -425,9 +605,10 @@ onUnmounted(() => {
       :open="diariaEntriesOpen"
       indicator-id="custo_diaria"
       title="Custo da diária geral — Lançamentos"
-      subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, pagamento, período e motivo"
+      subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, período e diária"
       :columns="diariaColumns"
       @close="diariaEntriesOpen = false"
+      @edit="onEntriesEdit"
     />
     <IndicatorEntriesModal
       v-if="treinamentoEntriesOpen"
@@ -437,6 +618,7 @@ onUnmounted(() => {
       subtitle="Registros de treinamento por colaborador (cargo, loja, tema, carga horária e modalidade)"
       :columns="treinamentoColumns"
       @close="treinamentoEntriesOpen = false"
+      @edit="onEntriesEdit"
     />
     <IndicatorEntriesModal
       v-if="custosEntriesOpen"
@@ -446,6 +628,15 @@ onUnmounted(() => {
       subtitle="Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)"
       :columns="custosColumns"
       @close="custosEntriesOpen = false"
+      @edit="onEntriesEdit"
+    />
+    <EditEntryModal
+      v-if="editingRow"
+      :open="!!editingRow"
+      :indicator-id="editingRow.ind.id"
+      :entry="editingRow.entry"
+      @close="editingRow = null"
+      @saved="editingRow = null"
     />
   </div>
 </template>
@@ -506,6 +697,18 @@ onUnmounted(() => {
 }
 .btn-ghost-sm:hover {
   background-color: rgb(244 244 245);
+}
+.btn-danger-solid-sm {
+  border-radius: 0.5rem;
+  background-color: rgb(220 38 38);
+  padding: 0.375rem 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #fff;
+  transition: background-color 0.15s;
+}
+.btn-danger-solid-sm:hover {
+  background-color: rgb(185 28 28);
 }
 :global(.dark) .btn-ghost-sm {
   color: rgb(228 228 231);

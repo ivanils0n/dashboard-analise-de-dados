@@ -13,7 +13,6 @@ import {
   STATES,
   STATE_NAMES,
   DEFAULT_STATE,
-  PAGAMENTO_OPTIONS,
   MODALIDADE_OPTIONS,
   getIndicatorById
 } from "@/lib/config";
@@ -34,21 +33,28 @@ import {
   closeVacancy,
   deleteVacancyRecord,
   listVacancies,
-  formatVacancyTempo
+  formatVacancyTempo,
+  findEmployeesByName
 } from "@/lib/employees";
-import { todayISO, firstDayOfMonthISO, formatDateTime, formatValue, formatCurrency } from "@/lib/utils";
+import { readWorkbookFile, parseTreinamentoSheet, downloadTreinamentoTemplate } from "@/lib/export";
+import { todayISO, firstDayOfMonthISO, formatDateTime, formatValue, formatCurrency, currentYm, MONTHS_SHORT, yearOptions, maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR, parseHoursBR, formatHoursBR } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
 
 const props = defineProps({
-  open: { type: Boolean, default: false }
+  open: { type: Boolean, default: false },
+  editEntry: { type: Object, default: null }
 });
 const emit = defineEmits(["close", "saved"]);
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
+
+/* Quando preenchido, o modal está editando um lançamento existente
+   (custo_diaria, treinamento ou custo_total). */
+const editingEntryId = ref(null);
 
 /* "Salário dos Colaboradores" entra no menu de lançamentos sem virar um
    indicador/KPI — a remuneração é gravada no próprio colaborador. */
@@ -89,7 +95,6 @@ const diaria = reactive({
   regional: "",
   inicio: "",
   fim: "",
-  pagamento: "",
   motivo: "",
   value: ""
 });
@@ -103,16 +108,18 @@ const treinamento = reactive({
   data: "",
   tema: "",
   cargaHoraria: "",
-  modalidade: "presencial",
-  valorPago: ""
+  modalidade: "presencial"
 });
 
 /* ---------- Custos Totais (por filial) ---------- */
+/* O lançamento de Custos Totais é vinculado a MÊS/ANO (competência), não a
+   um dia. Internamente o registro é gravado no 1º dia do mês escolhido para
+   manter compatibilidade com as consultas por data existentes. */
 const custosTot = reactive({
   estado: filters.current !== "todos" ? filters.current : "todos",
   query: "",
   branchId: null,
-  data: todayISO(),
+  month: currentYm(),
   custos: "",
   percent: ""
 });
@@ -138,6 +145,7 @@ watch(
 );
 
 function initModal() {
+  editingEntryId.value = null;
   indicatorId.value = MANUAL_INDICATORS[0].id;
   estado.value = filters.current === "todos" ? DEFAULT_STATE : filters.current;
   editingVacancyId.value = null;
@@ -152,7 +160,66 @@ function initModal() {
   vaga.nome = "";
   vaga.data = "";
   vaga.hora = "";
+
+  /* Modo edição: pré-preenche o formulário do lançamento selecionado. */
+  if (props.editEntry && props.editEntry.entry && props.editEntry.indicatorId) {
+    indicatorId.value = props.editEntry.indicatorId;
+    buildForm();
+    prefillEdit(props.editEntry.indicatorId, props.editEntry.entry);
+    return;
+  }
+
   buildForm();
+}
+
+/* Pré-preenche o formulário a partir de um lançamento existente (edição). */
+function prefillEdit(indId, entry) {
+  const m = entry.meta || {};
+  editingEntryId.value = entry.id;
+
+  if (indId === "custo_diaria") {
+    diaria.employeeId = m.employeeId || null;
+    diaria.query = "";
+    diaria.departamento = m.departamento || "";
+    diaria.filial = m.filial || "";
+    diaria.liderImediato = m.liderImediato || "";
+    diaria.gerenteRegional = m.gerenteRegional || "";
+    diaria.regional = m.regional || "";
+    diaria.inicio = m.inicio || entry.date;
+    diaria.fim = m.fim || entry.date;
+    diaria.motivo = m.motivo || "";
+    diaria.value = entry.value != null ? String(entry.value) : "";
+    showTab("diaria");
+    return;
+  }
+
+  if (indId === "treinamento") {
+    treinamento.employeeId = m.employeeId || null;
+    treinamento.query = "";
+    treinamento.cargo = m.cargo || "";
+    treinamento.filial = m.filial || "";
+    treinamento.data = entry.date || todayISO();
+    treinamento.tema = m.tema || "";
+    treinamento.cargaHoraria = entry.value != null ? String(entry.value) : "";
+    treinamento.modalidade = /online/i.test(String(m.modalidade || "")) ? "online" : "presencial";
+    showTab("treinamento");
+    return;
+  }
+
+  if (indId === "custo_total") {
+    const nextEstado = m.estado || (filters.current !== "todos" ? filters.current : "todos");
+    if (nextEstado !== custosTot.estado) {
+      skipCustosEstadoWatch = true;
+      custosTot.estado = nextEstado;
+    }
+    custosTot.query = "";
+    custosTot.branchId = m.filialId || null;
+    custosTot.month = entry.date ? String(entry.date).slice(0, 7) : currentYm();
+    custosTot.custos = normalizeCurrencyInput(entry.value != null ? String(entry.value) : "");
+    custosTot.percent = m.percent != null ? String(m.percent) : "";
+    showTab("custos");
+    return;
+  }
 }
 
 function resetDiaria() {
@@ -165,7 +232,6 @@ function resetDiaria() {
   diaria.regional = "";
   diaria.inicio = todayISO();
   diaria.fim = todayISO();
-  diaria.pagamento = "";
   diaria.motivo = "";
   diaria.value = "";
 }
@@ -179,22 +245,26 @@ function resetTreinamento() {
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
-  treinamento.valorPago = "";
 }
 
 function resetCustosTot() {
   custosTot.estado = filters.current !== "todos" ? filters.current : "todos";
   custosTot.query = "";
   custosTot.branchId = null;
-  custosTot.data = todayISO();
+  custosTot.month = currentYm();
   custosTot.custos = "";
   custosTot.percent = "";
 }
 
 /* Carrega os dados do estado escolhido para listar suas filiais. */
+let skipCustosEstadoWatch = false;
 watch(
   () => custosTot.estado,
   async (state) => {
+    if (skipCustosEstadoWatch) {
+      skipCustosEstadoWatch = false;
+      return;
+    }
     custosTot.branchId = null;
     custosTot.query = "";
     try {
@@ -306,12 +376,12 @@ function saveOccurrence() {
     date: occ.inicio,
     value: 1,
     state,
-    meta: {
-      type: occ.motivo,
-      periodEnd: occ.fim,
-      employeeId: emp.id,
-      employeeName: emp.name
-    }
+      meta: {
+        type: occ.motivo,
+        periodEnd: occ.fim,
+        employeeId: emp.id,
+        employeeName: String(emp.name).toUpperCase()
+      }
   });
   emit("saved");
   const motivo = ABSENTEEISM_TYPES[occ.motivo] || occ.motivo;
@@ -349,7 +419,7 @@ function saveSalary() {
       date: todayISO(),
       value,
       state: emp.estado || null,
-      meta: { employeeId: emp.id, employeeName: emp.name }
+      meta: { employeeId: emp.id, employeeName: String(emp.name).toUpperCase() }
     });
   }
 
@@ -476,7 +546,7 @@ function submitCusto() {
     date: todayISO(),
     value,
     state: st,
-    meta: { employeeId: emp.id, employeeName: emp.name }
+    meta: { employeeId: emp.id, employeeName: String(emp.name).toUpperCase() }
   });
   emit("saved");
   toast(`Custo de contratação lançado para ${emp.name}.`);
@@ -507,13 +577,14 @@ function pickDiariaEmployee(e) {
 /* Preenche o contexto organizacional automaticamente a partir do cadastro do
    colaborador (departamento, filial e líder). O "regional" é o estado. */
 function fillDiariaContext(emp) {
+  const up = (v) => String(v == null ? "" : v).toUpperCase();
   const dep = emp.departmentId ? getDepartmentById(emp.departmentId) : null;
-  diaria.departamento = dep ? dep.name : emp.sector || "";
+  diaria.departamento = dep ? up(dep.name) : up(emp.sector);
   const filial = emp.filialId ? getBranchById(emp.filialId) : null;
-  diaria.filial = filial ? `${filial.shortName} ${filial.name}`.trim() : "";
-  diaria.liderImediato = emp.liderImediato || "";
-  diaria.gerenteRegional = emp.gerenteRegional || "";
-  diaria.regional = emp.estado || "";
+  diaria.filial = filial ? up(`${filial.shortName} ${filial.name}`.trim()) : "";
+  diaria.liderImediato = up(emp.liderImediato);
+  diaria.gerenteRegional = up(emp.gerenteRegional);
+  diaria.regional = up(emp.estado);
 }
 
 function setDiariaToday() {
@@ -533,25 +604,36 @@ function submitDiaria() {
     return toast("Informe o valor pago na diária (R$).");
   }
   const value = Number(valueRaw);
+  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
 
-  addEntry("custo_diaria", {
+  const payload = {
     date: diaria.inicio,
     value,
     state: emp.estado || null,
     meta: {
       employeeId: emp.id,
-      employeeName: emp.name,
-      departamento: diaria.departamento.trim() || null,
-      filial: diaria.filial.trim() || null,
-      liderImediato: diaria.liderImediato.trim() || null,
-      gerenteRegional: diaria.gerenteRegional.trim() || null,
-      regional: diaria.regional.trim() || null,
-      pagamento: diaria.pagamento.trim() || null,
-      motivo: diaria.motivo.trim() || null,
+      employeeName: up(emp.name),
+      departamento: up(diaria.departamento),
+      filial: up(diaria.filial),
+      liderImediato: up(diaria.liderImediato),
+      gerenteRegional: up(diaria.gerenteRegional),
+      regional: up(diaria.regional),
+      motivo: up(diaria.motivo),
       inicio: diaria.inicio,
       fim: diaria.fim || diaria.inicio
     }
-  });
+  };
+
+  if (editingEntryId.value) {
+    updateEntry("custo_diaria", editingEntryId.value, payload);
+    editingEntryId.value = null;
+    emit("saved");
+    toast(`Diária atualizada para ${emp.name}.`);
+    close();
+    return;
+  }
+
+  addEntry("custo_diaria", payload);
 
   emit("saved");
   toast(`Diária lançada para ${emp.name}: ${formatCurrency(value)}.`);
@@ -559,7 +641,6 @@ function submitDiaria() {
   /* Mantém o colaborador selecionado para o próximo lançamento, apenas
      limpando os dados específicos da diária. */
   diaria.value = "";
-  diaria.pagamento = "";
   diaria.motivo = "";
   diaria.inicio = todayISO();
   diaria.fim = todayISO();
@@ -589,60 +670,240 @@ function pickTreinamentoEmployee(e) {
 
 /* Preenche cargo, loja (filial) e estado automaticamente do colaborador. */
 function fillTreinamentoContext(emp) {
-  treinamento.cargo = emp.cargo || "";
+  treinamento.cargo = String(emp.cargo || "").toUpperCase();
   const filial = emp.filialId ? getBranchById(emp.filialId) : null;
-  treinamento.filial = filial ? `${filial.shortName} ${filial.name}`.trim() : "";
+  treinamento.filial = filial ? String(`${filial.shortName} ${filial.name}`.trim()).toUpperCase() : "";
 }
 
 function submitTreinamento() {
   const emp = treinamento.employeeId ? getEmployeeById(treinamento.employeeId) : null;
   if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
   if (!treinamento.data) return toast("Informe a data do treinamento.");
-  const cargaRaw = String(treinamento.cargaHoraria).trim();
-  if (cargaRaw === "" || isNaN(Number(cargaRaw)) || Number(cargaRaw) < 0) {
-    return toast("Informe a carga horária do treinamento (horas).");
-  }
-  const carga = Number(cargaRaw);
-
-  let valorPago = null;
-  const valorRaw = String(treinamento.valorPago).trim();
-  if (valorRaw !== "") {
-    if (isNaN(Number(valorRaw)) || Number(valorRaw) < 0) {
-      return toast("Informe um valor pago válido (R$) ou deixe em branco.");
-    }
-    valorPago = Number(valorRaw);
+  const carga = parseHoursBR(treinamento.cargaHoraria);
+  if (carga === null || carga < 0) {
+    return toast("Informe a carga horária do treinamento (ex.: 8, 12:00 ou 12:30).");
   }
 
-  const filial = treinamento.filial.trim() || null;
+  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
+  const filial = up(treinamento.filial);
   const mod =
     (MODALIDADE_OPTIONS.find((o) => o.value === treinamento.modalidade) || {}).label ||
     treinamento.modalidade;
-  addEntry("treinamento", {
+  const payload = {
     date: treinamento.data,
     value: carga,
     state: emp.estado || null,
     meta: {
       employeeId: emp.id,
-      employeeName: emp.name,
-      cargo: treinamento.cargo.trim() || null,
+      employeeName: up(emp.name),
+      cargo: up(treinamento.cargo),
       filial,
-      tema: treinamento.tema.trim() || null,
+      tema: up(treinamento.tema),
       cargaHoraria: carga,
-      modalidade: mod,
-      valorPago
+      modalidade: mod
     }
-  });
+  };
+
+  if (editingEntryId.value) {
+    updateEntry("treinamento", editingEntryId.value, payload);
+    editingEntryId.value = null;
+    emit("saved");
+    toast(`Treinamento atualizado para ${emp.name}: ${formatHoursBR(carga)}.`);
+    close();
+    return;
+  }
+
+  addEntry("treinamento", payload);
 
   emit("saved");
-  toast(`Treinamento lançado para ${emp.name}: ${carga} h.`);
+  toast(`Treinamento lançado para ${emp.name}: ${formatHoursBR(carga)}.`);
 
   /* Mantém o colaborador selecionado, limpando os dados do treinamento. */
   treinamento.data = todayISO();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
-  treinamento.valorPago = "";
   fillTreinamentoContext(emp);
+}
+
+/* ---------- Importação de treinamentos por planilha ---------- */
+const trImportInput = ref(null);
+const trReviewOpen = ref(false);
+const trRows = ref([]);
+
+const trSelectedCount = computed(
+  () => trRows.value.filter((r) => r.chosen && r.candidates.some((c) => c.id === r.chosen)).length
+);
+const trAmbiguousCount = computed(
+  () => trRows.value.filter((r) => r.candidates.length > 1 && !r.missing).length
+);
+const trMissingCount = computed(() => trRows.value.filter((r) => r.missing).length);
+
+/* ---------- Filtro por causa (problemas no topo) ---------- */
+const TR_CAUSE_LABELS = {
+  sem_colaborador: "Colaborador não encontrado",
+  sem_carga: "Sem carga horária",
+  ambiguo: "Nome ambíguo (2 ou + colaboradores)",
+  ok: "OK"
+};
+const TR_CAUSE_ORDER = ["sem_colaborador", "sem_carga", "ambiguo", "ok"];
+
+const trFilter = ref("todos");
+
+function trCauseOf(r) {
+  if (r.missing) return "sem_colaborador";
+  if (r.carga === null || r.carga === undefined || isNaN(Number(r.carga))) return "sem_carga";
+  if (r.candidates.length > 1) return "ambiguo";
+  return "ok";
+}
+
+function trProblemRank(r) {
+  const idx = TR_CAUSE_ORDER.indexOf(trCauseOf(r));
+  return idx < 0 ? 99 : idx;
+}
+
+const trFilterOptions = computed(() => {
+  const present = new Set(trRows.value.map(trCauseOf));
+  const options = [{ value: "todos", label: "Todas as causas" }];
+  TR_CAUSE_ORDER.forEach((k) => {
+    if (present.has(k)) options.push({ value: k, label: TR_CAUSE_LABELS[k] });
+  });
+  return options;
+});
+
+/* Problemas primeiro; dentro de cada causa, ordena por nome. */
+const visibleTrRows = computed(() => {
+  const rows = trRows.value.filter((r) => trFilter.value === "todos" || trCauseOf(r) === trFilter.value);
+  return rows
+    .slice()
+    .sort((a, b) => trProblemRank(a) - trProblemRank(b) || String(a.name || "").localeCompare(String(b.name || "")));
+});
+
+/* Mês/competência dos treinamentos importados. */
+const trMonth = ref(currentYm());
+const trYearOptions = yearOptions(4, 1);
+
+const trMonthNum = computed(() =>
+  trMonth.value ? Number(trMonth.value.split("-")[1]) : new Date().getMonth() + 1
+);
+const trYearNum = computed(() =>
+  trMonth.value ? Number(trMonth.value.split("-")[0]) : new Date().getFullYear()
+);
+const trMonthLabel = computed(() => {
+  if (!trMonth.value) return "";
+  const [y, m] = trMonth.value.split("-");
+  return `${MONTHS_SHORT[Number(m) - 1] || m}/${y}`;
+});
+
+function setTrMonth(m) {
+  trMonth.value = `${trYearNum.value}-${String(m).padStart(2, "0")}`;
+}
+function setTrYear(y) {
+  trMonth.value = `${y}-${String(trMonthNum.value).padStart(2, "0")}`;
+}
+
+/* Monta o registro do candidato exibido na escolha (usuário · setor · filial · cargo · estado). */
+function trCandidateRecord(emp) {
+  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
+  return {
+    id: emp.id,
+    user: emp.user || "",
+    name: emp.name || "",
+    sector: emp.sector || "",
+    cargo: emp.cargo || "",
+    estado: emp.estado || "",
+    filial: filial ? String(`${filial.shortName} ${filial.name}`.trim()) : ""
+  };
+}
+
+function trCandidateLabel(c) {
+  const parts = [c.user, c.sector];
+  if (c.filial) parts.push(c.filial);
+  if (c.cargo) parts.push(c.cargo);
+  if (c.estado) parts.push(c.estado);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function trSheetToUse(wb) {
+  if (wb.Sheets["Treinamento"]) return wb.Sheets["Treinamento"];
+  const keys = Object.keys(wb.Sheets || {});
+  return keys.length ? wb.Sheets[keys[0]] : null;
+}
+
+async function onTrImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const wb = await readWorkbookFile(file);
+    const sheet = trSheetToUse(wb);
+    const parsed = sheet ? parseTreinamentoSheet(sheet) : [];
+    if (!parsed.length) {
+      toast("Nenhum treinamento encontrado na planilha. Use o template de treinamento.");
+      return;
+    }
+    trRows.value = parsed.map((row) => {
+      const matches = findEmployeesByName(row.name).map(trCandidateRecord);
+      return {
+        ...row,
+        candidates: matches,
+        missing: matches.length === 0,
+        chosen: matches.length === 1 ? matches[0].id : null
+      };
+    });
+    trFilter.value = "todos";
+    trMonth.value = currentYm();
+    trReviewOpen.value = true;
+  } catch (err) {
+    console.error(err);
+    toast("Não foi possível ler a planilha de treinamentos.");
+  }
+}
+
+function trRowUsable(r) {
+  return !r.missing && r.candidates.length > 0 && r.chosen;
+}
+
+function confirmTrImport() {
+  let ok = 0;
+  let skipped = 0;
+  let invalid = 0;
+  const dataTreinamento = trMonth.value ? `${trMonth.value}-01` : todayISO();
+  trRows.value.forEach((r) => {
+    if (r.carga === null || r.carga === undefined || isNaN(Number(r.carga))) {
+      invalid++;
+      return;
+    }
+    const emp = r.candidates.find((c) => c.id === r.chosen);
+    if (!emp) {
+      skipped++;
+      return;
+    }
+    const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
+    const filial = up(emp.filial) || null;
+    addEntry("treinamento", {
+      date: dataTreinamento,
+      value: Number(r.carga),
+      state: emp.estado || null,
+      meta: {
+        employeeId: emp.id,
+        employeeName: up(emp.name),
+        cargo: up(emp.cargo) || null,
+        filial,
+        tema: up(r.tema) || null,
+        cargaHoraria: Number(r.carga),
+        modalidade: r.modalidadeLabel || "Presencial"
+      }
+    });
+    ok++;
+  });
+  trReviewOpen.value = false;
+  trRows.value = [];
+  emit("saved");
+  const parts = [`${ok} treinamento(s) lançado(s) em ${trMonthLabel.value}`];
+  if (skipped) parts.push(`${skipped} não lançado(s)`);
+  if (invalid) parts.push(`${invalid} sem carga horária`);
+  toast("Importação concluída — " + parts.join(" · "));
 }
 
 /* ---------- Custos Totais (por filial) ---------- */
@@ -674,20 +935,57 @@ function pickCustosTotBranch(b) {
   showTab("custos");
 }
 
-function setCustosTotToday() {
-  custosTot.data = todayISO();
+/* ---------- Mês de competência (Custos Totais) ---------- */
+const custosYearOptions = yearOptions(4, 1);
+
+const custosMonthNum = computed(() =>
+  custosTot.month ? Number(custosTot.month.split("-")[1]) : 1
+);
+const custosYearNum = computed(() =>
+  custosTot.month ? Number(custosTot.month.split("-")[0]) : new Date().getFullYear()
+);
+
+const custosTotMonthLabel = computed(() => {
+  if (!custosTot.month) return "";
+  const [y, m] = custosTot.month.split("-");
+  const idx = Number(m) - 1;
+  return `${MONTHS_SHORT[idx] || m}/${y}`;
+});
+
+function setCustosMonth(m) {
+  const y = custosYearNum.value;
+  custosTot.month = `${y}-${String(m).padStart(2, "0")}`;
+}
+
+function setCustosYear(y) {
+  const m = String(custosMonthNum.value).padStart(2, "0");
+  custosTot.month = `${y}-${m}`;
+}
+
+function setCustosCurrentMonth() {
+  custosTot.month = currentYm();
+}
+
+/* ---------- Valor monetário (R$) com máscara brasileira ---------- */
+function onCustosMoneyInput(ev) {
+  custosTot.custos = maskCurrencyInput(ev.target.value);
+}
+
+function onCustosMoneyBlur() {
+  custosTot.custos = normalizeCurrencyInput(custosTot.custos);
 }
 
 function submitCustosTotal() {
   const b = custosTotBranch.value;
   if (!b) return toast("Selecione uma filial na aba Filial.");
-  if (!custosTot.data) return toast("Informe a data dos custos.");
+  if (!custosTot.month) return toast("Informe o mês/ano de referência dos custos.");
 
-  const custosRaw = String(custosTot.custos).trim();
-  if (custosRaw === "" || isNaN(Number(custosRaw)) || Number(custosRaw) < 0) {
-    return toast("Informe o valor dos custos (R$).");
+  const custosText = normalizeCurrencyInput(custosTot.custos);
+  if (custosText === "") return toast("Informe o valor dos custos (R$).");
+  const custos = parseCurrencyBR(custosText);
+  if (isNaN(custos) || custos < 0) {
+    return toast("Informe um valor de custos válido em Reais (R$).");
   }
-  const custos = Number(custosRaw);
 
   let percent = null;
   const percentRaw = String(custosTot.percent).trim();
@@ -699,8 +997,11 @@ function submitCustosTotal() {
     percent = p;
   }
 
-  addEntry("custo_total", {
-    date: custosTot.data,
+  /* O lançamento é gravado no 1º dia do mês/ano escolhido. */
+  const dataCompetencia = `${custosTot.month}-01`;
+
+  const payload = {
+    date: dataCompetencia,
     value: custos,
     state: b.estado || null,
     meta: {
@@ -710,16 +1011,27 @@ function submitCustosTotal() {
       razaoSocial: b.name || null,
       shortName: b.shortName || null,
       filial: [b.shortName, b.name].filter(Boolean).join(" ").trim() || null,
-      percent
+      percent,
+      competencia: custosTot.month
     }
-  });
+  };
+
+  if (editingEntryId.value) {
+    updateEntry("custo_total", editingEntryId.value, payload);
+    editingEntryId.value = null;
+    emit("saved");
+    toast(`Custos de ${custosTotMonthLabel.value} atualizados para ${b.name}.`);
+    close();
+    return;
+  }
+
+  addEntry("custo_total", payload);
 
   emit("saved");
-  toast(`Custos lançados para ${b.name}: ${formatCurrency(custos)}.`);
+  toast(`Custos de ${custosTotMonthLabel.value} lançados para ${b.name}: ${formatCurrency(custos)}.`);
 
   /* Mantém a filial selecionada para o próximo lançamento, limpando apenas
      os dados específicos do custo. */
-  custosTot.data = todayISO();
   custosTot.custos = "";
   custosTot.percent = "";
 }
@@ -821,7 +1133,7 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
         <div v-show="activeTab === 'nova'" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
             <label for="vagaNome" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Nome da vaga</label>
-            <input id="vagaNome" v-model="vaga.nome" type="text" class="input-field uppercase" placeholder="Ex.: Analista de RH" />
+            <input id="vagaNome" v-model="vaga.nome" v-upper type="text" class="input-field uppercase" placeholder="Ex.: ANALISTA DE RH" />
           </div>
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="flex flex-col gap-1.5">
@@ -956,23 +1268,23 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
             <div class="grid gap-3 sm:grid-cols-2">
               <div class="flex flex-col gap-1.5">
                 <label for="diariaDep" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Departamento</label>
-                <input id="diariaDep" v-model="diaria.departamento" type="text" class="input-field" />
+                <input id="diariaDep" v-model="diaria.departamento" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
-                <input id="diariaFilial" v-model="diaria.filial" type="text" class="input-field" />
+                <input id="diariaFilial" v-model="diaria.filial" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaLider" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Líder imediato</label>
-                <input id="diariaLider" v-model="diaria.liderImediato" type="text" class="input-field" />
+                <input id="diariaLider" v-model="diaria.liderImediato" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaGerente" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente regional</label>
-                <input id="diariaGerente" v-model="diaria.gerenteRegional" type="text" class="input-field" />
+                <input id="diariaGerente" v-model="diaria.gerenteRegional" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaRegional" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Regional</label>
-                <input id="diariaRegional" v-model="diaria.regional" type="text" class="input-field" />
+                <input id="diariaRegional" v-model="diaria.regional" v-upper type="text" class="input-field" />
               </div>
             </div>
           </fieldset>
@@ -989,17 +1301,10 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
             <button type="button" class="btn-ghost" @click="setDiariaToday">Hoje</button>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-4">
             <div class="flex flex-col gap-1.5">
-              <label for="diariaPagamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Pagamento</label>
-              <input id="diariaPagamento" v-model="diaria.pagamento" type="text" list="diariaPagamentoList" class="input-field" placeholder="Ex.: Diária, Alimentação..." />
-              <datalist id="diariaPagamentoList">
-                <option v-for="opt in PAGAMENTO_OPTIONS" :key="opt" :value="opt"></option>
-              </datalist>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="diariaMotivo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Motivo da diária</label>
-              <input id="diariaMotivo" v-model="diaria.motivo" type="text" class="input-field" placeholder="Ex.: Visita à loja..." />
+              <label for="diariaMotivo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Diária</label>
+              <input id="diariaMotivo" v-model="diaria.motivo" v-upper type="text" class="input-field" placeholder="Ex.: VISITA À LOJA..." />
             </div>
           </div>
 
@@ -1039,6 +1344,23 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
         </div>
 
         <div v-show="activeTab === 'treinamento'" class="flex flex-col gap-4">
+          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar treinamentos por planilha</strong>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Colunas: Colaborador · Tema do treinamento · Carga horária (horas) · Modalidade.
+                  Os nomes são cruzados com a equipe (ignorando maiúsculas/minúsculas, acentos e espaços).
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="downloadTreinamentoTemplate">Baixar template</button>
+                <button type="button" class="btn-primary btn-sm" @click="trImportInput?.click()">Importar planilha</button>
+                <input ref="trImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onTrImportFile" />
+              </div>
+            </div>
+          </div>
+
           <div class="flex flex-col gap-1.5">
             <label for="trSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
             <input id="trSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="treinamentoEmployeeName" placeholder="Nenhum selecionado" />
@@ -1050,11 +1372,11 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
           <div class="grid gap-4 sm:grid-cols-3">
             <div class="flex flex-col gap-1.5">
               <label for="trCargo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Cargo</label>
-              <input id="trCargo" v-model="treinamento.cargo" type="text" class="input-field" />
+              <input id="trCargo" v-model="treinamento.cargo" v-upper type="text" class="input-field" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="trFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Loja (Filial)</label>
-              <input id="trFilial" v-model="treinamento.filial" type="text" class="input-field" />
+              <input id="trFilial" v-model="treinamento.filial" v-upper type="text" class="input-field" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="trData" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data do treinamento</label>
@@ -1064,23 +1386,19 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
 
           <div class="flex flex-col gap-1.5">
             <label for="trTema" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tema do treinamento</label>
-            <input id="trTema" v-model="treinamento.tema" type="text" class="input-field" placeholder="Ex.: Excel, Atendimento, NR 35..." />
+            <input id="trTema" v-model="treinamento.tema" v-upper type="text" class="input-field" placeholder="Ex.: EXCEL, ATENDIMENTO, NR 35..." />
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-2">
             <div class="flex flex-col gap-1.5">
-              <label for="trCarga" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Carga horária (horas)</label>
-              <input id="trCarga" v-model="treinamento.cargaHoraria" type="number" min="0" step="any" class="input-field" placeholder="0" />
+              <label for="trCarga" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Carga horária</label>
+              <input id="trCarga" v-model="treinamento.cargaHoraria" type="text" inputmode="decimal" class="input-field" placeholder="Ex.: 8, 12:00 ou 12:30" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="trModalidade" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Modalidade</label>
               <select id="trModalidade" v-model="treinamento.modalidade" class="input-field">
                 <option v-for="m in MODALIDADE_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
               </select>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="trValor" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Valor pago (R$)</label>
-              <input id="trValor" v-model="treinamento.valorPago" type="number" min="0" step="any" class="input-field" placeholder="0,00 (opcional)" />
             </div>
           </div>
         </div>
@@ -1153,19 +1471,43 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
             </div>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div class="flex flex-col gap-1.5">
-              <label for="ctData" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data dos custos</label>
-              <input id="ctData" v-model="custosTot.data" type="date" class="input-field" />
+              <label for="ctMonth" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês de referência</label>
+              <select id="ctMonth" class="input-field" :value="custosMonthNum" @change="setCustosMonth(Number($event.target.value))">
+                <option v-for="(mName, i) in MONTHS_SHORT" :key="i + 1" :value="i + 1">{{ mName }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="ctYear" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Ano</label>
+              <select id="ctYear" class="input-field" :value="custosYearNum" @change="setCustosYear(Number($event.target.value))">
+                <option v-for="y in custosYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="ctCustos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Custos (R$)</label>
-              <input id="ctCustos" v-model="custosTot.custos" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
+              <input
+                id="ctCustos"
+                class="input-field text-right tabular-nums"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                placeholder="0,00"
+                :value="custosTot.custos"
+                @input="onCustosMoneyInput"
+                @blur="onCustosMoneyBlur"
+              />
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="ctPercent" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">%</label>
               <input id="ctPercent" v-model="custosTot.percent" type="number" min="0" step="any" class="input-field" placeholder="0,00 (informativo)" />
             </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" class="btn-ghost btn-sm" @click="setCustosCurrentMonth">Mês atual</button>
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">
+              Competência: <strong>{{ custosTotMonthLabel }}</strong> · O valor é armazenado como número (ex.: 1.500,50).
+            </span>
           </div>
           <p class="text-xs text-zinc-500 dark:text-zinc-400">
             O campo % é informativo (ex.: participação da filial) e aparece nos registros do indicador.
@@ -1269,6 +1611,109 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
             <button type="submit" class="btn-primary">Salvar salário</button>
           </div>
         </form>
+      </div>
+    </Teleport>
+
+    <!-- ===== Revisão de importação de treinamentos ===== -->
+    <Teleport to="body">
+      <div
+        v-if="trReviewOpen"
+        class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 p-4 py-10"
+      >
+        <div class="slide-up flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <div>
+              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar treinamentos importados</h3>
+              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                {{ trRows.length }} linha(s) · {{ trAmbiguousCount }} com nomes ambíguos ·
+                {{ trMissingCount }} sem colaborador correspondente
+              </p>
+            </div>
+            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="trReviewOpen = false">&times;</button>
+          </div>
+
+          <div class="flex flex-1 flex-col gap-2 overflow-y-auto px-6 py-4">
+            <div class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Mês do treinamento</span>
+              <select
+                class="input-field w-auto"
+                :value="trMonthNum"
+                aria-label="Mês do treinamento"
+                @change="setTrMonth(Number($event.target.value))"
+              >
+                <option v-for="(mName, i) in MONTHS_SHORT" :key="i + 1" :value="i + 1">{{ mName }}</option>
+              </select>
+              <select
+                class="input-field w-auto"
+                :value="trYearNum"
+                aria-label="Ano do treinamento"
+                @change="setTrYear(Number($event.target.value))"
+              >
+                <option v-for="y in trYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                Competência: <strong class="text-zinc-700 dark:text-zinc-200">{{ trMonthLabel }}</strong>
+              </span>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                Quando houver dois ou mais colaboradores com o mesmo nome, escolha qual é qual abaixo — ou “Não lançar”.
+              </p>
+              <select v-model="trFilter" class="input-field w-auto" aria-label="Filtrar por causa">
+                <option v-for="opt in trFilterOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+
+            <div
+              v-for="(r, idx) in visibleTrRows"
+              :key="idx"
+              class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
+              :class="r.candidates.length > 1 && !r.missing ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5' : ''"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ r.name }}</strong>
+                    <Badge v-if="r.candidates.length === 1 && !r.missing" tone="accent">1 colaborador</Badge>
+                    <Badge v-else-if="r.candidates.length > 1 && !r.missing" tone="muted">{{ r.candidates.length }} colaboradores</Badge>
+                  </div>
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ r.tema || "Sem tema" }} · {{ r.carga != null ? formatHoursBR(r.carga) : "sem carga horária" }} ·
+                    {{ r.modalidadeLabel || "Presencial" }}
+                  </p>
+                </div>
+                <span v-if="r.missing" class="text-xs font-semibold text-red-600 dark:text-red-400">
+                  Colaborador não encontrado na equipe
+                </span>
+                <span v-else-if="r.carga === null || r.carga === undefined" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  Sem carga horária — não será lançado
+                </span>
+              </div>
+
+              <div class="mt-2 flex flex-col gap-1">
+                <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Lançar para qual colaborador?</label>
+                <select
+                  v-model="r.chosen"
+                  class="input-field"
+                  :disabled="r.missing || r.candidates.length === 0"
+                >
+                  <option value="">— Não lançar —</option>
+                  <option v-for="c in r.candidates" :key="c.id" :value="c.id">
+                    {{ trCandidateLabel(c) }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <button type="button" class="btn-ghost" @click="trReviewOpen = false">Cancelar</button>
+            <button type="button" class="btn-primary" :disabled="!trSelectedCount" @click="confirmTrImport">
+              Lançar {{ trSelectedCount }} treinamento(s) em {{ trMonthLabel }}
+            </button>
+          </div>
+        </div>
       </div>
     </Teleport>
   </Modal>

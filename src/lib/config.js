@@ -106,7 +106,7 @@ export const INDICATORS = [
   {
     id: "custo_diaria",
     name: "Custo da diária geral",
-    desc: "Valor pago em diárias (colaborador, departamento, filial, líder, regional, pagamento, período e motivo)",
+    desc: "Valor pago em diárias (colaborador, departamento, filial, líder, regional, período e diária)",
     type: "currency",
     unit: "R$",
     decimals: 2,
@@ -118,7 +118,7 @@ export const INDICATORS = [
   {
     id: "treinamento",
     name: "Treinamento",
-    desc: "Carga horária e valor pago em treinamentos (colaborador, cargo, loja, tema, modalidade)",
+    desc: "Carga horária em treinamentos (colaborador, cargo, loja, tema, modalidade)",
     type: "hours",
     unit: "horas",
     decimals: 1,

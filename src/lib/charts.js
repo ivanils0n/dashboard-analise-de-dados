@@ -2,7 +2,7 @@
    já filtradas pela UI; o plugin valueLabels desenha os números quando
    options.plugins.valueLabels.display = true. */
 import { Chart, registerables } from "chart.js";
-import { formatValue, formatAxisValue, formatShortDate } from "./utils";
+import { formatValue, formatAxisValue, formatShortDate, formatCurrency } from "./utils";
 
 Chart.register(...registerables);
 
@@ -30,89 +30,168 @@ export const PIE_SECONDARY = "#94a3b8";
 const valueLabelsPlugin = {
   id: "valueLabels",
   afterDatasetsDraw(chart) {
-    const opts = chart.options.plugins && chart.options.plugins.valueLabels;
-    if (!opts || !opts.display) return;
+    try {
+      drawValueLabels(chart);
+    } catch (err) {
+      /* Nunca deixar um erro de desenho quebrar o app */
+    }
+  }
+};
 
-    const { ctx } = chart;
-    const p = chartPalette();
-    ctx.save();
-    ctx.font = "700 12px Inter, sans-serif";
-    ctx.textAlign = "center";
+function drawValueLabels(chart) {
+  const local = chart.__valueLabels || {};
+  const opts = (chart.options.plugins && chart.options.plugins.valueLabels) || {};
+  const display = local.display !== undefined ? local.display : opts.display;
+  if (!display) return;
 
-    if (chart.config.type === "doughnut" || chart.config.type === "pie") {
-      const meta = chart.getDatasetMeta(0);
-      const ds = chart.data.datasets[0];
+  const { ctx } = chart;
+  const p = chartPalette();
+  const rawFormatter = local.formatter !== undefined ? local.formatter : opts.formatter;
+  const formatter = typeof rawFormatter === "function" ? rawFormatter : null;
+  const label = (val) => (formatter ? formatter(val) : String(val));
+  ctx.save();
+  ctx.font = "700 12px Inter, sans-serif";
+  ctx.textAlign = "center";
+
+  if (chart.config.type === "doughnut" || chart.config.type === "pie") {
+    const meta = chart.getDatasetMeta(0);
+    const ds = chart.data.datasets[0];
+    if (!meta || !ds) return;
+    meta.data.forEach((el, i) => {
+      const val = ds.data[i];
+      if (val == null) return;
+      const prop = el.getProps(["x", "y", "startAngle", "endAngle", "innerRadius", "outerRadius"], true);
+      const mid = (prop.startAngle + prop.endAngle) / 2;
+      const r = (prop.outerRadius + prop.innerRadius) / 2;
+      const x = prop.x + Math.cos(mid) * r;
+      const y = prop.y + Math.sin(mid) * r;
+      ctx.fillStyle = ds.backgroundColor[i] === PIE_SECONDARY ? "#1f2937" : "#ffffff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label(val), x, y);
+    });
+  } else {
+    ctx.fillStyle = p.text;
+    const isBar = chart.config.type === "bar";
+    const perIndex = chart.__valueFormats || [];
+    chart.data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (!meta) return;
       meta.data.forEach((el, i) => {
         const val = ds.data[i];
         if (val == null) return;
-        const prop = el.getProps(["x", "y", "startAngle", "endAngle", "innerRadius", "outerRadius"], true);
-        const mid = (prop.startAngle + prop.endAngle) / 2;
-        const r = (prop.outerRadius + prop.innerRadius) / 2;
-        const x = prop.x + Math.cos(mid) * r;
-        const y = prop.y + Math.sin(mid) * r;
-        /* Cor de legenda por contraste com a fatia (vermelho -> branco,
-           fatia neutra -> texto escuro). */
-        ctx.fillStyle = ds.backgroundColor[i] === PIE_SECONDARY ? "#1f2937" : "#ffffff";
-        ctx.textBaseline = "middle";
-        ctx.fillText(String(val), x, y);
+        const offset = isBar ? 5 : 9;
+        let y = el.y - offset;
+        ctx.textBaseline = "bottom";
+        if (y - 13 < 0) {
+          ctx.textBaseline = "top";
+          y = el.y + offset;
+        }
+        const idxFormat = perIndex[i];
+        const text = idxFormat === "currency" ? formatCurrency(val) : label(val);
+        ctx.fillText(text, el.x, y);
       });
-    } else {
-      ctx.fillStyle = p.text;
-      const isBar = chart.config.type === "bar";
-      chart.data.datasets.forEach((ds, di) => {
-        const meta = chart.getDatasetMeta(di);
-        meta.data.forEach((el, i) => {
-          const val = ds.data[i];
-          if (val == null) return;
-          const offset = isBar ? 5 : 9;
-          let y = el.y - offset;
-          ctx.textBaseline = "bottom";
-          if (y - 13 < 0) {
-            ctx.textBaseline = "top";
-            y = el.y + offset;
-          }
-          ctx.fillText(String(val), el.x, y);
-        });
-      });
-    }
-    ctx.restore();
+    });
   }
-};
+  ctx.restore();
+}
 
 /* Linha tracejada da média do período (usada p/ Tempo médio de contratação).
    updateLineChart define chart.__meanLine = { value, label }. */
 const meanLinePlugin = {
   id: "meanLine",
   afterDatasetsDraw(chart) {
-    const m = chart.__meanLine;
-    if (!m || m.value === null || m.value === undefined) return;
-    const area = chart.chartArea;
-    const yScale = chart.scales && chart.scales.y;
-    if (!area || !yScale) return;
-    const y = yScale.getPixelForValue(m.value);
-    if (y < area.top || y > area.bottom) return;
-    const p = chartPalette();
-    const { ctx } = chart;
-    ctx.save();
-    ctx.strokeStyle = p.tick;
-    ctx.globalAlpha = 0.55;
-    ctx.setLineDash([6, 5]);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(area.left, y);
-    ctx.lineTo(area.right, y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-    ctx.font = "600 11px Inter, sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillStyle = p.tick;
-    ctx.fillText(m.label, area.right - 4, y - 6);
-    ctx.restore();
+    try {
+      drawMeanLine(chart);
+    } catch (err) {
+      /* Nunca deixar um erro de desenho quebrar o app */
+    }
   }
 };
 
+function drawMeanLine(chart) {
+  const m = chart.__meanLine;
+  if (!m || m.value === null || m.value === undefined) return;
+  const area = chart.chartArea;
+  const yScale = chart.scales && chart.scales.y;
+  if (!area || !yScale) return;
+  const y = yScale.getPixelForValue(m.value);
+  if (y < area.top || y > area.bottom) return;
+  const p = chartPalette();
+  const { ctx } = chart;
+  ctx.save();
+  ctx.strokeStyle = p.tick;
+  ctx.globalAlpha = 0.55;
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(area.left, y);
+  ctx.lineTo(area.right, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  ctx.font = "600 11px Inter, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillStyle = p.tick;
+  ctx.fillText(m.label, area.right - 4, y - 6);
+  ctx.restore();
+}
+
 Chart.register(meanLinePlugin);
+
+/* Linha de tendência — média móvel de 2 períodos (MM2) sobre os pontos do
+   gráfico de barras. updateBarChart define chart.__trendLine = [valores]. */
+export const TREND_COLOR = "#3b82f6";
+const trendLinePlugin = {
+  id: "trendLine",
+  afterDatasetsDraw(chart) {
+    try {
+      drawTrendLine(chart);
+    } catch (err) {
+      /* Nunca deixar um erro de desenho quebrar o app */
+    }
+  }
+};
+
+function drawTrendLine(chart) {
+  const t = chart.__trendLine;
+  if (!t || !Array.isArray(t.data) || !t.data.length) return;
+  const meta = chart.getDatasetMeta(0);
+  const yScale = chart.scales && chart.scales.y;
+  if (!meta || !yScale) return;
+
+  const { ctx } = chart;
+  ctx.save();
+  ctx.strokeStyle = TREND_COLOR;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  let started = false;
+  const points = [];
+  t.data.forEach((val, i) => {
+    const el = meta.data[i];
+    if (!el || val === null || val === undefined || isNaN(Number(val))) return;
+    const x = el.x;
+    const y = yScale.getPixelForValue(Number(val));
+    points.push({ x, y });
+    if (!started) {
+      ctx.moveTo(x, y);
+      started = true;
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  if (started) ctx.stroke();
+
+  ctx.fillStyle = TREND_COLOR;
+  points.forEach((pt) => {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+Chart.register(trendLinePlugin);
 
 export function createMiniLineChart(canvas) {
   return new Chart(canvas, {
@@ -189,8 +268,22 @@ export function updatePieChart(chart, data) {
 }
 
 export function setShowValues(chart, display) {
-  if (!chart || !chart.options.plugins.valueLabels) return;
-  chart.options.plugins.valueLabels.display = display;
+  if (!chart) return;
+  chart.__valueLabels = { ...(chart.__valueLabels || {}), display };
+  if (chart.options.plugins.valueLabels) chart.options.plugins.valueLabels.display = display;
+  chart.update();
+}
+
+/* Define como os rótulos de valor são formatados (ex.: moeda). */
+export function setValueFormatter(chart, formatter) {
+  if (!chart) return;
+  chart.__valueLabels = {
+    ...(chart.__valueLabels || {}),
+    formatter: typeof formatter === "function" ? formatter : null
+  };
+  if (chart.options.plugins.valueLabels) {
+    chart.options.plugins.valueLabels.formatter = typeof formatter === "function" ? formatter : null;
+  }
   chart.update();
 }
 
@@ -265,7 +358,13 @@ export function createAbsenteismoBar(canvas) {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: p.tick, font: { size: 11 } }
+          ticks: {
+            color: p.tick,
+            font: { size: 10 },
+            autoSkip: false,
+            maxRotation: 90,
+            minRotation: 90
+          }
         },
         y: {
           grid: { color: p.grid },
@@ -386,7 +485,13 @@ export function createBarChart(canvas) {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: p.tick, font: { size: 11 } }
+          ticks: {
+            color: p.tick,
+            font: { size: 10 },
+            autoSkip: false,
+            maxRotation: 90,
+            minRotation: 90
+          }
         },
         y: {
           grid: { color: p.grid },
@@ -400,12 +505,16 @@ export function createBarChart(canvas) {
   });
 }
 
-/* panorama: [{ label, value, tooltip }] */
-export function updateBarChart(chart, panorama) {
+/* panorama: [{ label, value, tooltipValue, format? }]
+   options: { format?: "currency" } — formata os rótulos/linha de média. */
+export function updateBarChart(chart, panorama, options = {}) {
   if (!chart || !panorama) return;
   const labels = panorama.map((p) => p.label);
   const values = panorama.map((p) => (p.value === null ? 0 : p.value));
-  const tooltips = panorama.map((p) => p.tooltip);
+  const tooltips = panorama.map((p) =>
+    p.tooltipValue != null ? p.tooltipValue : p.tooltip
+  );
+  chart.__valueFormats = panorama.map((p) => p.format || null);
 
   chart.data = {
     labels,
@@ -422,7 +531,22 @@ export function updateBarChart(chart, panorama) {
   };
 
   chart.options.plugins.tooltip.callbacks = {
-    label: (context) => tooltips[context.dataIndex] || context.raw
+    /* O título do tooltip já é o rótulo (nome do indicador/filial); aqui
+       mostramos apenas o valor, sem repetir o nome. */
+    label: (context) => String(tooltips[context.dataIndex] ?? context.raw)
   };
+
+  /* Linha de tendência — média móvel de 2 períodos (MM2). */
+  const ma2 = values.map((v, i) => {
+    const cur = Number(v) || 0;
+    if (i === 0) return cur;
+    return (Number(values[i - 1]) + cur) / 2;
+  });
+  chart.__trendLine =
+    options.trend !== false && values.length ? { data: ma2, label: "Tendência (MM2)" } : null;
+
+  /* Gráficos de barras não usam a linha de média. */
+  chart.__meanLine = null;
+
   chart.update();
 }

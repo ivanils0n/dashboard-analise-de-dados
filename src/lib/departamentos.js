@@ -1,12 +1,12 @@
 // Domínio de Departamentos.
 
 import { upsertDepartment, deleteDepartment, getDepartments } from "./store";
-import { createId, nowLocalISO } from "./utils";
+import { createId, nowLocalISO, sameState } from "./utils";
 
 export function listDepartments(state) {
   const all = getDepartments();
   if (state && state !== "todos") {
-    return all.filter((d) => (d.estado || null) === state);
+    return all.filter((d) => sameState(d.estado, state));
   }
   return all.slice();
 }

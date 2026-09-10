@@ -668,6 +668,58 @@ revoke all on function public.gg_delta_versao() from public;
 grant execute on function public.gg_delta_versao() to authenticated;
 
 -- ---------------------------------------------------------
+-- FEEDBACK / HISTÓRICO — consolidado mensal dos indicadores
+-- ---------------------------------------------------------
+-- Guarda os resultados consolidados (agregados/indicadores) dos MESES
+-- ANTERIORES por ano + mês + estado. Cada combinação
+-- (ano, mês, estado, indicador) possui UM único registro, que é ATUALIZADO
+-- quando os dados daquele período mudam — nunca é criada uma segunda linha.
+-- O mês vigente não é gravado aqui (usa os dados originais).
+-- ---------------------------------------------------------
+create table if not exists public.feedback_indicadores (
+  ano           int not null,
+  mes           int not null check (mes between 1 and 12),
+  estado        text not null default 'todos',
+  indicador     text not null,
+  valor         double precision,
+  contagem      int not null default 0,
+  tipos         jsonb,
+  atualizado_em timestamptz not null default now(),
+  constraint feedback_indicadores_pk primary key (ano, mes, estado, indicador)
+);
+
+create index if not exists idx_feedback_indicadores_periodo
+  on public.feedback_indicadores (ano, mes, estado);
+
+alter table public.feedback_indicadores enable row level security;
+
+drop policy if exists "feedback_indicadores_leitura" on public.feedback_indicadores;
+create policy "feedback_indicadores_leitura" on public.feedback_indicadores
+  for select to authenticated using (true);
+
+drop policy if exists "feedback_indicadores_insercao" on public.feedback_indicadores;
+create policy "feedback_indicadores_insercao" on public.feedback_indicadores
+  for insert to authenticated
+  with check (public.user_perfil() in ('admin', 'analista'));
+
+drop policy if exists "feedback_indicadores_atualizacao" on public.feedback_indicadores;
+create policy "feedback_indicadores_atualizacao" on public.feedback_indicadores
+  for update to authenticated
+  using (public.user_perfil() in ('admin', 'analista'))
+  with check (public.user_perfil() in ('admin', 'analista'));
+
+drop policy if exists "feedback_indicadores_exclusao" on public.feedback_indicadores;
+create policy "feedback_indicadores_exclusao" on public.feedback_indicadores
+  for delete to authenticated
+  using (public.user_perfil() in ('admin', 'analista'));
+
+-- Permissões explícitas (garante acesso mesmo se os default privileges
+-- do projeto não cobrirem a tabela criada por este script).
+grant select on public.feedback_indicadores to authenticated;
+grant insert, update, delete on public.feedback_indicadores to authenticated;
+grant select on public.feedback_indicadores to anon;
+
+-- ---------------------------------------------------------
 -- NOTA DE RETENÇÃO DO CHANGELOG
 -- O changelog cresce conforme há escritas (irrelevante para poucos
 -- registros). Para podar o histórico antigo com segurança:

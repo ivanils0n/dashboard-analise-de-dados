@@ -3,9 +3,19 @@ import { ref, reactive, computed, watch } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATES, STATE_NAMES, DEFAULT_STATE, getIndicatorById } from "@/lib/config";
-import { getEntriesFor, removeEntry } from "@/lib/store";
+import { getEntriesFor, removeEntry, removeEntries } from "@/lib/store";
 import { hydrateState } from "@/lib/supabase";
-import { formatDate, formatCurrency } from "@/lib/utils";
+import {
+  formatDate,
+  formatCurrency,
+  firstDayOfMonthISO,
+  lastDayOfMonthISO,
+  monthYm,
+  firstDayOfYm,
+  lastDayOfYm,
+  singleMonthOfRange,
+  ymLabel
+} from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
@@ -30,7 +40,7 @@ const props = defineProps({
   columns: { type: Array, default: () => [] }
 });
 
-const emit = defineEmits(["close"]);
+const emit = defineEmits(["close", "edit"]);
 
 const { state: filters } = useFilters();
 const { confirm } = useDialog();
@@ -42,7 +52,9 @@ const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: pr
 const applied = ref(false);
 const form = reactive({
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE,
-  search: ""
+  search: "",
+  from: "",
+  to: ""
 });
 
 watch(
@@ -64,15 +76,45 @@ watch(
   }
 );
 
+watch(
+  () => [form.from, form.to],
+  () => {
+    applied.value = false;
+  }
+);
+
 function apply() {
   applied.value = true;
+}
+
+/* Período = mês vigente (dinâmico) */
+function setThisMonthPeriod() {
+  form.from = firstDayOfMonthISO();
+  form.to = lastDayOfMonthISO();
+  applied.value = false;
+}
+
+/* Período = mês anterior ao vigente (ex.: hoje Setembro/2026 -> Ago/2026) */
+function setLastMonthPeriod() {
+  const ym = monthYm(-1);
+  form.from = firstDayOfYm(ym);
+  form.to = lastDayOfYm(ym);
+  applied.value = false;
 }
 
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   form.search = "";
+  form.from = "";
+  form.to = "";
   applied.value = false;
 }
+
+/* Rótulo do período selecionado quando é um único mês. */
+const selectedMonthLabel = computed(() => {
+  const ym = singleMonthOfRange(form.from, form.to);
+  return ym ? ymLabel(ym) : "";
+});
 
 /* ---------- Células ---------- */
 
@@ -133,6 +175,11 @@ const rows = computed(() => {
   if (!applied.value) return [];
   let list = getEntriesFor(props.indicatorId, form.estado).slice();
 
+  if (form.from && form.to && form.to < form.from) return [];
+
+  if (form.from) list = list.filter((e) => e.date >= form.from);
+  if (form.to) list = list.filter((e) => e.date <= form.to);
+
   const q = form.search.trim().toLowerCase();
   if (q) {
     list = list.filter((e) => {
@@ -155,6 +202,50 @@ async function removeRow(entry) {
   if (!ok) return;
   removeEntry(props.indicatorId, entry.id);
   toast("Registro excluído.");
+}
+
+/* ---------- Seleção múltipla / exclusão em lote ---------- */
+const selectedIds = ref(new Set());
+
+const selectedRows = computed(() => rows.value.filter((e) => selectedIds.value.has(e.id)));
+const allVisibleSelected = computed(
+  () => rows.value.length > 0 && rows.value.every((e) => selectedIds.value.has(e.id))
+);
+
+function toggleRow(entry) {
+  const next = new Set(selectedIds.value);
+  if (next.has(entry.id)) next.delete(entry.id);
+  else next.add(entry.id);
+  selectedIds.value = next;
+}
+
+function toggleSelectAll() {
+  if (allVisibleSelected.value) {
+    selectedIds.value = new Set();
+  } else {
+    selectedIds.value = new Set(rows.value.map((e) => e.id));
+  }
+}
+
+async function handleBulkDelete() {
+  const list = selectedRows.value;
+  const n = list.length;
+  if (!n) return;
+  const ok = await confirm({
+    title: `Excluir ${n} registro(s)?`,
+    message: "Os registros selecionados serão removidos definitivamente e os totais serão recalculados.",
+    confirmText: `Excluir ${n}`,
+    danger: true
+  });
+  if (!ok) return;
+  removeEntries(list.map((entry) => ({ indicatorId: props.indicatorId, entry })));
+  selectedIds.value = new Set();
+  toast(`${n} registro(s) excluído(s).`);
+}
+
+/* Pede ao pai para abrir o modal de lançamento em modo edição. */
+function editRow(entry) {
+  emit("edit", { indicatorId: props.indicatorId, entry });
 }
 
 function close() {
@@ -191,30 +282,94 @@ function close() {
         </div>
       </div>
 
+      <div class="rounded-xl border border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+        <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
+          <div class="flex flex-col gap-1">
+            <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Período</span>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                class="chip"
+                :class="singleMonthOfRange(form.from, form.to) === monthYm(0) ? 'chip-active' : ''"
+                @click="setThisMonthPeriod"
+              >
+                Mês atual
+              </button>
+              <button
+                type="button"
+                class="chip"
+                :class="singleMonthOfRange(form.from, form.to) === monthYm(-1) ? 'chip-active' : ''"
+                @click="setLastMonthPeriod"
+              >
+                Mês anterior
+              </button>
+            </div>
+          </div>
+          <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
+            <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">De</label>
+            <input v-model="form.from" type="date" class="input-field" />
+          </div>
+          <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
+            <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Até</label>
+            <input v-model="form.to" type="date" class="input-field" />
+          </div>
+          <span v-if="selectedMonthLabel" class="pb-1 text-xs font-medium text-zinc-400">
+            Exibindo {{ selectedMonthLabel }}
+          </span>
+        </div>
+      </div>
+
+      <div v-if="canEdit && selectedRows.length" class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+          {{ selectedRows.length }} selecionado(s)
+        </span>
+        <button
+          type="button"
+          class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+          @click="handleBulkDelete"
+        >
+          Excluir selecionados
+        </button>
+      </div>
+
       <div v-if="rows.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div class="max-h-[28rem] overflow-auto">
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
+            <table class="w-full min-w-max text-left text-sm">
               <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
                 <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
+                  <th v-if="canEdit" class="w-10 px-4 py-2.5 font-semibold">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      :checked="allVisibleSelected"
+                      aria-label="Selecionar todos os registros visíveis"
+                      @change="toggleSelectAll"
+                    />
+                  </th>
                   <th v-for="col in columns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 font-semibold">{{ col.label }}</th>
                   <th v-if="canEdit" class="px-4 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="entry in rows" :key="entry.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+                  <td v-if="canEdit" class="px-4 py-2.5">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      :checked="selectedIds.has(entry.id)"
+                      aria-label="Selecionar registro"
+                      @change="toggleRow(entry)"
+                    />
+                  </td>
                   <td v-for="col in columns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">
                     {{ cellText(entry, col) }}
                   </td>
                   <td v-if="canEdit" class="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      class="icon-btn-sm"
-                      aria-label="Excluir registro"
-                      @click="removeRow(entry)"
-                    >
-                      &times;
-                    </button>
+                    <div class="flex justify-end gap-2">
+                      <button type="button" class="btn-ghost-sm" aria-label="Editar registro" @click="editRow(entry)">Editar</button>
+                      <button type="button" class="icon-btn-sm" aria-label="Excluir registro" @click="removeRow(entry)">&times;</button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -291,6 +446,37 @@ function close() {
 :global(.dark) .btn-ghost:hover {
   background-color: rgb(39 39 42);
 }
+.chip {
+  border-radius: 9999px;
+  border: 1px solid rgb(212 212 216);
+  background-color: #fff;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(82 82 91);
+  transition: background-color 0.15s, color 0.15s;
+}
+.chip:hover {
+  background-color: rgb(244 244 245);
+}
+.chip-active {
+  border-color: rgb(239 68 68);
+  background-color: rgb(239 68 68);
+  color: #fff;
+}
+:global(.dark) .chip {
+  border-color: rgb(63 63 70);
+  background-color: rgb(24 24 27);
+  color: rgb(212 212 216);
+}
+:global(.dark) .chip:hover {
+  background-color: rgb(39 39 42);
+}
+:global(.dark) .chip-active {
+  border-color: rgb(220 38 38);
+  background-color: rgb(220 38 38);
+  color: #fff;
+}
 .icon-btn-sm {
   display: flex;
   height: 1.9rem;
@@ -313,5 +499,24 @@ function close() {
 :global(.dark) .icon-btn-sm:hover {
   background-color: rgb(39 39 42);
   color: rgb(244 244 245);
+}
+.btn-ghost-sm {
+  border-radius: 0.5rem;
+  border: 1px solid rgb(212 212 216);
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(63 63 70);
+  transition: background-color 0.15s;
+}
+.btn-ghost-sm:hover {
+  background-color: rgb(244 244 245);
+}
+:global(.dark) .btn-ghost-sm {
+  border-color: rgb(63 63 70);
+  color: rgb(228 228 231);
+}
+:global(.dark) .btn-ghost-sm:hover {
+  background-color: rgb(39 39 42);
 }
 </style>

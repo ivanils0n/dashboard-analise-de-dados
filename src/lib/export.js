@@ -6,6 +6,7 @@ import {
   getEntriesFor,
   getEmployees,
   getBranches,
+  getBranchById,
   getDepartments,
   getLatestForMeta,
   upsertEmployee,
@@ -14,8 +15,8 @@ import {
   addEntry
 } from "./store";
 import { INDICATORS, STATES, STATUS_LABELS, TYPE_LABELS } from "./config";
-import { activeStates, syncAll } from "./employees";
-import { createId, nowLocalISO, todayISO } from "./utils";
+import { activeStates, syncAll, findBranchByShortName } from "./employees";
+import { createId, nowLocalISO, todayISO, parseHoursBR } from "./utils";
 
 /* Previne "formula injection": texto iniciado com = + - @ vira texto puro
    (prefixo ') para nunca executar fórmula em planilha. */
@@ -102,10 +103,11 @@ export function toXLSX() {
 
   // ---- Planilha 3: Equipe ----
   const employeeRows = [
-    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado"]
+    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"]
   ];
   getEmployees().forEach((e) => {
     const cost = getLatestForMeta("custo_contratacao", "employeeId", e.id);
+    const branch = e.filialId ? getBranchById(e.filialId) : null;
     employeeRows.push([
       e.name,
       e.sector,
@@ -129,11 +131,12 @@ export function toXLSX() {
       e.comissao != null ? Number(e.comissao) : null,
       e.liderImediato || "",
       e.gerenteRegional || "",
-      e.estado || ""
+      e.estado || "",
+      branch ? branch.shortName : ""
     ]);
   });
   const sheetEmployees = XLSX.utils.aoa_to_sheet(safeRows(employeeRows));
-  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }];
+  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(workbook, sheetEmployees, "Equipe");
 
   // ---- Planilha 4: Filiais ----
@@ -176,8 +179,8 @@ export function downloadTemplate() {
   XLSX.utils.book_append_sheet(workbook, entriesSheet, "Lançamentos");
 
   const teamSheet = XLSX.utils.aoa_to_sheet([
-    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado"],
-    ["Maria Silva", "RH", "Analista de RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, 200, 400, 350, 280, 0, 150, 0, 300, "João Souza", "Carlos Lima", "RO"]
+    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"],
+    ["Maria Silva", "RH", "Analista de RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, 200, 400, 350, 280, 0, 150, 0, 300, "João Souza", "Carlos Lima", "RO", "PVH 1"]
   ]);
   XLSX.utils.book_append_sheet(workbook, teamSheet, "Equipe");
 
@@ -216,6 +219,199 @@ export function importFile(file, onResult) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+/* Lê um arquivo (.xlsx/.xls/.csv) e devolve a workbook (promise). */
+export function readWorkbookFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        resolve(XLSX.read(new Uint8Array(e.target.result), { type: "array" }));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/* Converte a primeira linha de uma planilha em array de objetos. */
+function sheetRows(sheet) {
+  if (!sheet) return [];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1 });
+}
+
+function parseDateText(raw) {
+  const d = normalizeDate(raw);
+  return d ? d + "T00:00:00" : null;
+}
+
+/* ---------- Planilha EQUIPE ---------- */
+
+export const EQUIPE_TEMPLATE_HEADER = [
+  "Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"
+];
+
+/* Lê a planilha "Equipe" e devolve candidatos a colaborador (sem gravar).
+   Cada item expõe { valid, name, sector, user, estado, employee, costValue }.
+   O `defaultEstado` é usado quando a linha não informa o estado. */
+export function parseEmployeeSheet(sheet, defaultEstado = null) {
+  const rows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const findCol = colIndex(headerRow);
+  const iName = findCol("colaborador");
+  const iSector = findCol("setor");
+  const iCargo = findCol("cargo");
+  const iUser = findCol("usuário", "usuario");
+  const iHired = findCol("entrada");
+  const iStatus = findCol("status");
+  const iType = findCol("tipo");
+  const iTurnover = findCol("conta no turnover");
+  const iCreated = findCol("registro");
+  const iUpdated = findCol("última atualização", "ultima atualizacao");
+  const iCost = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("custo"));
+  const iSalary = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("sal"));
+  const iValeT = headFind(headerRow, ["valetransporte", "vale transporte", "vt"]);
+  const iValeA = headFind(headerRow, ["valealimentacao", "vale alimentacao", "va"]);
+  const iInss = headFind(headerRow, ["inss"]);
+  const iFgts = headFind(headerRow, ["fgts"]);
+  const iIrrf = headFind(headerRow, ["irrf"]);
+  const iPremioArt = headFind(headerRow, ["art62", "artigo62"]);
+  const iPremioLoja = headFind(headerRow, ["loja"]);
+  const iComissao = headFind(headerRow, ["comiss"]);
+  const iLider = headFind(headerRow, ["lider"]);
+  const iGerente = headFind(headerRow, ["gerente"]);
+  const iEstado = findCol("estado");
+  /* "Filial" (nome abreviado). Evita casar com "Nome Filial" da aba Filiais. */
+  const iFilial = headFind(headerRow, ["filial", "abreviado", "sigla", "loja"]);
+
+  const items = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const upperTrim = (v) => String(v ?? "").trim().toUpperCase();
+    const name = upperTrim(cellAt(row, iName));
+    const sector = upperTrim(cellAt(row, iSector));
+    const user = upperTrim(cellAt(row, iUser));
+    const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
+    const estado = STATES.includes(estadoRaw)
+      ? estadoRaw
+      : defaultEstado && defaultEstado !== "todos"
+        ? defaultEstado
+        : null;
+
+    const filialText = String(cellAt(row, iFilial)).trim();
+    const filial = filialText ? findBranchByShortName(filialText) : null;
+
+    const valid = !!(name && user && estado);
+    const createdAt = normalizeDateTime(cellAt(row, iCreated)) || nowLocalISO();
+    const updatedAt = normalizeDateTime(cellAt(row, iUpdated)) || createdAt;
+    const hiredAt = parseDateText(cellAt(row, iHired));
+    const status = normalizeStatus(cellAt(row, iStatus));
+    const type = normalizeType(cellAt(row, iType));
+    const countsTurnover = normalizeBool(cellAt(row, iTurnover));
+    const costValue = moneyNum(cellAt(row, iCost));
+
+    const employee = valid
+      ? {
+          id: createId(),
+          name,
+          sector,
+          cargo: textOrNull(upperTrim(cellAt(row, iCargo))),
+          user,
+          estado,
+          filialId: filial ? filial.id : null,
+          salario: moneyNum(cellAt(row, iSalary)),
+          valeTransporte: moneyNum(cellAt(row, iValeT)),
+          valeAlimentacao: moneyNum(cellAt(row, iValeA)),
+          inss: moneyNum(cellAt(row, iInss)),
+          fgts: moneyNum(cellAt(row, iFgts)),
+          irrf: moneyNum(cellAt(row, iIrrf)),
+          premioArt62: moneyNum(cellAt(row, iPremioArt)),
+          premioLoja: moneyNum(cellAt(row, iPremioLoja)),
+          comissao: moneyNum(cellAt(row, iComissao)),
+          liderImediato: textOrNull(upperTrim(cellAt(row, iLider))),
+          gerenteRegional: textOrNull(upperTrim(cellAt(row, iGerente))),
+          hiredAt,
+          status,
+          type,
+          countsTurnover,
+          createdAt,
+          updatedAt,
+          firedAt: status === "desligado" ? updatedAt : null
+        }
+      : null;
+
+    items.push({ valid, name, sector, user, estado, filialText, filialId: filial ? filial.id : null, employee, costValue });
+  }
+  return items;
+}
+
+export function downloadEquipeTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows([EQUIPE_TEMPLATE_HEADER]));
+  sheet["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Equipe");
+  XLSX.writeFile(workbook, `gente-gestao-template-equipe_${todayISO()}.xlsx`);
+}
+
+/* ---------- Planilha TREINAMENTO (importação no modal) ---------- */
+
+export const TREINAMENTO_TEMPLATE_HEADER = [
+  "Colaborador", "Tema do treinamento", "Carga horária (horas)", "Modalidade"
+];
+
+/* Lê a planilha de treinamentos e devolve linhas normalizadas.
+   Campos devolvidos por linha:
+     { name, tema, carga, modalidade, modalidadeLabel } */
+export function parseTreinamentoSheet(sheet) {
+  const rows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iName = headFind(headerRow, ["colaborador", "nome do colaborador"]);
+  const iTema = headFind(headerRow, ["tema"]);
+  const iCarga = headFind(headerRow, ["carga"]);
+  const iModalidade = headFind(headerRow, ["modalidade"]);
+  const found = iName >= 0;
+  if (!found) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const name = String(cellAt(row, iName)).trim();
+    if (!name) continue;
+
+    const modalidadeRaw = String(cellAt(row, iModalidade)).trim().toLowerCase();
+    const modalidade = modalidadeRaw.includes("online") ? "online" : "presencial";
+    const modalidadeLabel = modalidade === "online" ? "Online" : "Presencial";
+
+    const carga = parseHoursBR(cellAt(row, iCarga));
+
+    out.push({
+      name,
+      tema: String(cellAt(row, iTema)).trim(),
+      carga,
+      modalidade,
+      modalidadeLabel
+    });
+  }
+  return out;
+}
+
+export function downloadTreinamentoTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      TREINAMENTO_TEMPLATE_HEADER,
+      ["Maria Silva", "Excel Avançado", 8, "Presencial"],
+      ["João Souza", "Atendimento ao Cliente", 4, "Online"]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 26 }, { wch: 30 }, { wch: 20 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Treinamento");
+  XLSX.writeFile(workbook, `gente-gestao-template-treinamento_${todayISO()}.xlsx`);
 }
 
 export function importWorkbook(wb, currentState) {
@@ -263,97 +459,30 @@ export function importWorkbook(wb, currentState) {
 
   const teamSheet = wb.Sheets["Equipe"];
   if (teamSheet) {
-    const rows = XLSX.utils.sheet_to_json(teamSheet, { header: 1 });
-    const headerRow = rows[0] || [];
-    const findCol = colIndex(headerRow);
-    const iName = findCol("colaborador");
-    const iSector = findCol("setor");
-    const iCargo = findCol("cargo");
-    const iUser = findCol("usuário", "usuario");
-    const iHired = findCol("entrada");
-    const iStatus = findCol("status");
-    const iType = findCol("tipo");
-    const iTurnover = findCol("conta no turnover");
-    const iCreated = findCol("registro");
-    const iUpdated = findCol("última atualização", "ultima atualizacao");
-    const iCost = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("custo"));
-    const iSalary = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("sal"));
-    const iValeT = headFind(headerRow, ["valetransporte", "vale transporte", "vt"]);
-    const iValeA = headFind(headerRow, ["valealimentacao", "vale alimentacao", "va"]);
-    const iInss = headFind(headerRow, ["inss"]);
-    const iFgts = headFind(headerRow, ["fgts"]);
-    const iIrrf = headFind(headerRow, ["irrf"]);
-    const iPremioArt = headFind(headerRow, ["art62", "artigo62"]);
-    const iPremioLoja = headFind(headerRow, ["loja"]);
-    const iComissao = headFind(headerRow, ["comiss"]);
-    const iLider = headFind(headerRow, ["lider"]);
-    const iGerente = headFind(headerRow, ["gerente"]);
-    const iEstado = findCol("estado");
-
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || !row.length) continue;
-      const name = String(cellAt(row, iName)).trim();
-      const sector = String(cellAt(row, iSector)).trim();
-      const user = String(cellAt(row, iUser)).trim();
-      if (!name || !user) { summary.invalid++; continue; }
-
-      const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
-      const estado = STATES.includes(estadoRaw) ? estadoRaw : (currentState && currentState !== "todos" ? currentState : null);
-
+    const candidates = parseEmployeeSheet(teamSheet, currentState && currentState !== "todos" ? currentState : null);
+    candidates.forEach((item) => {
+      if (!item.valid) {
+        summary.invalid++;
+        return;
+      }
+      const user = item.user.toLowerCase();
       const duplicateEmp = getEmployees().some(
-        (e) => e.user.toLowerCase() === user.toLowerCase() && (e.estado || null) === estado
+        (e) => e.user.toLowerCase() === user && (e.estado || null) === item.estado
       );
-      if (duplicateEmp) { summary.duplicateEmployees++; continue; }
+      if (duplicateEmp) { summary.duplicateEmployees++; return; }
 
-      const hiredAt = normalizeDate(cellAt(row, iHired));
-      const status = normalizeStatus(cellAt(row, iStatus));
-      const type = normalizeType(cellAt(row, iType));
-      const countsTurnover = normalizeBool(cellAt(row, iTurnover));
-      const createdAt = normalizeDateTime(cellAt(row, iCreated)) || nowLocalISO();
-      const updatedAt = normalizeDateTime(cellAt(row, iUpdated)) || createdAt;
-      const salaryRaw = cellAt(row, iSalary);
-      const salario = moneyNum(salaryRaw);
-
-      const employee = {
-        id: createId(),
-        name,
-        sector,
-        cargo: textOrNull(cellAt(row, iCargo)),
-        user,
-        estado,
-        salario,
-        valeTransporte: moneyNum(cellAt(row, iValeT)),
-        valeAlimentacao: moneyNum(cellAt(row, iValeA)),
-        inss: moneyNum(cellAt(row, iInss)),
-        fgts: moneyNum(cellAt(row, iFgts)),
-        irrf: moneyNum(cellAt(row, iIrrf)),
-        premioArt62: moneyNum(cellAt(row, iPremioArt)),
-        premioLoja: moneyNum(cellAt(row, iPremioLoja)),
-        comissao: moneyNum(cellAt(row, iComissao)),
-        liderImediato: textOrNull(cellAt(row, iLider)),
-        gerenteRegional: textOrNull(cellAt(row, iGerente)),
-        hiredAt: hiredAt ? hiredAt + "T00:00:00" : null,
-        status,
-        type,
-        countsTurnover,
-        createdAt,
-        updatedAt,
-        firedAt: status === "desligado" ? updatedAt : null
-      };
-      upsertEmployee(employee);
+      upsertEmployee(item.employee);
       summary.importedEmployees++;
 
-      const costValue = moneyNum(cellAt(row, iCost));
-      if (costValue !== null) {
+      if (item.costValue !== null && item.costValue !== undefined) {
         addEntry("custo_contratacao", {
           date: todayISO(),
-          value: costValue,
-          state: estado,
-          meta: { employeeId: employee.id, employeeName: employee.name }
+          value: item.costValue,
+          state: item.estado,
+          meta: { employeeId: item.employee.id, employeeName: item.employee.name }
         });
       }
-    }
+    });
   }
 
   const filiaisSheet = wb.Sheets["Filiais"];

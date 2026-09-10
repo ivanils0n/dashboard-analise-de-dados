@@ -39,7 +39,13 @@ onMounted(() => {
     </div>
 
     <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" height="h-52" />
-    <BarChart v-else-if="card.kind === 'bar'" :data="barData" />
+    <BarChart
+      v-else-if="card.kind === 'bar'"
+      :data="barData"
+      :show-values="showValues"
+      :show-trend="card.showTrend !== false"
+      :value-format="card.valueFormat || ''"
+    />
     <LineChart v-else :indicator="indicator" :entries="entries" :show-values="showValues" />
   </div>
 </template>

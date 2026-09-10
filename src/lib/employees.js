@@ -16,15 +16,59 @@ import {
   upsertEntryForDate,
   removeEntryForDate
 } from "./store";
-import { createId, nowLocalISO, todayISO, daysBetween } from "./utils";
+import { createId, nowLocalISO, todayISO, daysBetween, sameState } from "./utils";
 import { loadedStates } from "./supabase";
 
 export function listEmployees(state) {
   const all = useData().employees;
   if (state && state !== "todos") {
-    return all.filter((e) => (e.estado || null) === state);
+    const target = String(state).trim().toUpperCase();
+    return all.filter((e) => String(e.estado || "").trim().toUpperCase() === target);
   }
   return all;
+}
+
+/* Chave de comparação de nomes de pessoas: ignora caixa, acentos, espaços e
+   pontuação — "Porto Velho", "PORTO VELHO", "portovelho" e "Porto-Velho"
+   tornam-se a mesma chave. */
+export function normalizePersonName(name) {
+  return String(name ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/* Procura colaboradores cujo nome, normalizado, seja igual ao informado.
+   `excludeId` evita o próprio registro (útil na edição/cadastro). */
+export function findEmployeesByName(name, excludeId = null) {
+  const key = normalizePersonName(name);
+  if (!key) return [];
+  return useData().employees.filter(
+    (e) => normalizePersonName(e.name) === key && e.id !== excludeId
+  );
+}
+
+/* Chave de comparação de nomes abreviados de filial: ignora caixa, acentos,
+   espaços/pontuação e zeros à esquerda de cada número.
+   Ex.: "pvh5", "PVH 5", "pvh05", "Pvh-05" → mesma chave ("pvh5"). */
+export function normalizeBranchKey(value) {
+  const base = String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+  return base.replace(/0+(\d)/g, "$1");
+}
+
+/* Localiza a filial pelo nome abreviado (shortName), tolerando as variações
+   acima. Devolve a filial ou null. */
+export function findBranchByShortName(text) {
+  const key = normalizeBranchKey(text);
+  if (!key) return null;
+  return (
+    useData().branches.find((b) => normalizeBranchKey(b.shortName) === key) || null
+  );
 }
 
 /* Converte valor monetário opcional em número (null quando vazio). */
@@ -251,7 +295,7 @@ export function activeStates() {
 export function listVacancies(state) {
   let list = getVacancies();
   if (state && state !== "todos") {
-    list = list.filter((v) => (v.estado || null) === state);
+    list = list.filter((v) => sameState(v.estado, state));
   }
   return list.slice().sort((a, b) => b.openAt.localeCompare(a.openAt));
 }

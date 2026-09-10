@@ -124,6 +124,233 @@ export function createId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/* Compara siglas de estado tolerando caixa e espaços ("ro" = " RO " = "RO"). */
+export function sameState(value, target) {
+  return (
+    String(value ?? "").trim().toUpperCase() ===
+    String(target ?? "").trim().toUpperCase()
+  );
+}
+
+/* =========================================================
+   Utilitários de mês/ano e valores monetários (BRL)
+   ========================================================= */
+
+export const MONTHS_SHORT = [
+  "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+  "Jul", "Ago", "Set", "Out", "Nov", "Dez"
+];
+
+export const MONTHS_FULL = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/* Chave de mês "YYYY-MM" a partir de uma data ISO (YYYY-MM-DD ou timestamp). */
+export function ymOf(isoDate) {
+  if (!isoDate) return "";
+  return String(isoDate).slice(0, 7);
+}
+
+export function ymOfDate(d = new Date()) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/* Mês/ano vigente (relógio local). */
+export function currentYm() {
+  return ymOfDate();
+}
+
+/* Mês deslocado por `offset` meses a partir de hoje (negativo = anterior). */
+export function monthYm(offset = 0) {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + offset);
+  return ymOfDate(d);
+}
+
+/* Primeiro e último dia (YYYY-MM-DD) de um mês "YYYY-MM". */
+export function firstDayOfYm(ym) {
+  return `${ym}-01`;
+}
+
+export function lastDayOfYm(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(y, m, 0);
+  return `${last.getFullYear()}-${pad2(last.getMonth() + 1)}-${pad2(last.getDate())}`;
+}
+
+/* Rótulo curto "Fev/2026" para um mês "YYYY-MM". */
+export function ymLabel(ym) {
+  if (!ym) return "";
+  const [y, m] = ym.split("-");
+  const mi = Number(m) - 1;
+  if (!y || mi < 0 || mi > 11) return ym;
+  return `${MONTHS_SHORT[mi]}/${y}`;
+}
+
+/* Rótulo compacto "fev/26" (mês abreviado minúsculo + 2 dígitos do ano). */
+export function ymShortLabel(ym) {
+  if (!ym) return "";
+  const [y, m] = ym.split("-");
+  const mi = Number(m) - 1;
+  if (!y || mi < 0 || mi > 11) return ym;
+  return `${MONTHS_SHORT[mi].toLowerCase()}/${String(y).slice(-2)}`;
+}
+
+/* Rótulo por extenso "Setembro/2026". */
+export function ymLabelFull(ym) {
+  if (!ym) return "";
+  const [y, m] = ym.split("-");
+  const mi = Number(m) - 1;
+  if (!y || mi < 0 || mi > 11) return ym;
+  return `${MONTHS_FULL[mi]}/${y}`;
+}
+
+/* Se `start`/`end` corresponderem exatamente a um mês civil completo,
+   devolve a chave "YYYY-MM"; caso contrário devolve null. */
+export function singleMonthOfRange(start, end) {
+  if (!start || !end) return null;
+  const ym = ymOf(start);
+  if (ymOf(end) !== ym) return null;
+  if (start !== firstDayOfYm(ym)) return null;
+  if (end !== lastDayOfYm(ym)) return null;
+  return ym;
+}
+
+/* Valida um mês "YYYY-MM". */
+export function isValidYm(ym) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym || "")) return false;
+  const [y, m] = ym.split("-").map(Number);
+  return y >= 1900 && y <= 2200 && m >= 1 && m <= 12;
+}
+
+/* Lista de anos sugeridos para os seletores de mês (ex.: atual -4 .. atual +1). */
+export function yearOptions(before = 4, after = 1) {
+  const cur = new Date().getFullYear();
+  const out = [];
+  for (let y = cur - before; y <= cur + after; y++) out.push(y);
+  return out;
+}
+
+/* Converte texto digitado (ex.: "1.500,50", "1500,50", "1500.50",
+   "R$ 250,75") para Number. Evita ambiguidade entre vírgula e ponto:
+   quando os dois existem, o ponto é separador de milhar. */
+export function parseCurrencyBR(input) {
+  if (input === null || input === undefined) return NaN;
+  let s = String(input).replace(/[R$\s]/g, "").trim();
+  if (!s) return NaN;
+
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+
+  let normalized;
+  if (hasComma && hasDot) {
+    normalized = s.replace(/\./g, "").replace(",", ".");
+  } else if (hasComma) {
+    normalized = s.replace(/\./g, "").replace(",", ".");
+  } else if (hasDot) {
+    // "1.500" (milhar) x "1500.50" (decimal): só é milhar se os grupos
+    // forem de 3 dígitos do fim para o começo.
+    if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+      normalized = s.replace(/\./g, "");
+    } else {
+      normalized = s; // ponto como decimal
+    }
+  } else {
+    normalized = s;
+  }
+
+  if (!/^-?\d*\.?\d*$/.test(normalized)) return NaN;
+  return Number(normalized);
+}
+
+/* Formata um valor numérico como moeda brasileira (usada ao exibir valores). */
+export function formatBRL(value) {
+  if (value === null || value === undefined || isNaN(Number(value))) return "";
+  return Number(value).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+
+/* Máscara de digitação monetária: mantém apenas dígitos e uma vírgula
+   decimal, agrupando os milhares com ponto enquanto o usuário digita.
+   ""       -> ""
+   "1500"   -> "1.500"
+   "1500,5" -> "1.500,5"  ("1.500,50" no blur)
+   "R$ 1.000,00" -> "1.000,00" */
+export function maskCurrencyInput(inputValue) {
+  let s = String(inputValue ?? "");
+  s = s.replace(/[R$\s]/g, "");
+  if (!s) return "";
+  const lastComma = s.lastIndexOf(",");
+  let intRaw = (lastComma >= 0 ? s.slice(0, lastComma) : s).replace(/[^\d]/g, "");
+  let decRaw = lastComma >= 0 ? s.slice(lastComma + 1).replace(/[^\d]/g, "") : "";
+  decRaw = decRaw.slice(0, 2);
+  if (intRaw === "") intRaw = "0";
+  const int = parseInt(intRaw, 10);
+  const intLabel = isNaN(int) ? "0" : int.toLocaleString("pt-BR");
+  if (lastComma < 0) return intLabel;
+  return `${intLabel},${decRaw || ""}`;
+}
+
+/* Finaliza a exibição de um campo monetário (chamada no blur): garante que
+   existam duas casas decimais. Devolve texto formatado pt-BR. */
+export function normalizeCurrencyInput(text) {
+  const masked = maskCurrencyInput(text);
+  if (masked === "") return "";
+  const [intPart, decPart] = masked.split(",");
+  return `${intPart || "0"},${(decPart || "").padEnd(2, "0")}`;
+}
+
+/* Converte texto de horas em número (horas decimais). Aceita:
+   "12" → 12 | "12:00" → 12 | "12:30" → 12.5 | "12,5"/"12.5" → 12.5 |
+   "12h30" → 12.5. Devolve null quando inválido. */
+export function parseHoursBR(input) {
+  if (input === null || input === undefined) return null;
+  let s = String(input).trim();
+  if (!s) return null;
+
+  const withH = s.toLowerCase().replace(/(h|horas?)\s*$/i, "").trim();
+  const pure = withH || s;
+
+  const colon = pure.match(/^(\d{1,4})\s*:\s*([0-5]?\d)$/);
+  if (colon) {
+    const h = parseInt(colon[1], 10);
+    const m = parseInt(colon[2], 10);
+    return Number((h + m / 60).toFixed(4));
+  }
+  if (s.toLowerCase().includes("h")) {
+    const hm = s.toLowerCase().match(/^(\d{1,4})\s*h\s*(\d{1,2})?$/);
+    if (hm) {
+      const h = parseInt(hm[1], 10);
+      const m = hm[2] ? parseInt(hm[2], 10) : 0;
+      if (m >= 60) return null;
+      return Number((h + m / 60).toFixed(4));
+    }
+  }
+
+  const normalized = pure.replace(",", ".");
+  if (/^\d*\.?\d+$/.test(normalized)) {
+    const n = Number(normalized);
+    return isNaN(n) ? null : n;
+  }
+  return null;
+}
+
+/* Formata horas decimais no estilo relógio: 12 → "12h", 12.5 → "12h30". */
+export function formatHoursBR(value) {
+  const n = Number(value);
+  if (isNaN(n) || value === null || value === undefined || value === "") return "";
+  const whole = Math.floor(n);
+  const minutes = Math.round((n - whole) * 60);
+  if (minutes === 0) return `${whole}h`;
+  return `${whole}h${String(minutes).padStart(2, "0")}`;
+}
+
 // Grava no storage; em QuotaExceededError, limpa o storage e regrava.
 export function safeSetItem(storage, key, value) {
   try {

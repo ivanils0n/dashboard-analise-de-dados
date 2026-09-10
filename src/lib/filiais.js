@@ -1,12 +1,12 @@
 // Domínio de Filiais.
 
 import { getBranches, upsertBranch, deleteBranch } from "./store";
-import { createId, nowLocalISO } from "./utils";
+import { createId, nowLocalISO, sameState } from "./utils";
 
 export function listBranches(state) {
   const all = getBranches();
   if (state && state !== "todos") {
-    return all.filter((b) => (b.estado || null) === state);
+    return all.filter((b) => sameState(b.estado, state));
   }
   return all;
 }

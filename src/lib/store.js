@@ -1,7 +1,7 @@
 /* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada no
    Supabase via adaptador "remote" (write-through em lote com debounce). */
 import { reactive } from "vue";
-import { createId } from "./utils";
+import { createId, ymOf } from "./utils";
 
 export function emptyData() {
   return { version: 1, entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
@@ -23,6 +23,39 @@ export function bindRemote(adapter) {
 
 const ok = () => remote != null;
 
+/* Enfileira registros do Feedback/histórico (consolidado mensal) para serem
+   gravados no Supabase (tabela feedback_indicadores). Usado pela camada de
+   Feedback; em modo apenas local, a escrita é ignorada com segurança. */
+export function queueFeedbackRecords(records) {
+  if (!records || !records.length) return;
+  if (ok() && remote.feedbackUpsert) remote.feedbackUpsert(records);
+}
+
+/* Notificação de mutação de lançamentos (usada pela camada de Feedback).
+   Assinantes recebem a lista de meses "YYYY-MM" afetados. */
+const mutationListeners = new Set();
+
+export function onEntryMutation(listener) {
+  mutationListeners.add(listener);
+  return () => mutationListeners.delete(listener);
+}
+
+function emitEntryMutation(ymList) {
+  const months = [...new Set((ymList || []).filter(Boolean))];
+  if (!months.length) return;
+  mutationListeners.forEach((fn) => {
+    try {
+      fn(months);
+    } catch (err) {
+      console.error("[store] listener de mutação falhou:", err);
+    }
+  });
+}
+
+function monthsOf(...dates) {
+  return dates.filter(Boolean).map((d) => ymOf(d));
+}
+
 export function getAllEntries() {
   return data.entries;
 }
@@ -30,7 +63,10 @@ export function getAllEntries() {
 export function getEntriesFor(indicatorId, state) {
   let list = (data.entries[indicatorId] || []).slice().sort((a, b) => a.date.localeCompare(b.date));
   if (state && state !== "todos") {
-    list = list.filter((e) => e.meta && e.meta.estado === state);
+    const target = String(state).trim().toUpperCase();
+    list = list.filter(
+      (e) => String((e.meta && e.meta.estado) || "").trim().toUpperCase() === target
+    );
   }
   return list;
 }
@@ -48,6 +84,7 @@ export function addEntry(indicatorId, { date, value, meta, state }) {
   data.entries[indicatorId].push(entry);
   data.entries[indicatorId].sort((a, b) => a.date.localeCompare(b.date));
   if (ok()) remote.entryAdded(indicatorId, entry);
+  emitEntryMutation(monthsOf(date));
 }
 
 export function upsertEntryForDate(indicatorId, date, value, meta, state) {
@@ -70,10 +107,12 @@ export function upsertEntryForDate(indicatorId, date, value, meta, state) {
     current.value = Number(value);
     if (mergedMeta !== undefined) current.meta = mergedMeta;
     if (ok()) remote.entryUpdated(indicatorId, current);
+    emitEntryMutation(monthsOf(date));
   } else {
     const entry = { id: createId(), date, value: Number(value), meta: mergedMeta };
     list.push(entry);
     if (ok()) remote.entryAdded(indicatorId, entry);
+    emitEntryMutation(monthsOf(date));
   }
   list.sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -88,7 +127,10 @@ export function removeEntryForDate(indicatorId, date, state) {
     removedIds.push(e.id);
     return false;
   });
-  if (ok()) remote.entriesRemoved(removedIds, state);
+  if (removedIds.length) {
+    if (ok()) remote.entriesRemoved(removedIds, state);
+    emitEntryMutation(monthsOf(date));
+  }
 }
 
 export function removeEntry(indicatorId, entryId) {
@@ -96,16 +138,56 @@ export function removeEntry(indicatorId, entryId) {
   const entry = data.entries[indicatorId].find((e) => e.id === entryId);
   data.entries[indicatorId] = data.entries[indicatorId].filter((e) => e.id !== entryId);
   const estado = entry && entry.meta ? entry.meta.estado : null;
-  if (ok()) remote.entriesRemoved([entryId], estado);
+  if (entry) {
+    if (ok()) remote.entriesRemoved([entryId], estado);
+    emitEntryMutation(monthsOf(entry.date));
+  }
 }
 
 export function updateEntry(indicatorId, entryId, patch) {
   if (!data.entries[indicatorId]) return;
   const idx = data.entries[indicatorId].findIndex((e) => e.id === entryId);
   if (idx < 0) return;
+  const previousDate = data.entries[indicatorId][idx].date;
   data.entries[indicatorId][idx] = { ...data.entries[indicatorId][idx], ...patch };
   data.entries[indicatorId].sort((a, b) => a.date.localeCompare(b.date));
   if (ok()) remote.entryUpdated(indicatorId, data.entries[indicatorId][idx]);
+  const current = data.entries[indicatorId].find((e) => e.id === entryId);
+  const nextDate = current ? current.date : previousDate;
+  emitEntryMutation(monthsOf(previousDate, nextDate));
+}
+
+/* Exclusão em lote de lançamentos. `rows` é um array de
+   { indicatorId, entry }. Remove todos de uma vez, enfileira as exclusões
+   remotas agrupadas por estado e dispara uma única notificação de mutação. */
+export function removeEntries(rows) {
+  if (!rows || !rows.length) return;
+  const months = new Set();
+  const groups = new Map();
+  const removable = rows.filter(({ indicatorId, entry }) => {
+    if (!data.entries[indicatorId]) return false;
+    return data.entries[indicatorId].some((e) => e.id === entry.id);
+  });
+
+  removable.forEach(({ entry }) => {
+    months.add(ymOf(entry.date));
+    const estado = entry.meta && entry.meta.estado ? entry.meta.estado : "__none__";
+    if (!groups.has(estado)) groups.set(estado, []);
+    groups.get(estado).push(entry.id);
+  });
+
+  if (!removable.length) return;
+
+  groups.forEach((ids, estado) => {
+    if (ok()) remote.entriesRemoved(ids, estado === "__none__" ? null : estado);
+  });
+
+  removable.forEach(({ indicatorId, entry }) => {
+    if (!data.entries[indicatorId]) return;
+    data.entries[indicatorId] = data.entries[indicatorId].filter((e) => e.id !== entry.id);
+  });
+
+  emitEntryMutation([...months]);
 }
 
 export function getLatestForMeta(indicatorId, metaKey, metaValue) {
@@ -114,8 +196,12 @@ export function getLatestForMeta(indicatorId, metaKey, metaValue) {
 }
 
 export function clearEntries() {
+  const affected = Object.values(data.entries)
+    .flat()
+    .map((e) => ymOf(e.date));
   data.entries = {};
   if (ok()) remote.entriesCleared();
+  emitEntryMutation(affected);
 }
 
 export function getEmployees() {

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
-import { firstDayOfMonthISO, lastDayOfMonthISO, todayISO, formatDate } from "@/lib/utils";
+import { firstDayOfMonthISO, lastDayOfMonthISO, todayISO, formatDate, monthYm, firstDayOfYm, lastDayOfYm } from "@/lib/utils";
 
 /* Filtro de período compacto: um único campo "01/01/2026 - 31/01/2026".
    Ao clicar, abre um dropdown com os seletores de data.
@@ -42,6 +42,15 @@ function apply() {
 function setThisMonth() {
   draft.start = firstDayOfMonthISO();
   draft.end = lastDayOfMonthISO();
+  apply();
+}
+
+/* Mês anterior ao vigente, calculado dinamicamente (ex.: hoje é
+   Setembro/2026 -> seleciona Agosto/2026). */
+function setLastMonth() {
+  const ym = monthYm(-1);
+  draft.start = firstDayOfYm(ym);
+  draft.end = lastDayOfYm(ym);
   apply();
 }
 
@@ -101,8 +110,9 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       </div>
 
       <div class="flex items-center justify-end gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
-        <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
+        <button type="button" class="btn-ghost btn-sm" @click="setLastMonth">Mês anterior</button>
         <button type="button" class="btn-ghost btn-sm" @click="setThisMonth">Mês atual</button>
+        <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
         <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
       </div>
     </div>

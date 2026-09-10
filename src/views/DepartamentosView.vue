@@ -109,10 +109,11 @@ function clearFilters() {
 }
 
 function handleSubmit() {
+  const up = (v) => String(v == null ? "" : v).trim().toUpperCase();
   const data = {
     id: form.id || undefined,
-    name: form.name.trim(),
-    shortName: form.short.trim().toUpperCase() || null,
+    name: up(form.name),
+    shortName: up(form.short) || null,
     estado: form.estado || null
   };
 
@@ -140,6 +141,47 @@ async function handleDelete(id) {
   deleteDepartmentRecord(id);
   resetForm();
   toast("Departamento excluído.");
+}
+
+/* ---------- Seleção múltipla / exclusão em lote ---------- */
+const selectedIds = ref(new Set());
+
+const selectedDepartments = computed(() => tableList.value.filter((d) => selectedIds.value.has(d.id)));
+
+const allVisibleSelected = computed(
+  () => tableList.value.length > 0 && tableList.value.every((d) => selectedIds.value.has(d.id))
+);
+
+function toggleDepartment(id) {
+  const next = new Set(selectedIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedIds.value = next;
+}
+
+function toggleSelectAll() {
+  if (allVisibleSelected.value) {
+    selectedIds.value = new Set();
+  } else {
+    selectedIds.value = new Set(tableList.value.map((d) => d.id));
+  }
+}
+
+async function handleBulkDelete() {
+  const list = selectedDepartments.value;
+  const n = list.length;
+  if (!n) return;
+  const ok = await confirm({
+    title: `Excluir ${n} departamento(s)?`,
+    message: "Os departamentos selecionados serão removidos. Colaboradores vinculados ficarão sem setor. Essa ação não pode ser desfeita.",
+    confirmText: `Excluir ${n}`,
+    danger: true
+  });
+  if (!ok) return;
+  list.forEach((d) => deleteDepartmentRecord(d.id));
+  selectedIds.value = new Set();
+  resetForm();
+  toast(`${n} departamento(s) excluído(s).`);
 }
 
 function edit(id) {
@@ -179,11 +221,11 @@ function metrics(d) {
       <form class="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3" novalidate @submit.prevent="handleSubmit">
         <div class="flex flex-col gap-1.5">
           <label for="departmentName" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Nome do departamento</label>
-          <input id="departmentName" v-model="form.name" type="text" class="input-field uppercase" required placeholder="Ex.: RECURSOS HUMANOS" />
+          <input id="departmentName" v-model="form.name" v-upper type="text" class="input-field uppercase" required placeholder="Ex.: RECURSOS HUMANOS" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label for="departmentShort" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Sigla</label>
-          <input id="departmentShort" v-model="form.short" type="text" class="input-field uppercase" placeholder="Ex.: RH" />
+          <input id="departmentShort" v-model="form.short" v-upper type="text" class="input-field uppercase" placeholder="Ex.: RH" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label for="departmentEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
@@ -228,10 +270,32 @@ function metrics(d) {
         </div>
       </div>
 
+      <div v-if="selectedDepartments.length" class="flex flex-wrap items-center gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+          {{ selectedDepartments.length }} selecionado(s)
+        </span>
+        <button
+          type="button"
+          class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+          @click="handleBulkDelete"
+        >
+          Excluir selecionados
+        </button>
+      </div>
+
       <div v-if="tableList.length" class="max-h-[420px] overflow-auto">
         <table class="w-full text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
+              <th class="w-10 px-4 py-3 font-semibold">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  :checked="allVisibleSelected"
+                  aria-label="Selecionar todos os departamentos visíveis"
+                  @change="toggleSelectAll"
+                />
+              </th>
               <th class="px-5 py-3 font-semibold">Departamento</th>
               <th class="px-5 py-3 font-semibold">Sigla</th>
               <th class="px-5 py-3 font-semibold">Estado</th>
@@ -243,7 +307,21 @@ function metrics(d) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="d in tableList" :key="d.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+            <tr
+              v-for="d in tableList"
+              :key="d.id"
+              class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+              :class="selectedIds.has(d.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+            >
+              <td class="px-4 py-3">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  :checked="selectedIds.has(d.id)"
+                  :aria-label="`Selecionar ${d.name}`"
+                  @change="toggleDepartment(d.id)"
+                />
+              </td>
               <td class="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{{ d.name }}</td>
               <td class="px-5 py-3">
                 <Badge v-if="d.shortName" tone="muted">{{ d.shortName }}</Badge>

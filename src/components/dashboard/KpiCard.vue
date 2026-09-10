@@ -85,6 +85,20 @@ function onKeydown(e) {
       <PieChart :data="kpi.pieData" height="h-28" />
     </div>
 
+    <!-- Headcount, Custos Totais e Treinamento: apenas o total, centralizado (sem mini gráfico) -->
+    <div
+      v-else-if="kpi.id === 'headcount' || kpi.id === 'custo_total' || kpi.id === 'treinamento'"
+      class="flex flex-1 flex-col items-center justify-center px-1 py-6"
+    >
+      <p
+        class="max-w-full break-words text-center font-bold leading-tight text-zinc-900 dark:text-zinc-100"
+        :class="kpi.id === 'custo_total' ? 'text-2xl' : 'text-3xl'"
+      >
+        {{ valueText }}
+      </p>
+      <span class="mt-1 text-xs text-zinc-400">{{ kpi.countText }}</span>
+    </div>
+
     <!-- Padrão: mini gráfico de linha -->
     <div v-else>
       <MiniLineChart :entries="kpi.entries" />
