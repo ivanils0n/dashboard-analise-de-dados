@@ -5,11 +5,11 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
-import { STATES } from "@/lib/config";
+import { STATES, DEFAULT_STATE } from "@/lib/config";
 import { getBranches } from "@/lib/store";
 import { listBranches, saveBranch, deleteBranchRecord } from "@/lib/filiais";
-import { DEFAULT_STATE } from "@/lib/config";
 import { hydrateState } from "@/lib/supabase";
+import { normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
@@ -33,11 +33,11 @@ const form = reactive({
 const search = ref("");
 
 const tableList = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = normalizeText(search.value).trim();
   let list = listBranches(filters.current);
   if (q) {
     list = list.filter((b) =>
-      `${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`.toLowerCase().includes(q)
+      normalizeText(`${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`).includes(q)
     );
   }
   return list.slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));

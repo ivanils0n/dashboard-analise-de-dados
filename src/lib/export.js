@@ -16,7 +16,7 @@ import {
 } from "./store";
 import { INDICATORS, STATES, STATUS_LABELS, TYPE_LABELS } from "./config";
 import { activeStates, syncAll, findBranchByShortName } from "./employees";
-import { createId, nowLocalISO, todayISO, parseHoursBR } from "./utils";
+import { createId, nowLocalISO, todayISO, parseHoursBR, compareDateDesc } from "./utils";
 
 /* Previne "formula injection": texto iniciado com = + - @ vira texto puro
    (prefixo ') para nunca executar fórmula em planilha. */
@@ -63,7 +63,7 @@ function buildEntryRows() {
   INDICATORS.forEach((ind) => {
     (all[ind.id] || []).forEach((e) => flat.push({ ind, ...e }));
   });
-  flat.sort((a, b) => b.date.localeCompare(a.date));
+  flat.sort((a, b) => compareDateDesc(a.date, b.date));
   flat.forEach((row) => {
     rows.push([row.date, row.ind.name, Number(row.value), row.ind.unit, (row.meta && row.meta.estado) || ""]);
   });
@@ -237,10 +237,12 @@ export function readWorkbookFile(file) {
   });
 }
 
-/* Converte a primeira linha de uma planilha em array de objetos. */
-function sheetRows(sheet) {
+/* Converte a primeira linha de uma planilha em array de arrays.
+   `raw: false` devolve o texto formatado da célula — necessário para ler
+   horários como "01:30" em vez do número serial do Excel (0,0625). */
+function sheetRows(sheet, { raw = true } = {}) {
   if (!sheet) return [];
-  return XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, raw });
 }
 
 function parseDateText(raw) {
@@ -367,7 +369,9 @@ export const TREINAMENTO_TEMPLATE_HEADER = [
    Campos devolvidos por linha:
      { name, tema, carga, modalidade, modalidadeLabel } */
 export function parseTreinamentoSheet(sheet) {
-  const rows = sheetRows(sheet);
+  /* Lê os valores já formatados: células de horário (ex.: "01:30") chegam como
+     texto, não como fração de dia do Excel. */
+  const rows = sheetRows(sheet, { raw: false });
   const headerRow = rows[0] || [];
   const iName = headFind(headerRow, ["colaborador", "nome do colaborador"]);
   const iTema = headFind(headerRow, ["tema"]);
@@ -412,6 +416,68 @@ export function downloadTreinamentoTemplate() {
   sheet["!cols"] = [{ wch: 26 }, { wch: 30 }, { wch: 20 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Treinamento");
   XLSX.writeFile(workbook, `gente-gestao-template-treinamento_${todayISO()}.xlsx`);
+}
+
+/* ---------- Planilha VAGAS (Tempo médio de contratação) ---------- */
+
+export const VAGA_TEMPLATE_HEADER = [
+  "Nome da vaga",
+  "Data de abertura",
+  "Data de fechamento",
+  "Tipo de contratação",
+  "Estado",
+  "Filial"
+];
+
+/* Lê a planilha de vagas e devolve linhas normalizadas.
+   Campos por linha:
+     { name, openAt, closeAt, tipo, estado, filialText } */
+export function parseVagasSheet(sheet) {
+  const rows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iName = headFind(headerRow, ["nomedavaga", "vaga", "nome"]);
+  const iOpen = headFind(headerRow, ["dataabertura", "abertura"]);
+  const iClose = headFind(headerRow, ["datafechamento", "fechamento"]);
+  const iTipo = headFind(headerRow, ["tipocontratacao", "contratacao", "tipo"]);
+  const iEstado = headFind(headerRow, ["estado"]);
+  const iFilial = headFind(headerRow, ["filial", "abreviado", "loja"]);
+  if (iName < 0) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const name = String(cellAt(row, iName)).trim();
+    if (!name) continue;
+
+    const tipoRaw = String(cellAt(row, iTipo)).trim().toLowerCase();
+    const tipo = tipoRaw.includes("pj") ? "pj" : tipoRaw.includes("clt") ? "clt" : null;
+    const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
+
+    out.push({
+      name,
+      openAt: parseDateText(cellAt(row, iOpen)),
+      closeAt: parseDateText(cellAt(row, iClose)),
+      tipo,
+      estado: STATES.includes(estadoRaw) ? estadoRaw : null,
+      filialText: String(cellAt(row, iFilial)).trim()
+    });
+  }
+  return out;
+}
+
+export function downloadVagasTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      VAGA_TEMPLATE_HEADER,
+      ["ANALISTA DE RH", "2026-08-01", "2026-08-15", "CLT", "RO", "PVH1"],
+      ["ASSISTENTE ADMINISTRATIVO", "2026-08-05", "", "PJ", "AM", "MAO1"]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Vagas");
+  XLSX.writeFile(workbook, `gente-gestao-template-vagas_${todayISO()}.xlsx`);
 }
 
 export function importWorkbook(wb, currentState) {

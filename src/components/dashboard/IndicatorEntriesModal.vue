@@ -14,7 +14,11 @@ import {
   firstDayOfYm,
   lastDayOfYm,
   singleMonthOfRange,
-  ymLabel
+  ymLabel,
+  ymShortLabel,
+  normalizeText,
+  formatHoursClock,
+  compareDateDesc
 } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { useDialog } from "@/composables/useDialog";
@@ -29,6 +33,7 @@ import { canEditData } from "@/lib/auth";
      { label, meta, percent }     percentual de entry.meta[meta]
      { label, period: [a, b] }    período a–b em entry.meta
      { label, date }              data do lançamento
+     { label, month }             competência mês/ano do lançamento (ex.: ago/26)
      { label, value }             valor do lançamento formatado pelo indicador
 */
 
@@ -124,13 +129,13 @@ function meta(entry, key) {
 
 function hoursLabel(value) {
   if (value === undefined || value === null || value === "" || isNaN(Number(value))) return "—";
-  const n = Number(value);
-  return n.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " h";
+  return formatHoursClock(Number(value));
 }
 
 function cellText(entry, col) {
   if (col.value) return formatValue(entry);
   if (col.date) return formatDate(entry.date);
+  if (col.month) return ymShortLabel(entry.date);
   if (col.period) {
     const a = meta(entry, col.period[0]);
     const b = meta(entry, col.period[1]);
@@ -151,6 +156,7 @@ function cellText(entry, col) {
 
 function rawCell(entry, col) {
   if (col.date) return entry.date || "";
+  if (col.month) return entry.date || "";
   if (col.value) return String(entry.value ?? "");
   if (col.period) {
     const a = meta(entry, col.period[0]);
@@ -166,6 +172,7 @@ function formatValue(entry) {
   const num = Number(entry.value);
   if (isNaN(num)) return "—";
   if (indicator.value.type === "currency") return formatCurrency(num);
+  if (indicator.value.type === "hours") return formatHoursClock(num);
   return num.toLocaleString("pt-BR", { maximumFractionDigits: indicator.value.decimals ?? 1 });
 }
 
@@ -180,15 +187,17 @@ const rows = computed(() => {
   if (form.from) list = list.filter((e) => e.date >= form.from);
   if (form.to) list = list.filter((e) => e.date <= form.to);
 
-  const q = form.search.trim().toLowerCase();
+  const q = normalizeText(form.search).trim();
   if (q) {
     list = list.filter((e) => {
-      const hay = props.columns.map((c) => rawCell(e, c)).join(" ").toLowerCase();
+      const hay = normalizeText(props.columns.map((c) => rawCell(e, c)).join(" "));
       return hay.includes(q);
     });
   }
 
-  list.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  list.sort(
+    (a, b) => compareDateDesc(a.date, b.date) || String(b.id || "").localeCompare(String(a.id || ""))
+  );
   return list;
 });
 

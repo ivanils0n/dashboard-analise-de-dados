@@ -17,7 +17,7 @@ export function formatValue(indicator, value) {
     case "months":
       return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " meses";
     case "hours":
-      return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " h";
+      return formatHoursClock(num);
     default:
       return num.toLocaleString("pt-BR", { maximumFractionDigits: decimals });
   }
@@ -30,7 +30,7 @@ export function formatRawValue(indicator, value) {
     return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
   if (indicator.type === "hours") {
-    return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + " h";
+    return formatHoursClock(num);
   }
   return num.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
@@ -47,7 +47,7 @@ export function formatAxisValue(indicator, value) {
     return "R$ " + Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
   }
   if (indicator.type === "hours") {
-    return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "h";
+    return formatHoursClock(value);
   }
   const decimals = indicator.decimals ?? 1;
   return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: decimals });
@@ -100,6 +100,15 @@ export function lastDayOfMonthISO() {
   return `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`;
 }
 
+/* Comparações de data ISO tolerantes a valores ausentes/inválidos.
+   Evitam estouros em dados legados/importados com data nula. */
+export function compareDateAsc(a, b) {
+  return String(a || "").localeCompare(String(b || ""));
+}
+export function compareDateDesc(a, b) {
+  return String(b || "").localeCompare(String(a || ""));
+}
+
 /* Agrega lançamentos por dia (soma dos valores na mesma data), usado na
    evolução de indicadores com múltiplos registros por dia (ex.: diárias). */
 export function aggregateByDay(entries) {
@@ -110,7 +119,7 @@ export function aggregateByDay(entries) {
   });
   return [...byDay.entries()]
     .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => compareDateAsc(a.date, b.date));
 }
 
 export function daysBetween(startIso, endIso) {
@@ -122,6 +131,15 @@ export function daysBetween(startIso, endIso) {
 
 export function createId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/* Normaliza texto para busca: minúsculas e sem acentos.
+   Ex.: "Aguíar" -> "aguiar", "São Paulo" -> "sao paulo". */
+export function normalizeText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 /* Compara siglas de estado tolerando caixa e espaços ("ro" = " RO " = "RO"). */
@@ -139,11 +157,6 @@ export function sameState(value, target) {
 export const MONTHS_SHORT = [
   "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
   "Jul", "Ago", "Set", "Out", "Nov", "Dez"
-];
-
-export const MONTHS_FULL = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
 const pad2 = (n) => String(n).padStart(2, "0");
@@ -200,15 +213,6 @@ export function ymShortLabel(ym) {
   return `${MONTHS_SHORT[mi].toLowerCase()}/${String(y).slice(-2)}`;
 }
 
-/* Rótulo por extenso "Setembro/2026". */
-export function ymLabelFull(ym) {
-  if (!ym) return "";
-  const [y, m] = ym.split("-");
-  const mi = Number(m) - 1;
-  if (!y || mi < 0 || mi > 11) return ym;
-  return `${MONTHS_FULL[mi]}/${y}`;
-}
-
 /* Se `start`/`end` corresponderem exatamente a um mês civil completo,
    devolve a chave "YYYY-MM"; caso contrário devolve null. */
 export function singleMonthOfRange(start, end) {
@@ -218,13 +222,6 @@ export function singleMonthOfRange(start, end) {
   if (start !== firstDayOfYm(ym)) return null;
   if (end !== lastDayOfYm(ym)) return null;
   return ym;
-}
-
-/* Valida um mês "YYYY-MM". */
-export function isValidYm(ym) {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym || "")) return false;
-  const [y, m] = ym.split("-").map(Number);
-  return y >= 1900 && y <= 2200 && m >= 1 && m <= 12;
 }
 
 /* Lista de anos sugeridos para os seletores de mês (ex.: atual -4 .. atual +1). */
@@ -265,15 +262,6 @@ export function parseCurrencyBR(input) {
 
   if (!/^-?\d*\.?\d*$/.test(normalized)) return NaN;
   return Number(normalized);
-}
-
-/* Formata um valor numérico como moeda brasileira (usada ao exibir valores). */
-export function formatBRL(value) {
-  if (value === null || value === undefined || isNaN(Number(value))) return "";
-  return Number(value).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  });
 }
 
 /* Máscara de digitação monetária: mantém apenas dígitos e uma vírgula
@@ -317,11 +305,12 @@ export function parseHoursBR(input) {
   const withH = s.toLowerCase().replace(/(h|horas?)\s*$/i, "").trim();
   const pure = withH || s;
 
-  const colon = pure.match(/^(\d{1,4})\s*:\s*([0-5]?\d)$/);
+  const colon = pure.match(/^(\d{1,4})\s*:\s*([0-5]?\d)(?:\s*:\s*([0-5]?\d))?$/);
   if (colon) {
     const h = parseInt(colon[1], 10);
     const m = parseInt(colon[2], 10);
-    return Number((h + m / 60).toFixed(4));
+    const s = colon[3] ? parseInt(colon[3], 10) : 0;
+    return Number((h + m / 60 + s / 3600).toFixed(4));
   }
   if (s.toLowerCase().includes("h")) {
     const hm = s.toLowerCase().match(/^(\d{1,4})\s*h\s*(\d{1,2})?$/);
@@ -341,14 +330,15 @@ export function parseHoursBR(input) {
   return null;
 }
 
-/* Formata horas decimais no estilo relógio: 12 → "12h", 12.5 → "12h30". */
-export function formatHoursBR(value) {
+/* Formata horas decimais no padrão relógio HH:MM (zero à esquerda).
+   Ex.: 1 → "01:00", 0.5 → "00:30", 10 → "10:00", 12.5 → "12:30". */
+export function formatHoursClock(value) {
   const n = Number(value);
-  if (isNaN(n) || value === null || value === undefined || value === "") return "";
-  const whole = Math.floor(n);
-  const minutes = Math.round((n - whole) * 60);
-  if (minutes === 0) return `${whole}h`;
-  return `${whole}h${String(minutes).padStart(2, "0")}`;
+  if (value === null || value === undefined || value === "" || isNaN(n)) return "—";
+  const totalMinutes = Math.round(n * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 // Grava no storage; em QuotaExceededError, limpa o storage e regrava.

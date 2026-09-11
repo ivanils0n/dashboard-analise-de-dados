@@ -23,6 +23,8 @@ const { show: toast } = useToast();
 
 const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: props.indicatorId, type: "number" });
 const isCustoTotal = computed(() => props.indicatorId === "custo_total");
+const isTreinamento = computed(() => props.indicatorId === "treinamento");
+const usesMonth = computed(() => isCustoTotal.value || isTreinamento.value);
 
 const form = reactive({
   date: "",
@@ -43,8 +45,7 @@ function load() {
   Object.keys(meta).forEach((k) => {
     if (["estado", "employeeId", "employeeName", "competencia"].includes(k)) return;
     const v = meta[k];
-    if (v === null || v === undefined) out[k] = "";
-    else out[k] = typeof v === "number" ? String(v) : String(v);
+    out[k] = v === null || v === undefined ? "" : String(v);
   });
   form.meta = out;
 }
@@ -131,12 +132,12 @@ function save() {
     else meta[k] = String(raw).toUpperCase();
   });
 
-  const date = isCustoTotal.value ? `${form.month}-01` : form.date;
+  const date = usesMonth.value ? `${form.month}-01` : form.date;
   if (!date) {
     toast("Informe a data.");
     return;
   }
-  if (isCustoTotal.value) meta.competencia = form.month;
+  if (usesMonth.value) meta.competencia = form.month;
 
   updateEntry(props.indicatorId, props.entry.id, { date, value, meta });
   emit("saved");
@@ -154,8 +155,8 @@ function save() {
     @close="emit('close')"
   >
     <form class="flex flex-col gap-4" novalidate @submit.prevent="save">
-      <!-- Custos Totais: mês de referência -->
-      <div v-if="isCustoTotal" class="grid gap-4 sm:grid-cols-3">
+      <!-- Custos Totais / Treinamento: competência mês/ano -->
+      <div v-if="usesMonth" class="grid gap-4 sm:grid-cols-3">
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês</label>
           <select class="input-field" :value="custosMonthNum" @change="setMonth(Number($event.target.value))">
@@ -169,8 +170,8 @@ function save() {
           </select>
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Custos (R$)</label>
-          <input v-model="form.value" type="text" inputmode="decimal" class="input-field text-right tabular-nums" placeholder="0,00" />
+          <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">{{ isCustoTotal ? "Custos (R$)" : "Carga horária (horas)" }}</label>
+          <input v-model="form.value" type="text" inputmode="decimal" class="input-field text-right tabular-nums" :placeholder="isCustoTotal ? '0,00' : '0'" />
         </div>
       </div>
 

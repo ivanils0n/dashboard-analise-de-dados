@@ -6,6 +6,7 @@ import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import PresentationModal from "@/components/dashboard/PresentationModal.vue";
 import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
+import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
@@ -41,7 +42,6 @@ const {
   chartPieData,
   filteredEntries,
   panorama,
-  usingFeedback,
   formatEntryValue,
   formatDate
 } = dashboard;
@@ -52,6 +52,7 @@ const headcountOpen = ref(false);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
+const vacanciesOpen = ref(false);
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const SHOW_VALUES_KEY = "gg-show-values";
@@ -59,8 +60,10 @@ const storedShowValues = localStore.getItem(SHOW_VALUES_KEY);
 const showValues = ref(storedShowValues === null ? true : storedShowValues === "1");
 watch(showValues, (v) => safeSetItem(localStore, SHOW_VALUES_KEY, v ? "1" : "0"));
 const custosChartRef = ref(null);
+const treinamentoChartRef = ref(null);
 const editingRow = ref(null);
 const editTarget = ref(null);
+const editVacancyTarget = ref(null);
 
 /* Colunas exibidas no modal de registros (clique direito no KPI). */
 const diariaColumns = [
@@ -77,7 +80,7 @@ const diariaColumns = [
 ];
 
 const treinamentoColumns = [
-  { label: "Data", date: true },
+  { label: "Competência", month: true },
   { label: "Colaborador", meta: "employeeName" },
   { label: "Cargo", meta: "cargo" },
   { label: "Loja", meta: "filial" },
@@ -152,6 +155,9 @@ async function handleBulkDelete() {
 /* Dados do gráfico de barras dos Custos Totais em largura total. */
 const custosBarData = computed(() => dashboard.custosBarByFilial());
 
+/* Dados do gráfico de barras de Treinamento (carga horária por filial). */
+const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
+
 /* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
    treinamento usam a série agregada por dia (total do dia, sem visão
    individual); os demais indicadores usam os lançamentos do período. */
@@ -160,16 +166,14 @@ function lineEntries(card) {
   const ind = getIndicatorById(card.id);
   if (ind && ind.id === "absenteismo") return dashboard.absenteismoDailySeries();
   if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries();
-  if (ind && ind.id === "treinamento") return dashboard.trainingDailySeries();
   return filteredEntries(ind);
 }
 
-/* Gráfico de barras por filial dos indicadores de Treinamento e Custos Totais. */
+/* Gráfico de barras por estado do Headcount (demais indicadores têm gráfico
+   próprio fora da faixa "Evolução por indicador"). */
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
-  if (card.id === "treinamento") return dashboard.treinamentoBarByFilial();
-  if (card.id === "custo_total") return dashboard.custosBarByFilial();
   return [];
 }
 
@@ -179,12 +183,26 @@ function openLaunch() {
     return;
   }
   editTarget.value = null;
+  editVacancyTarget.value = null;
   launchOpen.value = true;
 }
 
 function closeLaunch() {
   launchOpen.value = false;
   editTarget.value = null;
+  editVacancyTarget.value = null;
+}
+
+/* Editar uma vaga a partir do histórico (botão direito no KPI de contratação). */
+function onVacancyEdit(vacancyId) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  vacanciesOpen.value = false;
+  editTarget.value = null;
+  editVacancyTarget.value = vacancyId;
+  launchOpen.value = true;
 }
 
 /* Editar um lançamento vindo do modal de registros (botão direito no KPI):
@@ -263,6 +281,7 @@ async function removeEntryRowConfirmed(indicatorId, entryId) {
   });
   if (!ok) return;
   removeEntry(indicatorId, entryId);
+  syncAll();
   toast("Lançamento excluído.");
 }
 
@@ -323,6 +342,10 @@ function onSelectKpi(id) {
       custosChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (id === "treinamento") {
+      treinamentoChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     scrollToKpiChart(id);
   });
 }
@@ -335,6 +358,7 @@ function onKpiContext(id) {
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "treinamento") treinamentoEntriesOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
+  else if (id === "tempo_contratacao") vacanciesOpen.value = true;
 }
 
 /* Rola a faixa de gráficos até o card do indicador e o destaca. */
@@ -431,13 +455,6 @@ onUnmounted(() => {
     <!-- ===== KPIs ===== -->
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
-      <span
-        v-if="usingFeedback"
-        class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
-        title="O período selecionado é um mês anterior ao vigente; os totais usam o consolidado mensal (Feedback)."
-      >
-        Histórico · consolidado mensal
-      </span>
     </div>
     <section class="flex gap-4 overflow-x-auto pb-2" aria-label="Indicadores-chave">
       <KpiCard
@@ -445,6 +462,7 @@ onUnmounted(() => {
         :key="kpi.id"
         :kpi="kpi"
         :selected="selectedKpiId === kpi.id"
+        :show-values="showValues"
         @select="onSelectKpi"
         @context="onKpiContext"
       />
@@ -478,29 +496,56 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- ===== PANORAMA ATUAL ===== -->
-    <section class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div class="mb-4">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Panorama atual</h2>
-        <span class="text-xs text-zinc-400 dark:text-zinc-400">Último valor por indicador</span>
-      </div>
-      <BarChart :data="panorama" :show-values="showValues" />
-    </section>
+    <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->
+    <div class="mt-8 grid gap-4 lg:grid-cols-2">
+      <!-- ===== PANORAMA ATUAL ===== -->
+      <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div class="mb-4">
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Panorama atual</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">Último valor por indicador</span>
+        </div>
+        <BarChart :data="panorama" :show-values="showValues" />
+      </section>
 
-    <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
+      <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
+      <section
+        ref="custosChartRef"
+        class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div class="mb-4">
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custos Totais — Evolução dos Indicadores</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
+        </div>
+        <BarChart v-if="custosBarData.length" :data="custosBarData" :show-values="showValues" value-format="currency" />
+        <div v-else class="p-6">
+          <EmptyState
+            title="Sem custos no período"
+            text="Use o botão “Lançar dados” (Custos Totais) para registrar os custos do período ou ajuste o filtro."
+          />
+        </div>
+      </section>
+    </div>
+
+    <!-- ===== TREINAMENTO — CARGA HORÁRIA POR FILIAL ===== -->
     <section
-      ref="custosChartRef"
+      ref="treinamentoChartRef"
       class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div class="mb-4">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custos Totais — Evolução dos Indicadores</h2>
-        <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
+        <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Treinamento — Carga horária por filial</h2>
+        <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma das horas de treinamento por filial no período filtrado</span>
       </div>
-      <BarChart v-if="custosBarData.length" :data="custosBarData" :show-values="showValues" value-format="currency" />
+      <BarChart
+        v-if="treinamentoBarData.length"
+        :data="treinamentoBarData"
+        :show-values="showValues"
+        value-format="hours"
+        :show-trend="true"
+      />
       <div v-else class="p-6">
         <EmptyState
-          title="Sem custos no período"
-          text="Use o botão “Lançar dados” (Custos Totais) para registrar os custos do período ou ajuste o filtro."
+          title="Sem treinamentos no período"
+          text="Use o botão “Lançar dados” (Treinamento) para registrar as horas ou ajuste o filtro."
         />
       </div>
     </section>
@@ -560,7 +605,7 @@ onUnmounted(() => {
                 />
               </td>
               <td class="px-5 py-3 text-zinc-700 dark:text-zinc-300">
-                {{ ind.form === "custo_total" ? ymShortLabel(entry.date) : formatDate(entry.date) }}
+                {{ ind.form === "custo_total" || ind.form === "treinamento" ? ymShortLabel(entry.date) : formatDate(entry.date) }}
               </td>
               <td class="px-5 py-3"><Badge>{{ ind.name }}</Badge></td>
               <td class="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{{ formatEntryValue(ind, entry) }}</td>
@@ -597,9 +642,17 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <LaunchModal v-if="launchOpen" :open="launchOpen" :edit-entry="editTarget" @close="closeLaunch" @saved="onSaved" />
+    <LaunchModal
+      v-if="launchOpen"
+      :open="launchOpen"
+      :edit-entry="editTarget"
+      :edit-vacancy-id="editVacancyTarget"
+      @close="closeLaunch"
+      @saved="onSaved"
+    />
     <PresentationModal v-if="presentationOpen" :open="presentationOpen" @close="presentationOpen = false" />
     <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
+    <VacanciesModal v-if="vacanciesOpen" :open="vacanciesOpen" @close="vacanciesOpen = false" @edit="onVacancyEdit" />
     <IndicatorEntriesModal
       v-if="diariaEntriesOpen"
       :open="diariaEntriesOpen"

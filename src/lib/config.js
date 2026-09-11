@@ -178,24 +178,6 @@ export const PERSONNEL_COST_FIELDS = [
   { key: "comissao", label: "Comissão" }
 ];
 
-/* Campos organizacionais usados para enriquecer o lançamento de diárias. */
-export const HIERARCHY_FIELDS = [
-  { key: "liderImediato", label: "Líder imediato" },
-  { key: "gerenteRegional", label: "Gerente regional" }
-];
-
-/* Sugestões para o campo "Pagamento" da diária (texto livre com sugestões). */
-export const PAGAMENTO_OPTIONS = [
-  "Diária",
-  "Alimentação",
-  "Hospedagem",
-  "Combustível",
-  "Pedágio",
-  "Deslocamento",
-  "Estacionamento",
-  "Outros"
-];
-
 /* Modalidades do lançamento de treinamento. */
 export const MODALIDADE_OPTIONS = [
   { value: "presencial", label: "Presencial" },

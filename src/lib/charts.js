@@ -38,6 +38,10 @@ const valueLabelsPlugin = {
   }
 };
 
+/* Registrado globalmente ANTES dos plugins de linha (média/tendência) para que
+   essas linhas sejam desenhadas por cima dos rótulos de valor. */
+Chart.register(valueLabelsPlugin);
+
 function drawValueLabels(chart) {
   const local = chart.__valueLabels || {};
   const opts = (chart.options.plugins && chart.options.plugins.valueLabels) || {};
@@ -46,11 +50,12 @@ function drawValueLabels(chart) {
 
   const { ctx } = chart;
   const p = chartPalette();
+  const compact = local.compact !== undefined ? local.compact : opts.compact;
   const rawFormatter = local.formatter !== undefined ? local.formatter : opts.formatter;
   const formatter = typeof rawFormatter === "function" ? rawFormatter : null;
   const label = (val) => (formatter ? formatter(val) : String(val));
   ctx.save();
-  ctx.font = "700 12px Inter, sans-serif";
+  ctx.font = compact ? "700 9px Inter, sans-serif" : "700 12px Inter, sans-serif";
   ctx.textAlign = "center";
 
   if (chart.config.type === "doughnut" || chart.config.type === "pie") {
@@ -76,19 +81,25 @@ function drawValueLabels(chart) {
     chart.data.datasets.forEach((ds, di) => {
       const meta = chart.getDatasetMeta(di);
       if (!meta) return;
+      const total = meta.data.length;
+      let lastX = -Infinity;
       meta.data.forEach((el, i) => {
         const val = ds.data[i];
         if (val == null) return;
-        const offset = isBar ? 5 : 9;
+        /* Em gráficos compactos (mini sparklines) evita sobrepor rótulos,
+           mas sempre desenha o último ponto. */
+        if (compact && i !== total - 1 && el.x - lastX < 24) return;
+        const offset = isBar ? 5 : compact ? 4 : 9;
         let y = el.y - offset;
         ctx.textBaseline = "bottom";
-        if (y - 13 < 0) {
+        if (y - (compact ? 10 : 13) < 0) {
           ctx.textBaseline = "top";
           y = el.y + offset;
         }
         const idxFormat = perIndex[i];
         const text = idxFormat === "currency" ? formatCurrency(val) : label(val);
         ctx.fillText(text, el.x, y);
+        lastX = el.x;
       });
     });
   }
@@ -200,6 +211,7 @@ export function createMiniLineChart(canvas) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 10, bottom: 2 } },
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
       scales: {
         x: { display: false },
@@ -267,22 +279,12 @@ export function updatePieChart(chart, data) {
   chart.update();
 }
 
-export function setShowValues(chart, display) {
+export function setShowValues(chart, display, extra = {}) {
   if (!chart) return;
-  chart.__valueLabels = { ...(chart.__valueLabels || {}), display };
-  if (chart.options.plugins.valueLabels) chart.options.plugins.valueLabels.display = display;
-  chart.update();
-}
-
-/* Define como os rótulos de valor são formatados (ex.: moeda). */
-export function setValueFormatter(chart, formatter) {
-  if (!chart) return;
-  chart.__valueLabels = {
-    ...(chart.__valueLabels || {}),
-    formatter: typeof formatter === "function" ? formatter : null
-  };
+  chart.__valueLabels = { ...(chart.__valueLabels || {}), display, ...extra };
   if (chart.options.plugins.valueLabels) {
-    chart.options.plugins.valueLabels.formatter = typeof formatter === "function" ? formatter : null;
+    chart.options.plugins.valueLabels.display = display;
+    Object.assign(chart.options.plugins.valueLabels, extra);
   }
   chart.update();
 }

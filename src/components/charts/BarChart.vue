@@ -2,7 +2,7 @@
 import { onMounted, onBeforeUnmount, watch, ref } from "vue";
 import { createBarChart, updateBarChart } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatHoursClock } from "@/lib/utils";
 
 const props = defineProps({
   data: { type: Array, default: () => [] },
@@ -18,8 +18,7 @@ let chart = null;
 function formatterFor(format) {
   if (format === "currency") return (v) => formatCurrency(v);
   if (format === "hours") {
-    return (v) =>
-      Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " h";
+    return (v) => formatHoursClock(v);
   }
   return null;
 }

@@ -7,7 +7,7 @@ import { STATES, STATE_NAMES, DEFAULT_STATE, PERSONNEL_COST_FIELDS } from "@/lib
 import { listEmployees, listDepartments, saveEmployee, employeeMonthlyCost, moneyOrNull } from "@/lib/employees";
 import { getBranchById, getEmployeeById, getLatestForMeta, addEntry, updateEntry, removeEntry } from "@/lib/store";
 import { hydrateState } from "@/lib/supabase";
-import { formatCurrency, todayISO } from "@/lib/utils";
+import { formatCurrency, todayISO, normalizeText } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
@@ -71,12 +71,12 @@ const rows = computed(() => {
     list = list.filter((e) => e.departmentId === form.department);
   }
 
-  const q = form.search.trim().toLowerCase();
+  const q = normalizeText(form.search).trim();
   if (q) {
     list = list.filter((e) => {
       const filial = e.filialId ? getBranchById(e.filialId) : null;
       const filialText = filial ? `${filial.shortName} ${filial.name}` : "";
-      return `${e.name} ${e.sector} ${e.user} ${filialText}`.toLowerCase().includes(q);
+      return normalizeText(`${e.name} ${e.sector} ${e.user} ${filialText}`).includes(q);
     });
   }
 

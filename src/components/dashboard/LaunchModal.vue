@@ -19,6 +19,7 @@ import {
 import {
   addEntry,
   updateEntry,
+  getEntriesFor,
   getLatestForMeta,
   getEmployeeById,
   getVacancyById,
@@ -32,19 +33,23 @@ import {
   updateVacancy,
   closeVacancy,
   deleteVacancyRecord,
+  deleteVacancies,
+  closeVacancies,
   listVacancies,
   formatVacancyTempo,
-  findEmployeesByName
+  findEmployeesByName,
+  findBranchByShortName
 } from "@/lib/employees";
-import { readWorkbookFile, parseTreinamentoSheet, downloadTreinamentoTemplate } from "@/lib/export";
-import { todayISO, firstDayOfMonthISO, formatDateTime, formatValue, formatCurrency, currentYm, MONTHS_SHORT, yearOptions, maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR, parseHoursBR, formatHoursBR } from "@/lib/utils";
+import { readWorkbookFile, parseTreinamentoSheet, downloadTreinamentoTemplate, parseVagasSheet, downloadVagasTemplate } from "@/lib/export";
+import { todayISO, firstDayOfMonthISO, formatDate, formatValue, formatCurrency, currentYm, MONTHS_SHORT, yearOptions, maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR, parseHoursBR, formatHoursClock, normalizeText } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  editEntry: { type: Object, default: null }
+  editEntry: { type: Object, default: null },
+  editVacancyId: { type: String, default: null }
 });
 const emit = defineEmits(["close", "saved"]);
 
@@ -76,9 +81,16 @@ const indicator = computed(() =>
   indicatorId.value === SALARIO_OPTION.id ? SALARIO_OPTION : getIndicatorById(indicatorId.value)
 );
 
-/* ---------- Vaga ---------- */
-const vaga = reactive({ nome: "", data: "", hora: "" });
+/* ---------- Vaga (Tempo médio de contratação) ---------- */
+const vaga = reactive({
+  nome: "",
+  abertura: "",
+  fechamento: "",
+  tipo: "clt",
+  filialId: null
+});
 const editingVacancyId = ref(null);
+const vagaImportInput = ref(null);
 
 /* ---------- Custo ---------- */
 const custo = reactive({ query: "", employeeId: null, value: "" });
@@ -100,12 +112,16 @@ const diaria = reactive({
 });
 
 /* ---------- Treinamento ---------- */
+/* O treinamento é vinculado a MÊS/ANO (competência), não a um dia. O registro
+   é gravado no 1º dia do mês escolhido para manter compatibilidade com as
+   consultas por data existentes. */
 const treinamento = reactive({
   query: "",
   employeeId: null,
   cargo: "",
   filial: "",
-  data: "",
+  filialShort: "",
+  month: currentYm(),
   tema: "",
   cargaHoraria: "",
   modalidade: "presencial"
@@ -157,15 +173,22 @@ function initModal() {
   resetDiaria();
   resetTreinamento();
   resetCustosTot();
-  vaga.nome = "";
-  vaga.data = "";
-  vaga.hora = "";
+  resetVagaForm();
+  selectedVacancyIds.value = new Set();
 
   /* Modo edição: pré-preenche o formulário do lançamento selecionado. */
   if (props.editEntry && props.editEntry.entry && props.editEntry.indicatorId) {
     indicatorId.value = props.editEntry.indicatorId;
     buildForm();
     prefillEdit(props.editEntry.indicatorId, props.editEntry.entry);
+    return;
+  }
+
+  /* Modo edição de vaga (aberto pelo histórico do KPI de contratação). */
+  if (props.editVacancyId) {
+    indicatorId.value = "tempo_contratacao";
+    buildForm();
+    editVacancy(props.editVacancyId);
     return;
   }
 
@@ -198,7 +221,8 @@ function prefillEdit(indId, entry) {
     treinamento.query = "";
     treinamento.cargo = m.cargo || "";
     treinamento.filial = m.filial || "";
-    treinamento.data = entry.date || todayISO();
+    treinamento.filialShort = m.shortName || "";
+    treinamento.month = entry.date ? String(entry.date).slice(0, 7) : currentYm();
     treinamento.tema = m.tema || "";
     treinamento.cargaHoraria = entry.value != null ? String(entry.value) : "";
     treinamento.modalidade = /online/i.test(String(m.modalidade || "")) ? "online" : "presencial";
@@ -241,7 +265,8 @@ function resetTreinamento() {
   treinamento.employeeId = null;
   treinamento.cargo = "";
   treinamento.filial = "";
-  treinamento.data = todayISO();
+  treinamento.filialShort = "";
+  treinamento.month = currentYm();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
@@ -432,48 +457,163 @@ function saveSalary() {
 
 const vacancies = computed(() => listVacancies(filters.current));
 
+/* Filiais disponíveis para a vaga, conforme o estado selecionado. */
+const vagaBranches = computed(() =>
+  listBranches(estado.value === "todos" ? "todos" : estado.value)
+);
+
+/* Limpa a filial escolhida quando ela deixa de existir no estado selecionado e
+   garante que as filiais do estado estejam carregadas para o seletor. */
+watch(
+  () => estado.value,
+  async (state) => {
+    try {
+      await hydrateState(state === "todos" ? "todos" : state);
+    } catch (err) {
+      console.warn("[LaunchModal] Falha ao carregar filiais do estado:", err);
+    }
+    if (vaga.filialId && !vagaBranches.value.some((b) => b.id === vaga.filialId)) {
+      vaga.filialId = null;
+    }
+  }
+);
+
+function resetVagaForm() {
+  vaga.nome = "";
+  vaga.abertura = "";
+  vaga.fechamento = "";
+  vaga.tipo = "clt";
+  vaga.filialId = null;
+}
+
+function vacancyFilial(v) {
+  const b = v && v.filialId ? getBranchById(v.filialId) : null;
+  return b ? b.shortName || b.name : "";
+}
+
+function tipoContratacaoLabel(t) {
+  if (!t) return "";
+  return String(t).toUpperCase();
+}
+
 function setVagaNow() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  vaga.data = todayISO();
-  vaga.hora = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  vaga.abertura = todayISO();
+}
+
+/* Estado efetivo do lançamento (fallback para o filtro/estado padrão). */
+function effectiveVagaEstado() {
+  if (estado.value && estado.value !== "todos") return estado.value;
+  return filters.current !== "todos" ? filters.current : DEFAULT_STATE;
 }
 
 function handleVacancyAdd() {
   const name = vaga.nome.trim();
-  if (!name || !vaga.data || !vaga.hora) return toast("Preencha nome, data e hora da vaga.");
-  const openAt = `${vaga.data}T${vaga.hora}:00`;
+  if (!name || !vaga.abertura) return toast("Preencha o nome e a data de abertura da vaga.");
+  if (vaga.fechamento && vaga.fechamento < vaga.abertura) {
+    return toast("A data de fechamento deve ser posterior à data de abertura.");
+  }
+  const openAt = `${vaga.abertura}T00:00:00`;
+  const closeAt = vaga.fechamento ? `${vaga.fechamento}T00:00:00` : null;
+  const st = effectiveVagaEstado();
 
   if (editingVacancyId.value) {
-    updateVacancy(editingVacancyId.value, { name, openAt });
+    updateVacancy(editingVacancyId.value, {
+      name,
+      openAt,
+      closeAt,
+      tipoContratacao: vaga.tipo,
+      estado: st,
+      filialId: vaga.filialId
+    });
     editingVacancyId.value = null;
     toast("Vaga atualizada.");
   } else {
-    const st =
-      estado.value === "todos"
-        ? filters.current !== "todos"
-          ? filters.current
-          : DEFAULT_STATE
-        : estado.value;
-    addVacancy({ name, openAt, estado: st });
-    toast(`Vaga adicionada — aguardando fechamento.${st ? ` (${st})` : ""}`);
+    addVacancy({
+      name,
+      openAt,
+      closeAt,
+      tipoContratacao: vaga.tipo,
+      estado: st,
+      filialId: vaga.filialId
+    });
+    toast(`Vaga adicionada${closeAt ? " e fechada" : " — aguardando fechamento"}.${st ? ` (${st})` : ""}`);
   }
 
-  vaga.nome = "";
-  vaga.data = "";
-  vaga.hora = "";
+  resetVagaForm();
   showTab("historico");
   emit("saved");
 }
 
-function editVacancy(id) {
+async function editVacancy(id) {
   const v = getVacancyById(id);
   if (!v) return;
   editingVacancyId.value = id;
   vaga.nome = v.name;
-  vaga.data = v.openAt.slice(0, 10);
-  vaga.hora = v.openAt.slice(11, 16);
+  vaga.abertura = v.openAt ? String(v.openAt).slice(0, 10) : "";
+  vaga.fechamento = v.closeAt ? String(v.closeAt).slice(0, 10) : "";
+  vaga.tipo = v.tipoContratacao || "clt";
+  if (v.estado && v.estado !== estado.value) {
+    estado.value = v.estado;
+    try {
+      await hydrateState(v.estado);
+    } catch (err) {
+      console.warn("[LaunchModal] Falha ao carregar filiais do estado:", err);
+    }
+  }
+  vaga.filialId = v.filialId || null;
   showTab("nova");
+}
+
+/* ---------- Importação de vagas por planilha ---------- */
+function vagaSheetToUse(wb) {
+  if (wb.Sheets["Vagas"]) return wb.Sheets["Vagas"];
+  const keys = Object.keys(wb.Sheets || {});
+  return keys.length ? wb.Sheets[keys[0]] : null;
+}
+
+async function onVagaImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const wb = await readWorkbookFile(file);
+    const sheet = vagaSheetToUse(wb);
+    const parsed = sheet ? parseVagasSheet(sheet) : [];
+    if (!parsed.length) {
+      toast("Nenhuma vaga encontrada na planilha. Use o template de vagas.");
+      return;
+    }
+    let ok = 0;
+    let skipped = 0;
+    parsed.forEach((row) => {
+      if (!row.name || !row.openAt) {
+        skipped++;
+        return;
+      }
+      const branch = row.filialText ? findBranchByShortName(row.filialText) : null;
+      const est =
+        row.estado ||
+        (branch && branch.estado) ||
+        (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
+      addVacancy({
+        name: String(row.name).toUpperCase(),
+        openAt: row.openAt,
+        closeAt: row.closeAt,
+        tipoContratacao: row.tipo,
+        estado: est,
+        filialId: branch ? branch.id : null
+      });
+      ok++;
+    });
+    emit("saved");
+    toast(
+      `Importação concluída — ${ok} vaga(s) lançada(s)${skipped ? ` · ${skipped} ignorada(s)` : ""}.`
+    );
+    showTab("historico");
+  } catch (err) {
+    console.error(err);
+    toast("Não foi possível ler a planilha de vagas.");
+  }
 }
 
 function closeVacancyById(id) {
@@ -497,18 +637,75 @@ async function removeVacancy(id) {
   toast("Vaga excluída.");
 }
 
+/* ---------- Seleção múltipla de vagas (aba Histórico) ---------- */
+const selectedVacancyIds = ref(new Set());
+
+const selectedVacancies = computed(() =>
+  vacancies.value.filter((v) => selectedVacancyIds.value.has(v.id))
+);
+const allVacanciesSelected = computed(
+  () =>
+    vacancies.value.length > 0 &&
+    vacancies.value.every((v) => selectedVacancyIds.value.has(v.id))
+);
+
+function toggleVacancy(id) {
+  const next = new Set(selectedVacancyIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedVacancyIds.value = next;
+}
+
+function toggleVacanciesAll() {
+  if (allVacanciesSelected.value) selectedVacancyIds.value = new Set();
+  else selectedVacancyIds.value = new Set(vacancies.value.map((v) => v.id));
+}
+
+async function handleBulkVacancyDelete() {
+  const list = selectedVacancies.value;
+  const n = list.length;
+  if (!n) return;
+  const ok = await confirm({
+    title: `Excluir ${n} vaga(s)?`,
+    message: "As vagas selecionadas serão removidas permanentemente.",
+    confirmText: `Excluir ${n}`,
+    danger: true
+  });
+  if (!ok) return;
+  deleteVacancies(list.map((v) => v.id));
+  selectedVacancyIds.value = new Set();
+  emit("saved");
+  toast(`${n} vaga(s) excluída(s).`);
+}
+
+function handleBulkVacancyClose() {
+  const list = selectedVacancies.value.filter((v) => !v.closeAt);
+  if (!list.length) {
+    toast("Nenhuma vaga em aberto entre as selecionadas.");
+    return;
+  }
+  closeVacancies(list.map((v) => v.id));
+  selectedVacancyIds.value = new Set();
+  emit("saved");
+  toast(`${list.length} vaga(s) fechada(s) — tempo de contratação registrado.`);
+}
+
 /* ---------- Custo ---------- */
 
 const custoResults = computed(() => {
-  const q = custo.query.trim().toLowerCase();
+  const q = normalizeText(custo.query).trim();
   const employees = getEmployees();
   const filtered = q
-    ? employees.filter((e) => `${e.name} ${e.sector} ${e.user}`.toLowerCase().includes(q))
+    ? employees.filter((e) => normalizeText(`${e.name} ${e.sector} ${e.user}`).includes(q))
     : employees;
-  return filtered.map((e) => {
-    const existing = getLatestForMeta("custo_contratacao", "employeeId", e.id);
-    return { employee: e, existing };
+  /* Índice único employeeId -> último custo de contratação (evita reler e
+     reordenar a lista completa para cada colaborador). */
+  const latestByEmployee = new Map();
+  getEntriesFor("custo_contratacao").forEach((entry) => {
+    const id = entry.meta && entry.meta.employeeId;
+    if (id) latestByEmployee.set(id, entry);
   });
+  return filtered.map((e) => ({ employee: e, existing: latestByEmployee.get(e.id) || null }));
 });
 
 const custoEmployeeName = computed(() => {
@@ -556,10 +753,10 @@ function submitCusto() {
 /* ---------- Diária ---------- */
 
 const diariaResults = computed(() => {
-  const q = diaria.query.trim().toLowerCase();
+  const q = normalizeText(diaria.query).trim();
   const employees = getEmployees();
   if (!q) return employees;
-  return employees.filter((e) => `${e.name} ${e.sector} ${e.user}`.toLowerCase().includes(q));
+  return employees.filter((e) => normalizeText(`${e.name} ${e.sector} ${e.user}`).includes(q));
 });
 
 const diariaEmployeeName = computed(() => {
@@ -650,10 +847,10 @@ function submitDiaria() {
 /* ---------- Treinamento ---------- */
 
 const treinamentoResults = computed(() => {
-  const q = treinamento.query.trim().toLowerCase();
+  const q = normalizeText(treinamento.query).trim();
   const employees = getEmployees();
   if (!q) return employees;
-  return employees.filter((e) => `${e.name} ${e.cargo || ""} ${e.sector} ${e.user}`.toLowerCase().includes(q));
+  return employees.filter((e) => normalizeText(`${e.name} ${e.cargo || ""} ${e.sector} ${e.user}`).includes(q));
 });
 
 const treinamentoEmployeeName = computed(() => {
@@ -673,12 +870,38 @@ function fillTreinamentoContext(emp) {
   treinamento.cargo = String(emp.cargo || "").toUpperCase();
   const filial = emp.filialId ? getBranchById(emp.filialId) : null;
   treinamento.filial = filial ? String(`${filial.shortName} ${filial.name}`.trim()).toUpperCase() : "";
+  treinamento.filialShort = filial && filial.shortName ? String(filial.shortName).toUpperCase() : "";
+}
+
+/* ---------- Mês/ano do treinamento (competência) ---------- */
+const treinamentoYearOptions = yearOptions(4, 1);
+
+const treinamentoMonthNum = computed(() =>
+  treinamento.month ? Number(treinamento.month.split("-")[1]) : new Date().getMonth() + 1
+);
+const treinamentoYearNum = computed(() =>
+  treinamento.month ? Number(treinamento.month.split("-")[0]) : new Date().getFullYear()
+);
+const treinamentoMonthLabel = computed(() => {
+  if (!treinamento.month) return "";
+  const [y, m] = treinamento.month.split("-");
+  return `${MONTHS_SHORT[Number(m) - 1] || m}/${y}`;
+});
+
+function setTreinamentoMonth(m) {
+  treinamento.month = `${treinamentoYearNum.value}-${String(m).padStart(2, "0")}`;
+}
+function setTreinamentoYear(y) {
+  treinamento.month = `${y}-${String(treinamentoMonthNum.value).padStart(2, "0")}`;
+}
+function setTreinamentoCurrentMonth() {
+  treinamento.month = currentYm();
 }
 
 function submitTreinamento() {
   const emp = treinamento.employeeId ? getEmployeeById(treinamento.employeeId) : null;
   if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
-  if (!treinamento.data) return toast("Informe a data do treinamento.");
+  if (!treinamento.month) return toast("Informe o mês/ano do treinamento.");
   const carga = parseHoursBR(treinamento.cargaHoraria);
   if (carga === null || carga < 0) {
     return toast("Informe a carga horária do treinamento (ex.: 8, 12:00 ou 12:30).");
@@ -690,7 +913,7 @@ function submitTreinamento() {
     (MODALIDADE_OPTIONS.find((o) => o.value === treinamento.modalidade) || {}).label ||
     treinamento.modalidade;
   const payload = {
-    date: treinamento.data,
+    date: `${treinamento.month}-01`,
     value: carga,
     state: emp.estado || null,
     meta: {
@@ -698,9 +921,11 @@ function submitTreinamento() {
       employeeName: up(emp.name),
       cargo: up(treinamento.cargo),
       filial,
+      shortName: up(treinamento.filialShort),
       tema: up(treinamento.tema),
       cargaHoraria: carga,
-      modalidade: mod
+      modalidade: mod,
+      competencia: treinamento.month
     }
   };
 
@@ -708,7 +933,7 @@ function submitTreinamento() {
     updateEntry("treinamento", editingEntryId.value, payload);
     editingEntryId.value = null;
     emit("saved");
-    toast(`Treinamento atualizado para ${emp.name}: ${formatHoursBR(carga)}.`);
+    toast(`Treinamento atualizado para ${emp.name}: ${formatHoursClock(carga)}.`);
     close();
     return;
   }
@@ -716,10 +941,10 @@ function submitTreinamento() {
   addEntry("treinamento", payload);
 
   emit("saved");
-  toast(`Treinamento lançado para ${emp.name}: ${formatHoursBR(carga)}.`);
+  toast(`Treinamento lançado para ${emp.name}: ${formatHoursClock(carga)}.`);
 
   /* Mantém o colaborador selecionado, limpando os dados do treinamento. */
-  treinamento.data = todayISO();
+  treinamento.month = currentYm();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
@@ -812,7 +1037,8 @@ function trCandidateRecord(emp) {
     sector: emp.sector || "",
     cargo: emp.cargo || "",
     estado: emp.estado || "",
-    filial: filial ? String(`${filial.shortName} ${filial.name}`.trim()) : ""
+    filial: filial ? String(`${filial.shortName} ${filial.name}`.trim()) : "",
+    shortName: filial ? filial.shortName || "" : ""
   };
 }
 
@@ -860,10 +1086,6 @@ async function onTrImportFile(e) {
   }
 }
 
-function trRowUsable(r) {
-  return !r.missing && r.candidates.length > 0 && r.chosen;
-}
-
 function confirmTrImport() {
   let ok = 0;
   let skipped = 0;
@@ -881,6 +1103,7 @@ function confirmTrImport() {
     }
     const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
     const filial = up(emp.filial) || null;
+    const shortName = up(emp.shortName) || null;
     addEntry("treinamento", {
       date: dataTreinamento,
       value: Number(r.carga),
@@ -890,6 +1113,7 @@ function confirmTrImport() {
         employeeName: up(emp.name),
         cargo: up(emp.cargo) || null,
         filial,
+        shortName,
         tema: up(r.tema) || null,
         cargaHoraria: Number(r.carga),
         modalidade: r.modalidadeLabel || "Presencial"
@@ -909,12 +1133,11 @@ function confirmTrImport() {
 /* ---------- Custos Totais (por filial) ---------- */
 
 const custosTotResults = computed(() => {
-  const q = custosTot.query.trim().toLowerCase();
+  const q = normalizeText(custosTot.query).trim();
   let list = listBranches(custosTot.estado);
   if (q) {
     list = list.filter((b) =>
-      `${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`
-        .toLowerCase()
+      normalizeText(`${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`)
         .includes(q)
     );
   }
@@ -1070,7 +1293,27 @@ watch(
   }
 );
 
-onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
+/* Escape fecha apenas a revisão de importação de treinamentos (não o modal). */
+function onTrReviewKeydown(e) {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    trReviewOpen.value = false;
+  }
+}
+
+watch(
+  () => trReviewOpen.value,
+  (open) => {
+    if (open) window.addEventListener("keydown", onTrReviewKeydown, true);
+    else window.removeEventListener("keydown", onTrReviewKeydown, true);
+  }
+);
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onSubKeydown, true);
+  window.removeEventListener("keydown", onTrReviewKeydown, true);
+});
 </script>
 
 <template>
@@ -1135,24 +1378,66 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
             <label for="vagaNome" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Nome da vaga</label>
             <input id="vagaNome" v-model="vaga.nome" v-upper type="text" class="input-field uppercase" placeholder="Ex.: ANALISTA DE RH" />
           </div>
-          <div class="grid gap-4 sm:grid-cols-2">
+
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="flex flex-col gap-1.5">
-              <label for="vagaData" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de abertura</label>
-              <input id="vagaData" v-model="vaga.data" type="date" class="input-field" />
+              <label for="vagaTipo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de contratação</label>
+              <select id="vagaTipo" v-model="vaga.tipo" class="input-field">
+                <option value="clt">CLT</option>
+                <option value="pj">PJ</option>
+              </select>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label for="vagaHora" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Hora</label>
-              <input id="vagaHora" v-model="vaga.hora" type="time" class="input-field" />
+              <label for="vagaEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <select id="vagaEstado" v-model="estado" class="input-field">
+                <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="vagaFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+              <select id="vagaFilial" v-model="vaga.filialId" class="input-field">
+                <option :value="null">— Sem filial —</option>
+                <option v-for="b in vagaBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
+              </select>
             </div>
           </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label for="vagaAbertura" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de abertura</label>
+              <input id="vagaAbertura" v-model="vaga.abertura" type="date" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="vagaFechamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de fechamento</label>
+              <input id="vagaFechamento" v-model="vaga.fechamento" type="date" class="input-field" />
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar vagas por planilha</strong>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Colunas: Nome da vaga · Data de abertura · Data de fechamento · Tipo de contratação (CLT/PJ) · Estado · Filial.
+                  A filial é cruzada com o cadastro da aba Filiais.
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="downloadVagasTemplate">Baixar template</button>
+                <button type="button" class="btn-primary btn-sm" @click="vagaImportInput?.click()">Importar planilha</button>
+                <input ref="vagaImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onVagaImportFile" />
+              </div>
+            </div>
+          </div>
+
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-ghost" @click="setVagaNow">Abrir Vaga</button>
+            <button type="button" class="btn-ghost" @click="setVagaNow">Abrir hoje</button>
             <button type="button" class="btn-primary" @click="handleVacancyAdd">
               {{ editingVacancyId ? "Salvar alterações" : "+ Adicionar vaga" }}
             </button>
           </div>
           <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            Ao adicionar, a vaga fica "em aberto" no histórico. Use "Fechar" quando for contratado.
+            Preencha a data de fechamento para calcular o tempo de contratação; se ficar vazia, a vaga permanece "em aberto".
           </p>
         </div>
 
@@ -1160,23 +1445,60 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
           <p v-if="!vacancies.length" class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
             Nenhuma vaga cadastrada. Adicione uma vaga na aba "Nova vaga".
           </p>
+
+          <div v-if="vacancies.length" class="flex flex-wrap items-center justify-between gap-2">
+            <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                class="h-4 w-4 cursor-pointer accent-red-600"
+                :checked="allVacanciesSelected"
+                aria-label="Selecionar todas as vagas"
+                @change="toggleVacanciesAll"
+              />
+              Selecionar todas
+            </label>
+            <div v-if="selectedVacancies.length" class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+                {{ selectedVacancies.length }} selecionada(s)
+              </span>
+              <button type="button" class="btn-ghost btn-sm" @click="handleBulkVacancyClose">Fechar selecionadas</button>
+              <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkVacancyDelete">Excluir selecionadas</button>
+            </div>
+          </div>
+
           <div
             v-for="v in vacancies"
             :key="v.id"
-            class="flex flex-col gap-3 rounded-xl border border-zinc-200 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800"
+            class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
+            :class="selectedVacancyIds.has(v.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
           >
-            <div class="flex flex-col gap-0.5">
-              <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ v.name }}</strong>
-              <span class="text-xs text-zinc-500 dark:text-zinc-400">Abertura: {{ formatDateTime(v.openAt) }}</span>
-              <span v-if="v.closeAt" class="text-xs text-zinc-500 dark:text-zinc-400">
-                Fechamento: {{ formatDateTime(v.closeAt) }} · Tempo: {{ formatVacancyTempo(v) }}
-              </span>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <Badge :tone="v.closeAt ? 'dark' : 'accent'">{{ v.closeAt ? "Fechado" : "Em aberto" }}</Badge>
-              <button type="button" class="btn-ghost btn-sm" @click="editVacancy(v.id)">Editar</button>
-              <button type="button" class="btn-primary btn-sm" :disabled="!!v.closeAt" @click="closeVacancyById(v.id)">Fechar</button>
-              <button type="button" class="btn-danger-ghost btn-sm" @click="removeVacancy(v.id)">Excluir</button>
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+              :checked="selectedVacancyIds.has(v.id)"
+              aria-label="Selecionar vaga"
+              @change="toggleVacancy(v.id)"
+            />
+            <div class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-0.5">
+                <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ v.name }}</strong>
+                <span
+                  v-if="v.tipoContratacao || vacancyFilial(v) || v.estado"
+                  class="text-xs text-zinc-500 dark:text-zinc-400"
+                >
+                  {{ [tipoContratacaoLabel(v.tipoContratacao), vacancyFilial(v), v.estado].filter(Boolean).join(" · ") }}
+                </span>
+                <span class="text-xs text-zinc-500 dark:text-zinc-400">Abertura: {{ formatDate(v.openAt) }}</span>
+                <span v-if="v.closeAt" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Fechamento: {{ formatDate(v.closeAt) }} · Tempo: {{ formatVacancyTempo(v) }}
+                </span>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Badge :tone="v.closeAt ? 'dark' : 'accent'">{{ v.closeAt ? "Fechado" : "Em aberto" }}</Badge>
+                <button type="button" class="btn-ghost btn-sm" @click="editVacancy(v.id)">Editar</button>
+                <button type="button" class="btn-primary btn-sm" :disabled="!!v.closeAt" @click="closeVacancyById(v.id)">Fechar</button>
+                <button type="button" class="btn-danger-ghost btn-sm" @click="removeVacancy(v.id)">Excluir</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1369,7 +1691,7 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
             </p>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div class="flex flex-col gap-1.5">
               <label for="trCargo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Cargo</label>
               <input id="trCargo" v-model="treinamento.cargo" v-upper type="text" class="input-field" />
@@ -1379,9 +1701,24 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
               <input id="trFilial" v-model="treinamento.filial" v-upper type="text" class="input-field" />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label for="trData" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data do treinamento</label>
-              <input id="trData" v-model="treinamento.data" type="date" class="input-field" />
+              <label for="trMonth" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês do treinamento</label>
+              <select id="trMonth" class="input-field" :value="treinamentoMonthNum" @change="setTreinamentoMonth(Number($event.target.value))">
+                <option v-for="(mName, i) in MONTHS_SHORT" :key="i + 1" :value="i + 1">{{ mName }}</option>
+              </select>
             </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trYear" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Ano</label>
+              <select id="trYear" class="input-field" :value="treinamentoYearNum" @change="setTreinamentoYear(Number($event.target.value))">
+                <option v-for="y in treinamentoYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" class="btn-ghost btn-sm" @click="setTreinamentoCurrentMonth">Mês atual</button>
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">
+              Competência: <strong>{{ treinamentoMonthLabel }}</strong>
+            </span>
           </div>
 
           <div class="flex flex-col gap-1.5">
@@ -1514,17 +1851,6 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
           </p>
         </div>
       </template>
-
-      <!-- ===== ESTADO (somente quando o lançamento não está atrelado a um colaborador) ===== -->
-      <div v-if="indicator.form === 'vaga'" class="flex flex-col gap-1.5">
-        <label for="entryEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado do lançamento</label>
-        <select id="entryEstado" v-model="estado" class="input-field">
-          <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
-        </select>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400">
-          O lançamento será vinculado ao estado selecionado e usado nos filtros por estado.
-        </p>
-      </div>
 
       <div class="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
         <button type="button" class="btn-ghost" @click="close">Cancelar</button>
@@ -1679,7 +2005,7 @@ onUnmounted(() => window.removeEventListener("keydown", onSubKeydown, true));
                     <Badge v-else-if="r.candidates.length > 1 && !r.missing" tone="muted">{{ r.candidates.length }} colaboradores</Badge>
                   </div>
                   <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ r.tema || "Sem tema" }} · {{ r.carga != null ? formatHoursBR(r.carga) : "sem carga horária" }} ·
+                    {{ r.tema || "Sem tema" }} · {{ r.carga != null ? formatHoursClock(r.carga) : "sem carga horária" }} ·
                     {{ r.modalidadeLabel || "Presencial" }}
                   </p>
                 </div>

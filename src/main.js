@@ -4,7 +4,6 @@ import App from "./App.vue";
 import router from "./router";
 import { bootstrapSupabase } from "./lib/supabase";
 import { syncAll } from "./lib/employees";
-import { initFeedback } from "./lib/feedback";
 import { isAuthenticated, getProfile, watchSupabaseAuthState, startAuthPolling, restoreSessionFromCookie } from "./lib/auth";
 
 if (import.meta.env.PROD) {
@@ -14,7 +13,6 @@ if (import.meta.env.PROD) {
 }
 
 async function bootstrap() {
-  initFeedback();
   let authed = isAuthenticated();
   if (!authed) authed = await restoreSessionFromCookie();
   await bootstrapSupabase();
@@ -59,6 +57,11 @@ const upperDirective = {
 bootstrap().then(() => {
   const app = createApp(App);
   app.directive("upper", upperDirective);
+  /* Expõe erros de render/computed no console com um rótulo claro, para
+     facilitar o diagnóstico (o Vue, em produção, os engole silenciosamente). */
+  app.config.errorHandler = (err, instance, info) => {
+    console.error("[GG] Erro na aplicação:", info, err);
+  };
   app.use(router);
   app.mount("#app");
 });

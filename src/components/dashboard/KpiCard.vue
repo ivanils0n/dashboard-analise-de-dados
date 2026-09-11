@@ -6,7 +6,8 @@ import { formatValue, formatRawValue } from "@/lib/utils";
 
 const props = defineProps({
   kpi: { type: Object, required: true },
-  selected: { type: Boolean, default: false }
+  selected: { type: Boolean, default: false },
+  showValues: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["select", "context"]);
@@ -49,6 +50,8 @@ const contextHint = computed(() => {
       return "Botão direito: lançamentos de treinamento";
     case "custo_total":
       return "Botão direito: lançamentos de custos";
+    case "tempo_contratacao":
+      return "Botão direito: histórico de vagas";
     default:
       return "";
   }
@@ -82,7 +85,7 @@ function onKeydown(e) {
     <!-- Turnover: pizza -->
     <div v-if="kpi.kind === 'pie'" class="mt-1">
       <p class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ kpi.value }}</p>
-      <PieChart :data="kpi.pieData" height="h-28" />
+      <PieChart :data="kpi.pieData" :show-values="showValues" height="h-28" />
     </div>
 
     <!-- Headcount, Custos Totais e Treinamento: apenas o total, centralizado (sem mini gráfico) -->
@@ -101,11 +104,22 @@ function onKeydown(e) {
 
     <!-- Padrão: mini gráfico de linha -->
     <div v-else>
-      <MiniLineChart :entries="kpi.entries" />
+      <MiniLineChart :entries="kpi.entries" :show-values="showValues" />
       <p class="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ valueText }}</p>
       <div class="mt-1 flex items-center justify-between gap-2 text-xs">
         <span :class="deltaTone">{{ deltaLabel }}</span>
         <span class="text-zinc-400">{{ kpi.countText }}</span>
+      </div>
+      <div
+        v-if="kpi.id === 'tempo_contratacao'"
+        class="mt-2 flex items-center justify-between gap-2 border-t border-zinc-100 pt-2 text-[11px] dark:border-zinc-800"
+      >
+        <span class="text-zinc-500 dark:text-zinc-400">
+          Abertas: <strong class="text-zinc-800 dark:text-zinc-100">{{ kpi.vagasAbertas ?? 0 }}</strong>
+        </span>
+        <span class="text-zinc-500 dark:text-zinc-400">
+          Fechadas: <strong class="text-zinc-800 dark:text-zinc-100">{{ kpi.vagasFechadas ?? 0 }}</strong>
+        </span>
       </div>
     </div>
 

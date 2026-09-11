@@ -12,6 +12,7 @@ import { listDepartments, departmentMetrics } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { saveDepartment, deleteDepartmentRecord, nameInUse } from "@/lib/departamentos";
 import { hydrateState } from "@/lib/supabase";
+import { normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
@@ -30,10 +31,10 @@ const branchFilterId = ref("todos");
 const range = reactive({ start: "", end: "" });
 
 const tableList = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = normalizeText(search.value).trim();
   let list = listDepartments(filters.current);
   if (q) {
-    list = list.filter((d) => `${d.name} ${d.shortName || ""}`.toLowerCase().includes(q));
+    list = list.filter((d) => normalizeText(`${d.name} ${d.shortName || ""}`).includes(q));
   }
   return list.slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 });
@@ -189,14 +190,20 @@ function edit(id) {
   if (department) fillForm(department);
 }
 
-/* Métricas de um departamento com os filtros ativos (lidas no render). */
+/* Métricas por departamento com os filtros ativos. Calculadas uma única vez
+   por render (o template lê 4 campos por linha, antes recalculava 4x). */
+const metricsByDept = computed(() => {
+  const filialId = branchFilterId.value !== "todos" ? branchFilterId.value : null;
+  const range = dateRange.value;
+  const map = new Map();
+  tableList.value.forEach((d) => {
+    map.set(d.id, departmentMetrics(d, filters.current, filialId, range));
+  });
+  return map;
+});
+
 function metrics(d) {
-  return departmentMetrics(
-    d,
-    filters.current,
-    branchFilterId.value !== "todos" ? branchFilterId.value : null,
-    dateRange.value
-  );
+  return metricsByDept.value.get(d.id) || { total: 0, ativos: 0, entradas: 0, saidas: 0 };
 }
 </script>
 

@@ -1,19 +1,15 @@
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, ABSENTEEISM_TYPES, STATES } from "@/lib/config";
-import { getEntriesFor, getAllEntries } from "@/lib/store";
-import { computedSnapshot, listEmployees } from "@/lib/employees";
+import { getEntriesFor, getAllEntries, getBranches } from "@/lib/store";
+import { computedSnapshot, listEmployees, listVacancies } from "@/lib/employees";
 import {
   formatValue,
   formatDate,
   formatCurrency,
   aggregateByDay,
-  singleMonthOfRange
+  normalizeText,
+  compareDateDesc
 } from "@/lib/utils";
-import {
-  feedbackUsableYm,
-  monthSnapshot,
-  getMonthSnapshot
-} from "@/lib/feedback";
 import { aggregateEntries, absenteismoTotals } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
 
@@ -27,57 +23,18 @@ const SALARY_IND = {
   form: "salario"
 };
 
-/* Indicadores manuais (lançáveis) cujo resultado é sensível ao período. */
-const MANUAL_DATE_SENSITIVE = new Set(
-  INDICATORS.filter((i) => i.manual && !i.computed).map((i) => i.id)
-);
-
 /* Centraliza o cálculo dos dados exibidos no dashboard a partir do
    filtro de período (reactive { start, end }) e do estado selecionado.
-
-   ORIGEM DOS DADOS (regra única):
-     • Mês vigente  -> dados normais/originais (nunca Feedback);
-     • Mês anterior -> Feedback (snapshot mensal consolidado) quando o
-                       período filtrado for exatamente um mês civil passado;
-     • Intervalos parciais ou com vários meses -> dados normais (os números
-                       coincidem com a soma dos snapshots por mês). */
+   Todos os totais são calculados diretamente sobre os lançamentos. */
 export function useDashboardData(filter) {
   const { state } = useFilters();
 
   function currentState() {
+    /* Lê `revision` além de `current`: garante recomputação a cada troca de
+       estado mesmo que o valor se repita (ex.: RO -> todos -> RO). */
+    void state.revision;
     return state.current;
   }
-
-  /* Contexto de Feedback: só existe quando o filtro é um único mês civil
-     anterior ao mês vigente. A leitura é pura (sem gravar no cache); o
-     cálculo/gravação do snapshot acontece no watch abaixo, fora de computeds. */
-  const feedbackCtx = computed(() => {
-    const ym = singleMonthOfRange(filter.start, filter.end);
-    if (!ym || !feedbackUsableYm(ym)) return null;
-    const snap = getMonthSnapshot(ym, currentState());
-    if (!snap) return null;
-    return { ym, snap };
-  });
-
-  /* Garante o snapshot do mês/estado selecionado (fora do computed). */
-  watch(
-    () => [filter.start, filter.end, state.current],
-    () => {
-      const ym = singleMonthOfRange(filter.start, filter.end);
-      if (ym && feedbackUsableYm(ym)) monthSnapshot(ym, currentState());
-    },
-    { immediate: true }
-  );
-
-  function feedbackRecord(ind, ctx) {
-    if (!ctx) return null;
-    const rec = ctx.snap.indicators && ctx.snap.indicators[ind.id];
-    return rec || null;
-  }
-
-  /* true quando o período filtrado é um único mês anterior ao vigente
-     (ou seja, quando a regra "meses anteriores → Feedback" está ativa). */
-  const usingFeedback = computed(() => !!feedbackCtx.value);
 
   function filteredEntries(ind) {
     const list = getEntriesFor(ind.id, currentState());
@@ -91,19 +48,10 @@ export function useDashboardData(filter) {
     });
   }
 
-  function absTotalsFromEntries(entries) {
-    return absenteismoTotals(entries);
-  }
-
   function absenteismoTypeTotals() {
     const ind = getIndicatorById("absenteismo");
     if (!ind) return { falta: 0, atraso: 0, afastamento: 0 };
-    const ctx = feedbackCtx.value;
-    if (ctx && feedbackRecord(ind, ctx)) {
-      const rec = feedbackRecord(ind, ctx);
-      if (rec.types) return { ...rec.types };
-    }
-    return absTotalsFromEntries(filteredEntries(ind));
+    return absenteismoTotals(filteredEntries(ind));
   }
 
   /* Série diária do Absenteísmo para o gráfico de evolução: soma as
@@ -119,13 +67,6 @@ export function useDashboardData(filter) {
      podem ocorrer na mesma data). */
   function diariaDailySeries() {
     const ind = getIndicatorById("custo_diaria");
-    if (!ind) return [];
-    return aggregateByDay(filteredEntries(ind));
-  }
-
-  /* Série diária do Treinamento: soma a carga horária por dia. */
-  function trainingDailySeries() {
-    const ind = getIndicatorById("treinamento");
     if (!ind) return [];
     return aggregateByDay(filteredEntries(ind));
   }
@@ -149,10 +90,22 @@ export function useDashboardData(filter) {
   function treinamentoBarByFilial() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
+    const branches = getBranches();
+    /* Rótulo abreviado da filial: usa o shortName gravado no lançamento; para
+       lançamentos antigos, tenta localizar a filial pelo texto do cadastro. */
+    const shortLabel = (meta) => {
+      if (meta.shortName) return String(meta.shortName).toUpperCase();
+      const text = String(meta.filial || "").toUpperCase();
+      if (!text) return "Sem filial";
+      const match =
+        branches.find((b) => b.shortName && text.includes(String(b.shortName).toUpperCase())) ||
+        branches.find((b) => b.name && text.includes(String(b.name).toUpperCase()));
+      return match ? String(match.shortName || match.name).toUpperCase() : text;
+    };
     const byFilial = new Map();
     filteredEntries(ind).forEach((e) => {
       const meta = e.meta || {};
-      const filial = meta.filial || "Sem filial";
+      const filial = shortLabel(meta);
       byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
     return [...byFilial.entries()]
@@ -188,12 +141,6 @@ export function useDashboardData(filter) {
     if (ind.computed) {
       return computedSnapshot(ind.id, currentState());
     }
-    /* Mês anterior + indicador manual => Feedback consolidado. */
-    if (MANUAL_DATE_SENSITIVE.has(ind.id)) {
-      const ctx = feedbackCtx.value;
-      const rec = feedbackRecord(ind, ctx);
-      if (rec) return rec.value; // pode ser null (mês sem lançamentos)
-    }
     return aggregateList(ind, filteredEntries(ind));
   }
 
@@ -203,15 +150,16 @@ export function useDashboardData(filter) {
     const visible = INDICATORS.filter((ind) => ind.id !== "turnover_saidas");
     return visible.map((ind) => {
       const entries = filteredEntries(ind);
-      const allEntries =
-        currentState() !== "todos" ? getEntriesFor(ind.id, currentState()) : getEntriesFor(ind.id);
+      const allEntries = getEntriesFor(ind.id, currentState());
       const current = indicatorCurrentValue(ind);
       let prev = null;
       if (filter.start && allEntries.length) {
         const before = allEntries.filter((e) => e.date < filter.start);
         prev = before.length ? aggregateList(ind, before) : null;
       } else if (!filter.start && entries.length > 1) {
-        prev = entries[entries.length - 2].value;
+        /* Sem início de período: o "anterior" é a agregação de tudo menos o
+           último lançamento (respeitando soma/média/último do indicador). */
+        prev = aggregateList(ind, entries.slice(0, -1));
       }
 
       let delta = null;
@@ -258,12 +206,13 @@ export function useDashboardData(filter) {
         };
       }
 
-      return {
+      const base = {
         id: ind.id,
         kind: "normal",
         name: ind.name,
         desc: ind.desc,
         type: ind.type,
+        decimals: ind.decimals,
         higherIsBetter: ind.higherIsBetter !== false,
         current,
         prev,
@@ -271,6 +220,15 @@ export function useDashboardData(filter) {
         countText,
         entries
       };
+
+      /* Tempo médio de contratação: quantidade de vagas abertas/fechadas. */
+      if (ind.id === "tempo_contratacao") {
+        const vacs = listVacancies(currentState());
+        base.vagasAbertas = vacs.filter((v) => !v.closeAt).length;
+        base.vagasFechadas = vacs.filter((v) => v.closeAt).length;
+      }
+
+      return base;
     });
   });
 
@@ -283,11 +241,14 @@ export function useDashboardData(filter) {
   }
 
   /* ---------- Faixa de gráficos por indicador ----------
-     O "Custos Totais" sai desta faixa e ganha gráfico próprio em largura
-     total abaixo do Panorama (o KPI/card continua selecionável). */
+     "Custos Totais" e "Treinamento" saem desta faixa e ganham gráfico próprio
+     abaixo do Panorama (o KPI/card continua selecionável). */
   const kpiChartCards = computed(() => {
     const visible = INDICATORS.filter(
-      (ind) => ind.id !== "turnover_saidas" && ind.id !== "custo_total"
+      (ind) =>
+        ind.id !== "turnover_saidas" &&
+        ind.id !== "custo_total" &&
+        ind.id !== "treinamento"
     );
     return visible.map((ind) => {
       if (ind.id === "turnover_entradas") {
@@ -316,17 +277,6 @@ export function useDashboardData(filter) {
           sub: "Por estado",
           unit: "colaboradores",
           valueFormat: "",
-          showTrend: false
-        };
-      }
-      if (ind.id === "treinamento") {
-        return {
-          id: "treinamento",
-          kind: "bar",
-          title: "Treinamento",
-          sub: "Carga horária por filial",
-          unit: "horas",
-          valueFormat: "hours",
           showTrend: false
         };
       }
@@ -388,7 +338,7 @@ export function useDashboardData(filter) {
   /* ---------- Tabela de lançamentos ---------- */
 
   function tableRows(query) {
-    const q = (query || "").trim().toLowerCase();
+    const q = normalizeText(query).trim();
     const all = getAllEntries();
     const rows = [];
     const stateTarget = String(currentState() || "").trim().toUpperCase();
@@ -411,14 +361,18 @@ export function useDashboardData(filter) {
     });
     // Ordenação cronológica decrescente: o lançamento mais recente no topo.
     // Desempate por id (criações mais novas primeiro) para o mesmo dia.
-    rows.sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.entry.id.localeCompare(a.entry.id));
+    rows.sort(
+      (a, b) =>
+        compareDateDesc(a.entry.date, b.entry.date) ||
+        String(b.entry.id || "").localeCompare(String(a.entry.id || ""))
+    );
 
     if (!q) return rows;
     return rows.filter((r) => {
-      if (r.ind.name.toLowerCase().includes(q)) return true;
+      if (normalizeText(r.ind.name).includes(q)) return true;
       const meta = r.entry.meta;
       if (!meta || typeof meta !== "object") return false;
-      return Object.values(meta).some((v) => typeof v === "string" && v.toLowerCase().includes(q));
+      return Object.values(meta).some((v) => typeof v === "string" && normalizeText(v).includes(q));
     });
   }
 
@@ -453,12 +407,10 @@ export function useDashboardData(filter) {
     absenteismoTypeTotals,
     absenteismoDailySeries,
     diariaDailySeries,
-    trainingDailySeries,
     treinamentoBarByFilial,
     headcountBarByState,
     custosBarByFilial,
     indicatorCurrentValue,
-    usingFeedback,
     kpis,
     selectedKpiId,
     selectKpi,

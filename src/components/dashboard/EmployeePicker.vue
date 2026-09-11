@@ -7,6 +7,7 @@ import { getDepartmentById, getBranchById } from "@/lib/store";
 import { hydrateState } from "@/lib/supabase";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import { normalizeText } from "@/lib/utils";
 
 const props = defineProps({
   defaultState: { type: String, default: "RO" },
@@ -84,12 +85,12 @@ const results = computed(() => {
     list = list.filter((e) => e.filialId === form.filial);
   }
 
-  const q = form.search.trim().toLowerCase();
+  const q = normalizeText(form.search).trim();
   if (q) {
     list = list.filter((e) => {
       const filial = e.filialId ? getBranchById(e.filialId) : null;
       const filialText = filial ? `${filial.shortName} ${filial.name}` : "";
-      return `${e.name} ${e.sector} ${e.user} ${filialText}`.toLowerCase().includes(q);
+      return normalizeText(`${e.name} ${e.sector} ${e.user} ${filialText}`).includes(q);
     });
   }
 

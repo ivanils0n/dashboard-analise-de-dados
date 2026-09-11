@@ -6,7 +6,6 @@ import {
   useData,
   getEmployeeById,
   deleteEmployee,
-  getBranchById,
   getDepartments,
   upsertEmployee,
   getVacancies,
@@ -106,10 +105,13 @@ export function saveEmployee(employeeData) {
 
   if (existing) {
     const updated = { ...existing, ...employeeData, updatedAt: now };
-    if (employeeData.status === "desligado") {
-      updated.firedAt = employeeData.firedAt || existing.firedAt || now;
-    } else {
-      updated.firedAt = null;
+    /* Só mexe em `firedAt` quando o status é informado: edições parciais
+       (ex.: salário) não podem apagar a data de desligamento. */
+    if (employeeData.status !== undefined) {
+      updated.firedAt =
+        employeeData.status === "desligado"
+          ? employeeData.firedAt || existing.firedAt || now
+          : null;
     }
     upsertEmployee(updated);
     return updated;
@@ -183,12 +185,6 @@ function filterByEntryDate(list, dateRange) {
     if (dateRange.end && (!d || d > dateRange.end)) return false;
     return true;
   });
-}
-
-export function filialMetrics(filial, state) {
-  if (!filial) return { total: 0, ativos: 0, entradas: 0, saidas: 0 };
-  const list = listEmployees(state).filter((e) => e.filialId === filial.id);
-  return metricsFrom(list);
 }
 
 function metricsFrom(list) {
@@ -297,21 +293,53 @@ export function listVacancies(state) {
   if (state && state !== "todos") {
     list = list.filter((v) => sameState(v.estado, state));
   }
-  return list.slice().sort((a, b) => b.openAt.localeCompare(a.openAt));
+  /* Tolerante a vagas sem data de abertura (dados legados/importados). */
+  return list
+    .slice()
+    .sort((a, b) => String(b.openAt || "").localeCompare(String(a.openAt || "")));
 }
 
-export function addVacancy({ name, openAt, estado }) {
-  const vacancy = { id: createId(), name, openAt, closeAt: null, estado: estado || null };
+export function addVacancy({
+  name,
+  openAt,
+  closeAt = null,
+  tipoContratacao = null,
+  estado,
+  filialId = null
+}) {
+  const vacancy = {
+    id: createId(),
+    name,
+    openAt,
+    closeAt: closeAt || null,
+    tipoContratacao: tipoContratacao || null,
+    estado: estado || null,
+    filialId: filialId || null
+  };
   upsertVacancy(vacancy);
   syncVacancyIndicator(vacancy.estado);
   return vacancy;
 }
 
-export function updateVacancy(id, { name, openAt }) {
+export function updateVacancy(
+  id,
+  { name, openAt, closeAt, tipoContratacao, estado, filialId }
+) {
   const vacancy = getVacancyById(id);
   if (!vacancy) return null;
-  const updated = { ...vacancy, name, openAt };
+  const prevEstado = vacancy.estado;
+  const updated = {
+    ...vacancy,
+    name,
+    openAt,
+    closeAt: closeAt !== undefined ? closeAt || null : vacancy.closeAt,
+    tipoContratacao:
+      tipoContratacao !== undefined ? tipoContratacao || null : vacancy.tipoContratacao,
+    estado: estado !== undefined ? estado || null : vacancy.estado,
+    filialId: filialId !== undefined ? filialId || null : vacancy.filialId
+  };
   upsertVacancy(updated);
+  if (prevEstado !== updated.estado) syncVacancyIndicator(prevEstado);
   syncVacancyIndicator(updated.estado);
   return updated;
 }
@@ -332,8 +360,32 @@ export function deleteVacancyRecord(id) {
   syncVacancyIndicator(estado);
 }
 
+/* Exclusão em lote: remove as vagas e recalcula o indicador uma única vez. */
+export function deleteVacancies(ids) {
+  const states = new Set();
+  (ids || []).forEach((id) => {
+    const v = getVacancyById(id);
+    if (!v) return;
+    deleteVacancy(id);
+    states.add(v.estado || null);
+  });
+  states.forEach((s) => syncVacancyIndicator(s));
+}
+
+/* Fechamento em lote: fecha as vagas abertas e recalcula uma única vez. */
+export function closeVacancies(ids) {
+  const states = new Set();
+  (ids || []).forEach((id) => {
+    const v = getVacancyById(id);
+    if (!v || v.closeAt) return;
+    upsertVacancy({ ...v, closeAt: nowLocalISO() });
+    states.add(v.estado || null);
+  });
+  states.forEach((s) => syncVacancyIndicator(s));
+}
+
 function syncVacancyIndicator(state) {
-  const closed = listVacancies(state).filter((v) => v.closeAt);
+  const closed = listVacancies(state).filter((v) => v.closeAt && v.openAt);
   const today = todayISO();
   if (!closed.length) {
     removeEntryForDate("tempo_contratacao", today, state);
@@ -345,8 +397,8 @@ function syncVacancyIndicator(state) {
 }
 
 export function formatVacancyTempo(vacancy) {
-  if (!vacancy.closeAt) return "—";
+  if (!vacancy.openAt || !vacancy.closeAt) return "—";
   const days = daysBetween(vacancy.openAt, vacancy.closeAt);
-  if (days === null) return "—";
+  if (days === null || isNaN(days)) return "—";
   return days.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " dias";
 }

@@ -1,10 +1,11 @@
 <script setup>
 import { onMounted, onBeforeUnmount, watch, ref } from "vue";
-import { createMiniLineChart, updateMiniLineChart } from "@/lib/charts";
+import { createMiniLineChart, updateMiniLineChart, setShowValues } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
 const props = defineProps({
-  entries: { type: Array, default: () => [] }
+  entries: { type: Array, default: () => [] },
+  showValues: { type: Boolean, default: false }
 });
 
 const canvas = ref(null);
@@ -14,6 +15,7 @@ function mountChart() {
   if (!canvas.value) return;
   chart = createMiniLineChart(canvas.value);
   updateMiniLineChart(chart, props.entries);
+  setShowValues(chart, props.showValues, { compact: true });
 }
 
 function unmountChart() {
@@ -38,6 +40,13 @@ watch(
     if (chart) updateMiniLineChart(chart, entries);
   },
   { deep: true }
+);
+
+watch(
+  () => props.showValues,
+  (show) => {
+    if (chart) setShowValues(chart, show, { compact: true });
+  }
 );
 </script>
 

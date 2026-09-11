@@ -4,8 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { STATES, DEFAULT_STATE } from "./config";
 import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData, upsertInList, useData } from "./store";
-import { sessionStore } from "./utils";
-import { feedbackClearAll } from "./feedback";
+import { sessionStore, compareDateAsc } from "./utils";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
 
@@ -115,6 +114,8 @@ function vacancyToRow(vacancy) {
     nome: vacancy.name ?? "",
     aberta_em: envTimestamp(vacancy.openAt),
     fechada_em: envTimestamp(vacancy.closeAt),
+    tipo_contratacao: vacancy.tipoContratacao || null,
+    filial_id: vacancy.filialId || null,
     estado_sigla: vacancy.estado || null
   };
 }
@@ -144,48 +145,12 @@ function departmentToRow(department) {
   };
 }
 
-/* Registro do Feedback/histórico (consolidado mensal). A PK é composta
-   (ano, mes, estado, indicador) — um único registro por período/indicador. */
-function feedbackToRow(record) {
-  return {
-    ano: Number(record.ano),
-    mes: Number(record.mes),
-    estado: record.estado || "todos",
-    indicador: String(record.indicador || ""),
-    valor: record.valor === undefined || record.valor === null ? null : Number(record.valor),
-    contagem: Number(record.contagem) || 0,
-    tipos: record.tipos || null
-  };
-}
-
 const _queue = {};
-const _clearQueue = {};
 let _flushTimer = null;
-let _feedbackWritesDisabled = false;
-
-/* Só grava o Feedback/histórico quando o perfil puder editar (admin/analista).
-   Evita 401/403 de RLS quando um visitante navega por meses anteriores. */
-function currentProfileCanEdit() {
-  try {
-    const raw = sessionStore.getItem("gg-auth");
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    const perfil = data && data.profile ? data.profile.perfil : null;
-    return perfil === "admin" || perfil === "analista";
-  } catch (err) {
-    return false;
-  }
-}
 
 function _enqueue(table, id, op) {
   if (!_queue[table]) _queue[table] = new Map();
   _queue[table].set(id, op);
-  _schedule();
-}
-
-function _enqueueClear(table) {
-  _clearQueue[table] = true;
-  if (_queue[table]) _queue[table].clear();
   _schedule();
 }
 
@@ -201,13 +166,6 @@ export async function flush() {
   const client = supabaseClient();
   if (!client) return;
   const jobs = [];
-
-  Object.keys(_clearQueue).forEach((table) => {
-    if (_clearQueue[table]) {
-      _clearQueue[table] = false;
-      jobs.push({ table, promise: client.from(table).delete().neq("id", "__none__") });
-    }
-  });
 
   Object.keys(_queue).forEach((table) => {
     const map = _queue[table];
@@ -235,18 +193,7 @@ export async function flush() {
   results.forEach(({ table, error }) => {
     if (!error) return;
     const status = error.status || error.code;
-    if (table === "feedback_indicadores") {
-      if (!_feedbackWritesDisabled) {
-        _feedbackWritesDisabled = true;
-        console.warn(
-          "[Supabase] Gravação do Feedback desabilitada nesta sessão. " +
-            "Verifique se a tabela feedback_indicadores existe e se as policies/grants foram aplicados.",
-          error.message || error
-        );
-      }
-      return;
-    }
-    console.error("[Supabase]", status ? `(${status}) ` : "", error.message || error);
+    console.error(`[Supabase] ${table}`, status ? `(${status}) ` : "", error.message || error);
   });
 }
 
@@ -268,9 +215,6 @@ export function registerRemote() {
     entriesRemoved(ids, estado) {
       const table = stateTable("lancamentos", estado);
       ids.forEach((id) => _enqueue(table, id, { type: "delete", id }));
-    },
-    entriesCleared() {
-      ["ro", "am", "pa"].forEach((s) => _enqueueClear(`lancamentos_${s}`));
     },
     employeeSaved(employee) {
       _enqueue(stateTable("colaboradores", employee.estado), employee.id, { type: "upsert", row: employeeToRow(employee) });
@@ -295,14 +239,6 @@ export function registerRemote() {
     },
     departmentRemoved(id, estado) {
       _enqueue(stateTable("departamentos", estado), id, { type: "delete", id });
-    },
-    feedbackUpsert(records) {
-      if (_feedbackWritesDisabled) return;
-      if (!currentProfileCanEdit()) return;
-      (records || []).forEach((r) => {
-        const key = `${r.ano}-${r.mes}-${(r.estado || "todos")}-${r.indicador}`;
-        _enqueue("feedback_indicadores", key, { type: "upsert", row: feedbackToRow(r) });
-      });
     }
   });
 }
@@ -358,6 +294,8 @@ function mapRemoteVacancy(row, impliedState) {
     name: row.nome ?? "",
     openAt: row.aberta_em,
     closeAt: row.fechada_em,
+    tipoContratacao: row.tipo_contratacao || null,
+    filialId: row.filial_id || null,
     estado: row.estado_sigla || impliedState || null
   };
 }
@@ -454,8 +392,6 @@ export async function hydrate(state) {
   if (loadedAny) {
     const v = await deltaVersao();
     if (v) DataCache.setVersion(v);
-    // Dados remotos podem ter mudado -> snapshots mensais antigos inválidos.
-    feedbackClearAll();
   }
   console.info(`[Supabase] Dados carregados: ${states.join(", ")}.`);
   return true;
@@ -499,7 +435,7 @@ function mergeStateFromCache(suffix, state) {
       payload.departments.push(mapRemoteDepartment(item, state));
     }
   });
-  Object.keys(payload.entries).forEach((k) => payload.entries[k].sort((a, b) => a.date.localeCompare(b.date)));
+  Object.keys(payload.entries).forEach((k) => payload.entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
   mergeFromRemote(payload);
 }
 
@@ -630,7 +566,7 @@ function _upsertInMemory(tabela, row, estado) {
       value: Number(row.valor),
       meta: row.meta || null
     });
-    data.entries[ind].sort((a, b) => a.date.localeCompare(b.date));
+    data.entries[ind].sort((a, b) => compareDateAsc(a.date, b.date));
   } else if (tabela.indexOf("colaboradores_") === 0) {
     upsertInList(data.employees, mapRemoteEmployee(row, estado));
   } else if (tabela.indexOf("vagas_") === 0) {
@@ -655,7 +591,6 @@ function applyDelta(changes) {
     }
     _loadedStates[estado] = true;
   });
-  if (changes && changes.length) feedbackClearAll();
 }
 
 function loadLocalIntoMemory() {
@@ -695,7 +630,7 @@ function loadLocalIntoMemory() {
     }
   });
 
-  Object.keys(data.entries).forEach((k) => data.entries[k].sort((a, b) => a.date.localeCompare(b.date)));
+  Object.keys(data.entries).forEach((k) => data.entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
   replaceFromCache(data);
 
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
@@ -780,7 +715,6 @@ export function discardPendingWrites() {
     clearTimeout(_flushTimer);
     _flushTimer = null;
   }
-  Object.keys(_clearQueue).forEach((k) => delete _clearQueue[k]);
   Object.keys(_queue).forEach((k) => _queue[k].clear());
 }
 
@@ -791,7 +725,6 @@ export function resetLocalState() {
   resetData();
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
   DataCache.resetAll();
-  feedbackClearAll();
 }
 
 /* "Recarregar Dados": limpa cache e memória, remove resíduos antigos do
@@ -803,7 +736,6 @@ export async function reloadData() {
   DataCache.resetAll();
   resetData();
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-  feedbackClearAll();
 
   if (supabaseClient()) {
     await hydrate(DEFAULT_STATE);

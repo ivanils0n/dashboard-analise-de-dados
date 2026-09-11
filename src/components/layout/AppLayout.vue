@@ -1,12 +1,13 @@
 <script setup>
 import { computed } from "vue";
-import { getProfile } from "@/lib/auth";
+import { authState } from "@/lib/auth";
 import TopBar from "./TopBar.vue";
 import SideBar from "./SideBar.vue";
 
-/* O visitante tem acesso somente leitura ao dashboard e não exibe a sidebar. */
+/* O visitante tem acesso somente leitura ao dashboard e não exibe a sidebar.
+   Lê o estado reativo (authState.profile) para reagir a login/logout. */
 const isVisitor = computed(() => {
-  const p = getProfile();
+  const p = authState.profile;
   return !!(p && p.perfil === "visitante");
 });
 </script>

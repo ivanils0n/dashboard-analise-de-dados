@@ -1,7 +1,6 @@
 /* Regras centrais de agregação dos indicadores.
    Único lugar que decide como um indicador é consolidado a partir dos seus
-   lançamentos. Usado pelos KPIs, gráficos e pela camada de Feedback para
-   garantir que todos sigam exatamente a mesma lógica. */
+   lançamentos, garantindo que KPIs e gráficos sigam exatamente a mesma lógica. */
 
 /* Identificadores cujo valor do período é a SOMA dos lançamentos. */
 const SUM_INDICATORS = new Set(["absenteismo", "custo_diaria", "treinamento", "custo_total"]);
@@ -37,14 +36,4 @@ export function absenteismoTotals(list) {
     if (type in totals) totals[type] += Number(e.value) || 0;
   });
   return totals;
-}
-
-/* Soma os valores por rótulo (ex.: custos por filial). */
-export function sumByKey(list, keyOf, valueOf = (e) => Number(e.value) || 0) {
-  const map = new Map();
-  (list || []).forEach((e) => {
-    const key = keyOf(e);
-    map.set(key, (map.get(key) || 0) + valueOf(e));
-  });
-  return map;
 }

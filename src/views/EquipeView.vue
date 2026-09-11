@@ -14,6 +14,7 @@ import {
   getBranchById,
   getDepartmentById,
   getEmployees,
+  deleteEmployee,
   addEntry
 } from "@/lib/store";
 import {
@@ -28,7 +29,7 @@ import {
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/supabase";
 import { readWorkbookFile, parseEmployeeSheet, downloadEquipeTemplate } from "@/lib/export";
-import { todayISO, formatDate, formatDateTime } from "@/lib/utils";
+import { todayISO, formatDate, formatDateTime, normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
@@ -68,12 +69,12 @@ const showFiredAt = computed(() => form.status === "desligado");
 
 const tableList = computed(() => {
   let list = listEmployees(filters.current);
-  const q = ef.search.trim().toLowerCase();
+  const q = normalizeText(ef.search).trim();
   if (q) {
     list = list.filter((e) => {
       const filial = e.filialId ? getBranchById(e.filialId) : null;
       const filialText = filial ? `${filial.shortName} ${filial.name}` : "";
-      return `${e.name} ${e.sector} ${e.user} ${filialText}`.toLowerCase().includes(q);
+      return normalizeText(`${e.name} ${e.sector} ${e.user} ${filialText}`).includes(q);
     });
   }
   if (ef.department && ef.department !== "todos") {
@@ -255,7 +256,6 @@ function cancelDuplicateAdd() {
 const importFileInput = ref(null);
 const importReviewOpen = ref(false);
 const importCandidates = ref([]);
-const importParsed = ref([]);
 const importing = ref(false);
 
 const importSelectedCount = computed(() => importCandidates.value.filter((c) => c.include).length);
@@ -411,7 +411,6 @@ async function onEquipeImportFile(e) {
       return;
     }
     const currentUserKey = (u) => String(u || "").trim().toUpperCase();
-    importParsed.value = parsed;
     const base = parsed.map((item) => {
       const nameDuplicates = item.valid
         ? findEmployeesByName(item.name).map((emp) => ({
@@ -469,7 +468,6 @@ async function onEquipeImportFile(e) {
       const added = importSelectedCandidates(importCandidates.value.filter((c) => c.include));
       if (added > 0) toast(`${added} colaborador(es) adicionado(s).`);
       importCandidates.value = [];
-      importParsed.value = [];
       return;
     }
 
@@ -510,7 +508,6 @@ async function confirmImportEmployees() {
   const added = importSelectedCandidates(selected);
   importReviewOpen.value = false;
   importCandidates.value = [];
-  importParsed.value = [];
   toast(`${added} colaborador(es) adicionado(s).`);
 }
 
@@ -562,7 +559,8 @@ async function handleBulkDelete() {
     danger: true
   });
   if (!ok) return;
-  list.forEach((e) => removeEmployee(e.id));
+  /* Remove em lote sem recalcular os indicadores a cada item. */
+  list.forEach((e) => deleteEmployee(e.id));
   selectedIds.value = new Set();
   syncAll();
   resetForm();
