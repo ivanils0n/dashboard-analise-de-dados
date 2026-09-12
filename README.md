@@ -132,7 +132,7 @@ npm run dev                    # front em http://localhost:5173
 Aponte o front para o Worker no `.env` (padrão do `wrangler dev`):
 
 ```
-VITE_API_BASE=http://127.0.0.1:8787
+VITE_API_URL=http://127.0.0.1:8787
 ```
 
 ## Autenticação
@@ -164,15 +164,15 @@ Anote a URL (ex.: `https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev`).
 
 ### 2. Front
 
-No build, informe a URL do Worker em `VITE_API_BASE`:
+No build, informe a URL do Worker em `VITE_API_URL` (sempre com `https://`):
 
 ```bash
-VITE_API_BASE=https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev npm run build
+VITE_API_URL=https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev npm run build
 ```
 
 - **Cloudflare Pages**: aponte o projeto para o repositório, build `npm run build`,
-  output `dist`, e defina a variável `VITE_API_BASE`.
-- **GitHub Pages**: cadastre o segredo `VITE_API_BASE` (URL pública do Worker) em
+  output `dist`, e defina a variável `VITE_API_URL`.
+- **GitHub Pages**: cadastre o segredo `VITE_API_URL` (URL pública do Worker) em
   **Settings → Secrets and variables → Actions**; o workflow injeta no build.
 
 ## Como adicionar um novo indicador

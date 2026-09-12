@@ -51,7 +51,7 @@ Usuário inicial: `admin` / `Admin@123`.
 | --- | --- | --- |
 | `DATABASE_URL` | sim | Connection string do CockroachDB |
 | `JWT_SECRET` | sim | Segredo para assinar os JWT |
-| `CORS_ORIGIN` | não | Origens permitidas, separadas por vírgula (ex.: `https://app.exemplo.com`). Sem ela, usa `*` (a auth é por Bearer token, não cookie) |
+| `CORS_ORIGIN` | não | Origens permitidas, separadas por vírgula. Já definida em `wrangler.jsonc` como `https://gente-gestao-modenaesilva.pages.dev,http://localhost:5173`. Sem ela, usa `*` (a auth é por Bearer token, não cookie) |
 
 Desenvolvimento local:
 

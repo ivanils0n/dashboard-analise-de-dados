@@ -3,5 +3,8 @@
   "name": "gente-gestao-api",
   "main": "src/index.ts",
   "compatibility_date": "2024-11-01",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "CORS_ORIGIN": "https://gente-gestao-modenaesilva.pages.dev,http://localhost:5173"
+  }
 }

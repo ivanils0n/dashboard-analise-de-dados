@@ -16,7 +16,7 @@ export default defineConfig(() => {
         "@": resolve(root, "src")
       }
     },
-    // Expõe as variáveis VITE_* em import.meta.env (ex.: VITE_API_BASE).
+    // Expõe as variáveis VITE_* em import.meta.env (ex.: VITE_API_URL).
     envPrefix: ["VITE_"],
     // Hardening de produção: o runtime do Vue 3 é compilado sem suporte a
     // DevTools (desliga __VUE_PROD_DEVTOOLS__ explicitamente).
