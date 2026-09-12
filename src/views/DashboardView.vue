@@ -91,7 +91,7 @@ const treinamentoColumns = [
 ];
 
 const custosColumns = [
-  { label: "Data", date: true },
+  { label: "Mês", month: true },
   { label: "Filial CNPJ", meta: "cnpj" },
   { label: "Razão Social", meta: "razaoSocial" },
   { label: "Estado", meta: "estado" },
