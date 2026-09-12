@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 import { DEFAULT_STATE } from "@/lib/config";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 
 const state = reactive({

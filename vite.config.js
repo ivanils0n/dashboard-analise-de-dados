@@ -16,9 +16,8 @@ export default defineConfig(() => {
         "@": resolve(root, "src")
       }
     },
-    // Expõe SUPABASE_URL / SUPABASE_ANON_KEY (e as variantes VITE_*) em
-    // import.meta.env — tanto no .env local quanto nos secrets do deploy.
-    envPrefix: ["VITE_", "SUPABASE_"],
+    // Expõe as variáveis VITE_* em import.meta.env (ex.: VITE_API_BASE).
+    envPrefix: ["VITE_"],
     // Hardening de produção: o runtime do Vue 3 é compilado sem suporte a
     // DevTools (desliga __VUE_PROD_DEVTOOLS__ explicitamente).
     define: {

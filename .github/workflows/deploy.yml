@@ -38,16 +38,15 @@ jobs:
             npm install
           fi
 
-      # O Vite injeta as credenciais no bundle durante o build.
-      # Cadastre em Settings → Secrets and variables → Actions:
-      #   SUPABASE_URL       (secret ou variable)
-      #   SUPABASE_ANON_KEY  (secret ou variable)
-      - name: Build com credenciais injetadas
+      # O front fala com o Worker (backend/) que acessa o CockroachDB.
+      # Informe a URL pública do Worker para o build:
+      #   Settings → Secrets and variables → Actions → VITE_API_BASE
+      # Ex.: https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev
+      - name: Build com a URL da API injetada
         run: |
           if [ -f pnpm-lock.yaml ]; then pnpm exec vite build; else npx vite build; fi
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+          VITE_API_BASE: ${{ secrets.VITE_API_BASE || vars.VITE_API_BASE }}
 
       - name: Configurar Pages
         uses: actions/configure-pages@v5

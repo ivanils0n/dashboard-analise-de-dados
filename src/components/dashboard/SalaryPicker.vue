@@ -3,7 +3,7 @@ import { ref, reactive, computed, watch } from "vue";
 import { STATES, STATE_NAMES, STATUS_LABELS, TYPE_LABELS } from "@/lib/config";
 import { listEmployees, listDepartments, syncAll } from "@/lib/employees";
 import { getDepartmentById, getBranchById } from "@/lib/store";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { formatDate, formatCurrency, normalizeText } from "@/lib/utils";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";

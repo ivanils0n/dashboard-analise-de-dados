@@ -5,7 +5,7 @@ import Badge from "@/components/ui/Badge.vue";
 import EmployeePicker from "@/components/dashboard/EmployeePicker.vue";
 import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
 import { listBranches } from "@/lib/filiais";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import {
   MANUAL_INDICATORS,
   ABSENTEEISM_TYPES,

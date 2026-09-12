@@ -27,7 +27,7 @@ import {
   normalizePersonName
 } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { readWorkbookFile, parseEmployeeSheet, downloadEquipeTemplate } from "@/lib/export";
 import { todayISO, formatDate, formatDateTime, normalizeText } from "@/lib/utils";
 

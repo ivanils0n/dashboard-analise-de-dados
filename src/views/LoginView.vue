@@ -3,7 +3,7 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { login } from "@/lib/auth";
 import { DEFAULT_STATE } from "@/lib/config";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 
 const router = useRouter();

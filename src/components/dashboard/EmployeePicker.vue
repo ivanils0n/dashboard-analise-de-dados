@@ -4,7 +4,7 @@ import { STATES, STATE_NAMES } from "@/lib/config";
 import { listEmployees, listDepartments, syncAll } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { getDepartmentById, getBranchById } from "@/lib/store";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { normalizeText } from "@/lib/utils";

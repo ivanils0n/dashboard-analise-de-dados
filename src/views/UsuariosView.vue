@@ -5,7 +5,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import Modal from "@/components/ui/Modal.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
-import { supabaseClient } from "@/lib/supabase";
+import { apiFetch } from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 
 const { show: toast } = useToast();
@@ -27,46 +27,16 @@ const form = reactive({
 const PERFIL_LABELS = { admin: "Administrador", analista: "Analista", visitante: "Visitante" };
 
 async function load() {
-  const client = supabaseClient();
-  if (!client) {
-    toast("Sem conexão com o Supabase.");
-    loading.value = false;
-    return;
-  }
-
-  let list = null;
-
+  loading.value = true;
   try {
-    const { data, error: rpcError } = await client.rpc("listar_usuarios");
-    if (rpcError) {
-      console.warn("[Usuarios] RPC listar_usuarios indisponível:", rpcError.message);
-    } else {
-      list = data;
-    }
+    const response = await apiFetch("/api/users");
+    users.value = (response.data || []).filter((u) => u.perfil);
   } catch (err) {
-    console.warn("[Usuarios] Falha ao chamar listar_usuarios:", err);
+    console.error("[Usuarios] Erro ao carregar:", err);
+    toast(err.message || "Não foi possível carregar os usuários.");
+  } finally {
+    loading.value = false;
   }
-
-  if (list === null) {
-    try {
-      const { data, error: err } = await client.from("usuarios").select("*").order("usuario");
-      if (err) {
-        console.error("[Usuarios]", err.message);
-        toast(err.message || "Não foi possível carregar os usuários.");
-        loading.value = false;
-        return;
-      }
-      list = data || [];
-    } catch (err) {
-      console.error("[Usuarios] Erro ao carregar:", err);
-      toast("Não foi possível carregar os usuários.");
-      loading.value = false;
-      return;
-    }
-  }
-
-  users.value = (list || []).filter((u) => u.perfil);
-  loading.value = false;
 }
 
 function openModal() {
@@ -94,22 +64,19 @@ async function handleCreate() {
   }
 
   busy.value = true;
-  const client = supabaseClient();
-  const { error: err } = await client.rpc("criar_usuario", {
-    p_nome: nome,
-    p_usuario: usuario,
-    p_perfil: form.perfil,
-    p_senha: senha
-  });
-  busy.value = false;
-
-  if (err) {
+  try {
+    await apiFetch("/api/users", {
+      method: "POST",
+      body: { nome, usuario, perfil: form.perfil, senha }
+    });
+    modalOpen.value = false;
+    toast(`Usuário "${usuario}" criado.`);
+    load();
+  } catch (err) {
     error.value = err.message;
-    return;
+  } finally {
+    busy.value = false;
   }
-  modalOpen.value = false;
-  toast(`Usuário "${usuario}" criado.`);
-  load();
 }
 
 async function handleDelete(id) {
@@ -122,14 +89,13 @@ async function handleDelete(id) {
     danger: true
   });
   if (!ok) return;
-  const client = supabaseClient();
-  const { error: err } = await client.rpc("excluir_usuario", { p_id: id });
-  if (err) {
+  try {
+    await apiFetch(`/api/users/${id}`, { method: "DELETE" });
+    toast("Usuário excluído.");
+    load();
+  } catch (err) {
     toast(err.message || "Não foi possível excluir o usuário.");
-    return;
   }
-  toast("Usuário excluído.");
-  load();
 }
 
 onMounted(load);

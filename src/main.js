@@ -2,9 +2,9 @@ import { createApp } from "vue";
 import "@/assets/main.css";
 import App from "./App.vue";
 import router from "./router";
-import { bootstrapSupabase } from "./lib/supabase";
+import { bootstrapData } from "./lib/db";
 import { syncAll } from "./lib/employees";
-import { isAuthenticated, getProfile, watchSupabaseAuthState, startAuthPolling, restoreSessionFromCookie } from "./lib/auth";
+import { isAuthenticated, getProfile, startAuthPolling } from "./lib/auth";
 
 if (import.meta.env.PROD) {
   try {
@@ -13,12 +13,10 @@ if (import.meta.env.PROD) {
 }
 
 async function bootstrap() {
-  let authed = isAuthenticated();
-  if (!authed) authed = await restoreSessionFromCookie();
-  await bootstrapSupabase();
+  const authed = isAuthenticated();
+  await bootstrapData(authed);
   if (authed) syncAll();
   getProfile();
-  watchSupabaseAuthState();
   startAuthPolling();
 }
 

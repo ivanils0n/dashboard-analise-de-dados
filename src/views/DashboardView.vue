@@ -23,7 +23,7 @@ import { removeEntry, removeEntries } from "@/lib/store";
 import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore } from "@/lib/utils";
 import { syncAll } from "@/lib/employees";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
-import { reloadData, hydrateState } from "@/lib/supabase";
+import { reloadData, hydrateState } from "@/lib/db";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters } = useFilters();

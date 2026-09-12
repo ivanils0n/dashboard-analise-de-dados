@@ -1,19 +1,13 @@
-/* Cliente Supabase + data layer: cache por item (sessionStorage) + delta sync,
-   escritas em fila com debounce, sessão/purga via resetLocalState. */
-import { createClient } from "@supabase/supabase-js";
+/* Camada de dados: cache por item (sessionStorage) + delta sync via API
+   (Cloudflare Worker → CockroachDB), escritas em fila com debounce, sessão/
+   purga via resetLocalState. */
 import { STATES, DEFAULT_STATE } from "./config";
+import { apiFetch } from "./api";
 import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData, upsertInList, useData } from "./store";
 import { sessionStore, compareDateAsc } from "./utils";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
-
-/* Credenciais injetadas pelo Vite (envPrefix expõe SUPABASE_* em
-   import.meta.env — ver vite.config.js) */
-const ENV = {
-  SUPABASE_URL: import.meta.env.SUPABASE_URL || "",
-  SUPABASE_ANON_KEY: import.meta.env.SUPABASE_ANON_KEY || ""
-};
 
 /* Corrige timestamps "hora local" para o Postgres sem duplicar fuso.
    Valores que já vêm do banco com fuso (Z ou ±HH:MM) são preservados. */
@@ -29,37 +23,6 @@ function envTimestamp(localIso) {
   const abs = Math.abs(offset);
   const pad = (n) => String(n).padStart(2, "0");
   return `${localIso}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
-}
-
-let _client;
-
-function createSupabaseClient() {
-  const url = ENV.SUPABASE_URL;
-  const key = ENV.SUPABASE_ANON_KEY;
-  if (!url || !key || /SEU-PROJETO|sua-anon-key/i.test(url + key)) {
-    console.info("[Supabase] Credenciais ausentes — usando apenas memória local.");
-    return null;
-  }
-  try {
-    return createClient(url, key, {
-      auth: {
-        // Sessão em memória do navegador apenas: nada de tokens em disco.
-        storage: sessionStore,
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        flowType: "pkce"
-      }
-    });
-  } catch (err) {
-    console.error("[Supabase] Falha ao criar o client:", err);
-    return null;
-  }
-}
-
-export function supabaseClient() {
-  if (_client === undefined) _client = createSupabaseClient();
-  return _client;
 }
 
 function stateTable(base, state) {
@@ -163,22 +126,24 @@ function _schedule() {
 }
 
 export async function flush() {
-  const client = supabaseClient();
-  if (!client) return;
   const jobs = [];
 
   Object.keys(_queue).forEach((table) => {
     const map = _queue[table];
     if (!map || !map.size) return;
     const upserts = [];
-    const deleteIds = [];
+    const deletes = [];
     map.forEach((op) => {
       if (op.type === "upsert") upserts.push(op.row);
-      else deleteIds.push(op.id);
+      else deletes.push(op.id);
     });
     map.clear();
-    if (upserts.length) jobs.push({ table, promise: client.from(table).upsert(upserts) });
-    if (deleteIds.length) jobs.push({ table, promise: client.from(table).delete().in("id", deleteIds) });
+    if (upserts.length || deletes.length) {
+      jobs.push({
+        table,
+        promise: apiFetch(`/api/data/${table}`, { method: "POST", body: { upserts, deletes } })
+      });
+    }
   });
 
   if (!jobs.length) return;
@@ -186,23 +151,18 @@ export async function flush() {
   const results = await Promise.all(
     jobs.map((job) =>
       Promise.resolve(job.promise)
-        .then(({ error }) => ({ table: job.table, error }))
+        .then(() => ({ table: job.table, error: null }))
         .catch((err) => ({ table: job.table, error: err }))
     )
   );
   results.forEach(({ table, error }) => {
     if (!error) return;
     const status = error.status || error.code;
-    console.error(`[Supabase] ${table}`, status ? `(${status}) ` : "", error.message || error);
+    console.error(`[API] ${table}`, status ? `(${status}) ` : "", error.message || error);
   });
 }
 
 export function registerRemote() {
-  const client = supabaseClient();
-  if (!client) {
-    bindRemote(null);
-    return;
-  }
   bindRemote({
     entryAdded(indicatorId, entry) {
       const estado = entry.meta ? entry.meta.estado : null;
@@ -266,7 +226,7 @@ function mapRemoteEmployee(row, impliedState) {
     user: row.usuario != null ? String(row.usuario) : "",
     estado: row.estado_sigla || impliedState || null,
     salario: row.salario != null ? Number(row.salario) : null,
-    hiredAt: row.entrada_em ? row.entrada_em + "T00:00:00" : null,
+    hiredAt: row.entrada_em ? String(row.entrada_em).split("T")[0] + "T00:00:00" : null,
     status: row.status || "ativo",
     type: row.tipo || "efetivado",
     countsTurnover: !!row.conta_turnover,
@@ -332,8 +292,6 @@ export function loadedStates() {
 }
 
 export async function hydrate(state) {
-  const client = supabaseClient();
-  if (!client) return false;
   state = state || DEFAULT_STATE;
   const states = state === "todos" ? STATES.slice() : [state];
 
@@ -342,27 +300,27 @@ export async function hydrate(state) {
     if (_loadedStates[s]) continue;
     loadedAny = true;
     const suffix = s.toLowerCase();
-    const fetchTable = async (name, cols) => {
+    const fetchTable = async (name) => {
       try {
-        return await client.from(name).select(cols);
+        return await apiFetch(`/api/data/${name}`);
       } catch (err) {
-        console.error(`[Supabase] Erro ao consultar ${name}:`, err);
-        return null;
+        console.error(`[API] Erro ao consultar ${name}:`, err);
+        return { error: err };
       }
     };
     const [lan, vac, col, fil, dep] = await Promise.all([
-      fetchTable(`lancamentos_${suffix}`, "id, indicador_id, data, valor, meta"),
-      fetchTable(`vagas_${suffix}`, "*"),
-      fetchTable(`colaboradores_${suffix}`, "*"),
-      fetchTable(`filiais_${suffix}`, "*"),
-      fetchTable(`departamentos_${suffix}`, "*")
+      fetchTable(`lancamentos_${suffix}`),
+      fetchTable(`vagas_${suffix}`),
+      fetchTable(`colaboradores_${suffix}`),
+      fetchTable(`filiais_${suffix}`),
+      fetchTable(`departamentos_${suffix}`)
     ]);
     const errored = [lan, vac, col, fil, dep].filter((res) => res && res.error);
     if (errored.length) {
       // Não marca o estado como carregado quando a consulta falha (ex.: sem
       // sessão autenticada ainda). Assim o estado é baixado novamente no
       // próximo acesso — evita telas vazias por estado "marcado" sem dados.
-      errored.forEach((res) => console.error("[Supabase]", res.error.message));
+      errored.forEach((res) => console.error("[API]", res.error.message));
       return false;
     }
 
@@ -393,7 +351,7 @@ export async function hydrate(state) {
     const v = await deltaVersao();
     if (v) DataCache.setVersion(v);
   }
-  console.info(`[Supabase] Dados carregados: ${states.join(", ")}.`);
+  console.info(`[API] Dados carregados: ${states.join(", ")}.`);
   return true;
 }
 
@@ -445,8 +403,6 @@ function mergeStateFromCache(suffix, state) {
       delta desde a última versão;
    3. senão, faz o download completo do estado (que é então guardado no cache). */
 export async function hydrateState(next) {
-  const client = supabaseClient();
-  if (!client) return false;
   // Limpa (uma vez) resíduos de PII de versões antigas gravados em localStorage.
   DataCache.removeLegacy();
   const states = next === "todos" ? STATES.slice() : [next];
@@ -482,7 +438,7 @@ export async function hydrateState(next) {
         });
         DataCache.setVersion(delta.versaoAtual);
       }
-      console.info(`[Supabase] Estados restaurados do cache local: ${pending.join(", ")}.`);
+      console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);
       return true;
     }
     // Delta indisponível: recarrega por completo para não exibir dados velhos.
@@ -493,47 +449,25 @@ export async function hydrateState(next) {
 }
 
 async function deltaVersao() {
-  const client = supabaseClient();
-  if (!client) return 0;
   try {
-    const { data, error } = await client.rpc("gg_delta_versao");
-    if (error) {
-      console.warn("[Supabase] gg_delta_versao indisponível:", error.message);
-      return 0;
-    }
-    const v = Array.isArray(data) ? data[0] : data;
-    return Number(v) || 0;
+    const data = await apiFetch("/api/delta/version");
+    return Number(data && data.data && data.data.versao) || 0;
   } catch (err) {
-    console.warn("[Supabase] Falha ao obter versão do delta:", err);
+    console.warn("[API] Versão do delta indisponível:", err.message);
     return 0;
   }
 }
 
 async function fetchDelta(versao) {
-  const client = supabaseClient();
-  if (!client) return null;
   try {
-    const { data, error } = await client.rpc("gg_delta_sync", {
-      p_versao: Number(versao) || 0
-    });
-    if (error) {
-      console.warn("[Supabase] gg_delta_sync indisponível:", error.message);
-      return null;
-    }
-    if (!data || !data.length) {
-      return { versaoAtual: Number(versao) || 0, changes: [] };
-    }
+    const data = await apiFetch(`/api/delta/sync?versao=${Number(versao) || 0}`);
+    const payload = data && data.data ? data.data : {};
     return {
-      versaoAtual: Number(data[0].versao_atual) || 0,
-      changes: data.map((r) => ({
-        tabela: r.tabela,
-        registro_id: r.registro_id,
-        operacao: r.operacao,
-        dados: r.dados
-      }))
+      versaoAtual: Number(payload.versaoAtual) || Number(versao) || 0,
+      changes: Array.isArray(payload.changes) ? payload.changes : []
     };
   } catch (err) {
-    console.warn("[Supabase] Falha no delta sync:", err);
+    console.warn("[API] Falha no delta sync:", err);
     return null;
   }
 }
@@ -649,18 +583,15 @@ function loadLocalIntoMemory() {
    3) se houver cache -> pede apenas os itens alterados/deletados desde a
       última versão e aplica via setItem/removeItem. */
 export async function hydrateWithDelta(state) {
-  const client = supabaseClient();
-  if (!client) return false;
-
   DataCache.removeLegacy();
 
   const hasLocal = loadLocalIntoMemory();
   if (hasLocal) {
-    console.info("[Supabase] Cache local restaurado do sessionStorage.");
+    console.info("[API] Cache local restaurado do sessionStorage.");
   }
 
   if (!hasLocal) {
-    console.info("[Supabase] Primeiro acesso — baixando dados completos.");
+    console.info("[API] Primeiro acesso — baixando dados completos.");
     Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
     return await hydrate(state);
   }
@@ -668,7 +599,7 @@ export async function hydrateWithDelta(state) {
   const versao = DataCache.getVersion();
   const delta = await fetchDelta(versao);
   if (!delta) {
-    console.info("[Supabase] Delta indisponível — baixando dados completos (fallback).");
+    console.info("[API] Delta indisponível — baixando dados completos (fallback).");
     DataCache.resetAll();
     Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
     resetData();
@@ -676,32 +607,22 @@ export async function hydrateWithDelta(state) {
   }
 
   if (delta.versaoAtual <= versao || !delta.changes.length) {
-    console.info(`[Supabase] Sem alterações (versão ${versao}) — usando cache local.`);
+    console.info(`[API] Sem alterações (versão ${versao}) — usando cache local.`);
     return true;
   }
 
-  console.info(`[Supabase] Delta sync: ${delta.changes.length} alteração(ões) desde a versão ${versao}.`);
+  console.info(`[API] Delta sync: ${delta.changes.length} alteração(ões) desde a versão ${versao}.`);
   applyDelta(delta.changes);
   DataCache.setVersion(delta.versaoAtual);
   return true;
 }
 
-/* Boot: chamado pelo main.js antes da montagem do app. */
-export async function bootstrapSupabase() {
+/* Boot: chamado pelo main.js antes da montagem do app. Só hidrata quando já
+   há sessão autenticada (sem ela a API responde 401). */
+export async function bootstrapData(authed) {
   registerRemote();
-  const client = supabaseClient();
-  if (!client) return;
-  // Sem sessão autenticada as consultas falham (RLS exige login) e poderiam
-  // marcar estados como carregados/vazios ou limpar o cache. Só hidrata
-  // depois do login (LoginView chama hydrateState + syncAll).
-  try {
-    const { data } = await client.auth.getSession();
-    if (!data || !data.session) {
-      console.info("[Supabase] Sem sessão ativa — dados serão carregados após o login.");
-      return;
-    }
-  } catch (err) {
-    console.warn("[Supabase] Não foi possível confirmar a sessão:", err);
+  if (!authed) {
+    console.info("[API] Sem sessão ativa — dados serão carregados após o login.");
     return;
   }
   await hydrateWithDelta(DEFAULT_STATE);
@@ -729,17 +650,14 @@ export function resetLocalState() {
 
 /* "Recarregar Dados": limpa cache e memória, remove resíduos antigos do
    localStorage e busca os dados atualizados direto do banco. A sessão
-   (gg-auth e tokens sb-*) vive em sessionStorage e é preservada (as chaves
-   ggd:* são as únicas apagadas). */
+   (gg-auth) vive em sessionStorage e é preservada (as chaves ggd:* são as
+   únicas apagadas). */
 export async function reloadData() {
   DataCache.removeLegacy();
   DataCache.resetAll();
   resetData();
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-
-  if (supabaseClient()) {
-    await hydrate(DEFAULT_STATE);
-  }
+  await hydrate(DEFAULT_STATE);
 }
 
 /* Garante que escritas pendentes não se percam ao sair da página */

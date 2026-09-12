@@ -1,24 +1,43 @@
 # Dependências
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
+.pnp.js
 
-# Ambiente / segredos
+# Ambiente / segredos (nunca versionar)
+# Exceção: os arquivos *.example ficam no repositório como modelo.
 .env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Cloudflare / Wrangler
+.wrangler/
+wrangler.toml.bak
 
 # Build
-/dist
-/dist/*
+dist/
+build/
 
 # Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Sistema operacional
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Editores
 .idea/
 .vscode/
+*.swp
+*.swo
 
+# Config local do opencode
 opencode.json

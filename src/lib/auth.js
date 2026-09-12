@@ -1,10 +1,11 @@
-/* Autenticação (Supabase Auth): sessão e perfil em sessionStorage (sem tokens
-   em disco); logout/expiração purgam memória+cache+fila; RBAC por perfil
-   admin/analista/visitante; perfil validado via RPC meu_perfil. */
+/* Autenticação própria (API → CockroachDB): sessão e perfil em sessionStorage
+   (sem tokens em disco); logout/expiração purgam memória+cache+fila; RBAC por
+   perfil admin/analista/visitante; perfil validado via /api/auth/me. */
 import { reactive } from "vue";
 import { AUTH_EMAIL_DOMAIN } from "./config";
 import { safeSetItem, sessionStore, localStore } from "./utils";
-import { supabaseClient, resetLocalState } from "./supabase";
+import { apiFetch } from "./api";
+import { resetLocalState } from "./db";
 
 const AUTH_STORAGE_KEY = "gg-auth";
 const AUTH_DURATION_MS = 6 * 60 * 60 * 1000; // 6 horas
@@ -48,9 +49,8 @@ function clearSession() {
   } catch (e) {}
 }
 
-// Remove tokens do supabase-js (sb-*-auth-token) no sessionStorage e em
-// resíduos do localStorage.
-function clearSupabaseKeys() {
+// Remove resíduos de tokens do supabase-js (sb-*-auth-token) de versões antigas.
+function clearLegacyKeys() {
   const scan = (store) => {
     try {
       const toRemove = [];
@@ -69,13 +69,7 @@ function clearSupabaseKeys() {
 
 let _expiredHandled = false;
 
-// Refresh em cookie HttpOnly via Pages Function. OPCIONAL e desligado por
-// padrão (GitHub Pages não executa Functions); habilitar no Cloudflare com
-// VITE_GG_SESSION_COOKIE=true.
-const AUTH_COOKIE_ENDPOINT = "/api/auth/session";
-const SESSION_COOKIE_ENABLED = import.meta.env.VITE_GG_SESSION_COOKIE === "true";
-
-// Revalida o perfil no servidor com TTL (evita chamar a RPC a cada navegação).
+// Revalida o perfil no servidor com TTL (evita chamar a API a cada navegação).
 const PROFILE_CHECK_TTL_MS = 60 * 1000;
 let _lastProfileCheck = 0;
 
@@ -111,141 +105,51 @@ export function canEditData() {
   return !!(p && (p.perfil === "admin" || p.perfil === "analista"));
 }
 
-// Carrega o perfil (RPC meu_perfil / security definer) e salva na sessão.
-export async function loadProfile(client, userId, email) {
-  if (!client || !userId) return null;
-  let data = null;
-
+// Carrega o perfil via API e salva na sessão.
+export async function loadProfile() {
   try {
-    const { data: rows, error } = await client.rpc("meu_perfil");
-    if (error) {
-      console.warn("[Auth] RPC meu_perfil indisponível:", error.message);
-    } else if (rows && rows.length) {
-      data = rows[0];
-    }
+    const data = await apiFetch("/api/auth/me");
+    const row = data && data.data && data.data.user;
+    if (!row || !row.ativo) return null;
+    return {
+      id: row.id,
+      email: row.email,
+      usuario: row.usuario,
+      nome: row.nome || row.usuario || "",
+      perfil: row.perfil || "visitante"
+    };
   } catch (err) {
-    console.warn("[Auth] Falha ao chamar meu_perfil:", err);
-  }
-
-  if (!data) {
-    try {
-      let query = client.from("usuarios").select("id, email, usuario, nome, perfil, ativo");
-      if (email) {
-        query = query.or(`id.eq.${userId},email.eq.${encodeURIComponent(email)}`);
-      } else {
-        query = query.eq("id", userId);
-      }
-      const { data: row, error } = await query.maybeSingle();
-      if (error) {
-        console.warn("[Auth] Não foi possível carregar o perfil:", error.message);
-      } else {
-        data = row;
-      }
-    } catch (err) {
-      console.error("[Auth] Erro ao carregar perfil:", err);
-    }
-  }
-
-  if (!data) {
-    console.warn("[Auth] Perfil não encontrado no banco.");
+    if (err.status !== 401) console.warn("[Auth] Falha ao carregar perfil:", err.message);
     return null;
   }
-
-  const profile = {
-    id: data.id,
-    email: data.email,
-    usuario: data.usuario,
-    nome: data.nome || data.usuario || "",
-    perfil: data.perfil || "visitante"
-  };
-  const prev = readSession() || {};
-  writeSession({ ...prev, profile });
-  authState.profile = profile;
-  return profile;
 }
 
 export async function ensureProfile() {
   const stored = getProfile();
   const now = Date.now();
   if (stored && now - _lastProfileCheck < PROFILE_CHECK_TTL_MS) return stored;
-  const data = readSession();
-  const userId = data && data.user ? data.user.id : null;
-  const email = data && data.user ? data.user.email : null;
-  const client = supabaseClient();
-  const fetched = await loadProfile(client, userId, email);
+  const fetched = await loadProfile();
   _lastProfileCheck = Date.now();
-  if (!fetched && (userId || email)) {
+  if (!fetched) {
     handleSessionExpired();
     return null;
   }
-  return fetched || stored;
+  const prev = readSession() || {};
+  writeSession({ ...prev, profile: fetched });
+  authState.profile = fetched;
+  return fetched;
 }
 
-function saveSession(session) {
+function saveSession(token, profile) {
   _expiredHandled = false;
   _lastProfileCheck = 0;
-  const prev = readSession() || {};
   writeSession({
-    token: session.access_token,
-    user: session.user ? { id: session.user.id, email: session.user.email } : prev.user || null,
-    profile: prev.profile || null,
+    token,
+    user: profile ? { id: profile.id, email: profile.email } : null,
+    profile: profile || null,
     expiresAt: Date.now() + AUTH_DURATION_MS
   });
   scheduleExpiryLogout();
-  mirrorSessionToCookie(session && session.refresh_token);
-}
-
-// ---------- Cookie HttpOnly (Cloudflare Pages Function) ----------
-// Espelha o refresh no cookie após login/refresh local.
-function mirrorSessionToCookie(refreshToken) {
-  if (!SESSION_COOKIE_ENABLED || !refreshToken) return;
-  fetch(AUTH_COOKIE_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify({ refresh_token: refreshToken })
-  }).catch(() => {});
-}
-
-function clearSessionCookie() {
-  if (!SESSION_COOKIE_ENABLED) return;
-  fetch(AUTH_COOKIE_ENDPOINT, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
-}
-
-// Restaura a sessão: o servidor troca o refresh (HttpOnly) por um novo par e
-// devolve só em memória.
-export async function restoreSessionFromCookie() {
-  if (!SESSION_COOKIE_ENABLED) return false;
-  try {
-    const res = await fetch(AUTH_COOKIE_ENDPOINT, { method: "GET", credentials: "same-origin" });
-    if (!res.ok) return false;
-    const s = await res.json();
-    if (!s || !s.access_token || !s.refresh_token) return false;
-
-    const client = supabaseClient();
-    if (!client) return false;
-
-    const user = s.user && s.user.id ? s.user : null;
-    if (!user) return false;
-
-    const { error } = await client.auth.setSession({
-      access_token: s.access_token,
-      refresh_token: s.refresh_token
-    });
-    if (error) return false;
-
-    // Valida o perfil (RLS) antes de aceitar a sessão restaurada.
-    const profile = await loadProfile(client, user.id, user.email);
-    if (!profile) {
-      await client.auth.signOut().catch(() => {});
-      return false;
-    }
-
-    saveSession({ access_token: s.access_token, refresh_token: s.refresh_token, user });
-    return true;
-  } catch (e) {
-    return false;
-  }
 }
 
 let _expiryTimer = null;
@@ -270,73 +174,61 @@ function scheduleExpiryLogout() {
 }
 
 export async function login(identifier, password) {
-  const client = supabaseClient();
-  if (!client) {
-    return { error: { message: "Credenciais do Supabase não configuradas." } };
-  }
-  const email = buildLoginEmail(identifier);
-  if (!email) return { error: { message: "Informe o usuário." } };
+  const usuario = String(identifier || "").trim();
+  if (!usuario) return { error: { message: "Informe o usuário." } };
 
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
-  if (error) {
-    return { error };
+  try {
+    const response = await apiFetch("/api/auth/login", {
+      method: "POST",
+      auth: false,
+      body: { usuario, senha: password }
+    });
+    const data = response && response.data ? response.data : {};
+    const profile = data.user || null;
+    saveSession(data.token, profile);
+    // Sessão nova = estado zerado (nada do usuário anterior em memória/cache).
+    resetLocalState();
+    return { data };
+  } catch (err) {
+    return { error: { message: err.message } };
   }
-
-  const profile = await loadProfile(client, data.session.user.id, data.session.user.email);
-  if (!profile) {
-    await client.auth.signOut().catch(() => {});
-    return { error: { message: "Não foi possível carregar o perfil. Faça login novamente." } };
-  }
-
-  saveSession(data.session);
-  // Sessão nova = estado zerado (nada do usuário anterior em memória/cache).
-  resetLocalState();
-  return { data };
 }
 
 export async function changePassword(currentPassword, newPassword) {
-  const client = supabaseClient();
-  if (!client) {
-    return { error: { message: "Credenciais do Supabase não configuradas." } };
+  try {
+    await apiFetch("/api/auth/change-password", {
+      method: "POST",
+      body: { senhaAtual: currentPassword, senhaNova: newPassword }
+    });
+    return { data: true };
+  } catch (err) {
+    return { error: { message: err.message } };
   }
-  const data = readSession();
-  const profile = getProfile();
-  const email = (data && data.user && data.user.email) || (profile && profile.email) || "";
-  if (!email) return { error: { message: "Não foi possível identificar o usuário." } };
-
-  const { error: reauthError } = await client.auth.signInWithPassword({ email, password: currentPassword });
-  if (reauthError) return { error: { message: "Senha atual incorreta." } };
-
-  const { data: upd, error } = await client.auth.updateUser({ password: newPassword });
-  if (error) return { error };
-  if (upd && upd.session) saveSession(upd.session);
-  return { data: upd };
 }
 
 export async function changeName(newName) {
-  const client = supabaseClient();
-  if (!client) {
-    return { error: { message: "Credenciais do Supabase não configuradas." } };
+  try {
+    await apiFetch("/api/auth/change-name", {
+      method: "POST",
+      body: { nome: newName }
+    });
+    const prev = readSession() || {};
+    prev.profile = { ...(prev.profile || {}), nome: newName };
+    writeSession(prev);
+    authState.profile = prev.profile;
+    return { data: true };
+  } catch (err) {
+    return { error: { message: err.message } };
   }
-  const { error } = await client.rpc("atualizar_meu_nome", { p_nome: newName });
-  if (error) return { error };
-  const prev = readSession() || {};
-  prev.profile = { ...(prev.profile || {}), nome: newName };
-  writeSession(prev);
-  authState.profile = prev.profile;
-  return { data: true };
 }
 
 function performFullCleanup() {
   clearExpiryTimer();
   stopAuthPolling();
   clearSession();
-  clearSupabaseKeys();
-  clearSessionCookie();
+  clearLegacyKeys();
   authState.profile = null;
   resetLocalState();
-  const client = supabaseClient();
-  if (client) client.auth.signOut().catch(() => {});
 }
 
 export function logout() {
@@ -348,24 +240,6 @@ export function handleSessionExpired() {
   if (_expiredHandled) return;
   _expiredHandled = true;
   performFullCleanup();
-}
-
-// Encerra a sessão quando o Supabase sinaliza SIGNED_OUT; mantém o cookie
-// sincronizado quando o refresh token é rotacionado em segundo plano.
-export function watchSupabaseAuthState() {
-  const client = supabaseClient();
-  if (!client) return;
-  client.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_OUT") {
-      handleSessionExpired();
-    } else if (
-      (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
-      session &&
-      session.refresh_token
-    ) {
-      mirrorSessionToCookie(session.refresh_token);
-    }
-  });
 }
 
 // Expiração em tempo real (6h): intervalo rastreado e encerrado no logout.

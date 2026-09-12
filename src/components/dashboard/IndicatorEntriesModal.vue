@@ -4,7 +4,7 @@ import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATES, STATE_NAMES, DEFAULT_STATE, getIndicatorById } from "@/lib/config";
 import { getEntriesFor, removeEntry, removeEntries } from "@/lib/store";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import {
   formatDate,
   formatCurrency,

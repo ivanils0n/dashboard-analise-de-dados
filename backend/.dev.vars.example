@@ -1,0 +1,6 @@
+# Copie para .dev.vars (NÃO vai para o git) — usado pelo `wrangler dev`.
+# Connection string do CockroachDB (Cloud → Connect → Connection string).
+DATABASE_URL=postgresql://usuario:senha@host:26257/defaultdb?sslmode=require
+
+# Segredo para assinar os JWT (HS256). Gere uma string aleatória longa.
+JWT_SECRET=troque-por-uma-string-aleatoria-bem-longa

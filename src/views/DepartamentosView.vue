@@ -11,7 +11,7 @@ import { getDepartmentById, getBranchById } from "@/lib/store";
 import { listDepartments, departmentMetrics } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { saveDepartment, deleteDepartmentRecord, nameInUse } from "@/lib/departamentos";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();

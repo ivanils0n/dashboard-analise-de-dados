@@ -6,7 +6,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATES, STATE_NAMES, DEFAULT_STATE, PERSONNEL_COST_FIELDS } from "@/lib/config";
 import { listEmployees, listDepartments, saveEmployee, employeeMonthlyCost, moneyOrNull } from "@/lib/employees";
 import { getBranchById, getEmployeeById, getLatestForMeta, addEntry, updateEntry, removeEntry } from "@/lib/store";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { formatCurrency, todayISO, normalizeText } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";

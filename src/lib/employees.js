@@ -16,7 +16,7 @@ import {
   removeEntryForDate
 } from "./store";
 import { createId, nowLocalISO, todayISO, daysBetween, sameState } from "./utils";
-import { loadedStates } from "./supabase";
+import { loadedStates } from "./db";
 
 export function listEmployees(state) {
   const all = useData().employees;

@@ -6,7 +6,7 @@ import Badge from "@/components/ui/Badge.vue";
 import { STATES, STATE_NAMES } from "@/lib/config";
 import { listVacancies, formatVacancyTempo, deleteVacancies } from "@/lib/employees";
 import { getBranchById } from "@/lib/store";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import {
   formatDate,
   firstDayOfMonthISO,

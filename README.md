@@ -8,7 +8,9 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 - **Vue Router** — SPA com roteamento por hash (funciona em hospedagem estática sem rewrite)
 - **Tailwind CSS v4** — estilização 100% utilitária e responsiva
 - **Vite** — build, code-splitting automático por rota e chunks de bibliotecas
-- **Chart.js**, **SheetJS (xlsx)** e **@supabase/supabase-js** — via npm (sem CDN)
+- **Cloudflare Workers + Hono** — backend/API (pasta `backend/`)
+- **CockroachDB** — banco de dados (PostgreSQL wire), acessado pelo driver `pg`
+- **Chart.js** e **SheetJS (xlsx)** — via npm (sem CDN)
 
 ## Funcionalidades
 
@@ -19,7 +21,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 - **Modal "Lançar dados" dinâmico**: cada indicador manual (Absenteísmo, Tempo médio de contratação, Custo de contratação) altera o formulário e as abas do modal.
 - **Exportação e importação**: botão de menu com **XLSX** (4 planilhas: `Indicadores`, `Lançamentos`, `Equipe` e `Filiais`), **CSV** e **Baixar template**; **Importar planilha** verifica duplicados (dados já existentes são ignorados).
 - **Apresentação**: modo de slides com gráficos por indicador e navegação.
-- **Persistência**: `localStorage` como cache offline + **sincronização com Supabase** (delta sync).
+- **Persistência**: `sessionStorage` como cache offline + **sincronização com o CockroachDB** via API (delta sync).
 - **Autenticação** por perfil (admin / analista / visitante) e controle de acesso por rota.
 
 ## Indicadores e origem dos dados
@@ -40,6 +42,21 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 ```
 ├── index.html                    # Ponto de entrada (monta a SPA)
 ├── vite.config.js                # Vite + Tailwind + variáveis de ambiente
+├── backend/                      # API (Cloudflare Worker + Hono)
+│   ├── package.json              # hono, pg, wrangler
+│   ├── wrangler.toml             # Configuração do Worker (nodejs_compat)
+│   ├── .dev.vars.example         # DATABASE_URL / JWT_SECRET (local)
+│   └── src/
+│       ├── index.js              # App Hono + CORS + rotas
+│       ├── lib/
+│       │   ├── db.js             # Pool pg (CockroachDB)
+│       │   ├── auth.js           # Senha (PBKDF2) + JWT (HS256) + middleware
+│       │   └── tables.js         # Allowlist de tabelas/colunas
+│       └── routes/
+│           ├── auth.js           # login, me, change-name, change-password
+│           ├── users.js          # listar/criar/excluir usuários (admin)
+│           ├── data.js           # leitura/escrita em lote + changelog
+│           └── delta.js          # version, sync
 ├── src/
 │   ├── main.js                   # Bootstrap (dados + auth) e montagem do app
 │   ├── App.vue                   # Root: rota + toast + diálogo global
@@ -48,13 +65,14 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 │   ├── lib/                      # Domínio e dados
 │   │   ├── config.js             # Indicadores (manual/computado), estados, perfis
 │   │   ├── utils.js              # Formatação de valores, datas e horas
-│   │   ├── cache.js              # Cache delta por item (localStorage)
-│   │   ├── supabase.js           # Cliente Supabase + delta sync + fila em lote
+│   │   ├── cache.js              # Cache delta por item (sessionStorage)
+│   │   ├── api.js                # Cliente HTTP da API (Bearer JWT)
+│   │   ├── db.js                 # Delta sync + fila em lote (API)
 │   │   ├── store.js              # Estado reativo (Vue) + write-through remoto
 │   │   ├── employees.js          # Domínio da equipe e indicadores calculados
 │   │   ├── filiais.js            # Domínio de filiais
 │   │   ├── departamentos.js      # Domínio de departamentos
-│   │   ├── auth.js               # Login/perfil/permissões (Supabase Auth)
+│   │   ├── auth.js               # Login/perfil/permissões (auth própria)
 │   │   ├── charts.js             # Gráficos Chart.js (linha, barras e pizza)
 │   │   └── export.js             # Exportação/importação XLSX/CSV (SheetJS)
 │   ├── composables/              # Lógica reutilizável
@@ -70,65 +88,92 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 │   └── views/                    # Login, Dashboard, Equipe, Filiais,
 │                                 # Departamentos, Usuários
 ├── public/logo.png               # Logo (servido na raiz)
-├── sql/schema.sql                # Tabelas + RLS do Supabase
-└── .github/workflows/deploy.yml  # Deploy automático no GitHub Pages
+├── sql/schema.sql                # Tabelas do CockroachDB (sem RLS/policies)
+└── .github/workflows/deploy.yml  # Deploy estático (opcional)
 ```
 
-## Persistência no Supabase
+## Backend: Cloudflare Worker (Hono) + CockroachDB
 
-O app funciona 100% offline via `localStorage` (cache delta por registro), mas sincroniza tudo com um banco **Supabase** (Postgres) quando configurado:
+O front é 100% offline-first (cache em `sessionStorage`), mas sincroniza com um
+banco **CockroachDB** através de uma API em **Cloudflare Worker** (framework
+**Hono**), na pasta `backend/`. As credenciais do banco nunca vão para o browser:
+só o Worker as acessa.
 
-1. Crie um projeto em [supabase.com](https://supabase.com).
-2. No **SQL Editor**, execute o conteúdo de [`sql/schema.sql`](sql/schema.sql) para criar as tabelas (`lancamentos_*`, `colaboradores_*`, `vagas_*`, `filiais_*`, `departamentos_*`) e as policies de RLS.
-3. Credenciais locais: copie `.env.example` para `.env` com a URL e anon key (**Project Settings → API**). Aceita os nomes `SUPABASE_URL`/`SUPABASE_ANON_KEY` ou `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` — o Vite lê o arquivo e injeta tudo no bundle (dev e build):
-   ```
-   SUPABASE_URL=https://SEU-PROJETO.supabase.co
-   SUPABASE_ANON_KEY=sua-anon-key-aqui
-   ```
-4. Rode o app (`npm run dev`) — os dados são carregados e sincronizados automaticamente.
+### 1. Criar o banco
 
-Notas:
-- O `localStorage` serve de cache offline; ao abrir, apenas os itens alterados desde a última versão são baixados (delta sync via `gg_delta_sync`). Um download completo ocorre apenas no primeiro acesso ou quando o delta não está disponível.
-- Escritas são agrupadas em lote (1 requisição por tabela) e snapshots calculados sem mudança não geram tráfego.
-- Sem `.env` válido (ou aberto via `file://`), o app opera apenas local.
-- Use somente a **anon key**, nunca a `service_role`.
+1. Crie um cluster no [CockroachDB Cloud](https://cockroachlabs.cloud/) (ou rode local com `cockroach start-single-node`).
+2. Em **SQL Shell / SQL Editor**, execute [`sql/schema.sql`](sql/schema.sql). Ele cria as tabelas (`lancamentos_*`, `colaboradores_*`, `vagas_*`, `filiais_*`, `departamentos_*`, `usuarios`, `registro_alteracoes`) **sem RLS/policies** e o usuário inicial `admin` (senha `Admin@123`).
+3. Copie a **connection string** (botão *Connect*), no formato:
+   `postgresql://usuario:senha@host:26257/defaultdb?sslmode=require`.
 
-## Como executar
+### 2. Configurar as variáveis do Worker
+
+Estas variáveis **não** entram no bundle do front:
+
+| Variável | Descrição |
+| --- | --- |
+| `DATABASE_URL` | Connection string do CockroachDB |
+| `JWT_SECRET` | String aleatória longa para assinar os JWT |
+
+- **Local**: copie `backend/.dev.vars.example` para `backend/.dev.vars` e preencha. O arquivo está no `.gitignore`.
+- **Produção (Cloudflare)**: **Workers & Pages → seu Worker → Settings → Variables and Secrets**.
+
+### 3. Rodar localmente
+
+O front (Vite) e o Worker (wrangler) rodam em processos separados:
 
 ```bash
-npm install
-npm run dev
+npm install                    # front
+npm --prefix backend install   # API
+npm run dev:api                # Worker em http://127.0.0.1:8787
+npm run dev                    # front em http://localhost:5173
 ```
 
-Build de produção:
+Aponte o front para o Worker no `.env` (padrão do `wrangler dev`):
+
+```
+VITE_API_BASE=http://127.0.0.1:8787
+```
+
+## Autenticação
+
+A autenticação é **própria** (não há Supabase Auth):
+
+- Login em `POST /api/auth/login` (`usuario`/`senha`) → devolve um **JWT (HS256)** com validade de 6h.
+- A senha é guardada como **PBKDF2-SHA256** (100.000 iterações) na coluna `usuarios.senha_hash`.
+- O JWT fica apenas no `sessionStorage` (chave `gg-auth`); nada de tokens em disco.
+- Perfis: `admin` (tudo), `analista` (edita dados) e `visitante` (somente leitura).
+
+> O usuário inicial é `admin` / `Admin@123`. **Troque a senha** no primeiro acesso (menu do avatar).
+
+## Deploy
+
+O front (estático) e o Worker (API) são publicados separadamente.
+
+### 1. Worker (API)
 
 ```bash
-npm run build   # gera a pasta dist/
-npm run preview # serve o build localmente
+cd backend
+npx wrangler login          # uma vez
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put JWT_SECRET
+npm run deploy              # publica o Worker e mostra a URL pública
 ```
 
-## Deploy no GitHub Pages
+Anote a URL (ex.: `https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev`).
 
-O deploy usa **GitHub Actions**: a cada push em `main`, o Vite injeta as credenciais dos segredos no bundle durante o build e publica o site.
+### 2. Front
 
-1. Envie o repositório para o GitHub.
-2. Em **Settings → Secrets and variables → Actions**, cadastre os segredos:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY` ⚠️ apenas a anon key, nunca a service_role
-3. Em **Settings → Pages → Build and deployment → Source**, selecione **GitHub Actions**.
-4. Faça push em `main` (ou rode o workflow manualmente em *Actions → Deploy para GitHub Pages → Run workflow*).
+No build, informe a URL do Worker em `VITE_API_BASE`:
 
-> O `.nojekyll` incluído garante publicação sem processamento Jekyll. O roteamento por hash (`/#/dashboard`, etc.) dispensa regras de rewrite do servidor.
+```bash
+VITE_API_BASE=https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev npm run build
+```
 
-## Deploy no Cloudflare Pages
-
-1. No dashboard: **Workers & Pages → Create application → Pages → Connect to Git** e selecione o repositório.
-2. Na configuração de build:
-   - **Framework preset:** `Vite`
-   - **Build command:** `npm run build`
-   - **Build output directory:** `dist`
-3. Em **Settings → Environment variables (Production)**, adicione `SUPABASE_URL` e `SUPABASE_ANON_KEY`.
-4. **Save and Deploy**.
+- **Cloudflare Pages**: aponte o projeto para o repositório, build `npm run build`,
+  output `dist`, e defina a variável `VITE_API_BASE`.
+- **GitHub Pages**: cadastre o segredo `VITE_API_BASE` (URL pública do Worker) em
+  **Settings → Secrets and variables → Actions**; o workflow injeta no build.
 
 ## Como adicionar um novo indicador
 
@@ -155,4 +200,5 @@ Tudo é centralizado em `src/lib/config.js`. Adicione um novo objeto ao array `I
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Chart.js](https://www.chartjs.org/)
 - [SheetJS](https://sheetjs.com/)
-- [supabase-js](https://supabase.com/docs/reference/javascript/)
+- [node-postgres (pg)](https://node-postgres.com/)
+- [CockroachDB](https://www.cockroachlabs.com/)

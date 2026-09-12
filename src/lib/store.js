@@ -1,5 +1,5 @@
-/* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada no
-   Supabase via adaptador "remote" (write-through em lote com debounce). */
+/* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada na API
+   (CockroachDB) via adaptador "remote" (write-through em lote com debounce). */
 import { reactive } from "vue";
 import { createId, compareDateAsc } from "./utils";
 
@@ -14,7 +14,7 @@ export function useData() {
   return data;
 }
 
-/* Adaptador de escrita no Supabase (registrado pelo supabase.js) */
+/* Adaptador de escrita na API (registrado pelo db.js) */
 let remote = null;
 
 export function bindRemote(adapter) {

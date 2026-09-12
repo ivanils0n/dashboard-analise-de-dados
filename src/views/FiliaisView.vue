@@ -8,7 +8,7 @@ import { useFilters } from "@/composables/useFilters";
 import { STATES, DEFAULT_STATE } from "@/lib/config";
 import { getBranches } from "@/lib/store";
 import { listBranches, saveBranch, deleteBranchRecord } from "@/lib/filiais";
-import { hydrateState } from "@/lib/supabase";
+import { hydrateState } from "@/lib/db";
 import { normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();
