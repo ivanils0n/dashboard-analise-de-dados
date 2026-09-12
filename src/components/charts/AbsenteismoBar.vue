@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
 import { createAbsenteismoBar, updateAbsenteismoBar, setShowValues } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
@@ -28,6 +28,11 @@ function unmountChart() {
 
 onMounted(mountChart);
 onBeforeUnmount(unmountChart);
+
+/* Ao voltar de uma aba mantida em cache (KeepAlive), reajusta o canvas. */
+onActivated(() => {
+  if (chart) chart.resize();
+});
 
 /* Recria o gráfico com a paleta do tema quando o modo claro/escuro muda */
 watch(isDark, () => {

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
 import { createBarChart, updateBarChart } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 import { formatCurrency, formatHoursClock } from "@/lib/utils";
@@ -50,6 +50,11 @@ function unmountChart() {
 
 onMounted(mountChart);
 onBeforeUnmount(unmountChart);
+
+/* Ao voltar de uma aba mantida em cache (KeepAlive), reajusta o canvas. */
+onActivated(() => {
+  if (chart) chart.resize();
+});
 
 /* Recria o gráfico com a paleta do tema quando o modo claro/escuro muda */
 watch(isDark, () => {

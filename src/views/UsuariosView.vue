@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onActivated } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import Modal from "@/components/ui/Modal.vue";
@@ -98,11 +98,13 @@ async function handleDelete(id) {
   }
 }
 
-onMounted(load);
+/* Recarrega ao entrar na aba (e no primeiro acesso), já que a view fica em
+   cache pelo KeepAlive. */
+onActivated(load);
 </script>
 
 <template>
-  <div class="fade-in">
+  <div>
     <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
@@ -136,7 +138,6 @@ onMounted(load);
               <th class="px-5 py-3 font-semibold">Usuário</th>
               <th class="px-5 py-3 font-semibold">Nome</th>
               <th class="px-5 py-3 font-semibold">Perfil</th>
-              <th class="px-5 py-3 font-semibold">E-mail</th>
               <th class="px-5 py-3 font-semibold">Cadastro</th>
               <th class="px-5 py-3"></th>
             </tr>
@@ -146,7 +147,6 @@ onMounted(load);
               <td class="px-5 py-3"><Badge>{{ u.usuario }}</Badge></td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ u.nome || "—" }}</td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ PERFIL_LABELS[u.perfil] || u.perfil }}</td>
-              <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ u.email || "—" }}</td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ formatDateTime(u.criado_em) }}</td>
               <td class="px-5 py-3 text-right">
                 <button

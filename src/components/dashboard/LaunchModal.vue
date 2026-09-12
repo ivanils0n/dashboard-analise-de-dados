@@ -2,6 +2,7 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
+import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import EmployeePicker from "@/components/dashboard/EmployeePicker.vue";
 import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
 import { listBranches } from "@/lib/filiais";
@@ -922,6 +923,7 @@ function submitTreinamento() {
       cargo: up(treinamento.cargo),
       filial,
       shortName: up(treinamento.filialShort),
+      estado: emp.estado || null,
       tema: up(treinamento.tema),
       cargaHoraria: carga,
       modalidade: mod,
@@ -955,6 +957,7 @@ function submitTreinamento() {
 const trImportInput = ref(null);
 const trReviewOpen = ref(false);
 const trRows = ref([]);
+const trImporting = ref(false);
 
 const trSelectedCount = computed(
   () => trRows.value.filter((r) => r.chosen && r.candidates.some((c) => c.id === r.chosen)).length
@@ -1060,6 +1063,7 @@ async function onTrImportFile(e) {
   const file = e.target.files && e.target.files[0];
   e.target.value = "";
   if (!file) return;
+  trImporting.value = true;
   try {
     const wb = await readWorkbookFile(file);
     const sheet = trSheetToUse(wb);
@@ -1083,6 +1087,8 @@ async function onTrImportFile(e) {
   } catch (err) {
     console.error(err);
     toast("Não foi possível ler a planilha de treinamentos.");
+  } finally {
+    trImporting.value = false;
   }
 }
 
@@ -1114,6 +1120,8 @@ function confirmTrImport() {
         cargo: up(emp.cargo) || null,
         filial,
         shortName,
+        estado: emp.estado || null,
+        competencia: trMonth.value || null,
         tema: up(r.tema) || null,
         cargaHoraria: Number(r.carga),
         modalidade: r.modalidadeLabel || "Presencial"
@@ -2042,6 +2050,8 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <LoadingOverlay :show="trImporting" label="Importando treinamentos..." />
   </Modal>
 </template>
 

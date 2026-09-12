@@ -13,12 +13,82 @@
   <script>
     document.documentElement.classList.toggle("dark", localStorage.getItem("gg-theme") === "dark");
   </script>
-  <script type="module" crossorigin src="./assets/app-DaKAX1R6.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/vue-qc36qgHi.js">
-  <link rel="modulepreload" crossorigin href="./assets/vue-router-DLfBlFD0.js">
-  <link rel="stylesheet" crossorigin href="./assets/app-COhup5TP.css">
+  <style>
+    #app-loading {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      background: #fff;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    .dark #app-loading {
+      background: #09090b;
+    }
+    #app-loading p {
+      margin: 0;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #52525b;
+    }
+    .dark #app-loading p {
+      color: #d4d4d8;
+    }
+    #app-loading .gg-loader {
+      position: relative;
+      display: flex;
+      height: 88px;
+      width: 96px;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    #app-loading .gg-ball {
+      display: block;
+      height: 26px;
+      width: 26px;
+      border-radius: 9999px;
+      background: linear-gradient(160deg, #f87171, #dc2626);
+      box-shadow: 0 6px 14px rgba(220, 38, 38, 0.35);
+      animation: gg-ball-bounce 0.62s cubic-bezier(0.28, 0.84, 0.42, 1) infinite alternate;
+    }
+    #app-loading .gg-ball-shadow {
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      height: 7px;
+      width: 34px;
+      margin-left: -17px;
+      border-radius: 9999px;
+      background: rgba(24, 24, 27, 0.35);
+      filter: blur(1px);
+      animation: gg-ball-shadow 0.62s cubic-bezier(0.28, 0.84, 0.42, 1) infinite alternate;
+    }
+    @keyframes gg-ball-bounce {
+      0% { transform: translateY(0) scale(1.08, 0.82); }
+      100% { transform: translateY(-62px) scale(0.94, 1.1); }
+    }
+    @keyframes gg-ball-shadow {
+      0% { transform: scaleX(1); opacity: 0.4; }
+      100% { transform: scaleX(0.45); opacity: 0.12; }
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/app-2D6Ra-Fg.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vue-D4yvPv-f.js">
+  <link rel="modulepreload" crossorigin href="./assets/vue-router-CBi2-FJT.js">
+  <link rel="stylesheet" crossorigin href="./assets/app-C3eKNqV9.css">
 </head>
 <body>
   <div id="app"></div>
+  <div id="app-loading" role="status" aria-live="polite">
+    <div class="gg-loader">
+      <span class="gg-ball"></span>
+      <span class="gg-ball-shadow"></span>
+    </div>
+    <p>Carregando informações...</p>
+  </div>
 </body>
 </html>

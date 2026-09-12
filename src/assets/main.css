@@ -50,6 +50,20 @@ body {
   animation: gg-fade-in 0.25s ease-out both;
 }
 
+/* Transição entre as abas (views). Curta para não atrasar a navegação. */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
 @keyframes gg-slide-up {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }

@@ -208,7 +208,7 @@ function metrics(d) {
 </script>
 
 <template>
-  <div class="fade-in">
+  <div>
     <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Departamentos</h1>

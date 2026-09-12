@@ -1,7 +1,7 @@
 import { createApp } from "vue";
 import "@/assets/main.css";
 import App from "./App.vue";
-import router from "./router";
+import router, { prefetchRoutes } from "./router";
 import { bootstrapData } from "./lib/db";
 import { syncAll } from "./lib/employees";
 import { isAuthenticated, getProfile, startAuthPolling } from "./lib/auth";
@@ -62,4 +62,13 @@ bootstrap().then(() => {
   };
   app.use(router);
   app.mount("#app");
+
+  /* Baixa os chunks das demais abas em tempo ocioso para tornar a troca
+     entre elas instantânea. */
+  prefetchRoutes();
+
+  /* Remove a tela de loading estática exibida enquanto os dados iniciais
+     eram carregados (ver index.html). */
+  const loading = document.getElementById("app-loading");
+  if (loading) loading.remove();
 });

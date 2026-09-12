@@ -3,6 +3,7 @@ import { ref, reactive, computed, watch, onMounted } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import Modal from "@/components/ui/Modal.vue";
+import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
@@ -15,6 +16,7 @@ import {
   getDepartmentById,
   getEmployees,
   deleteEmployee,
+  upsertEmployee,
   addEntry
 } from "@/lib/store";
 import {
@@ -485,7 +487,10 @@ async function onEquipeImportFile(e) {
 function importSelectedCandidates(selected) {
   const chosen = selected.filter((c) => c.item && c.item.valid);
   chosen.forEach(({ item }) => {
-    saveEmployee(item.employee);
+    /* upsertEmployee preserva o id, a filial e as datas (registro/atualização)
+       lidas da planilha; saveEmployee geraria um id novo e descartaria esses
+       dados, quebrando o vínculo do custo de contratação. */
+    upsertEmployee(item.employee);
     if (item.costValue !== null && item.costValue !== undefined) {
       addEntry("custo_contratacao", {
         date: todayISO(),
@@ -505,10 +510,15 @@ async function confirmImportEmployees() {
     toast("Nenhum colaborador selecionado.");
     return;
   }
-  const added = importSelectedCandidates(selected);
-  importReviewOpen.value = false;
-  importCandidates.value = [];
-  toast(`${added} colaborador(es) adicionado(s).`);
+  importing.value = true;
+  try {
+    const added = importSelectedCandidates(selected);
+    importReviewOpen.value = false;
+    importCandidates.value = [];
+    toast(`${added} colaborador(es) adicionado(s).`);
+  } finally {
+    importing.value = false;
+  }
 }
 
 async function handleDelete(id) {
@@ -578,7 +588,7 @@ function statusTone(status) {
 </script>
 
 <template>
-  <div class="fade-in">
+  <div>
     <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Equipe</h1>
@@ -966,6 +976,8 @@ function statusTone(status) {
         </div>
       </div>
     </Modal>
+
+    <LoadingOverlay :show="importing" label="Importando colaboradores..." />
   </div>
 </template>
 

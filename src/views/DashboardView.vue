@@ -12,6 +12,7 @@ import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
@@ -238,17 +239,25 @@ function onMenuClick(action) {
 }
 
 async function handleReload() {
-  await reloadData();
-  syncAll();
-  toast("Dados recarregados.");
+  importing.value = true;
+  try {
+    await reloadData();
+    syncAll();
+    toast("Dados recarregados.");
+  } finally {
+    importing.value = false;
+  }
 }
 
 const fileInput = ref(null);
+const importing = ref(false);
 
 function onImportFile(e) {
   const file = e.target.files && e.target.files[0];
   if (file) {
+    importing.value = true;
     importFile(file, (summary) => {
+      importing.value = false;
       if (summary.error) {
         toast("Erro ao importar a planilha.");
         return;
@@ -394,7 +403,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="fade-in">
+  <div>
     <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
@@ -691,6 +700,8 @@ onUnmounted(() => {
       @close="editingRow = null"
       @saved="editingRow = null"
     />
+
+    <LoadingOverlay :show="importing" :label="'Processando planilha...'" />
   </div>
 </template>
 

@@ -6,6 +6,7 @@ import { apiFetch } from "./api";
 import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData, upsertInList, useData } from "./store";
 import { sessionStore, compareDateAsc } from "./utils";
+import { beginLoading, endLoading } from "../composables/useLoading";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
 
@@ -291,7 +292,21 @@ export function loadedStates() {
   return _loadedStates;
 }
 
+/* Baixa os dados dos estados informados, exibindo a tela de carregamento
+   enquanto houver rede. */
 export async function hydrate(state) {
+  state = state || DEFAULT_STATE;
+  const states = state === "todos" ? STATES.slice() : [state];
+  if (states.every((s) => _loadedStates[s])) return true;
+  beginLoading();
+  try {
+    return await _hydrate(state);
+  } finally {
+    endLoading();
+  }
+}
+
+async function _hydrate(state) {
   state = state || DEFAULT_STATE;
   const states = state === "todos" ? STATES.slice() : [state];
 
@@ -403,6 +418,17 @@ function mergeStateFromCache(suffix, state) {
       delta desde a última versão;
    3. senão, faz o download completo do estado (que é então guardado no cache). */
 export async function hydrateState(next) {
+  const states = next === "todos" ? STATES.slice() : [next];
+  if (states.every((s) => _loadedStates[s])) return true;
+  beginLoading();
+  try {
+    return await _hydrateState(next);
+  } finally {
+    endLoading();
+  }
+}
+
+async function _hydrateState(next) {
   // Limpa (uma vez) resíduos de PII de versões antigas gravados em localStorage.
   DataCache.removeLegacy();
   const states = next === "todos" ? STATES.slice() : [next];

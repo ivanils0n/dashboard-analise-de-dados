@@ -57,7 +57,7 @@ const headFind = (headerRow, tokens, exclude = []) => {
 };
 
 function buildEntryRows() {
-  const rows = [["Data", "Indicador", "Valor", "Unidade", "Estado"]];
+  const rows = [["Data", "Indicador", "Valor", "Unidade", "Estado", "Meta"]];
   const all = getAllEntries();
   const flat = [];
   INDICATORS.forEach((ind) => {
@@ -65,7 +65,14 @@ function buildEntryRows() {
   });
   flat.sort((a, b) => compareDateDesc(a.date, b.date));
   flat.forEach((row) => {
-    rows.push([row.date, row.ind.name, Number(row.value), row.ind.unit, (row.meta && row.meta.estado) || ""]);
+    rows.push([
+      row.date,
+      row.ind.name,
+      Number(row.value),
+      row.ind.unit,
+      (row.meta && row.meta.estado) || "",
+      row.meta ? JSON.stringify(row.meta) : ""
+    ]);
   });
   return rows;
 }
@@ -98,7 +105,7 @@ export function toXLSX() {
 
   // ---- Planilha 2: Lançamentos ----
   const sheetEntries = XLSX.utils.aoa_to_sheet(safeRows(buildEntryRows()));
-  sheetEntries["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
+  sheetEntries["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 60 }];
   XLSX.utils.book_append_sheet(workbook, sheetEntries, "Lançamentos");
 
   // ---- Planilha 3: Equipe ----
@@ -163,7 +170,7 @@ export function toXLSX() {
 export function toCSV() {
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(safeRows(buildEntryRows()));
-  sheet["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
+  sheet["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 60 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Lançamentos");
   XLSX.writeFile(workbook, `gente-gestao-dados_${todayISO()}.csv`, { bookType: "csv" });
 }
@@ -172,9 +179,9 @@ export function downloadTemplate() {
   const workbook = XLSX.utils.book_new();
 
   const entriesSheet = XLSX.utils.aoa_to_sheet([
-    ["Data", "Indicador", "Valor", "Unidade", "Estado"],
-    ["2026-08-19", "Headcount", 120, "colaboradores", "RO"],
-    ["2026-08-19", "Absenteísmo", 3, "ocorrências", "RO"]
+    ["Data", "Indicador", "Valor", "Unidade", "Estado", "Meta"],
+    ["2026-08-19", "Headcount", 120, "colaboradores", "RO", ""],
+    ["2026-08-19", "Absenteísmo", 3, "ocorrências", "RO", ""]
   ]);
   XLSX.utils.book_append_sheet(workbook, entriesSheet, "Lançamentos");
 
@@ -276,7 +283,9 @@ export function parseEmployeeSheet(sheet, defaultEstado = null) {
   const iCost = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("custo"));
   const iSalary = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("sal"));
   const iValeT = headFind(headerRow, ["valetransporte", "vale transporte", "vt"]);
-  const iValeA = headFind(headerRow, ["valealimentacao", "vale alimentacao", "va"]);
+  /* "va" sozinho casaria com "Vale-transporte"; só aceita "VA" exato. */
+  let iValeA = headFind(headerRow, ["valealimentacao", "vale alimentacao"]);
+  if (iValeA < 0) iValeA = findCol("va");
   const iInss = headFind(headerRow, ["inss"]);
   const iFgts = headFind(headerRow, ["fgts"]);
   const iIrrf = headFind(headerRow, ["irrf"]);
@@ -286,8 +295,13 @@ export function parseEmployeeSheet(sheet, defaultEstado = null) {
   const iLider = headFind(headerRow, ["lider"]);
   const iGerente = headFind(headerRow, ["gerente"]);
   const iEstado = findCol("estado");
-  /* "Filial" (nome abreviado). Evita casar com "Nome Filial" da aba Filiais. */
-  const iFilial = headFind(headerRow, ["filial", "abreviado", "sigla", "loja"]);
+  /* "Filial" (nome abreviado). Evita casar com "Premiação loja (R$)" ou
+     "Nome Filial" da aba Filiais. */
+  const iFilial = headFind(
+    headerRow,
+    ["filial", "abreviado", "sigla", "loja"],
+    ["premio", "premiacao"]
+  );
 
   const items = [];
   for (let i = 1; i < rows.length; i++) {
@@ -497,6 +511,7 @@ export function importWorkbook(wb, currentState) {
     const iInd = findCol("indicador");
     const iVal = findCol("valor");
     const iEstado = findCol("estado");
+    const iMeta = findCol("meta");
 
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
@@ -512,13 +527,25 @@ export function importWorkbook(wb, currentState) {
 
       const estado = STATES.includes(estadoRaw) ? estadoRaw : (currentState && currentState !== "todos" ? currentState : null);
 
+      /* Meta (JSON) preserva colaborador, tema, filial, percentual etc. */
+      let meta = null;
+      const metaRaw = cellAt(row, iMeta);
+      if (metaRaw !== "" && metaRaw !== undefined && metaRaw !== null) {
+        try {
+          const parsed = JSON.parse(String(metaRaw));
+          if (parsed && typeof parsed === "object") meta = parsed;
+        } catch (err) {
+          /* meta inválido é ignorado (mantém compatibilidade) */
+        }
+      }
+
       const existing = getEntriesFor(ind.id);
       const duplicate = existing.some(
         (e) => e.date === date && Number(e.value) === value && (e.meta ? e.meta.estado : null) === estado
       );
       if (duplicate) { summary.duplicates++; continue; }
 
-      addEntry(ind.id, { date, value, state: estado });
+      addEntry(ind.id, { date, value, state: estado, meta });
       summary.imported++;
     }
   }

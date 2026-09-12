@@ -2,11 +2,23 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import { isAuthenticated, ensureProfile } from "@/lib/auth";
 import AppLayout from "@/components/layout/AppLayout.vue";
 
+/* Carregadores das views (lazy). Ficam num único lugar para permitir o
+   pré-carregamento dos chunks logo após o login — a troca de abas fica
+   instantânea, sem baixar o código no momento da navegação. */
+const views = {
+  login: () => import("@/views/LoginView.vue"),
+  dashboard: () => import("@/views/DashboardView.vue"),
+  equipe: () => import("@/views/EquipeView.vue"),
+  filiais: () => import("@/views/FiliaisView.vue"),
+  departamentos: () => import("@/views/DepartamentosView.vue"),
+  usuarios: () => import("@/views/UsuariosView.vue")
+};
+
 const routes = [
   {
     path: "/login",
     name: "login",
-    component: () => import("@/views/LoginView.vue"),
+    component: views.login,
     meta: { public: true }
   },
   {
@@ -17,31 +29,31 @@ const routes = [
       {
         path: "dashboard",
         name: "dashboard",
-        component: () => import("@/views/DashboardView.vue"),
+        component: views.dashboard,
         meta: { requiresAuth: true }
       },
       {
         path: "equipe",
         name: "equipe",
-        component: () => import("@/views/EquipeView.vue"),
+        component: views.equipe,
         meta: { requiresAuth: true, editOnly: true }
       },
       {
         path: "filiais",
         name: "filiais",
-        component: () => import("@/views/FiliaisView.vue"),
+        component: views.filiais,
         meta: { requiresAuth: true, editOnly: true }
       },
       {
         path: "departamentos",
         name: "departamentos",
-        component: () => import("@/views/DepartamentosView.vue"),
+        component: views.departamentos,
         meta: { requiresAuth: true, editOnly: true }
       },
       {
         path: "usuarios",
         name: "usuarios",
-        component: () => import("@/views/UsuariosView.vue"),
+        component: views.usuarios,
         meta: { requiresAuth: true, adminOnly: true }
       }
     ]
@@ -51,6 +63,27 @@ const routes = [
     redirect: "/dashboard"
   }
 ];
+
+/* Baixa antecipadamente os chunks das views durante o tempo ocioso do
+   navegador. Chamado após a montagem do layout interno (usuário logado). */
+export function prefetchRoutes() {
+  const run = () => {
+    Object.values(views).forEach((load) => {
+      try {
+        load().catch(() => {});
+      } catch (err) {
+        /* noop */
+      }
+    });
+  };
+  if (typeof window === "undefined") return;
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 2500 });
+  } else {
+    setTimeout(run, 400);
+  }
+}
+
 
 const router = createRouter({ history: createWebHashHistory(), routes });
 
