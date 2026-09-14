@@ -454,16 +454,14 @@ async function _hydrateState(next) {
     const delta = await fetchDelta(versao);
     if (delta) {
       if (delta.changes && delta.changes.length) {
-        // Snapshot dos estados realmente carregados: o applyDelta marca como
-        // carregado todo estado citado no delta, o que marcaria indevidamente
-        // estados que ainda não tiveram o conjunto completo de dados em memória.
-        const loadedBefore = new Set(Object.keys(_loadedStates));
+        // Snapshot dos estados realmente carregados (já inclui `pending`, que
+        // acabou de ser marcado acima): o applyDelta marca como carregado todo
+        // estado citado no delta, o que marcaria indevidamente estados que
+        // ainda não tiveram o conjunto completo de dados em memória.
+        const loadedBefore = Object.keys(_loadedStates);
         applyDelta(delta.changes);
         Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-        pending.forEach((s) => (_loadedStates[s] = true));
-        loadedBefore.forEach((s) => {
-          if (!_loadedStates[s]) _loadedStates[s] = true;
-        });
+        loadedBefore.forEach((s) => (_loadedStates[s] = true));
         DataCache.setVersion(delta.versaoAtual);
       }
       console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);

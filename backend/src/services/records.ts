@@ -195,11 +195,17 @@ export async function bulkWrite(
 
     let deleted = 0;
     for (const value of deletes) {
+      if (value === null || value === undefined) continue;
       const id = String(value);
       if (!id) continue;
       const existing = await client.query(`select * from public.${table} where id = $1 limit 1`, [id]);
+      const row = existing.rows[0];
+      // Registro ausente: nada a excluir. Gravar o changelog aqui criaria uma
+      // entrada fantasma (dados null) e avançaria a versão do delta à toa.
+      if (!row) continue;
+
       await client.query(`delete from public.${table} where id = $1`, [id]);
-      await recordChange(client, table, id, "delete", existing.rows[0] ?? null);
+      await recordChange(client, table, id, "delete", row);
       deleted++;
     }
 

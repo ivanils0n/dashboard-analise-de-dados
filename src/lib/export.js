@@ -16,7 +16,7 @@ import {
 } from "./store";
 import { INDICATORS, STATES, STATUS_LABELS, TYPE_LABELS } from "./config";
 import { activeStates, syncAll, findBranchByShortName } from "./employees";
-import { createId, nowLocalISO, todayISO, parseHoursBR, compareDateDesc } from "./utils";
+import { createId, nowLocalISO, todayISO, parseHoursBR, parseCurrencyBR, compareDateDesc } from "./utils";
 
 /* Previne "formula injection": texto iniciado com = + - @ vira texto puro
    (prefixo ') para nunca executar fórmula em planilha. */
@@ -211,21 +211,21 @@ export function downloadTemplate() {
   XLSX.writeFile(workbook, `gente-gestao-template_${todayISO()}.xlsx`);
 }
 
-export function importFile(file, onResult) {
+/* `currentState` é o estado selecionado no dashboard: serve de padrão para as
+   linhas da planilha que não informam a coluna "Estado". Sem ele, essas linhas
+   entrariam sem estado e sumiriam dos filtros por região. */
+export function importFile(file, onResult, currentState = null) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-      const summary = importWorkbook(wb);
+  readWorkbookFile(file)
+    .then((wb) => {
+      const summary = importWorkbook(wb, currentState);
       syncAll();
       onResult && onResult(summary);
-    } catch (err) {
+    })
+    .catch((err) => {
       console.error(err);
       onResult && onResult({ error: true });
-    }
-  };
-  reader.readAsArrayBuffer(file);
+    });
 }
 
 /* Lê um arquivo (.xlsx/.xls/.csv) e devolve a workbook (promise). */
@@ -791,16 +791,14 @@ function cellAt(row, index) {
   return value === undefined || value === null ? "" : value;
 }
 
-/* Converte célula em número monetário (null quando vazia/inválida). */
+/* Converte célula em número monetário (null quando vazia/inválida).
+   Delega o texto ao parser pt-BR único (parseCurrencyBR), que resolve a
+   ambiguidade entre ponto de milhar e ponto decimal — "1.500" vale 1500,
+   não 1,5. */
 function moneyNum(raw) {
   if (raw === undefined || raw === null || raw === "") return null;
   if (typeof raw === "number") return isNaN(raw) ? null : raw;
-  let s = String(raw).trim().replace(/[R$\s]/g, "");
-  if (!s) return null;
-  if (s.indexOf(",") !== -1) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  }
-  const n = Number(s);
+  const n = parseCurrencyBR(raw);
   return isNaN(n) ? null : n;
 }
 
@@ -810,20 +808,31 @@ function textOrNull(raw) {
   return s || null;
 }
 
+/* Converte o número de série de data do Excel em Date.
+   O serial representa uma data "de parede" (sem fuso); o instante gerado é a
+   meia-noite UTC dela, então SEMPRE leia os componentes com os getters UTC —
+   os getters locais devolvem o dia anterior em qualquer fuso a oeste de
+   Greenwich (RO/AM/PA = UTC-4/-3). */
+function excelSerialToDate(raw) {
+  if (typeof raw !== "number" || !(raw > 20000 && raw < 100000)) return null;
+  const d = new Date(Math.round((raw - 25569) * 86400000));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function serialToISODate(d) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
 function normalizeDate(raw) {
   if (raw === undefined || raw === null || raw === "") return null;
   const s = String(raw).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (br) return `${br[3]}-${br[2]}-${br[1]}`;
-  if (typeof raw === "number" && raw > 20000 && raw < 100000) {
-    const d = new Date(Math.round((raw - 25569) * 86400000));
-    if (!isNaN(d.getTime())) {
-      const pad = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }
-  }
-  return null;
+  const serial = excelSerialToDate(raw);
+  return serial ? serialToISODate(serial) : null;
 }
 
 function normalizeDateTime(raw) {
@@ -834,12 +843,9 @@ function normalizeDateTime(raw) {
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s)) {
     return s.length === 16 ? s + ":00" : s;
   }
-  if (typeof raw === "number" && raw > 20000 && raw < 100000) {
-    const d = new Date(Math.round((raw - 25569) * 86400000));
-    if (!isNaN(d.getTime())) {
-      const pad = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-    }
+  const serial = excelSerialToDate(raw);
+  if (serial) {
+    return `${serialToISODate(serial)}T${pad2(serial.getUTCHours())}:${pad2(serial.getUTCMinutes())}:00`;
   }
   return null;
 }

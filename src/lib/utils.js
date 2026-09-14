@@ -62,8 +62,10 @@ export function formatDate(isoDate) {
 
 export function formatShortDate(isoDate) {
   if (!isoDate) return "—";
-  const date = new Date(isoDate + "T00:00:00");
-  if (isNaN(date.getTime())) return isoDate;
+  /* Aceita "YYYY-MM-DD" e timestamps: sem o teste de "T", um valor que já
+     tem hora virava "...T10:00:00T00:00:00" (Invalid Date) e era exibido cru. */
+  const date = new Date(/T/.test(isoDate) ? isoDate : isoDate + "T00:00:00");
+  if (isNaN(date.getTime())) return String(isoDate);
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
@@ -281,9 +283,8 @@ export function parseCurrencyBR(input) {
   const hasDot = s.includes(".");
 
   let normalized;
-  if (hasComma && hasDot) {
-    normalized = s.replace(/\./g, "").replace(",", ".");
-  } else if (hasComma) {
+  if (hasComma) {
+    // Com vírgula presente ela é sempre o decimal: o ponto só pode ser milhar.
     normalized = s.replace(/\./g, "").replace(",", ".");
   } else if (hasDot) {
     // "1.500" (milhar) x "1500.50" (decimal): só é milhar se os grupos
@@ -378,7 +379,12 @@ export function formatHoursClock(value) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// Grava no storage; em QuotaExceededError, limpa o storage e regrava.
+/* Prefixo das chaves de cache de dados (ver lib/cache.js). São as únicas
+   descartáveis: podem ser rebaixadas para liberar espaço porque são
+   reconstruídas pelo delta sync. */
+const DISPOSABLE_PREFIX = "ggd:";
+
+// Grava no storage; em QuotaExceededError, descarta o cache de dados e regrava.
 export function safeSetItem(storage, key, value) {
   try {
     storage.setItem(key, value);
@@ -390,18 +396,26 @@ export function safeSetItem(storage, key, value) {
         err.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
         err.code === 22 ||
         err.code === 1014);
-    if (isQuota) {
-      try {
-        storage.clear();
-      } catch (e) {}
-      try {
-        storage.setItem(key, value);
-        return true;
-      } catch (e2) {
-        return false;
+    if (!isQuota) return false;
+
+    /* Antes limpava o storage inteiro — isso apagava junto a sessão (gg-auth)
+       e deslogava o usuário no meio do trabalho. Remove apenas as chaves de
+       cache, que o delta sync rebaixa sozinho. */
+    try {
+      const disposable = [];
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k && k !== key && k.indexOf(DISPOSABLE_PREFIX) === 0) disposable.push(k);
       }
+      disposable.forEach((k) => storage.removeItem(k));
+    } catch (e) {}
+
+    try {
+      storage.setItem(key, value);
+      return true;
+    } catch (e2) {
+      return false;
     }
-    return false;
   }
 }
 

@@ -70,7 +70,7 @@ function mountChart() {
   chart = createBarChart(canvas.value);
   applyOptions();
   /* Uma única atualização no mount (evita múltiplos resizes). */
-  updateBarChart(chart, props.data, { format: props.valueFormat, trend: props.showTrend });
+  updateBarChart(chart, props.data, { trend: props.showTrend });
 }
 
 function unmountChart() {
@@ -97,7 +97,7 @@ watch(isDark, () => {
 watch(
   () => props.data,
   (data) => {
-    if (chart) updateBarChart(chart, data, { format: props.valueFormat, trend: props.showTrend });
+    if (chart) updateBarChart(chart, data, { trend: props.showTrend });
   },
   { deep: true }
 );
@@ -116,7 +116,7 @@ watch(
   () => {
     if (!chart) return;
     applyOptions();
-    updateBarChart(chart, props.data, { format: props.valueFormat, trend: props.showTrend });
+    updateBarChart(chart, props.data, { trend: props.showTrend });
   }
 );
 
@@ -124,7 +124,7 @@ watch(
   () => props.showTrend,
   () => {
     if (!chart) return;
-    updateBarChart(chart, props.data, { format: props.valueFormat, trend: props.showTrend });
+    updateBarChart(chart, props.data, { trend: props.showTrend });
   }
 );
 </script>

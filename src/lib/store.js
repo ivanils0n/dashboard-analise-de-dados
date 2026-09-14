@@ -114,19 +114,18 @@ export function updateEntry(indicatorId, entryId, patch) {
    remotas agrupadas por estado. */
 export function removeEntries(rows) {
   if (!rows || !rows.length) return;
-  const groups = new Map();
   const removable = rows.filter(({ indicatorId, entry }) => {
     if (!data.entries[indicatorId]) return false;
     return data.entries[indicatorId].some((e) => e.id === entry.id);
   });
+  if (!removable.length) return;
 
+  const groups = new Map();
   removable.forEach(({ entry }) => {
     const estado = entry.meta && entry.meta.estado ? entry.meta.estado : "__none__";
     if (!groups.has(estado)) groups.set(estado, []);
     groups.get(estado).push(entry.id);
   });
-
-  if (!removable.length) return;
 
   groups.forEach((ids, estado) => {
     if (ok()) remote.entriesRemoved(ids, estado === "__none__" ? null : estado);

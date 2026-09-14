@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Badge from "@/components/ui/Badge.vue";
@@ -59,6 +59,10 @@ onMounted(() => {
   flash.value = true;
   flashTimer = setTimeout(() => (flash.value = false), 1800);
 });
+
+/* O card é remontado a cada troca de filtro/estado; sem isto o timer
+   continuava vivo e escrevia num componente já desmontado. */
+onBeforeUnmount(() => clearTimeout(flashTimer));
 </script>
 
 <template>

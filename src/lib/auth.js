@@ -2,7 +2,6 @@
    (sem tokens em disco); logout/expiração purgam memória+cache+fila; RBAC por
    perfil admin/analista/visitante; perfil validado via /api/auth/me. */
 import { reactive } from "vue";
-import { AUTH_EMAIL_DOMAIN } from "./config";
 import { safeSetItem, sessionStore, localStore } from "./utils";
 import { apiFetch } from "./api";
 import { resetLocalState } from "./db";
@@ -21,13 +20,8 @@ export const authState = reactive({
   loading: true
 });
 
-/* Constrói o e-mail completo (aceita "ivan" ou "ivan@gente.gestao") */
-export function buildLoginEmail(value) {
-  const v = String(value || "").trim();
-  if (!v) return "";
-  if (v.indexOf("@") !== -1) return v.toLowerCase();
-  return v.toLowerCase() + "@" + AUTH_EMAIL_DOMAIN;
-}
+/* Nota: a montagem do e-mail a partir do usuário ("ivan" -> "ivan@...") é
+   feita pelo backend (services/auth.ts) — não duplicar aqui. */
 
 // ---------- Sessão (sessionStorage) ----------
 function readSession() {

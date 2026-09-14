@@ -25,7 +25,13 @@ export function aggregateEntries(ind, list) {
     const sum = list.reduce((s, e) => s + (Number(e.value) || 0), 0);
     return sum / list.length;
   }
-  return Number(list[list.length - 1].value) || null;
+  /* Um lançamento com valor 0 é um dado válido (ex.: 0 dias de contratação)
+     e não pode virar "sem dados": só devolve null quando o valor está
+     ausente ou não é numérico. */
+  const raw = list[list.length - 1].value;
+  if (raw === null || raw === undefined || raw === "") return null;
+  const last = Number(raw);
+  return Number.isFinite(last) ? last : null;
 }
 
 /* Totais do Absenteísmo por tipo (falta/atraso/afastamento). */
@@ -33,7 +39,11 @@ export function absenteismoTotals(list) {
   const totals = { falta: 0, atraso: 0, afastamento: 0 };
   (list || []).forEach((e) => {
     const type = e.meta && e.meta.type;
-    if (type in totals) totals[type] += Number(e.value) || 0;
+    /* hasOwnProperty, não `in`: `in` também casa com o protótipo
+       ("toString", "constructor"...) e criaria chaves espúrias no total. */
+    if (Object.prototype.hasOwnProperty.call(totals, type)) {
+      totals[type] += Number(e.value) || 0;
+    }
   });
   return totals;
 }

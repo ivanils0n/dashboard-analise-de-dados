@@ -39,7 +39,9 @@ const valueLabelsPlugin = {
 };
 
 /* Registrado globalmente ANTES dos plugins de linha (média/tendência) para que
-   essas linhas sejam desenhadas por cima dos rótulos de valor. */
+   essas linhas sejam desenhadas por cima dos rótulos de valor. O registro
+   global vale para todos os gráficos — não repetir em `plugins: []` na
+   criação de cada um. */
 Chart.register(valueLabelsPlugin);
 
 function drawValueLabels(chart) {
@@ -245,7 +247,6 @@ export function createPieChart(canvas) {
         }
       ]
     },
-    plugins: [valueLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -311,7 +312,6 @@ export function createLineChart(canvas) {
   return new Chart(canvas, {
     type: "line",
     data: { labels: [], datasets: [] },
-    plugins: [valueLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -340,7 +340,6 @@ export function createAbsenteismoBar(canvas) {
   return new Chart(canvas, {
     type: "bar",
     data: { labels: [], datasets: [] },
-    plugins: [valueLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -416,7 +415,6 @@ export function updateLineChart(chart, indicator, entries) {
 
   const labels = entries.map((e) => formatShortDate(e.date));
   const values = entries.map((e) => e.value);
-  const p = chartPalette();
 
   /* Tempo médio de contratação: destaca a média do período em dias. */
   if (indicator && indicator.id === "tempo_contratacao") {
@@ -467,7 +465,6 @@ export function createBarChart(canvas) {
   return new Chart(canvas, {
     type: "bar",
     data: { labels: [], datasets: [] },
-    plugins: [valueLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -507,8 +504,11 @@ export function createBarChart(canvas) {
   });
 }
 
-/* panorama: [{ label, value, tooltipValue, format? }]
-   options: { format?: "currency" } — formata os rótulos/linha de média. */
+/* panorama: [{ label, value, tooltipValue, format? }] — `format` por item
+   ("currency") controla o rótulo daquela barra.
+   options: { trend?: boolean } — desenha (padrão) ou não a linha de tendência.
+   A formatação global dos rótulos vem de chart.__valueLabels.formatter,
+   definido pelo componente (ver BarChart.vue). */
 export function updateBarChart(chart, panorama, options = {}) {
   if (!chart || !panorama) return;
   const labels = panorama.map((p) => p.label);

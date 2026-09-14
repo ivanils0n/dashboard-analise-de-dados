@@ -303,23 +303,27 @@ function onImportFile(e) {
   const file = e.target.files && e.target.files[0];
   if (file) {
     importing.value = true;
-    importFile(file, (summary) => {
-      importing.value = false;
-      if (summary.error) {
-        toast("Erro ao importar a planilha.");
-        return;
-      }
-      const parts = [`${summary.imported} lançamento(s) importado(s)`];
-      if (summary.duplicates) parts.push(`${summary.duplicates} duplicado(s) ignorado(s)`);
-      if (summary.invalid) parts.push(`${summary.invalid} inválido(s)`);
-      if (summary.importedEmployees) parts.push(`${summary.importedEmployees} colaborador(es) importado(s)`);
-      if (summary.duplicateEmployees) parts.push(`${summary.duplicateEmployees} colaborador(es) duplicado(s)`);
-      if (summary.importedBranches) parts.push(`${summary.importedBranches} filial(ais) importada(s)`);
-      if (summary.duplicateBranches) parts.push(`${summary.duplicateBranches} filial(ais) duplicada(s)`);
-      if (summary.importedDepartments) parts.push(`${summary.importedDepartments} departamento(s) importado(s)`);
-      if (summary.duplicateDepartments) parts.push(`${summary.duplicateDepartments} departamento(s) duplicado(s)`);
-      toast("Importação concluída — " + parts.join(" · "));
-    });
+    importFile(
+      file,
+      (summary) => {
+        importing.value = false;
+        if (summary.error) {
+          toast("Erro ao importar a planilha.");
+          return;
+        }
+        const parts = [`${summary.imported} lançamento(s) importado(s)`];
+        if (summary.duplicates) parts.push(`${summary.duplicates} duplicado(s) ignorado(s)`);
+        if (summary.invalid) parts.push(`${summary.invalid} inválido(s)`);
+        if (summary.importedEmployees) parts.push(`${summary.importedEmployees} colaborador(es) importado(s)`);
+        if (summary.duplicateEmployees) parts.push(`${summary.duplicateEmployees} colaborador(es) duplicado(s)`);
+        if (summary.importedBranches) parts.push(`${summary.importedBranches} filial(ais) importada(s)`);
+        if (summary.duplicateBranches) parts.push(`${summary.duplicateBranches} filial(ais) duplicada(s)`);
+        if (summary.importedDepartments) parts.push(`${summary.importedDepartments} departamento(s) importado(s)`);
+        if (summary.duplicateDepartments) parts.push(`${summary.duplicateDepartments} departamento(s) duplicado(s)`);
+        toast("Importação concluída — " + parts.join(" · "));
+      },
+      filters.current
+    );
   }
   e.target.value = "";
 }

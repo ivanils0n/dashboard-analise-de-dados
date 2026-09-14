@@ -6,7 +6,6 @@ import {
   useData,
   getEmployeeById,
   deleteEmployee,
-  getDepartments,
   upsertEmployee,
   getVacancies,
   upsertVacancy,
@@ -75,14 +74,10 @@ export function findBranchByShortName(text) {
 }
 
 /* Converte valor monetário opcional em número (null quando vazio). */
-function toMoneyOrNull(value) {
+export function moneyOrNull(value) {
   if (value === undefined || value === null || value === "") return null;
   const num = Number(value);
   return isNaN(num) ? null : num;
-}
-
-export function moneyOrNull(value) {
-  return toMoneyOrNull(value);
 }
 
 /* Soma salário + encargos/benefícios/premiações/comissão do colaborador:
@@ -100,7 +95,7 @@ export function employeeMonthlyCost(employee) {
     employee.premioLoja,
     employee.comissao
   ];
-  return fields.reduce((sum, v) => sum + (toMoneyOrNull(v) || 0), 0);
+  return fields.reduce((sum, v) => sum + (moneyOrNull(v) || 0), 0);
 }
 
 export function saveEmployee(employeeData) {
@@ -137,14 +132,14 @@ export function saveEmployee(employeeData) {
     filialId: employeeData.filialId || null,
     liderImediato: employeeData.liderImediato != null ? String(employeeData.liderImediato) : null,
     gerenteRegional: employeeData.gerenteRegional != null ? String(employeeData.gerenteRegional) : null,
-    valeTransporte: toMoneyOrNull(employeeData.valeTransporte),
-    valeAlimentacao: toMoneyOrNull(employeeData.valeAlimentacao),
-    inss: toMoneyOrNull(employeeData.inss),
-    fgts: toMoneyOrNull(employeeData.fgts),
-    irrf: toMoneyOrNull(employeeData.irrf),
-    premioArt62: toMoneyOrNull(employeeData.premioArt62),
-    premioLoja: toMoneyOrNull(employeeData.premioLoja),
-    comissao: toMoneyOrNull(employeeData.comissao),
+    valeTransporte: moneyOrNull(employeeData.valeTransporte),
+    valeAlimentacao: moneyOrNull(employeeData.valeAlimentacao),
+    inss: moneyOrNull(employeeData.inss),
+    fgts: moneyOrNull(employeeData.fgts),
+    irrf: moneyOrNull(employeeData.irrf),
+    premioArt62: moneyOrNull(employeeData.premioArt62),
+    premioLoja: moneyOrNull(employeeData.premioLoja),
+    comissao: moneyOrNull(employeeData.comissao),
     createdAt: now,
     updatedAt: now,
     firedAt: employeeData.firedAt || null
@@ -160,13 +155,11 @@ export function removeEmployee(id) {
 
 /* ---------- Departamentos & Filiais ---------- */
 
-export function listDepartments(state) {
-  const all = getDepartments();
-  if (state && state !== "todos") {
-    return all.filter((d) => (d.estado || null) === state);
-  }
-  return all.slice();
-}
+/* Reexporta a lista de departamentos de lib/departamentos.js (dono do
+   domínio). Antes havia uma segunda implementação aqui que comparava o estado
+   com `===` exato, enquanto a de departamentos.js usa sameState() — o mesmo
+   departamento aparecia ou sumia da lista conforme o ponto de entrada. */
+export { listDepartments } from "./departamentos";
 
 export function departmentMetrics(department, state, filialId, dateRange) {
   if (!department) return { total: 0, ativos: 0, entradas: 0, saidas: 0 };
@@ -321,7 +314,7 @@ export function addVacancy({
     name,
     openAt,
     closeAt: closeAt || null,
-    salario: toMoneyOrNull(salario),
+    salario: moneyOrNull(salario),
     tipoContratacao: tipoContratacao || null,
     estado: estado || null,
     filialId: filialId || null
@@ -344,7 +337,7 @@ export function updateVacancy(
     name,
     openAt,
     closeAt: closeAt !== undefined ? closeAt || null : vacancy.closeAt,
-    salario: salario !== undefined ? toMoneyOrNull(salario) : vacancy.salario,
+    salario: salario !== undefined ? moneyOrNull(salario) : vacancy.salario,
     tipoContratacao:
       tipoContratacao !== undefined ? tipoContratacao || null : vacancy.tipoContratacao,
     estado: estado !== undefined ? estado || null : vacancy.estado,
@@ -412,7 +405,7 @@ export function closeVacancies(ids, closeDate = null) {
 function syncVacancyCost(vacancy) {
   if (!vacancy) return;
   const existing = getLatestForMeta("custo_contratacao", "vacancyId", vacancy.id);
-  const salario = toMoneyOrNull(vacancy.salario);
+  const salario = moneyOrNull(vacancy.salario);
   if (salario === null) {
     if (existing) removeEntry("custo_contratacao", existing.id);
     return;

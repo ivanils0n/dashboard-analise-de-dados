@@ -50,8 +50,17 @@ export function useDashboardData(filter, options = {}) {
     });
   }
 
+  /* Lançamentos "sem período" (ver diariaDailySeries) usam uma data-sentinela
+     bem no passado só para satisfazer o banco — nunca representam um período
+     real e por isso NUNCA entram nas listas/agregados normais, mesmo sem
+     filtro de data ativo (sentinela sempre "antes" de qualquer início de
+     período). Só entram quando explicitamente pedidos (toggle "Mostrar sem
+     período" do KPI, tratado à parte em `kpis`). */
   function filteredEntries(ind) {
-    return filterByRange(getEntriesFor(ind.id, currentState()));
+    const withPeriod = getEntriesFor(ind.id, currentState()).filter(
+      (e) => !(e.meta && e.meta.semPeriodo)
+    );
+    return filterByRange(withPeriod);
   }
 
   function absenteismoTypeTotals() {
@@ -86,12 +95,18 @@ export function useDashboardData(filter, options = {}) {
     return aggregateByDay(list);
   }
 
-  /* Quantos lançamentos de diária foram importados sem período definido
-     (estado/filtro atual, sem considerar o filtro de data). */
-  function diariaSemPeriodoCount() {
+  /* Lançamentos de diária sem competência definida (estado/filtro atual, sem
+     considerar o filtro de data). Única fonte para a contagem exibida no KPI
+     e para a soma adicionada quando "Mostrar sem período" está ativo — usada
+     tanto por `indicatorCurrentValue` (KPI e Panorama) quanto pelo card. */
+  function diariaSemPeriodoEntries() {
     const ind = getIndicatorById("custo_diaria");
-    if (!ind) return 0;
-    return getEntriesFor(ind.id, currentState()).filter((e) => e.meta && e.meta.semPeriodo).length;
+    if (!ind) return [];
+    return getEntriesFor(ind.id, currentState()).filter((e) => e.meta && e.meta.semPeriodo);
+  }
+
+  function diariaSemPeriodoCount() {
+    return diariaSemPeriodoEntries().length;
   }
 
   /* Valor de um indicador para uma lista de lançamentos (regra única de
@@ -169,11 +184,22 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => b.value - a.value);
   }
 
+  /* Fonte única do "valor atual" de um indicador: usada tanto pelos KPIs
+     quanto pelo Panorama atual — ambos precisam mostrar exatamente o mesmo
+     número. Para "Custo da diária geral", soma os lançamentos sem competência
+     definida quando "Mostrar sem período" está ativo (e só então). */
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
       return computedSnapshot(ind.id, currentState());
     }
-    return aggregateList(ind, filteredEntries(ind));
+    let value = aggregateList(ind, filteredEntries(ind));
+    if (ind.id === "custo_diaria" && diariaShowSemPeriodo.value) {
+      const sem = diariaSemPeriodoEntries();
+      if (sem.length) {
+        value = (Number(value) || 0) + sem.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+      }
+    }
+    return value;
   }
 
   /* ---------- KPIs ---------- */
@@ -186,7 +212,12 @@ export function useDashboardData(filter, options = {}) {
       let current = indicatorCurrentValue(ind);
       let prev = null;
       if (filter.start && allEntries.length) {
-        const before = allEntries.filter((e) => e.date < filter.start);
+        /* Exclui semPeriodo: a data-sentinela é sempre "antes" de filter.start,
+           então sem este filtro toda diária sem período entraria no "anterior"
+           e distorceria a seta de variação (▲/▼) do card. */
+        const before = allEntries.filter(
+          (e) => e.date < filter.start && !(e.meta && e.meta.semPeriodo)
+        );
         prev = before.length ? aggregateList(ind, before) : null;
       } else if (!filter.start && entries.length > 1) {
         /* Sem início de período: o "anterior" é a agregação de tudo menos o
@@ -200,15 +231,12 @@ export function useDashboardData(filter, options = {}) {
         delta = { diff, up: diff > 0, down: diff < 0 };
       }
 
-      /* "Mostrar sem período" (filtro ao lado do KPI): soma ao total exibido
-         os lançamentos de diária importados sem competência definida — eles
-         não entram em `entries`/`current` por padrão (ver diariaDailySeries). */
-      let extraCount = 0;
-      if (ind.id === "custo_diaria" && diariaShowSemPeriodo.value) {
-        const semPeriodoEntries = allEntries.filter((e) => e.meta && e.meta.semPeriodo);
-        extraCount = semPeriodoEntries.length;
-        current = (Number(current) || 0) + semPeriodoEntries.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
-      }
+      /* "Mostrar sem período" (filtro ao lado do KPI): a soma em si já está em
+         `current` (ver indicatorCurrentValue) — aqui só ajusta a contagem de
+         lançamentos exibida no card. */
+      const extraCount = ind.id === "custo_diaria" && diariaShowSemPeriodo.value
+        ? diariaSemPeriodoEntries().length
+        : 0;
 
       const totalCount = entries.length + extraCount;
       const countText = totalCount === 1 ? "1 lançamento" : `${totalCount} lançamentos`;
@@ -371,7 +399,10 @@ export function useDashboardData(filter, options = {}) {
             label: ind.name,
             value,
             tooltipValue: value === null ? "sem dados" : formatValue(ind, value),
-            format: ind.id === "custo_total" ? "currency" : null
+            /* Antes só "custo_total" ganhava este formato — "custo_diaria"
+               (mesmo tipo "currency") caía no rótulo padrão e desenhava o
+               número cru (ex.: "25048.370000000003") em vez de moeda. */
+            format: ind.type === "currency" ? "currency" : null
           }
         ];
       })
