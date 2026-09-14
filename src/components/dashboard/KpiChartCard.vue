@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import LineChart from "@/components/charts/LineChart.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import { getIndicatorById } from "@/lib/config";
+import { aggregateByMonth, formatMonthLabel, formatValue } from "@/lib/utils";
+
+/* Tipos cuja soma mensal não faz sentido — usa a média do mês. */
+const AVG_TYPES = ["percent", "days", "months"];
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -18,6 +21,39 @@ const flash = ref(false);
 let flashTimer = null;
 
 const indicator = computed(() => getIndicatorById(props.card.id) || { id: props.card.id, name: props.card.title });
+
+/* Sentinela gravada como `date` dos lançamentos "sem período" (ver Custo da
+   diária geral): cai sempre no mesmo mês (0001-01), o que permite isolar o
+   grupo do restante da agregação mensal normal. */
+const NO_PERIODO_MONTH = "0001-01";
+
+/* Evolução por indicador: agrega os lançamentos por mês para o gráfico de
+   barras (soma para contagens/valores, média para percentuais e prazos).
+   Lançamentos "sem período" viram uma barra própria no fim, em vez de se
+   misturarem com o mês real em que foram importados. */
+const monthlyBarData = computed(() => {
+  if (props.card.kind !== "line") return [];
+  const method = AVG_TYPES.includes(indicator.value.type) ? "avg" : "sum";
+  const monthly = aggregateByMonth(props.entries, method);
+  const rows = [];
+  let semPeriodo = null;
+  monthly.forEach((m) => {
+    const row = { label: formatMonthLabel(m.date), value: m.value, tooltipValue: formatValue(indicator.value, m.value) };
+    if (m.date === NO_PERIODO_MONTH) {
+      semPeriodo = { ...row, label: "Sem período" };
+    } else {
+      rows.push(row);
+    }
+  });
+  if (semPeriodo) rows.push(semPeriodo);
+  return rows;
+});
+
+const monthlyValueFormat = computed(() => {
+  if (indicator.value.type === "currency") return "currency";
+  if (indicator.value.type === "hours") return "hours";
+  return "";
+});
 
 onMounted(() => {
   flash.value = true;
@@ -46,6 +82,12 @@ onMounted(() => {
       :show-trend="card.showTrend !== false"
       :value-format="card.valueFormat || ''"
     />
-    <LineChart v-else :indicator="indicator" :entries="entries" :show-values="showValues" />
+    <BarChart
+      v-else
+      :data="monthlyBarData"
+      :show-values="showValues"
+      :show-trend="false"
+      :value-format="monthlyValueFormat"
+    />
   </div>
 </template>

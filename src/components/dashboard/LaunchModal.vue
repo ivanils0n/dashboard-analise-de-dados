@@ -41,7 +41,15 @@ import {
   findEmployeesByName,
   findBranchByShortName
 } from "@/lib/employees";
-import { readWorkbookFile, parseTreinamentoSheet, downloadTreinamentoTemplate, parseVagasSheet, downloadVagasTemplate } from "@/lib/export";
+import {
+  readWorkbookFile,
+  parseTreinamentoSheet,
+  downloadTreinamentoTemplate,
+  parseVagasSheet,
+  downloadVagasTemplate,
+  parseDiariaSheet,
+  downloadDiariaTemplate
+} from "@/lib/export";
 import { todayISO, firstDayOfMonthISO, formatDate, formatValue, formatCurrency, currentYm, MONTHS_SHORT, yearOptions, maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR, parseHoursBR, formatHoursClock, normalizeText } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
@@ -111,16 +119,19 @@ const custo = reactive({ query: "", employeeId: null, value: "" });
 const custoExisting = ref(null);
 
 /* ---------- Diária ---------- */
+/* A diária é vinculada a MÊS/ANO (competência), não a um dia — o registro é
+   gravado no 1º dia do mês escolhido, igual ao Treinamento. */
 const diaria = reactive({
   query: "",
   employeeId: null,
+  employeeName: "",
+  funcao: "",
   departamento: "",
   filial: "",
   liderImediato: "",
   gerenteRegional: "",
   regional: "",
-  inicio: "",
-  fim: "",
+  mes: currentYm(),
   motivo: "",
   value: ""
 });
@@ -218,14 +229,15 @@ function prefillEdit(indId, entry) {
 
   if (indId === "custo_diaria") {
     diaria.employeeId = m.employeeId || null;
+    diaria.employeeName = m.employeeName || "";
+    diaria.funcao = m.funcao || "";
     diaria.query = "";
     diaria.departamento = m.departamento || "";
     diaria.filial = m.filial || "";
     diaria.liderImediato = m.liderImediato || "";
     diaria.gerenteRegional = m.gerenteRegional || "";
     diaria.regional = m.regional || "";
-    diaria.inicio = m.inicio || entry.date;
-    diaria.fim = m.fim || entry.date;
+    diaria.mes = m.competencia || (entry.date ? String(entry.date).slice(0, 7) : currentYm());
     diaria.motivo = m.motivo || "";
     diaria.value = entry.value != null ? String(entry.value) : "";
     showTab("diaria");
@@ -265,13 +277,14 @@ function prefillEdit(indId, entry) {
 function resetDiaria() {
   diaria.query = "";
   diaria.employeeId = null;
+  diaria.employeeName = "";
+  diaria.funcao = "";
   diaria.departamento = "";
   diaria.filial = "";
   diaria.liderImediato = "";
   diaria.gerenteRegional = "";
-  diaria.regional = "";
-  diaria.inicio = todayISO();
-  diaria.fim = todayISO();
+  diaria.regional = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+  diaria.mes = currentYm();
   diaria.motivo = "";
   diaria.value = "";
 }
@@ -816,15 +829,21 @@ const diariaResults = computed(() => {
   return employees.filter((e) => normalizeText(`${e.name} ${e.sector} ${e.user}`).includes(q));
 });
 
-const diariaEmployeeName = computed(() => {
-  if (!diaria.employeeId) return "";
-  const emp = getEmployeeById(diaria.employeeId);
-  return emp ? `${emp.name} · ${emp.sector}` : "";
-});
-
 function pickDiariaEmployee(e) {
   diaria.employeeId = e.id;
+  diaria.employeeName = e.name;
   fillDiariaContext(e);
+  showTab("diaria");
+}
+
+/* Colaborador não cadastrado (ou ainda não importado): lança a diária mesmo
+   assim, sem vínculo, usando o nome digitado na busca. */
+function pickDiariaEmployeeManual() {
+  const name = diaria.query.trim();
+  if (!name) return;
+  diaria.employeeId = null;
+  diaria.employeeName = name;
+  diaria.query = "";
   showTab("diaria");
 }
 
@@ -832,6 +851,7 @@ function pickDiariaEmployee(e) {
    colaborador (departamento, filial e líder). O "regional" é o estado. */
 function fillDiariaContext(emp) {
   const up = (v) => String(v == null ? "" : v).toUpperCase();
+  diaria.funcao = up(emp.cargo);
   const dep = emp.departmentId ? getDepartmentById(emp.departmentId) : null;
   diaria.departamento = dep ? up(dep.name) : up(emp.sector);
   const filial = emp.filialId ? getBranchById(emp.filialId) : null;
@@ -841,40 +861,61 @@ function fillDiariaContext(emp) {
   diaria.regional = up(emp.estado);
 }
 
-function setDiariaToday() {
-  diaria.inicio = todayISO();
-  diaria.fim = todayISO();
+/* ---------- Mês/ano da diária (competência) ---------- */
+const diariaYearOptions = yearOptions(4, 1);
+
+const diariaMonthNum = computed(() =>
+  diaria.mes ? Number(diaria.mes.split("-")[1]) : new Date().getMonth() + 1
+);
+const diariaYearNum = computed(() =>
+  diaria.mes ? Number(diaria.mes.split("-")[0]) : new Date().getFullYear()
+);
+const diariaMonthLabel = computed(() => {
+  if (!diaria.mes) return "";
+  const [y, m] = diaria.mes.split("-");
+  return `${MONTHS_SHORT[Number(m) - 1] || m}/${y}`;
+});
+
+function setDiariaMonth(m) {
+  diaria.mes = `${diariaYearNum.value}-${String(m).padStart(2, "0")}`;
+}
+function setDiariaYear(y) {
+  diaria.mes = `${y}-${String(diariaMonthNum.value).padStart(2, "0")}`;
+}
+function setDiariaCurrentMonth() {
+  diaria.mes = currentYm();
 }
 
 function submitDiaria() {
+  /* O colaborador cadastrado não é mais obrigatório: se não houver vínculo,
+     lança mesmo assim usando o nome digitado (útil também para a futura
+     importação por planilha, que pode não encontrar todo mundo cadastrado). */
   const emp = diaria.employeeId ? getEmployeeById(diaria.employeeId) : null;
-  if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
-  if (!diaria.inicio) return toast("Informe o período da diária.");
-  if (diaria.fim && diaria.fim < diaria.inicio) {
-    return toast("A data fim deve ser posterior à data início.");
-  }
+  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
+  const employeeName = up(emp ? emp.name : diaria.employeeName);
+  if (!employeeName) return toast("Informe o colaborador (selecione um cadastrado ou digite o nome).");
+  if (!diaria.mes) return toast("Informe o mês da diária.");
   const valueRaw = String(diaria.value).trim();
   if (valueRaw === "" || isNaN(Number(valueRaw)) || Number(valueRaw) < 0) {
     return toast("Informe o valor pago na diária (R$).");
   }
   const value = Number(valueRaw);
-  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
 
   const payload = {
-    date: diaria.inicio,
+    date: `${diaria.mes}-01`,
     value,
-    state: emp.estado || null,
+    state: emp ? emp.estado || null : diaria.regional || null,
     meta: {
-      employeeId: emp.id,
-      employeeName: up(emp.name),
+      employeeId: emp ? emp.id : null,
+      employeeName,
+      funcao: up(diaria.funcao),
       departamento: up(diaria.departamento),
       filial: up(diaria.filial),
       liderImediato: up(diaria.liderImediato),
       gerenteRegional: up(diaria.gerenteRegional),
       regional: up(diaria.regional),
       motivo: up(diaria.motivo),
-      inicio: diaria.inicio,
-      fim: diaria.fim || diaria.inicio
+      competencia: diaria.mes
     }
   };
 
@@ -882,7 +923,7 @@ function submitDiaria() {
     updateEntry("custo_diaria", editingEntryId.value, payload);
     editingEntryId.value = null;
     emit("saved");
-    toast(`Diária atualizada para ${emp.name}.`);
+    toast(`Diária atualizada para ${employeeName}.`);
     close();
     return;
   }
@@ -890,15 +931,163 @@ function submitDiaria() {
   addEntry("custo_diaria", payload);
 
   emit("saved");
-  toast(`Diária lançada para ${emp.name}: ${formatCurrency(value)}.`);
+  toast(`Diária lançada para ${employeeName} em ${diariaMonthLabel.value}: ${formatCurrency(value)}.`);
 
   /* Mantém o colaborador selecionado para o próximo lançamento, apenas
      limpando os dados específicos da diária. */
   diaria.value = "";
   diaria.motivo = "";
-  diaria.inicio = todayISO();
-  diaria.fim = todayISO();
-  fillDiariaContext(emp);
+  diaria.mes = currentYm();
+  if (emp) fillDiariaContext(emp);
+}
+
+/* ---------- Importação de diárias por planilha ---------- */
+const diImportInput = ref(null);
+const diReviewOpen = ref(false);
+const diRows = ref([]);
+const diImporting = ref(false);
+
+const diValidRows = computed(() => diRows.value.filter((r) => !r.errors.length));
+const diErrorCount = computed(() => diRows.value.length - diValidRows.value.length);
+/* Cada linha válida vira exatamente uma diária (lançada no mês informado). */
+const diEntriesCount = computed(() => diValidRows.value.length);
+
+/* Monta o registro do candidato exibido na escolha (usuário · setor · filial · cargo · estado). */
+function diCandidateRecord(emp) {
+  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
+  return {
+    id: emp.id,
+    user: emp.user || "",
+    name: emp.name || "",
+    sector: emp.sector || "",
+    cargo: emp.cargo || "",
+    estado: emp.estado || "",
+    filial: filial ? String(`${filial.shortName} ${filial.name}`.trim()) : "",
+    shortName: filial ? filial.shortName || "" : ""
+  };
+}
+
+function diCandidateLabel(c) {
+  const parts = [c.user, c.sector];
+  if (c.filial) parts.push(c.filial);
+  if (c.cargo) parts.push(c.cargo);
+  if (c.estado) parts.push(c.estado);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function diPeriodoLabel(r) {
+  if (!r.periodo.ok) return "Sem período";
+  const [y, m] = r.periodo.mes.split("-");
+  return `${MONTHS_SHORT[Number(m) - 1] || m}/${y}`;
+}
+
+function diSheetToUse(wb) {
+  if (wb.Sheets["Diária"]) return wb.Sheets["Diária"];
+  if (wb.Sheets["Diaria"]) return wb.Sheets["Diaria"];
+  const keys = Object.keys(wb.Sheets || {});
+  return keys.length ? wb.Sheets[keys[0]] : null;
+}
+
+async function onDiImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  diImporting.value = true;
+  try {
+    /* Filiais e colaboradores podem ser de qualquer estado — garante que
+       tudo esteja carregado antes de tentar casar a planilha. */
+    await hydrateState("todos");
+    const wb = await readWorkbookFile(file);
+    const sheet = diSheetToUse(wb);
+    const parsed = sheet ? parseDiariaSheet(sheet) : [];
+    if (!parsed.length) {
+      toast("Nenhuma diária encontrada na planilha. Use o template de diária.");
+      return;
+    }
+    diRows.value = parsed.map((row) => {
+      const candidates = row.colaboradorText ? findEmployeesByName(row.colaboradorText).map(diCandidateRecord) : [];
+      /* Só invalida a linha (não importa) quando falta colaborador ou
+         pagamento. Filial e período em branco/não reconhecidos são apenas
+         avisos — a diária é lançada mesmo assim, sem esses dados. */
+      const errors = [];
+      const warnings = [];
+      if (!row.filialText) warnings.push("Filial não informada.");
+      else if (!row.filial) warnings.push(`Filial "${row.filialText}" não encontrada no cadastro.`);
+      if (!row.colaboradorText) errors.push("Colaborador não informado.");
+      if (!row.periodo.ok) warnings.push(row.periodo.reason);
+      if (row.pagamento === null) errors.push("Pagamento inválido ou não informado.");
+      return {
+        ...row,
+        candidates,
+        chosen: candidates.length === 1 ? candidates[0].id : "",
+        errors,
+        warnings
+      };
+    });
+    diReviewOpen.value = true;
+  } catch (err) {
+    console.error(err);
+    toast("Não foi possível ler a planilha de diárias.");
+  } finally {
+    diImporting.value = false;
+  }
+}
+
+/* Sentinela gravada como `date` das diárias sem período (ver monthlyBarData
+   em KpiChartCard.vue, que isola esse grupo numa barra "Sem período"). */
+const NO_PERIODO_DATE = "0001-01-01";
+
+function confirmDiImport() {
+  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
+  const errorCount = diErrorCount.value;
+  let entriesOk = 0;
+
+  diValidRows.value.forEach((r) => {
+    const candidate = r.chosen ? r.candidates.find((c) => c.id === r.chosen) : null;
+    const emp = candidate ? getEmployeeById(candidate.id) : null;
+    const employeeName = up(emp ? emp.name : r.colaboradorText);
+    /* Filial pode não ter sido informada ou não ter sido encontrada — nesse
+       caso a região vem do colaborador vinculado ou do filtro de estado atual. */
+    const filial = r.filial;
+    const state = filial
+      ? filial.estado || null
+      : emp
+        ? emp.estado || null
+        : filters.current !== "todos"
+          ? filters.current
+          : DEFAULT_STATE;
+    const dep = emp && emp.departmentId ? getDepartmentById(emp.departmentId) : null;
+    const mes = r.periodo.ok ? r.periodo.mes : null;
+
+    const meta = {
+      employeeId: emp ? emp.id : null,
+      employeeName,
+      funcao: up(r.funcaoText) || (emp ? up(emp.cargo) : null),
+      departamento: emp ? (dep ? up(dep.name) : up(emp.sector)) : null,
+      filial: filial ? up(`${filial.shortName} ${filial.name}`.trim()) : up(r.filialText),
+      liderImediato: emp ? up(emp.liderImediato) : null,
+      gerenteRegional: emp ? up(emp.gerenteRegional) : null,
+      regional: state,
+      motivo: up(r.motivoText),
+      competencia: mes,
+      semPeriodo: !mes
+    };
+
+    addEntry("custo_diaria", {
+      date: mes ? `${mes}-01` : NO_PERIODO_DATE,
+      value: Number(r.pagamento),
+      state,
+      meta
+    });
+    entriesOk++;
+  });
+
+  diReviewOpen.value = false;
+  diRows.value = [];
+  emit("saved");
+  const parts = [`${entriesOk} diária(s) lançada(s)`];
+  if (errorCount) parts.push(`${errorCount} linha(s) com erro não importada(s)`);
+  toast("Importação concluída — " + parts.join(" · "));
 }
 
 /* ---------- Treinamento ---------- */
@@ -1687,20 +1876,60 @@ onUnmounted(() => {
           <p class="text-xs text-zinc-500 dark:text-zinc-400">
             Ao selecionar, departamento, filial e líder são preenchidos do cadastro do colaborador; o regional é o estado.
           </p>
+          <p v-if="diaria.query.trim()" class="text-xs">
+            Colaborador não cadastrado?
+            <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="pickDiariaEmployeeManual">
+              Lançar mesmo assim para "{{ diaria.query.trim() }}"
+            </button>
+          </p>
         </div>
 
         <div v-show="activeTab === 'diaria'" class="flex flex-col gap-4">
+          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar diárias por planilha</strong>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Colunas: Filial · Colaborador · Função · Periodo · Motivo · Pagamento.
+                  Periodo aceita dd/mm/aaaa, mm/aaaa, m/aa ou mm/aa (lançamento por mês).
+                  A região é definida pela filial; o colaborador não precisa estar cadastrado.
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="downloadDiariaTemplate">Baixar template</button>
+                <button type="button" class="btn-primary btn-sm" @click="diImportInput?.click()">Importar planilha</button>
+                <input ref="diImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onDiImportFile" />
+              </div>
+            </div>
+          </div>
+
           <div class="flex flex-col gap-1.5">
-            <label for="diariaSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
-            <input id="diariaSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="diariaEmployeeName" placeholder="Nenhum selecionado" />
-            <p v-if="diaria.employeeId" class="text-xs">
-              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('colaborador')">Trocar colaborador</button>
+            <label for="diariaSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
+            <input
+              id="diariaSelected"
+              v-model="diaria.employeeName"
+              v-upper
+              type="text"
+              class="input-field"
+              :class="diaria.employeeId ? 'cursor-default bg-zinc-100 dark:bg-zinc-800' : ''"
+              :readonly="!!diaria.employeeId"
+              placeholder="Nome do colaborador"
+            />
+            <p class="text-xs">
+              <span v-if="!diaria.employeeId" class="text-zinc-400 dark:text-zinc-500">Sem vínculo com o cadastro da Equipe. </span>
+              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('colaborador')">
+                {{ diaria.employeeId ? "Trocar colaborador" : "Buscar colaborador cadastrado" }}
+              </button>
             </p>
           </div>
 
           <fieldset class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
             <legend class="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">Contexto do colaborador (auto-preenchido)</legend>
             <div class="grid gap-3 sm:grid-cols-2">
+              <div class="flex flex-col gap-1.5">
+                <label for="diariaFuncao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Função</label>
+                <input id="diariaFuncao" v-model="diaria.funcao" v-upper type="text" class="input-field" />
+              </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaDep" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Departamento</label>
                 <input id="diariaDep" v-model="diaria.departamento" v-upper type="text" class="input-field" />
@@ -1724,16 +1953,26 @@ onUnmounted(() => {
             </div>
           </fieldset>
 
-          <div class="flex flex-wrap items-end gap-4">
-            <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-              <label for="diariaInicio" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Período — início</label>
-              <input id="diariaInicio" v-model="diaria.inicio" type="date" class="input-field" />
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label for="diariaMonth" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês da diária</label>
+              <select id="diariaMonth" class="input-field" :value="diariaMonthNum" @change="setDiariaMonth(Number($event.target.value))">
+                <option v-for="(mName, i) in MONTHS_SHORT" :key="i + 1" :value="i + 1">{{ mName }}</option>
+              </select>
             </div>
-            <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-              <label for="diariaFim" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Período — fim</label>
-              <input id="diariaFim" v-model="diaria.fim" type="date" class="input-field" />
+            <div class="flex flex-col gap-1.5">
+              <label for="diariaYear" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Ano</label>
+              <select id="diariaYear" class="input-field" :value="diariaYearNum" @change="setDiariaYear(Number($event.target.value))">
+                <option v-for="y in diariaYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
             </div>
-            <button type="button" class="btn-ghost" @click="setDiariaToday">Hoje</button>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" class="btn-ghost btn-sm" @click="setDiariaCurrentMonth">Mês atual</button>
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">
+              Competência: <strong>{{ diariaMonthLabel }}</strong>
+            </span>
           </div>
 
           <div class="grid gap-4">
@@ -2052,6 +2291,84 @@ onUnmounted(() => {
         </form>
       </div>
     </Teleport>
+
+    <!-- ===== Revisão de importação de diárias ===== -->
+    <Teleport to="body">
+      <div
+        v-if="diReviewOpen"
+        class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 p-4 py-10"
+      >
+        <div class="slide-up flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <div>
+              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar diárias importadas</h3>
+              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                {{ diRows.length }} linha(s) · {{ diEntriesCount }} lançamento(s) a criar ·
+                {{ diErrorCount }} linha(s) com erro
+              </p>
+            </div>
+            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="diReviewOpen = false">&times;</button>
+          </div>
+
+          <div class="flex flex-1 flex-col gap-2 overflow-y-auto px-6 py-4">
+            <p class="text-xs text-zinc-500 dark:text-zinc-400">
+              Quando houver dois ou mais colaboradores com o mesmo nome, escolha qual é qual abaixo — colaboradores não
+              cadastrados são lançados mesmo assim, usando o nome da planilha.
+            </p>
+
+            <div
+              v-for="(r, idx) in diRows"
+              :key="idx"
+              class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
+              :class="r.errors.length ? 'border-red-400 bg-red-50/60 dark:border-red-500/40 dark:bg-red-500/5' : (r.warnings.length || r.candidates.length > 1) ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5' : ''"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <strong class="text-sm text-zinc-900 dark:text-zinc-100">Linha {{ r.rowNumber }} — {{ r.colaboradorText || "Sem colaborador" }}</strong>
+                    <Badge v-if="r.candidates.length === 1" tone="accent">1 colaborador</Badge>
+                    <Badge v-else-if="r.candidates.length > 1" tone="muted">{{ r.candidates.length }} colaboradores</Badge>
+                    <Badge v-else-if="r.colaboradorText" tone="muted">sem cadastro</Badge>
+                  </div>
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ r.filialText || "Sem filial" }}<span v-if="r.funcaoText"> · {{ r.funcaoText }}</span> ·
+                    {{ diPeriodoLabel(r) }}<span v-if="r.motivoText"> · {{ r.motivoText }}</span> ·
+                    {{ r.pagamento != null ? formatCurrency(r.pagamento) : "sem pagamento" }}
+                  </p>
+                </div>
+              </div>
+
+              <ul v-if="r.errors.length" class="mt-2 list-disc pl-4 text-xs font-medium text-red-600 dark:text-red-400">
+                <li v-for="(msg, i) in r.errors" :key="'err' + i">{{ msg }}</li>
+              </ul>
+
+              <ul v-if="r.warnings.length" class="mt-2 list-disc pl-4 text-xs font-medium text-amber-600 dark:text-amber-400">
+                <li v-for="(msg, i) in r.warnings" :key="'warn' + i">{{ msg }}</li>
+              </ul>
+
+              <div v-if="!r.errors.length && r.colaboradorText" class="mt-2 flex flex-col gap-1">
+                <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Vincular a qual colaborador?</label>
+                <select v-model="r.chosen" class="input-field" :disabled="!r.candidates.length">
+                  <option value="">— Não vincular (lançar com o nome da planilha) —</option>
+                  <option v-for="c in r.candidates" :key="c.id" :value="c.id">
+                    {{ diCandidateLabel(c) }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
+            <button type="button" class="btn-ghost" @click="diReviewOpen = false">Cancelar</button>
+            <button type="button" class="btn-primary" :disabled="!diEntriesCount" @click="confirmDiImport">
+              Lançar {{ diEntriesCount }} diária(s)
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <LoadingOverlay :show="diImporting" label="Importando diárias..." />
 
     <!-- ===== Revisão de importação de treinamentos ===== -->
     <Teleport to="body">

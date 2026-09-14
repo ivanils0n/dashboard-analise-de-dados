@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, onActivated } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import Modal from "@/components/ui/Modal.vue";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
+import { beginLoading, endLoading } from "@/composables/useLoading";
 import { readWorkbookFile, parseEmployeeSheet, downloadEquipeTemplate } from "@/lib/export";
 import { todayISO, formatDate, formatDateTime, normalizeText } from "@/lib/utils";
 
@@ -120,7 +121,15 @@ function resetForm() {
 
 onMounted(() => {
   resetForm();
-  hydrateState(filters.current).catch(() => {});
+});
+
+/* Mostra a tela de carregamento sempre que a aba é aberta (inclusive ao
+   voltar de outra aba, já que o KeepAlive não remonta o componente). */
+onActivated(() => {
+  beginLoading("Carregando equipe...");
+  hydrateState(filters.current)
+    .catch(() => {})
+    .finally(endLoading);
 });
 
 /* Ao trocar de estado, o departamento selecionado pode não existir no novo

@@ -122,6 +122,34 @@ export function aggregateByDay(entries) {
     .sort((a, b) => compareDateAsc(a.date, b.date));
 }
 
+/* Agrega lançamentos por mês (soma ou média, conforme o tipo do indicador),
+   usado no gráfico de barras da "Evolução por indicador". */
+export function aggregateByMonth(entries, method = "sum") {
+  const byMonth = new Map();
+  (entries || []).forEach((e) => {
+    if (!e || !e.date) return;
+    const month = String(e.date).slice(0, 7);
+    if (!byMonth.has(month)) byMonth.set(month, { sum: 0, count: 0 });
+    const agg = byMonth.get(month);
+    agg.sum += Number(e.value) || 0;
+    agg.count += 1;
+  });
+  return [...byMonth.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, agg]) => ({
+      date: month,
+      value: method === "avg" ? agg.sum / agg.count : agg.sum
+    }));
+}
+
+export function formatMonthLabel(monthKey) {
+  if (!monthKey) return "—";
+  const [y, m] = String(monthKey).split("-");
+  const date = new Date(Number(y), Number(m) - 1, 1);
+  if (isNaN(date.getTime())) return monthKey;
+  return date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", "");
+}
+
 export function daysBetween(startIso, endIso) {
   const start = new Date(startIso);
   const end = new Date(endIso);

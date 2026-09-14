@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from "vue";
+import { ref, reactive, computed, watch, onActivated } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
@@ -12,6 +12,7 @@ import { listDepartments, departmentMetrics } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { saveDepartment, deleteDepartmentRecord, nameInUse } from "@/lib/departamentos";
 import { hydrateState } from "@/lib/db";
+import { beginLoading, endLoading } from "@/composables/useLoading";
 import { normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();
@@ -43,9 +44,13 @@ const total = computed(() => listDepartments(filters.current).length);
 
 const branchOptions = computed(() => listBranches(filters.current));
 
-/* Garante que os dados do estado selecionado estejam carregados ao abrir a aba. */
-onMounted(() => {
-  hydrateState(filters.current).catch(() => {});
+/* Mostra a tela de carregamento sempre que a aba é aberta (inclusive ao
+   voltar de outra aba, já que o KeepAlive não remonta o componente). */
+onActivated(() => {
+  beginLoading("Carregando departamentos...");
+  hydrateState(filters.current)
+    .catch(() => {})
+    .finally(endLoading);
 });
 
 /* Ao trocar de estado, limpa o filtro de filial (sigla pode não existir lá). */

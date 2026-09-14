@@ -25,9 +25,12 @@ const SALARY_IND = {
 
 /* Centraliza o cálculo dos dados exibidos no dashboard a partir do
    filtro de período (reactive { start, end }) e do estado selecionado.
-   Todos os totais são calculados diretamente sobre os lançamentos. */
-export function useDashboardData(filter) {
+   Todos os totais são calculados diretamente sobre os lançamentos.
+   `options.diariaShowSemPeriodo` (ref) controla o filtro "Mostrar sem
+   período" do KPI de Custo da diária geral. */
+export function useDashboardData(filter, options = {}) {
   const { state } = useFilters();
+  const diariaShowSemPeriodo = options.diariaShowSemPeriodo || ref(false);
 
   function currentState() {
     /* Lê `revision` além de `current`: garante recomputação a cada troca de
@@ -36,8 +39,7 @@ export function useDashboardData(filter) {
     return state.current;
   }
 
-  function filteredEntries(ind) {
-    const list = getEntriesFor(ind.id, currentState());
+  function filterByRange(list) {
     const start = filter.start;
     const end = filter.end;
     if (!start && !end) return list;
@@ -46,6 +48,10 @@ export function useDashboardData(filter) {
       if (end && e.date > end) return false;
       return true;
     });
+  }
+
+  function filteredEntries(ind) {
+    return filterByRange(getEntriesFor(ind.id, currentState()));
   }
 
   function absenteismoTypeTotals() {
@@ -64,11 +70,28 @@ export function useDashboardData(filter) {
   }
 
   /* Série diária das diárias: soma o valor pago por dia (vários lançamentos
-     podem ocorrer na mesma data). */
-  function diariaDailySeries() {
+     podem ocorrer na mesma data). Lançamentos importados sem período (ver
+     importação por planilha) ficam de fora por padrão — não têm uma data
+     real, então não respeitam o filtro de período — e só entram quando
+     `includeSemPeriodo` é true (filtro ao lado do KPI). */
+  function diariaDailySeries(includeSemPeriodo = false) {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
-    return aggregateByDay(filteredEntries(ind));
+    const all = getEntriesFor(ind.id, currentState());
+    const comPeriodo = all.filter((e) => !(e.meta && e.meta.semPeriodo));
+    let list = filterByRange(comPeriodo);
+    if (includeSemPeriodo) {
+      list = list.concat(all.filter((e) => e.meta && e.meta.semPeriodo));
+    }
+    return aggregateByDay(list);
+  }
+
+  /* Quantos lançamentos de diária foram importados sem período definido
+     (estado/filtro atual, sem considerar o filtro de data). */
+  function diariaSemPeriodoCount() {
+    const ind = getIndicatorById("custo_diaria");
+    if (!ind) return 0;
+    return getEntriesFor(ind.id, currentState()).filter((e) => e.meta && e.meta.semPeriodo).length;
   }
 
   /* Valor de um indicador para uma lista de lançamentos (regra única de
@@ -160,7 +183,7 @@ export function useDashboardData(filter) {
     return visible.map((ind) => {
       const entries = filteredEntries(ind);
       const allEntries = getEntriesFor(ind.id, currentState());
-      const current = indicatorCurrentValue(ind);
+      let current = indicatorCurrentValue(ind);
       let prev = null;
       if (filter.start && allEntries.length) {
         const before = allEntries.filter((e) => e.date < filter.start);
@@ -177,7 +200,18 @@ export function useDashboardData(filter) {
         delta = { diff, up: diff > 0, down: diff < 0 };
       }
 
-      const countText = entries.length === 1 ? "1 lançamento" : `${entries.length} lançamentos`;
+      /* "Mostrar sem período" (filtro ao lado do KPI): soma ao total exibido
+         os lançamentos de diária importados sem competência definida — eles
+         não entram em `entries`/`current` por padrão (ver diariaDailySeries). */
+      let extraCount = 0;
+      if (ind.id === "custo_diaria" && diariaShowSemPeriodo.value) {
+        const semPeriodoEntries = allEntries.filter((e) => e.meta && e.meta.semPeriodo);
+        extraCount = semPeriodoEntries.length;
+        current = (Number(current) || 0) + semPeriodoEntries.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+      }
+
+      const totalCount = entries.length + extraCount;
+      const countText = totalCount === 1 ? "1 lançamento" : `${totalCount} lançamentos`;
 
       /* Card especial do Turnover (entradas vs saídas) */
       if (ind.id === "turnover_entradas") {
@@ -354,17 +388,24 @@ export function useDashboardData(filter) {
     const matchesState = (e) =>
       stateTarget === "TODOS" ||
       String((e.meta && e.meta.estado) || "").trim().toUpperCase() === stateTarget;
+    /* Diárias importadas sem período não têm uma data real (usam uma
+       sentinela só para satisfazer o banco) — sempre aparecem aqui, sem
+       respeitar o filtro de data do topo. */
+    const inDateRange = (e) => {
+      if (e.meta && e.meta.semPeriodo) return true;
+      if (filter.start && e.date < filter.start) return false;
+      if (filter.end && e.date > filter.end) return false;
+      return true;
+    };
     INDICATORS.forEach((ind) => {
       (all[ind.id] || []).forEach((e) => {
-        if (filter.start && e.date < filter.start) return;
-        if (filter.end && e.date > filter.end) return;
+        if (!inDateRange(e)) return;
         if (!matchesState(e)) return;
         rows.push({ entry: e, ind });
       });
     });
     (all[SALARY_IND.id] || []).forEach((e) => {
-      if (filter.start && e.date < filter.start) return;
-      if (filter.end && e.date > filter.end) return;
+      if (!inDateRange(e)) return;
       if (!matchesState(e)) return;
       rows.push({ entry: e, ind: SALARY_IND });
     });
@@ -419,6 +460,7 @@ export function useDashboardData(filter) {
     absenteismoTypeTotals,
     absenteismoDailySeries,
     diariaDailySeries,
+    diariaSemPeriodoCount,
     treinamentoBarByFilial,
     treinamentoFilialEntries,
     headcountBarByState,

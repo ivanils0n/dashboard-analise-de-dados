@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from "vue";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
@@ -26,13 +26,20 @@ import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, nor
 import { syncAll } from "@/lib/employees";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
 import { reloadData, hydrateState } from "@/lib/db";
+import { beginLoading, endLoading } from "@/composables/useLoading";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters } = useFilters();
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 
-const dashboard = useDashboardData(dateFilter);
+/* Diárias importadas sem período (planilha sem a coluna Periodo preenchida)
+   ficam ocultas do KPI por padrão — este filtro, ao lado do card, ativa a
+   visualização delas (agrupadas numa barra "Sem período" e somadas ao total
+   do KPI). Declarado antes do useDashboardData para ser passado a ele. */
+const diariaShowSemPeriodo = ref(false);
+
+const dashboard = useDashboardData(dateFilter, { diariaShowSemPeriodo });
 
 /* Retornos desestruturados como bindings de topo (o template desembrulha
    automaticamente refs de topo; um ref aninhado em objeto não é desembrulhado). */
@@ -93,7 +100,7 @@ const diariaColumns = [
   { label: "Líder imediato", meta: "liderImediato" },
   { label: "Gerente regional", meta: "gerenteRegional" },
   { label: "Regional", meta: "regional" },
-  { label: "Período", period: ["inicio", "fim"] },
+  { label: "Período", month: true },
   { label: "Diária", meta: "motivo" },
   { label: "Valor pago", value: true }
 ];
@@ -124,6 +131,18 @@ let flashTimer = null;
 const canEdit = canEditData();
 
 const tableRows = computed(() => dashboard.tableRows(tableSearch.value));
+
+/* Data exibida em "Lançamentos recentes": indicadores lançados por
+   competência (mês/ano) mostram o mês; diárias sem período conhecido
+   (importadas sem a coluna Periodo) mostram "Sem período" em vez da
+   data-sentinela interna. */
+function tableDateLabel(ind, entry) {
+  if (entry.meta && entry.meta.semPeriodo) return "Sem período";
+  if (ind.form === "custo_total" || ind.form === "treinamento" || ind.form === "diaria") {
+    return ymShortLabel(entry.date);
+  }
+  return formatDate(entry.date);
+}
 
 /* Busca na área de indicadores: filtra os cards pelo nome/descrição
    (ignorando maiúsculas/minúsculas e acentos). */
@@ -185,6 +204,8 @@ const custosBarData = computed(() => dashboard.custosBarByFilial());
 /* Dados do gráfico de barras de Treinamento (carga horária por filial). */
 const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
 
+const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
+
 /* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
    treinamento usam a série agregada por dia (total do dia, sem visão
    individual); os demais indicadores usam os lançamentos do período. */
@@ -192,7 +213,7 @@ function lineEntries(card) {
   if (card.kind !== "line") return [];
   const ind = getIndicatorById(card.id);
   if (ind && ind.id === "absenteismo") return dashboard.absenteismoDailySeries();
-  if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries();
+  if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries(diariaShowSemPeriodo.value);
   return filteredEntries(ind);
 }
 
@@ -426,13 +447,19 @@ function onDocumentClick() {
 
 onMounted(() => {
   document.addEventListener("click", onDocumentClick);
-  /* Garante que o estado selecionado está carregado ao abrir o Dashboard
-     (navegação pode chegar antes de um carregamento iniciado em outra aba). */
-  hydrateState(filters.current).catch(() => {});
 });
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClick);
   clearTimeout(flashTimer);
+});
+
+/* Mostra a tela de carregamento sempre que a aba é aberta (inclusive ao
+   voltar de outra aba, já que o KeepAlive não remonta o componente). */
+onActivated(() => {
+  beginLoading("Carregando dashboard...");
+  hydrateState(filters.current)
+    .catch(() => {})
+    .finally(endLoading);
 });
 </script>
 
@@ -513,8 +540,11 @@ onUnmounted(() => {
         :kpi="kpi"
         :selected="selectedKpiId === kpi.id"
         :show-values="showValues"
+        :sem-periodo-count="kpi.id === 'custo_diaria' ? diariaSemPeriodoCount : 0"
+        :show-sem-periodo="diariaShowSemPeriodo"
         @select="onSelectKpi"
         @context="onKpiContext"
+        @toggle-sem-periodo="diariaShowSemPeriodo = $event"
       />
       <p
         v-if="!visibleKpis.length"
@@ -730,7 +760,7 @@ onUnmounted(() => {
                 />
               </td>
               <td class="px-5 py-3 text-zinc-700 dark:text-zinc-300">
-                {{ ind.form === "custo_total" || ind.form === "treinamento" ? ymShortLabel(entry.date) : formatDate(entry.date) }}
+                {{ tableDateLabel(ind, entry) }}
               </td>
               <td class="px-5 py-3"><Badge>{{ ind.name }}</Badge></td>
               <td class="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{{ formatEntryValue(ind, entry) }}</td>

@@ -142,7 +142,7 @@ function hoursLabel(value) {
 function cellText(entry, col) {
   if (col.value) return formatValue(entry);
   if (col.date) return formatDate(entry.date);
-  if (col.month) return ymShortLabel(entry.date);
+  if (col.month) return entry.meta && entry.meta.semPeriodo ? "Sem período" : ymShortLabel(entry.date);
   if (col.period) {
     const a = meta(entry, col.period[0]);
     const b = meta(entry, col.period[1]);

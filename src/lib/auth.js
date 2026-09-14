@@ -70,7 +70,7 @@ function clearLegacyKeys() {
 let _expiredHandled = false;
 
 // Revalida o perfil no servidor com TTL (evita chamar a API a cada navegação).
-const PROFILE_CHECK_TTL_MS = 60 * 1000;
+const PROFILE_CHECK_TTL_MS = 60 * 60 * 1000; // 1 hora
 let _lastProfileCheck = 0;
 
 export function getToken() {

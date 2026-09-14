@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onActivated } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { useToast } from "@/composables/useToast";
@@ -9,15 +9,20 @@ import { STATES, DEFAULT_STATE } from "@/lib/config";
 import { getBranches } from "@/lib/store";
 import { listBranches, saveBranch, deleteBranchRecord } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
+import { beginLoading, endLoading } from "@/composables/useLoading";
 import { normalizeText } from "@/lib/utils";
 
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
 
-/* Garante que os dados do estado selecionado estejam carregados ao abrir a aba. */
-onMounted(() => {
-  hydrateState(filters.current).catch(() => {});
+/* Mostra a tela de carregamento sempre que a aba é aberta (inclusive ao
+   voltar de outra aba, já que o KeepAlive não remonta o componente). */
+onActivated(() => {
+  beginLoading("Carregando filiais...");
+  hydrateState(filters.current)
+    .catch(() => {})
+    .finally(endLoading);
 });
 
 const form = reactive({

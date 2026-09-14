@@ -432,6 +432,120 @@ export function downloadTreinamentoTemplate() {
   XLSX.writeFile(workbook, `gente-gestao-template-treinamento_${todayISO()}.xlsx`);
 }
 
+/* ---------- Planilha DIÁRIA (Custo da diária geral) ---------- */
+
+export const DIARIA_TEMPLATE_HEADER = ["Filial", "Colaborador", "Função", "Periodo", "Motivo", "Pagamento"];
+
+/* Interpreta a coluna "Periodo" da planilha de diárias. A diária é lançada
+   por MÊS de competência (sem início/fim) — aceita:
+   - "dd/mm/aaaa" (uma data completa; o dia é ignorado, só mês/ano contam) ou
+     o valor de data nativo do Excel (célula formatada como data)
+   - "mm/aaaa" ou "m/aaaa" (mês/ano com 4 dígitos)
+   - "mm/aa" ou "m/aa" (mês/ano com 2 dígitos — assume 20aa)
+   Reaproveita `normalizeDate` para o caso de data completa: células de data
+   do Excel chegam como número de série, e formatá-las como texto (raw:false)
+   depende do locale do arquivo — por isso o valor cru é lido à parte. */
+export function parseDiariaMes(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return { ok: false, reason: "Período em branco" };
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+
+  const iso = normalizeDate(raw);
+  if (iso) {
+    const [ano, mes] = iso.split("-");
+    return { ok: true, mes: `${ano}-${mes}` };
+  }
+
+  const text = String(raw).trim();
+
+  let m = text.match(/^(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const mes = Number(m[1]);
+    if (mes < 1 || mes > 12) return { ok: false, reason: "Mês inválido no período" };
+    return { ok: true, mes: `${m[2]}-${pad(mes)}` };
+  }
+
+  m = text.match(/^(\d{1,2})\/(\d{2})$/);
+  if (m) {
+    const mes = Number(m[1]);
+    if (mes < 1 || mes > 12) return { ok: false, reason: "Mês inválido no período" };
+    const ano = 2000 + Number(m[2]);
+    return { ok: true, mes: `${ano}-${pad(mes)}` };
+  }
+
+  return { ok: false, reason: "Formato de período não reconhecido (use dd/mm/aaaa, mm/aaaa, m/aa ou mm/aa)" };
+}
+
+/* Lê a planilha de diárias e devolve linhas normalizadas (sem gravar nada).
+   Cada item: { rowNumber, filialText, filial, colaboradorText, funcaoText,
+   periodoText, periodo, motivoText, pagamentoRaw, pagamento }.
+   `filial` já vem resolvida (cadastro existente) — a região do lançamento é
+   sempre a do estado da filial, nunca uma coluna da planilha. */
+export function parseDiariaSheet(sheet) {
+  const rows = sheetRows(sheet, { raw: false });
+  /* Período é lido também no formato cru (raw:true): células de data reais
+     chegam como número de série do Excel, evitando o texto formatado no
+     locale errado (ver parseDiariaMes). */
+  const rawRows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iFilial = headFind(headerRow, ["filial"]);
+  const iColaborador = headFind(headerRow, ["colaborador"]);
+  const iFuncao = headFind(headerRow, ["funcao"]);
+  const iPeriodo = headFind(headerRow, ["periodo"]);
+  const iMotivo = headFind(headerRow, ["motivo"]);
+  const iPagamento = headFind(headerRow, ["pagamento", "valor"]);
+  if (iFilial < 0 || iPeriodo < 0 || iPagamento < 0) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length || row.every((c) => String(c ?? "").trim() === "")) continue;
+
+    const filialText = String(cellAt(row, iFilial)).trim();
+    const colaboradorText = String(cellAt(row, iColaborador)).trim();
+    const funcaoText = String(cellAt(row, iFuncao)).trim();
+    const periodoText = String(cellAt(row, iPeriodo)).trim();
+    const periodoRaw = cellAt(rawRows[i] || [], iPeriodo);
+    const motivoText = String(cellAt(row, iMotivo)).trim();
+    /* Mesmo cuidado do Período: célula numérica formatada como texto
+       (raw:false) pode vir no locale errado (ex.: "1,234.56" em vez de
+       "1.234,56") e estourar o valor ao converter — usa o número cru quando
+       disponível. */
+    const pagamentoFormatted = cellAt(row, iPagamento);
+    const pagamentoRawValue = cellAt(rawRows[i] || [], iPagamento);
+    const pagamentoRaw = pagamentoRawValue !== "" ? pagamentoRawValue : pagamentoFormatted;
+
+    out.push({
+      rowNumber: i + 1,
+      filialText,
+      filial: filialText ? findBranchByShortName(filialText) : null,
+      colaboradorText,
+      funcaoText,
+      periodoText,
+      periodo: parseDiariaMes(periodoRaw !== "" ? periodoRaw : periodoText),
+      motivoText,
+      pagamentoRaw,
+      pagamento: moneyNum(pagamentoRaw)
+    });
+  }
+  return out;
+}
+
+export function downloadDiariaTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      DIARIA_TEMPLATE_HEADER,
+      ["PVH1", "Maria Silva", "Analista de RH", "06/2026", "Visita à loja", 150],
+      ["MAO1", "João Souza", "Supervisor", "8/26", "Auditoria", 150]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 14 }, { wch: 26 }, { wch: 22 }, { wch: 14 }, { wch: 26 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Diária");
+  XLSX.writeFile(workbook, `gente-gestao-template-diaria_${todayISO()}.xlsx`);
+}
+
 /* ---------- Planilha VAGAS (Tempo médio de contratação) ---------- */
 
 export const VAGA_TEMPLATE_HEADER = [

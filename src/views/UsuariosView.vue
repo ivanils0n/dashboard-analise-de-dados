@@ -5,6 +5,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import Modal from "@/components/ui/Modal.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
+import { beginLoading, endLoading } from "@/composables/useLoading";
 import { apiFetch } from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const PERFIL_LABELS = { admin: "Administrador", analista: "Analista", visitante:
 
 async function load() {
   loading.value = true;
+  beginLoading("Carregando usuários...");
   try {
     const response = await apiFetch("/api/users");
     users.value = (response.data || []).filter((u) => u.perfil);
@@ -36,6 +38,7 @@ async function load() {
     toast(err.message || "Não foi possível carregar os usuários.");
   } finally {
     loading.value = false;
+    endLoading();
   }
 }
 

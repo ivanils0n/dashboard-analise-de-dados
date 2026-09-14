@@ -7,10 +7,14 @@ import { formatValue, formatRawValue } from "@/lib/utils";
 const props = defineProps({
   kpi: { type: Object, required: true },
   selected: { type: Boolean, default: false },
-  showValues: { type: Boolean, default: false }
+  showValues: { type: Boolean, default: false },
+  /* Só usado no card "Custo da diária geral": quantos lançamentos importados
+     estão sem período e se, no momento, estão sendo exibidos no gráfico. */
+  semPeriodoCount: { type: Number, default: 0 },
+  showSemPeriodo: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["select", "context"]);
+const emit = defineEmits(["select", "context", "toggle-sem-periodo"]);
 
 /* Para indicadores onde "menor é melhor" (ex.: Absenteísmo), um aumento
    é ruim (vermelho) e uma queda é boa (verde). */
@@ -128,5 +132,19 @@ function onKeydown(e) {
     <div v-if="contextHint" class="mt-2 border-t border-zinc-100 pt-2 text-right text-[10px] uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
       {{ contextHint }}
     </div>
+
+    <label
+      v-if="kpi.id === 'custo_diaria' && semPeriodoCount"
+      class="mt-2 flex cursor-pointer items-center gap-1.5 border-t border-zinc-100 pt-2 text-[11px] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
+      @click.stop
+    >
+      <input
+        type="checkbox"
+        class="h-3.5 w-3.5 cursor-pointer accent-red-600"
+        :checked="showSemPeriodo"
+        @change="emit('toggle-sem-periodo', $event.target.checked)"
+      />
+      Mostrar sem período ({{ semPeriodoCount }})
+    </label>
   </article>
 </template>
