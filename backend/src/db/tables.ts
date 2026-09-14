@@ -104,6 +104,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "nome", type: "text", required: true },
       { name: "aberta_em", type: "timestamptz", required: true },
       { name: "fechada_em", type: "timestamptz" },
+      { name: "salario", type: "number" },
       { name: "tipo_contratacao", type: "text", values: ["clt", "pj"] },
       { name: "filial_id", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }

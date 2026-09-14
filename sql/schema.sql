@@ -25,6 +25,7 @@ create table if not exists public.vagas_ro (
   nome              text not null,
   aberta_em         timestamptz not null,
   fechada_em        timestamptz,
+  salario           numeric(12,2),
   tipo_contratacao  text check (tipo_contratacao in ('clt', 'pj')),
   filial_id         text,
   estado_sigla      text references public.estados(sigla)
@@ -105,6 +106,7 @@ create table if not exists public.vagas_am (
   nome              text not null,
   aberta_em         timestamptz not null,
   fechada_em        timestamptz,
+  salario           numeric(12,2),
   tipo_contratacao  text check (tipo_contratacao in ('clt', 'pj')),
   filial_id         text,
   estado_sigla      text references public.estados(sigla)
@@ -185,6 +187,7 @@ create table if not exists public.vagas_pa (
   nome              text not null,
   aberta_em         timestamptz not null,
   fechada_em        timestamptz,
+  salario           numeric(12,2),
   tipo_contratacao  text check (tipo_contratacao in ('clt', 'pj')),
   filial_id         text,
   estado_sigla      text references public.estados(sigla)

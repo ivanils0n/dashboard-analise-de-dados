@@ -184,6 +184,15 @@ export function monthYm(offset = 0) {
   return ymOfDate(d);
 }
 
+/* Desloca um mês "YYYY-MM" em `delta` meses (negativo = anterior).
+   Ex.: addMonthsYm("2026-09", -1) -> "2026-08". */
+export function addMonthsYm(ym, delta = 0) {
+  const [y, m] = String(ym || currentYm()).split("-").map(Number);
+  if (!y || !m) return currentYm();
+  const d = new Date(y, m - 1 + Number(delta), 1);
+  return ymOfDate(d);
+}
+
 /* Primeiro e último dia (YYYY-MM-DD) de um mês "YYYY-MM". */
 export function firstDayOfYm(ym) {
   return `${ym}-01`;

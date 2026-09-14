@@ -85,27 +85,29 @@ export function useDashboardData(filter) {
     });
   }
 
+  /* Rótulo (filial) que agrupa um treinamento: usa o shortName gravado no
+     lançamento; para lançamentos antigos, tenta localizar a filial pelo texto
+     do cadastro. */
+  function treinamentoFilialLabel(meta) {
+    const m = meta || {};
+    if (m.shortName) return String(m.shortName).toUpperCase();
+    const text = String(m.filial || "").toUpperCase();
+    if (!text) return "Sem filial";
+    const branches = getBranches();
+    const match =
+      branches.find((b) => b.shortName && text.includes(String(b.shortName).toUpperCase())) ||
+      branches.find((b) => b.name && text.includes(String(b.name).toUpperCase()));
+    return match ? String(match.shortName || match.name).toUpperCase() : text;
+  }
+
   /* Agregação para o gráfico de barras do Treinamento: soma a carga horária
      por filial (loja) no período filtrado. */
   function treinamentoBarByFilial() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
-    const branches = getBranches();
-    /* Rótulo abreviado da filial: usa o shortName gravado no lançamento; para
-       lançamentos antigos, tenta localizar a filial pelo texto do cadastro. */
-    const shortLabel = (meta) => {
-      if (meta.shortName) return String(meta.shortName).toUpperCase();
-      const text = String(meta.filial || "").toUpperCase();
-      if (!text) return "Sem filial";
-      const match =
-        branches.find((b) => b.shortName && text.includes(String(b.shortName).toUpperCase())) ||
-        branches.find((b) => b.name && text.includes(String(b.name).toUpperCase()));
-      return match ? String(match.shortName || match.name).toUpperCase() : text;
-    };
     const byFilial = new Map();
     filteredEntries(ind).forEach((e) => {
-      const meta = e.meta || {};
-      const filial = shortLabel(meta);
+      const filial = treinamentoFilialLabel(e.meta);
       byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
     return [...byFilial.entries()]
@@ -115,6 +117,13 @@ export function useDashboardData(filter) {
         tooltipValue: formatValue(ind, value)
       }))
       .sort((a, b) => b.value - a.value);
+  }
+
+  /* Lançamentos de treinamento de uma filial (usados ao clicar na barra). */
+  function treinamentoFilialEntries(label) {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    return filteredEntries(ind).filter((e) => treinamentoFilialLabel(e.meta) === label);
   }
 
   /* Agregação para o gráfico de barras dos Custos Totais: soma os custos
@@ -389,6 +398,9 @@ export function useDashboardData(filter) {
     if (ind.form === "custo" && entry.meta && entry.meta.employeeName) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
+    if (ind.id === "custo_contratacao" && entry.meta && entry.meta.vacancyName) {
+      return `${formatValue(ind, entry.value)} · ${entry.meta.vacancyName}`;
+    }
     if (ind.form === "custo_total" && entry.meta && entry.meta.razaoSocial) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.razaoSocial}`;
     }
@@ -408,6 +420,7 @@ export function useDashboardData(filter) {
     absenteismoDailySeries,
     diariaDailySeries,
     treinamentoBarByFilial,
+    treinamentoFilialEntries,
     headcountBarByState,
     custosBarByFilial,
     indicatorCurrentValue,

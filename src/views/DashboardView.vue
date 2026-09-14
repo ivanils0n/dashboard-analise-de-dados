@@ -7,6 +7,7 @@ import PresentationModal from "@/components/dashboard/PresentationModal.vue";
 import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
+import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
@@ -21,7 +22,7 @@ import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 import { getIndicatorById } from "@/lib/config";
 import { removeEntry, removeEntries } from "@/lib/store";
-import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore } from "@/lib/utils";
+import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText } from "@/lib/utils";
 import { syncAll } from "@/lib/employees";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
 import { reloadData, hydrateState } from "@/lib/db";
@@ -54,14 +55,31 @@ const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
 const vacanciesOpen = ref(false);
+const vacancyAllPeriods = ref(false);
+
+/* Modal ao clicar em uma barra do gráfico de Treinamento (por filial). */
+const treinamentoFilialOpen = ref(false);
+const treinamentoFilialLabel = ref("");
+const treinamentoFilialRows = ref([]);
+
+function onTreinamentoBarClick({ label }) {
+  if (!label) return;
+  treinamentoFilialLabel.value = label;
+  treinamentoFilialRows.value = dashboard.treinamentoFilialEntries(label);
+  treinamentoFilialOpen.value = true;
+}
 const menuOpen = ref(false);
 const tableSearch = ref("");
+const kpiSearch = ref("");
 const SHOW_VALUES_KEY = "gg-show-values";
 const storedShowValues = localStore.getItem(SHOW_VALUES_KEY);
 const showValues = ref(storedShowValues === null ? true : storedShowValues === "1");
 watch(showValues, (v) => safeSetItem(localStore, SHOW_VALUES_KEY, v ? "1" : "0"));
 const custosChartRef = ref(null);
 const treinamentoChartRef = ref(null);
+const panoramaChartRef = ref(null);
+const custosBarChartRef = ref(null);
+const treinamentoBarChartRef = ref(null);
 const editingRow = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
@@ -106,6 +124,14 @@ let flashTimer = null;
 const canEdit = canEditData();
 
 const tableRows = computed(() => dashboard.tableRows(tableSearch.value));
+
+/* Busca na área de indicadores: filtra os cards pelo nome/descrição
+   (ignorando maiúsculas/minúsculas e acentos). */
+const visibleKpis = computed(() => {
+  const q = normalizeText(kpiSearch.value).trim();
+  if (!q) return kpis.value;
+  return kpis.value.filter((k) => normalizeText(`${k.name} ${k.desc || ""}`).includes(q));
+});
 
 /* ---------- Seleção múltipla / exclusão em lote (Lançamentos Recentes) ---------- */
 const selectedKeys = ref(new Set());
@@ -367,7 +393,15 @@ function onKpiContext(id) {
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "treinamento") treinamentoEntriesOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
-  else if (id === "tempo_contratacao") vacanciesOpen.value = true;
+  else if (id === "tempo_contratacao") {
+    vacancyAllPeriods.value = false;
+    vacanciesOpen.value = true;
+  } else if (id === "custo_contratacao") {
+    /* O custo de contratação vem do salário das vagas: abre o histórico
+       completo (abertas e fechadas, sem restringir ao mês atual). */
+    vacancyAllPeriods.value = true;
+    vacanciesOpen.value = true;
+  }
 }
 
 /* Rola a faixa de gráficos até o card do indicador e o destaca. */
@@ -464,10 +498,17 @@ onUnmounted(() => {
     <!-- ===== KPIs ===== -->
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+      <input
+        v-model="kpiSearch"
+        type="search"
+        class="input-sm ml-auto w-full sm:w-64"
+        placeholder="Buscar indicador..."
+        aria-label="Buscar indicador"
+      />
     </div>
     <section class="flex gap-4 overflow-x-auto pb-2" aria-label="Indicadores-chave">
       <KpiCard
-        v-for="kpi in kpis"
+        v-for="kpi in visibleKpis"
         :key="kpi.id"
         :kpi="kpi"
         :selected="selectedKpiId === kpi.id"
@@ -475,6 +516,12 @@ onUnmounted(() => {
         @select="onSelectKpi"
         @context="onKpiContext"
       />
+      <p
+        v-if="!visibleKpis.length"
+        class="self-center px-4 text-sm text-zinc-500 dark:text-zinc-400"
+      >
+        Nenhum indicador encontrado para “{{ kpiSearch }}”.
+      </p>
     </section>
 
     <!-- ===== EVOLUÇÃO POR INDICADOR ===== -->
@@ -509,11 +556,33 @@ onUnmounted(() => {
     <div class="mt-8 grid gap-4 lg:grid-cols-2">
       <!-- ===== PANORAMA ATUAL ===== -->
       <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div class="mb-4">
-          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Panorama atual</h2>
-          <span class="text-xs text-zinc-400 dark:text-zinc-400">Último valor por indicador</span>
+        <div class="mb-4 flex items-start justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Panorama atual</h2>
+            <span class="text-xs text-zinc-400 dark:text-zinc-400">Último valor por indicador</span>
+          </div>
+          <button
+            type="button"
+            class="icon-btn-sm"
+            title="Tela cheia"
+            aria-label="Ver gráfico Panorama atual em tela cheia"
+            @click="panoramaChartRef?.openFullscreen()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
         </div>
-        <BarChart :data="panorama" :show-values="showValues" />
+        <BarChart
+          ref="panoramaChartRef"
+          :data="panorama"
+          :show-values="showValues"
+          title="Panorama atual"
+          subtitle="Último valor por indicador"
+        />
       </section>
 
       <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
@@ -521,11 +590,36 @@ onUnmounted(() => {
         ref="custosChartRef"
         class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <div class="mb-4">
-          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custos Totais — Evolução dos Indicadores</h2>
-          <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
+        <div class="mb-4 flex items-start justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custos Totais — Evolução dos Indicadores</h2>
+            <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
+          </div>
+          <button
+            v-if="custosBarData.length"
+            type="button"
+            class="icon-btn-sm"
+            title="Tela cheia"
+            aria-label="Ver gráfico de Custos Totais em tela cheia"
+            @click="custosBarChartRef?.openFullscreen()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
         </div>
-        <BarChart v-if="custosBarData.length" :data="custosBarData" :show-values="showValues" value-format="currency" />
+        <BarChart
+          v-if="custosBarData.length"
+          ref="custosBarChartRef"
+          :data="custosBarData"
+          :show-values="showValues"
+          value-format="currency"
+          title="Custos Totais — Evolução dos Indicadores"
+          subtitle="Soma dos custos por filial no período filtrado"
+        />
         <div v-else class="p-6">
           <EmptyState
             title="Sem custos no período"
@@ -540,16 +634,38 @@ onUnmounted(() => {
       ref="treinamentoChartRef"
       class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
     >
-      <div class="mb-4">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Treinamento — Carga horária por filial</h2>
-        <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma das horas de treinamento por filial no período filtrado</span>
+      <div class="mb-4 flex items-start justify-between gap-2">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Treinamento — Carga horária por filial</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma das horas de treinamento por filial no período filtrado</span>
+        </div>
+        <button
+          v-if="treinamentoBarData.length"
+          type="button"
+          class="icon-btn-sm"
+          title="Tela cheia"
+          aria-label="Ver gráfico de Treinamento em tela cheia"
+          @click="treinamentoBarChartRef?.openFullscreen()"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+          </svg>
+        </button>
       </div>
       <BarChart
         v-if="treinamentoBarData.length"
+        ref="treinamentoBarChartRef"
         :data="treinamentoBarData"
         :show-values="showValues"
         value-format="hours"
         :show-trend="true"
+        bars-clickable
+        title="Treinamento — Carga horária por filial"
+        subtitle="Soma das horas de treinamento por filial no período filtrado"
+        @bar-click="onTreinamentoBarClick"
       />
       <div v-else class="p-6">
         <EmptyState
@@ -661,7 +777,20 @@ onUnmounted(() => {
     />
     <PresentationModal v-if="presentationOpen" :open="presentationOpen" @close="presentationOpen = false" />
     <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
-    <VacanciesModal v-if="vacanciesOpen" :open="vacanciesOpen" @close="vacanciesOpen = false" @edit="onVacancyEdit" />
+    <VacanciesModal
+      v-if="vacanciesOpen"
+      :open="vacanciesOpen"
+      :all-periods="vacancyAllPeriods"
+      @close="vacanciesOpen = false"
+      @edit="onVacancyEdit"
+    />
+    <TrainingFilialModal
+      v-if="treinamentoFilialOpen"
+      :open="treinamentoFilialOpen"
+      :filial="treinamentoFilialLabel"
+      :entries="treinamentoFilialRows"
+      @close="treinamentoFilialOpen = false"
+    />
     <IndicatorEntriesModal
       v-if="diariaEntriesOpen"
       :open="diariaEntriesOpen"
@@ -689,6 +818,7 @@ onUnmounted(() => {
       title="Custos Totais — Lançamentos"
       subtitle="Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)"
       :columns="custosColumns"
+      default-this-month
       @close="custosEntriesOpen = false"
       @edit="onEntriesEdit"
     />

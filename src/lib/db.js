@@ -78,6 +78,7 @@ function vacancyToRow(vacancy) {
     nome: vacancy.name ?? "",
     aberta_em: envTimestamp(vacancy.openAt),
     fechada_em: envTimestamp(vacancy.closeAt),
+    salario: vacancy.salario != null ? Number(vacancy.salario) : null,
     tipo_contratacao: vacancy.tipoContratacao || null,
     filial_id: vacancy.filialId || null,
     estado_sigla: vacancy.estado || null
@@ -255,6 +256,7 @@ function mapRemoteVacancy(row, impliedState) {
     name: row.nome ?? "",
     openAt: row.aberta_em,
     closeAt: row.fechada_em,
+    salario: row.salario != null ? Number(row.salario) : null,
     tipoContratacao: row.tipo_contratacao || null,
     filialId: row.filial_id || null,
     estado: row.estado_sigla || impliedState || null

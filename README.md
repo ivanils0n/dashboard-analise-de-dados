@@ -15,7 +15,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 ## Funcionalidades
 
 - **Dashboard**: KPIs dos indicadores, gráfico de linha (evolução histórica), gráfico de barras (panorama atual), gráficos de pizza (Turnover), tabela de lançamentos com busca e filtro de período.
-- **Filtro de período**: aplica intervalo de datas aos KPIs, gráficos e lançamentos. Inicia preenchido com o **mês local atual**. O **Custo de contratação** é exibido como **média** dos lançamentos no período filtrado.
+- **Filtro de período**: aplica intervalo de datas aos KPIs, gráficos e lançamentos. Inicia preenchido com o **mês local atual**. O **Custo de contratação** é exibido como a **soma dos salários das vagas (abertas e fechadas)** e dos lançamentos manuais no período filtrado.
 - **Filtro por estado** (RO / AM / PA / Todos) no topo, compartilhado por todas as páginas; os dados são baixados do banco sob demanda por estado.
 - **Equipe**: cadastro de colaboradores com **Colaborador, Setor, Usuário, Data de entrada, Status (Ativo/Desligado/Afastado)** e **Tipo (Efetivado/Em experiência)**, filial por sigla e registro de data/hora de cadastro e última atualização.
 - **Modal "Lançar dados" dinâmico**: cada indicador manual (Absenteísmo, Tempo médio de contratação, Custo de contratação) altera o formulário e as abas do modal.
@@ -32,7 +32,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 | Turnover | **Equipe** (calculado) | entradas marcadas no cadastro |
 | Absenteísmo | **Modal** (manual) | média de faltas/atrasos/afastamentos no período |
 | Tempo médio de contratação | **Modal** (histórico de vagas) | dias entre abertura e fechamento |
-| Custo de contratação | **Modal** (vinculado a colaborador) | R$ |
+| Custo de contratação | **Modal** (salário das vagas abertas/fechadas + lançamentos por colaborador) | R$ (soma) |
 | Tempo de permanência | **Equipe** (calculado) | média em dias dos desligados |
 | Turnover no período de experiência | **Equipe** (calculado) | desligados com até 90 dias |
 | Retenção | **Equipe** (calculado) | % de ativos e efetivados |

@@ -61,7 +61,7 @@ export const INDICATORS = [
   {
     id: "custo_contratacao",
     name: "Custo de contratação",
-    desc: "Investimento médio por contratação",
+    desc: "Soma dos salários das vagas (abertas e fechadas)",
     type: "currency",
     unit: "R$",
     decimals: 2,

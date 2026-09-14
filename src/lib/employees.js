@@ -12,6 +12,10 @@ import {
   upsertVacancy,
   deleteVacancy,
   getVacancyById,
+  addEntry,
+  updateEntry,
+  removeEntry,
+  getLatestForMeta,
   upsertEntryForDate,
   removeEntryForDate
 } from "./store";
@@ -277,6 +281,10 @@ export function syncAll() {
     }
     upsertEntryForDate("turnover_experiencia", today, probationTurnoverCount(state), null, state);
   });
+
+  /* Reconcilia o custo das vagas: garante um lançamento para toda vaga com
+     salário (inclusive as criadas antes desta regra). */
+  getVacancies().forEach((v) => syncVacancyCost(v));
 }
 
 /* Estados cujos dados já estão em memória (otimização de carga). */
@@ -303,6 +311,7 @@ export function addVacancy({
   name,
   openAt,
   closeAt = null,
+  salario = null,
   tipoContratacao = null,
   estado,
   filialId = null
@@ -312,18 +321,20 @@ export function addVacancy({
     name,
     openAt,
     closeAt: closeAt || null,
+    salario: toMoneyOrNull(salario),
     tipoContratacao: tipoContratacao || null,
     estado: estado || null,
     filialId: filialId || null
   };
   upsertVacancy(vacancy);
   syncVacancyIndicator(vacancy.estado);
+  syncVacancyCost(vacancy);
   return vacancy;
 }
 
 export function updateVacancy(
   id,
-  { name, openAt, closeAt, tipoContratacao, estado, filialId }
+  { name, openAt, closeAt, salario, tipoContratacao, estado, filialId }
 ) {
   const vacancy = getVacancyById(id);
   if (!vacancy) return null;
@@ -333,6 +344,7 @@ export function updateVacancy(
     name,
     openAt,
     closeAt: closeAt !== undefined ? closeAt || null : vacancy.closeAt,
+    salario: salario !== undefined ? toMoneyOrNull(salario) : vacancy.salario,
     tipoContratacao:
       tipoContratacao !== undefined ? tipoContratacao || null : vacancy.tipoContratacao,
     estado: estado !== undefined ? estado || null : vacancy.estado,
@@ -341,15 +353,19 @@ export function updateVacancy(
   upsertVacancy(updated);
   if (prevEstado !== updated.estado) syncVacancyIndicator(prevEstado);
   syncVacancyIndicator(updated.estado);
+  syncVacancyCost(updated);
   return updated;
 }
 
-export function closeVacancy(id) {
+/* Fecha a vaga. Sem `closeDate`, usa o momento atual; com data (YYYY-MM-DD),
+   encerra a vaga às 00:00 do dia informado. */
+export function closeVacancy(id, closeDate = null) {
   const vacancy = getVacancyById(id);
   if (!vacancy || vacancy.closeAt) return null;
-  const updated = { ...vacancy, closeAt: nowLocalISO() };
+  const updated = { ...vacancy, closeAt: closeDate ? `${String(closeDate).slice(0, 10)}T00:00:00` : nowLocalISO() };
   upsertVacancy(updated);
   syncVacancyIndicator(updated.estado);
+  syncVacancyCost(updated);
   return updated;
 }
 
@@ -358,6 +374,7 @@ export function deleteVacancyRecord(id) {
   const estado = vacancy ? vacancy.estado : null;
   deleteVacancy(id);
   syncVacancyIndicator(estado);
+  removeVacancyCost(id);
 }
 
 /* Exclusão em lote: remove as vagas e recalcula o indicador uma única vez. */
@@ -367,21 +384,52 @@ export function deleteVacancies(ids) {
     const v = getVacancyById(id);
     if (!v) return;
     deleteVacancy(id);
+    removeVacancyCost(id);
     states.add(v.estado || null);
   });
   states.forEach((s) => syncVacancyIndicator(s));
 }
 
 /* Fechamento em lote: fecha as vagas abertas e recalcula uma única vez. */
-export function closeVacancies(ids) {
+export function closeVacancies(ids, closeDate = null) {
   const states = new Set();
   (ids || []).forEach((id) => {
     const v = getVacancyById(id);
     if (!v || v.closeAt) return;
-    upsertVacancy({ ...v, closeAt: nowLocalISO() });
+    const closeAt = closeDate ? `${String(closeDate).slice(0, 10)}T00:00:00` : nowLocalISO();
+    const updated = { ...v, closeAt };
+    upsertVacancy(updated);
+    syncVacancyCost(updated);
     states.add(v.estado || null);
   });
   states.forEach((s) => syncVacancyIndicator(s));
+}
+
+/* O salário da vaga entra no KPI "Custo de contratação" como um lançamento
+   (um por vaga), esteja ela aberta ou fechada. A data do lançamento é a do
+   fechamento quando houver; senão, a da abertura. Editar/limpar o salário
+   atualiza ou remove o lançamento; excluir a vaga também remove. */
+function syncVacancyCost(vacancy) {
+  if (!vacancy) return;
+  const existing = getLatestForMeta("custo_contratacao", "vacancyId", vacancy.id);
+  const salario = toMoneyOrNull(vacancy.salario);
+  if (salario === null) {
+    if (existing) removeEntry("custo_contratacao", existing.id);
+    return;
+  }
+  const date = String(vacancy.closeAt || vacancy.openAt || todayISO()).slice(0, 10);
+  const meta = { vacancyId: vacancy.id, vacancyName: vacancy.name, source: "vaga" };
+  if (vacancy.estado) meta.estado = vacancy.estado;
+  if (existing) {
+    updateEntry("custo_contratacao", existing.id, { value: salario, date, meta });
+  } else {
+    addEntry("custo_contratacao", { date, value: salario, state: vacancy.estado, meta });
+  }
+}
+
+function removeVacancyCost(vacancyId) {
+  const existing = getLatestForMeta("custo_contratacao", "vacancyId", vacancyId);
+  if (existing) removeEntry("custo_contratacao", existing.id);
 }
 
 function syncVacancyIndicator(state) {

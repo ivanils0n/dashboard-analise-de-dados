@@ -52,6 +52,8 @@ const contextHint = computed(() => {
       return "Botão direito: lançamentos de custos";
     case "tempo_contratacao":
       return "Botão direito: histórico de vagas";
+    case "custo_contratacao":
+      return "Botão direito: histórico de vagas";
     default:
       return "";
   }
@@ -67,7 +69,7 @@ function onKeydown(e) {
 
 <template>
   <article
-    class="flex w-[240px] shrink-0 cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
+    class="flex w-[270px] shrink-0 cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"
@@ -88,9 +90,9 @@ function onKeydown(e) {
       <PieChart :data="kpi.pieData" :show-values="showValues" height="h-28" />
     </div>
 
-    <!-- Headcount, Custos Totais e Treinamento: apenas o total, centralizado (sem mini gráfico) -->
+    <!-- Headcount, Custos Totais, Treinamento e Custo de contratação: apenas o total, centralizado (sem mini gráfico) -->
     <div
-      v-else-if="kpi.id === 'headcount' || kpi.id === 'custo_total' || kpi.id === 'treinamento'"
+      v-else-if="kpi.id === 'headcount' || kpi.id === 'custo_total' || kpi.id === 'treinamento' || kpi.id === 'custo_contratacao'"
       class="flex flex-1 flex-col items-center justify-center px-1 py-6"
     >
       <p

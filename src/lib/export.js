@@ -439,13 +439,14 @@ export const VAGA_TEMPLATE_HEADER = [
   "Data de abertura",
   "Data de fechamento",
   "Tipo de contratação",
+  "Salário (R$)",
   "Estado",
   "Filial"
 ];
 
 /* Lê a planilha de vagas e devolve linhas normalizadas.
    Campos por linha:
-     { name, openAt, closeAt, tipo, estado, filialText } */
+     { name, openAt, closeAt, tipo, salario, estado, filialText } */
 export function parseVagasSheet(sheet) {
   const rows = sheetRows(sheet);
   const headerRow = rows[0] || [];
@@ -453,6 +454,7 @@ export function parseVagasSheet(sheet) {
   const iOpen = headFind(headerRow, ["dataabertura", "abertura"]);
   const iClose = headFind(headerRow, ["datafechamento", "fechamento"]);
   const iTipo = headFind(headerRow, ["tipocontratacao", "contratacao", "tipo"]);
+  const iSalario = headFind(headerRow, ["salario", "remuneracao"]);
   const iEstado = headFind(headerRow, ["estado"]);
   const iFilial = headFind(headerRow, ["filial", "abreviado", "loja"]);
   if (iName < 0) return [];
@@ -473,6 +475,7 @@ export function parseVagasSheet(sheet) {
       openAt: parseDateText(cellAt(row, iOpen)),
       closeAt: parseDateText(cellAt(row, iClose)),
       tipo,
+      salario: moneyNum(cellAt(row, iSalario)),
       estado: STATES.includes(estadoRaw) ? estadoRaw : null,
       filialText: String(cellAt(row, iFilial)).trim()
     });
@@ -485,11 +488,11 @@ export function downloadVagasTemplate() {
   const sheet = XLSX.utils.aoa_to_sheet(
     safeRows([
       VAGA_TEMPLATE_HEADER,
-      ["ANALISTA DE RH", "2026-08-01", "2026-08-15", "CLT", "RO", "PVH1"],
-      ["ASSISTENTE ADMINISTRATIVO", "2026-08-05", "", "PJ", "AM", "MAO1"]
+      ["ANALISTA DE RH", "2026-08-01", "2026-08-15", "CLT", 3500, "RO", "PVH1"],
+      ["ASSISTENTE ADMINISTRATIVO", "2026-08-05", "", "PJ", 2200, "AM", "MAO1"]
     ])
   );
-  sheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 14 }];
+  sheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Vagas");
   XLSX.writeFile(workbook, `gente-gestao-template-vagas_${todayISO()}.xlsx`);
 }

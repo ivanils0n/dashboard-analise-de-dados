@@ -3,10 +3,10 @@
    lançamentos, garantindo que KPIs e gráficos sigam exatamente a mesma lógica. */
 
 /* Identificadores cujo valor do período é a SOMA dos lançamentos. */
-const SUM_INDICATORS = new Set(["absenteismo", "custo_diaria", "treinamento", "custo_total"]);
+const SUM_INDICATORS = new Set(["absenteismo", "custo_diaria", "treinamento", "custo_total", "custo_contratacao"]);
 
 /* Identificador cujo valor do período é a MÉDIA dos lançamentos. */
-const AVG_INDICATORS = new Set(["custo_contratacao"]);
+const AVG_INDICATORS = new Set([]);
 
 export function aggregationKind(ind) {
   if (!ind) return "last";

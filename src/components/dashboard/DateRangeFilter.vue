@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
-import { firstDayOfMonthISO, lastDayOfMonthISO, todayISO, formatDate, monthYm, firstDayOfYm, lastDayOfYm } from "@/lib/utils";
+import { firstDayOfMonthISO, lastDayOfMonthISO, todayISO, formatDate, firstDayOfYm, ymOf, currentYm, addMonthsYm } from "@/lib/utils";
 
 /* Filtro de período compacto: um único campo "01/01/2026 - 31/01/2026".
    Ao clicar, abre um dropdown com os seletores de data.
@@ -42,23 +42,21 @@ function apply() {
 function setThisMonth() {
   draft.start = firstDayOfMonthISO();
   draft.end = lastDayOfMonthISO();
-  apply();
 }
 
-/* Mês anterior ao vigente, calculado dinamicamente (ex.: hoje é
-   Setembro/2026 -> seleciona Agosto/2026). */
+/* Volta um mês no campo "De" a cada clique (Set -> Ago -> Jul ...).
+   As mudanças ficam apenas no rascunho: o filtro só é aplicado
+   quando o usuário clica em "Aplicar". */
 function setLastMonth() {
-  const ym = monthYm(-1);
+  const baseStart = draft.start || (props.range && props.range.start) || todayISO();
+  const ym = addMonthsYm(ymOf(baseStart) || currentYm(), -1);
   draft.start = firstDayOfYm(ym);
-  draft.end = lastDayOfYm(ym);
-  apply();
 }
 
-/* Seleciona o dia de hoje (início = fim = hoje) e aplica na hora. */
+/* Preenche o dia de hoje (início = fim = hoje); aplica só no "Aplicar". */
 function setToday() {
   draft.start = todayISO();
   draft.end = todayISO();
-  apply();
 }
 
 function onDocClick() {
@@ -109,11 +107,14 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
-        <button type="button" class="btn-ghost btn-sm" @click="setLastMonth">Mês anterior</button>
-        <button type="button" class="btn-ghost btn-sm" @click="setThisMonth">Mês atual</button>
-        <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
-        <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
+      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+        <span class="text-[11px] text-zinc-400 dark:text-zinc-500">Aplique as alterações em “Aplicar”.</span>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn-ghost btn-sm" @click="setLastMonth">Mês anterior</button>
+          <button type="button" class="btn-ghost btn-sm" @click="setThisMonth">Mês atual</button>
+          <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
+          <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
+        </div>
       </div>
     </div>
   </div>

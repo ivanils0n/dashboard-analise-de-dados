@@ -189,7 +189,7 @@ function close() {
     title="Headcount — Custo de pessoal dos Colaboradores"
     subtitle="Clique em um colaborador para ver e editar os custos mensais de pessoal (salário, benefícios, encargos, premiações e comissão)"
     :open="open"
-    max-width="max-w-4xl"
+    max-width="max-w-6xl"
     @close="close"
   >
     <!-- Filtros -->
@@ -242,15 +242,15 @@ function close() {
 
     <!-- Tabela -->
     <div v-if="rows.length" class="mt-4 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-      <div class="max-h-80 overflow-y-auto">
-        <table class="w-full text-left text-sm">
+      <div class="max-h-80 overflow-auto">
+        <table class="w-full min-w-max text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
-              <th class="px-4 py-2.5 font-semibold">Colaborador</th>
-              <th class="px-4 py-2.5 font-semibold">Setor</th>
-              <th class="px-4 py-2.5 font-semibold">Filial</th>
-              <th class="px-4 py-2.5 text-right font-semibold">Salário</th>
-              <th class="px-4 py-2.5 text-right font-semibold">Custo mensal</th>
+              <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
+              <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Setor</th>
+              <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
+              <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Salário</th>
+              <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Custo mensal</th>
               <th class="px-4 py-2.5"></th>
             </tr>
           </thead>
@@ -261,19 +261,19 @@ function close() {
               class="cursor-pointer border-b border-zinc-100 transition last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60"
               @click="openDetail(e)"
             >
-              <td class="px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ e.name }}</td>
-              <td class="px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ e.sector }}</td>
-              <td class="px-4 py-2.5">
+              <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ e.name }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ e.sector }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5">
                 <Badge v-if="branchShort(e)" tone="muted">{{ branchShort(e) }}</Badge>
                 <span v-else>—</span>
               </td>
-              <td class="px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
+              <td class="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
                 {{ e.salario != null ? formatCurrency(e.salario) : "—" }}
               </td>
-              <td class="px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
+              <td class="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
                 {{ employeeMonthlyCost(e) > 0 ? formatCurrency(employeeMonthlyCost(e)) : "—" }}
               </td>
-              <td class="px-4 py-2.5 text-right text-zinc-400 dark:text-zinc-500">
+              <td class="whitespace-nowrap px-4 py-2.5 text-right text-zinc-400 dark:text-zinc-500">
                 <span class="text-xs font-medium text-accent-hover dark:text-red-400">Custos</span>
                 <span class="ml-1" aria-hidden="true">→</span>
               </td>

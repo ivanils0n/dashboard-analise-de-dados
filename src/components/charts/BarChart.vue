@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
+import Modal from "@/components/ui/Modal.vue";
 import { createBarChart, updateBarChart } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 import { formatCurrency, formatHoursClock } from "@/lib/utils";
@@ -9,11 +10,42 @@ const props = defineProps({
   showValues: { type: Boolean, default: false },
   showTrend: { type: Boolean, default: true },
   heightPx: { type: Number, default: 288 },
-  valueFormat: { type: String, default: "" }
+  valueFormat: { type: String, default: "" },
+  /* Ocupa toda a altura do contêiner (usado no modo tela cheia). */
+  fluid: { type: Boolean, default: false },
+  /* Habilita o clique nas barras (emite "bar-click"). */
+  barsClickable: { type: Boolean, default: false },
+  title: { type: String, default: "" },
+  subtitle: { type: String, default: "" }
 });
+
+const emit = defineEmits(["bar-click"]);
+
+const expandOpen = ref(false);
+
+/* Abre o modal em tela cheia. O botão fica no cabeçalho da seção,
+   fora da área do gráfico (chamado via ref pelo componente pai). */
+function openFullscreen() {
+  expandOpen.value = true;
+}
+
+defineExpose({ openFullscreen });
 
 const canvas = ref(null);
 let chart = null;
+
+/* Clique em uma barra: identifica o índice sob o cursor e emite o rótulo. */
+function onCanvasClick(evt) {
+  if (!chart) return;
+  const points = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, true);
+  if (!points.length) return;
+  const index = points[0].index;
+  emit("bar-click", {
+    index,
+    label: chart.data.labels[index],
+    value: chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
+  });
+}
 
 function formatterFor(format) {
   if (format === "currency") return (v) => formatCurrency(v);
@@ -98,7 +130,36 @@ watch(
 </script>
 
 <template>
-  <div class="relative w-full" :style="{ height: heightPx + 'px' }">
-    <canvas ref="canvas" aria-hidden="true"></canvas>
+  <div
+    class="relative w-full"
+    :class="fluid ? 'h-full' : ''"
+    :style="fluid ? undefined : { height: heightPx + 'px' }"
+  >
+    <canvas
+      ref="canvas"
+      :class="barsClickable ? 'cursor-pointer' : ''"
+      aria-hidden="true"
+      @click="onCanvasClick"
+    ></canvas>
   </div>
+
+  <Modal
+    v-if="expandOpen"
+    fullscreen
+    :title="title || 'Gráfico'"
+    :subtitle="subtitle"
+    @close="expandOpen = false"
+  >
+    <div class="h-[calc(100vh-190px)] min-h-[320px] w-full">
+      <BarChart
+        :data="data"
+        :show-values="showValues"
+        :show-trend="showTrend"
+        :value-format="valueFormat"
+        :bars-clickable="barsClickable"
+        fluid
+        @bar-click="emit('bar-click', $event)"
+      />
+    </div>
+  </Modal>
 </template>

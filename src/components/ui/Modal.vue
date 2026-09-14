@@ -26,15 +26,15 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
       @click.self="emit('close')"
     >
       <div
-        class="w-full rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        class="w-full min-w-0 rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
         :class="fullscreen
           ? 'flex h-screen max-w-none flex-col rounded-none border-0'
-          : 'slide-up ' + maxWidth"
+          : 'slide-up flex max-h-[90vh] flex-col ' + maxWidth"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
       >
-        <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
+        <div class="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
           <div>
             <h2 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">{{ title }}</h2>
             <p v-if="subtitle" class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{{ subtitle }}</p>
@@ -49,7 +49,7 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto" :class="fullscreen ? 'p-4 sm:p-6' : 'px-6 py-5'">
+        <div class="min-h-0 min-w-0 flex-1 overflow-y-auto" :class="fullscreen ? 'p-4 sm:p-6' : 'px-6 py-5'">
           <slot />
         </div>
       </div>

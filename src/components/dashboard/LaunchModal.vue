@@ -87,11 +87,24 @@ const vaga = reactive({
   nome: "",
   abertura: "",
   fechamento: "",
+  salario: "",
   tipo: "clt",
   filialId: null
 });
 const editingVacancyId = ref(null);
 const vagaImportInput = ref(null);
+
+/* Datas de fechamento escolhidas na aba Histórico (padrão: hoje). */
+const closeDates = reactive({});
+const bulkCloseDate = ref(todayISO());
+
+function closeDateFor(id) {
+  return closeDates[id] || todayISO();
+}
+
+function setCloseDate(id, value) {
+  closeDates[id] = value;
+}
 
 /* ---------- Custo ---------- */
 const custo = reactive({ query: "", employeeId: null, value: "" });
@@ -176,6 +189,8 @@ function initModal() {
   resetCustosTot();
   resetVagaForm();
   selectedVacancyIds.value = new Set();
+  Object.keys(closeDates).forEach((k) => delete closeDates[k]);
+  bulkCloseDate.value = todayISO();
 
   /* Modo edição: pré-preenche o formulário do lançamento selecionado. */
   if (props.editEntry && props.editEntry.entry && props.editEntry.indicatorId) {
@@ -458,6 +473,13 @@ function saveSalary() {
 
 const vacancies = computed(() => listVacancies(filters.current));
 
+/* Totais do histórico de vagas (abertas x fechadas). */
+const vacancyStats = computed(() => {
+  const list = vacancies.value;
+  const fechadas = list.filter((v) => v.closeAt).length;
+  return { total: list.length, abertas: list.length - fechadas, fechadas };
+});
+
 /* Filiais disponíveis para a vaga, conforme o estado selecionado. */
 const vagaBranches = computed(() =>
   listBranches(estado.value === "todos" ? "todos" : estado.value)
@@ -483,6 +505,7 @@ function resetVagaForm() {
   vaga.nome = "";
   vaga.abertura = "";
   vaga.fechamento = "";
+  vaga.salario = "";
   vaga.tipo = "clt";
   vaga.filialId = null;
 }
@@ -501,6 +524,23 @@ function setVagaNow() {
   vaga.abertura = todayISO();
 }
 
+/* Valor da vaga (R$) com máscara brasileira. */
+function onVagaSalaryInput(ev) {
+  vaga.salario = maskCurrencyInput(ev.target.value);
+}
+
+function onVagaSalaryBlur() {
+  vaga.salario = normalizeCurrencyInput(vaga.salario);
+}
+
+/* Converte o salário digitado em número (null quando vazio/inválido). */
+function vagaSalarioValue() {
+  const text = normalizeCurrencyInput(vaga.salario);
+  if (text === "") return null;
+  const value = parseCurrencyBR(text);
+  return isNaN(value) || value < 0 ? NaN : value;
+}
+
 /* Estado efetivo do lançamento (fallback para o filtro/estado padrão). */
 function effectiveVagaEstado() {
   if (estado.value && estado.value !== "todos") return estado.value;
@@ -513,6 +553,8 @@ function handleVacancyAdd() {
   if (vaga.fechamento && vaga.fechamento < vaga.abertura) {
     return toast("A data de fechamento deve ser posterior à data de abertura.");
   }
+  const salario = vagaSalarioValue();
+  if (Number.isNaN(salario)) return toast("Informe um salário válido (R$).");
   const openAt = `${vaga.abertura}T00:00:00`;
   const closeAt = vaga.fechamento ? `${vaga.fechamento}T00:00:00` : null;
   const st = effectiveVagaEstado();
@@ -522,6 +564,7 @@ function handleVacancyAdd() {
       name,
       openAt,
       closeAt,
+      salario,
       tipoContratacao: vaga.tipo,
       estado: st,
       filialId: vaga.filialId
@@ -533,6 +576,7 @@ function handleVacancyAdd() {
       name,
       openAt,
       closeAt,
+      salario,
       tipoContratacao: vaga.tipo,
       estado: st,
       filialId: vaga.filialId
@@ -552,6 +596,7 @@ async function editVacancy(id) {
   vaga.nome = v.name;
   vaga.abertura = v.openAt ? String(v.openAt).slice(0, 10) : "";
   vaga.fechamento = v.closeAt ? String(v.closeAt).slice(0, 10) : "";
+  vaga.salario = v.salario != null ? normalizeCurrencyInput(String(v.salario)) : "";
   vaga.tipo = v.tipoContratacao || "clt";
   if (v.estado && v.estado !== estado.value) {
     estado.value = v.estado;
@@ -600,6 +645,7 @@ async function onVagaImportFile(e) {
         name: String(row.name).toUpperCase(),
         openAt: row.openAt,
         closeAt: row.closeAt,
+        salario: row.salario,
         tipoContratacao: row.tipo,
         estado: est,
         filialId: branch ? branch.id : null
@@ -618,9 +664,14 @@ async function onVagaImportFile(e) {
 }
 
 function closeVacancyById(id) {
-  closeVacancy(id);
+  const date = closeDateFor(id);
+  const vacancy = getVacancyById(id);
+  if (vacancy && vacancy.openAt && date < String(vacancy.openAt).slice(0, 10)) {
+    return toast("A data de fechamento deve ser posterior à data de abertura.");
+  }
+  closeVacancy(id, date);
   emit("saved");
-  toast("Vaga fechada — tempo de contratação registrado.");
+  toast("Vaga fechada — tempo de contratação e custo registrados.");
 }
 
 async function removeVacancy(id) {
@@ -685,10 +736,15 @@ function handleBulkVacancyClose() {
     toast("Nenhuma vaga em aberto entre as selecionadas.");
     return;
   }
-  closeVacancies(list.map((v) => v.id));
+  const date = bulkCloseDate.value || todayISO();
+  const invalid = list.find((v) => v.openAt && date < String(v.openAt).slice(0, 10));
+  if (invalid) {
+    return toast(`A data de fechamento é anterior à abertura da vaga "${invalid.name}".`);
+  }
+  closeVacancies(list.map((v) => v.id), date);
   selectedVacancyIds.value = new Set();
   emit("saved");
-  toast(`${list.length} vaga(s) fechada(s) — tempo de contratação registrado.`);
+  toast(`${list.length} vaga(s) fechada(s) — tempo de contratação e custo registrados.`);
 }
 
 /* ---------- Custo ---------- */
@@ -1329,6 +1385,7 @@ onUnmounted(() => {
     :title="indicator ? indicator.name : 'Lançar dados'"
     :subtitle="indicator ? indicator.desc : ''"
     :open="open"
+    max-width="max-w-4xl"
     @close="close"
   >
     <form v-if="indicator" class="flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
@@ -1410,7 +1467,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="flex flex-col gap-1.5">
               <label for="vagaAbertura" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de abertura</label>
               <input id="vagaAbertura" v-model="vaga.abertura" type="date" class="input-field" />
@@ -1419,6 +1476,20 @@ onUnmounted(() => {
               <label for="vagaFechamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de fechamento</label>
               <input id="vagaFechamento" v-model="vaga.fechamento" type="date" class="input-field" />
             </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="vagaSalario" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Salário da vaga (R$)</label>
+              <input
+                id="vagaSalario"
+                class="input-field text-right tabular-nums"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                placeholder="0,00"
+                :value="vaga.salario"
+                @input="onVagaSalaryInput"
+                @blur="onVagaSalaryBlur"
+              />
+            </div>
           </div>
 
           <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
@@ -1426,7 +1497,7 @@ onUnmounted(() => {
               <div class="flex min-w-0 flex-col gap-0.5">
                 <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar vagas por planilha</strong>
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Nome da vaga · Data de abertura · Data de fechamento · Tipo de contratação (CLT/PJ) · Estado · Filial.
+                  Colunas: Nome da vaga · Data de abertura · Data de fechamento · Tipo de contratação (CLT/PJ) · Salário (R$) · Estado · Filial.
                   A filial é cruzada com o cadastro da aba Filiais.
                 </p>
               </div>
@@ -1446,6 +1517,7 @@ onUnmounted(() => {
           </div>
           <p class="text-xs text-zinc-500 dark:text-zinc-400">
             Preencha a data de fechamento para calcular o tempo de contratação; se ficar vazia, a vaga permanece "em aberto".
+            O salário informado entra no KPI "Custo de contratação" tanto para vagas abertas quanto fechadas.
           </p>
         </div>
 
@@ -1453,6 +1525,21 @@ onUnmounted(() => {
           <p v-if="!vacancies.length" class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
             Nenhuma vaga cadastrada. Adicione uma vaga na aba "Nova vaga".
           </p>
+
+          <div v-if="vacancies.length" class="grid grid-cols-3 gap-2">
+            <div class="rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Total de vagas</span>
+              <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ vacancyStats.total }}</p>
+            </div>
+            <div class="rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Abertas</span>
+              <p class="text-xl font-bold tabular-nums text-accent-hover dark:text-red-400">{{ vacancyStats.abertas }}</p>
+            </div>
+            <div class="rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Fechadas</span>
+              <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ vacancyStats.fechadas }}</p>
+            </div>
+          </div>
 
           <div v-if="vacancies.length" class="flex flex-wrap items-center justify-between gap-2">
             <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
@@ -1469,6 +1556,13 @@ onUnmounted(() => {
               <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
                 {{ selectedVacancies.length }} selecionada(s)
               </span>
+              <input
+                type="date"
+                class="input-field w-[150px] px-2 py-1 text-xs"
+                :value="bulkCloseDate"
+                aria-label="Data de fechamento das vagas selecionadas"
+                @input="bulkCloseDate = $event.target.value"
+              />
               <button type="button" class="btn-ghost btn-sm" @click="handleBulkVacancyClose">Fechar selecionadas</button>
               <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkVacancyDelete">Excluir selecionadas</button>
             </div>
@@ -1497,6 +1591,9 @@ onUnmounted(() => {
                   {{ [tipoContratacaoLabel(v.tipoContratacao), vacancyFilial(v), v.estado].filter(Boolean).join(" · ") }}
                 </span>
                 <span class="text-xs text-zinc-500 dark:text-zinc-400">Abertura: {{ formatDate(v.openAt) }}</span>
+                <span v-if="v.salario != null" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Salário: {{ formatCurrency(v.salario) }}
+                </span>
                 <span v-if="v.closeAt" class="text-xs text-zinc-500 dark:text-zinc-400">
                   Fechamento: {{ formatDate(v.closeAt) }} · Tempo: {{ formatVacancyTempo(v) }}
                 </span>
@@ -1504,7 +1601,15 @@ onUnmounted(() => {
               <div class="flex flex-wrap items-center gap-2">
                 <Badge :tone="v.closeAt ? 'dark' : 'accent'">{{ v.closeAt ? "Fechado" : "Em aberto" }}</Badge>
                 <button type="button" class="btn-ghost btn-sm" @click="editVacancy(v.id)">Editar</button>
-                <button type="button" class="btn-primary btn-sm" :disabled="!!v.closeAt" @click="closeVacancyById(v.id)">Fechar</button>
+                <input
+                  v-if="!v.closeAt"
+                  type="date"
+                  class="input-field w-[150px] px-2 py-1 text-xs"
+                  :value="closeDateFor(v.id)"
+                  aria-label="Data de fechamento da vaga"
+                  @input="setCloseDate(v.id, $event.target.value)"
+                />
+                <button v-if="!v.closeAt" type="button" class="btn-primary btn-sm" @click="closeVacancyById(v.id)">Fechar vaga</button>
                 <button type="button" class="btn-danger-ghost btn-sm" @click="removeVacancy(v.id)">Excluir</button>
               </div>
             </div>
