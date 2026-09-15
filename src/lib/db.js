@@ -1,7 +1,7 @@
 /* Camada de dados: cache por item (sessionStorage) + delta sync via API
    (Cloudflare Worker → CockroachDB), escritas em fila com debounce, sessão/
    purga via resetLocalState. */
-import { STATES, DEFAULT_STATE } from "./config";
+import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData, upsertInList, useData } from "./store";
@@ -413,69 +413,80 @@ export async function hydrate(state) {
   }
 }
 
+/* Baixa e grava em cache as 5 tabelas de um único estado. Cada estado é
+   isolado dos demais (ver _hydrate): a falha de um (ex.: timeout numa
+   consulta grande) não impede os outros de serem carregados e marcados. */
+async function hydrateOneState(s) {
+  const suffix = s.toLowerCase();
+  const fetchTable = async (name) => {
+    try {
+      return await apiFetch(`/api/data/${name}`);
+    } catch (err) {
+      console.error(`[API] Erro ao consultar ${name}:`, err);
+      return { error: err };
+    }
+  };
+  const [lan, vac, col, fil, dep] = await Promise.all([
+    fetchLancamentosInitial(s, suffix),
+    fetchTable(`vagas_${suffix}`),
+    fetchTable(`colaboradores_${suffix}`),
+    fetchTable(`filiais_${suffix}`),
+    fetchTable(`departamentos_${suffix}`)
+  ]);
+  const errored = [lan, vac, col, fil, dep].filter((res) => res && res.error);
+  if (errored.length) {
+    // Não marca o estado como carregado quando a consulta falha (ex.: sem
+    // sessão autenticada ainda). Assim o estado é baixado novamente no
+    // próximo acesso — evita telas vazias por estado "marcado" sem dados.
+    errored.forEach((res) => console.error("[API]", res.error.message));
+    delete _coveredSince[s];
+    return false;
+  }
+
+  const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
+  const rowsLan = rowsOf(lan);
+  const rowsVac = rowsOf(vac);
+  const rowsCol = rowsOf(col);
+  const rowsFil = rowsOf(fil);
+  const rowsDep = rowsOf(dep);
+
+  rowsLan.forEach((r) => DataCache.setItem(`lancamentos_${suffix}`, r.id, r));
+  rowsVac.forEach((r) => DataCache.setItem(`vagas_${suffix}`, r.id, r));
+  rowsCol.forEach((r) => DataCache.setItem(`colaboradores_${suffix}`, r.id, r));
+  rowsFil.forEach((r) => DataCache.setItem(`filiais_${suffix}`, r.id, r));
+  rowsDep.forEach((r) => DataCache.setItem(`departamentos_${suffix}`, r.id, r));
+
+  mergeFromRemote({
+    entries: mapRemoteEntries(rowsLan),
+    vacancies: rowsVac.map((r) => mapRemoteVacancy(r, s)),
+    employees: rowsCol.map((r) => mapRemoteEmployee(r, s)),
+    branches: rowsFil.map((r) => mapRemoteBranch(r, s)),
+    departments: rowsDep.map((r) => mapRemoteDepartment(r, s))
+  });
+  _loadedStates[s] = true;
+  return true;
+}
+
+/* Carrega os estados pendentes em paralelo (antes era um for-of sequencial
+   com await, que somava a latência de cada estado em vez de correr junto —
+   a causa principal da demora ao entrar com o filtro em "todos", que carrega
+   RO+AM+PA de uma vez). */
 async function _hydrate(state) {
   state = state || DEFAULT_STATE;
   const states = state === "todos" ? STATES.slice() : [state];
+  const pending = states.filter((s) => !_loadedStates[s]);
+  if (!pending.length) return true;
 
-  let loadedAny = false;
-  for (const s of states) {
-    if (_loadedStates[s]) continue;
-    loadedAny = true;
-    const suffix = s.toLowerCase();
-    const fetchTable = async (name) => {
-      try {
-        return await apiFetch(`/api/data/${name}`);
-      } catch (err) {
-        console.error(`[API] Erro ao consultar ${name}:`, err);
-        return { error: err };
-      }
-    };
-    const [lan, vac, col, fil, dep] = await Promise.all([
-      fetchLancamentosInitial(s, suffix),
-      fetchTable(`vagas_${suffix}`),
-      fetchTable(`colaboradores_${suffix}`),
-      fetchTable(`filiais_${suffix}`),
-      fetchTable(`departamentos_${suffix}`)
-    ]);
-    const errored = [lan, vac, col, fil, dep].filter((res) => res && res.error);
-    if (errored.length) {
-      // Não marca o estado como carregado quando a consulta falha (ex.: sem
-      // sessão autenticada ainda). Assim o estado é baixado novamente no
-      // próximo acesso — evita telas vazias por estado "marcado" sem dados.
-      errored.forEach((res) => console.error("[API]", res.error.message));
-      delete _coveredSince[s];
-      return false;
-    }
-
-    const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
-    const rowsLan = rowsOf(lan);
-    const rowsVac = rowsOf(vac);
-    const rowsCol = rowsOf(col);
-    const rowsFil = rowsOf(fil);
-    const rowsDep = rowsOf(dep);
-
-    rowsLan.forEach((r) => DataCache.setItem(`lancamentos_${suffix}`, r.id, r));
-    rowsVac.forEach((r) => DataCache.setItem(`vagas_${suffix}`, r.id, r));
-    rowsCol.forEach((r) => DataCache.setItem(`colaboradores_${suffix}`, r.id, r));
-    rowsFil.forEach((r) => DataCache.setItem(`filiais_${suffix}`, r.id, r));
-    rowsDep.forEach((r) => DataCache.setItem(`departamentos_${suffix}`, r.id, r));
-
-    mergeFromRemote({
-      entries: mapRemoteEntries(rowsLan),
-      vacancies: rowsVac.map((r) => mapRemoteVacancy(r, s)),
-      employees: rowsCol.map((r) => mapRemoteEmployee(r, s)),
-      branches: rowsFil.map((r) => mapRemoteBranch(r, s)),
-      departments: rowsDep.map((r) => mapRemoteDepartment(r, s))
-    });
-    _loadedStates[s] = true;
-  }
+  const results = await Promise.all(pending.map((s) => hydrateOneState(s)));
+  const loadedAny = results.some(Boolean);
 
   if (loadedAny) {
     const v = await deltaVersao();
     if (v) DataCache.setVersion(v);
   }
-  console.info(`[API] Dados carregados: ${states.join(", ")}.`);
-  return true;
+  const loaded = pending.filter((_, i) => results[i]);
+  if (loaded.length) console.info(`[API] Dados carregados: ${loaded.join(", ")}.`);
+  return results.every(Boolean);
 }
 
 const STATE_TABLES = ["lancamentos_", "vagas_", "colaboradores_", "filiais_", "departamentos_"];
@@ -771,14 +782,19 @@ export async function hydrateWithDelta(state) {
 }
 
 /* Boot: chamado pelo main.js antes da montagem do app. Só hidrata quando já
-   há sessão autenticada (sem ela a API responde 401). */
+   há sessão autenticada (sem ela a API responde 401).
+   Usa o mesmo estado padrão do filtro do dashboard (DEFAULT_FILTER_STATE)
+   — antes hidratava sempre "RO" (DEFAULT_STATE) aqui e, logo em seguida, o
+   onMounted do Dashboard carregava os demais estados do filtro "todos"
+   separadamente: duas rodadas de carregamento em vez de uma, com "RO"
+   sendo baixado de novo a cada boot mesmo quando o filtro real era outro. */
 export async function bootstrapData(authed) {
   registerRemote();
   if (!authed) {
     console.info("[API] Sem sessão ativa — dados serão carregados após o login.");
     return;
   }
-  await hydrateWithDelta(DEFAULT_STATE);
+  await hydrateWithDelta(DEFAULT_FILTER_STATE);
 }
 
 /* Descarta escritas locais ainda pendentes (fila com debounce). Usado no

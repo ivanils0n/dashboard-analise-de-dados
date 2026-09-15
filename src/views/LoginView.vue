@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { login } from "@/lib/auth";
-import { DEFAULT_STATE } from "@/lib/config";
+import { DEFAULT_FILTER_STATE } from "@/lib/config";
 import { hydrateState } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 
@@ -32,7 +32,7 @@ async function handleSubmit() {
   /* Só depois de autenticar é seguro baixar os dados: carrega o estado padrão
      (e demais quando o usuário trocar o filtro) priorizando cache + delta. */
   try {
-    await hydrateState(DEFAULT_STATE);
+    await hydrateState(DEFAULT_FILTER_STATE);
     syncAll();
   } catch (e) {
     console.warn("[Login] Falha ao carregar dados:", e);
