@@ -6,5 +6,11 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "CORS_ORIGIN": "https://gente-gestao-modenaesilva.pages.dev,http://localhost:5173"
-  }
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "c333cbc957c24f1e96157779a150ae76"
+    }
+  ]
 }

@@ -1,7 +1,7 @@
 export type Perfil = "admin" | "analista" | "visitante";
 
 export type Bindings = {
-  DATABASE_URL: string;
+  HYPERDRIVE: Hyperdrive;
   JWT_SECRET: string;
   CORS_ORIGIN?: string;
 };

@@ -5,18 +5,19 @@ import type { Bindings } from "../types";
 types.setTypeParser(1082, (value: string) => value);
 
 function createClient(env: Bindings): Client {
-  if (!env.DATABASE_URL) {
-    throw new Error("DATABASE_URL não configurada.");
+  if (!env.HYPERDRIVE) {
+    throw new Error("Binding HYPERDRIVE não configurado.");
   }
   return new Client({
-    connectionString: env.DATABASE_URL,
+    connectionString: env.HYPERDRIVE.connectionString,
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000
   });
 }
 
-// Uma conexão nova por requisição: no runtime do Workers, sockets guardados
-// em pool entre requisições podem ficar inválidos e travar a resposta.
+// Uma conexão nova por requisição: o Hyperdrive mantém o pool real de
+// conexões com o banco por trás do binding, então abrir/fechar aqui é
+// barato e evita sockets travados entre requisições do Worker.
 export async function withClient<T>(
   env: Bindings,
   fn: (client: Client) => Promise<T>
