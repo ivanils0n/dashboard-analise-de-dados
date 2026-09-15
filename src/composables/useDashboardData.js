@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { INDICATORS, getIndicatorById, ABSENTEEISM_TYPES, STATES } from "@/lib/config";
 import { getEntriesFor, getAllEntries, getBranches } from "@/lib/store";
 import { computedSnapshot, listEmployees, listVacancies } from "@/lib/employees";
@@ -7,11 +7,16 @@ import {
   formatDate,
   formatCurrency,
   aggregateByDay,
+  aggregateByMonth,
+  formatMonthLabel,
   normalizeText,
-  compareDateDesc
+  compareDateDesc,
+  daysBetween,
+  todayISO
 } from "@/lib/utils";
 import { aggregateEntries, absenteismoTotals } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
+import { ensureLancamentosSince } from "@/lib/db";
 
 /* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
    mas aparece em "Lançamentos recentes" com formatação de moeda. */
@@ -39,6 +44,18 @@ export function useDashboardData(filter, options = {}) {
     return state.current;
   }
 
+  /* A carga inicial de lançamentos traz só uma janela recente (ver
+     LANCAMENTOS_WINDOW_MONTHS em lib/db.js); quando o filtro de período do
+     dashboard pede uma data anterior ao que já está carregado, busca sob
+     demanda o período que falta. */
+  watch(
+    () => [filter.start, currentState()],
+    ([start, s]) => {
+      if (start) ensureLancamentosSince(s, start);
+    },
+    { immediate: true }
+  );
+
   function filterByRange(list) {
     const start = filter.start;
     const end = filter.end;
@@ -55,9 +72,12 @@ export function useDashboardData(filter, options = {}) {
      real e por isso NUNCA entram nas listas/agregados normais, mesmo sem
      filtro de data ativo (sentinela sempre "antes" de qualquer início de
      período). Só entram quando explicitamente pedidos (toggle "Mostrar sem
-     período" do KPI, tratado à parte em `kpis`). */
-  function filteredEntries(ind) {
-    const withPeriod = getEntriesFor(ind.id, currentState()).filter(
+     período" do KPI, tratado à parte em `kpis`).
+     `state`, quando informado, troca o estado usado no lugar do estado
+     global do filtro — usado pelo filtro de estado independente do gráfico
+     de Treinamento (ver treinamentoBarByFilial/treinamentoFilialEntries). */
+  function filteredEntries(ind, state) {
+    const withPeriod = getEntriesFor(ind.id, state || currentState()).filter(
       (e) => !(e.meta && e.meta.semPeriodo)
     );
     return filterByRange(withPeriod);
@@ -123,6 +143,25 @@ export function useDashboardData(filter, options = {}) {
     });
   }
 
+  /* Vagas abertas no período filtrado (data de abertura dentro do range) para
+     o gráfico de barras do Cockpit (Tempo médio de contratação): uma barra
+     por vaga, com os dias decorridos até o fechamento — ou até hoje, se
+     ainda estiver aberta. */
+  function vacanciesBarByOpen() {
+    const vacs = listVacancies(currentState()).filter((v) => v.openAt);
+    const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
+    return inRange
+      .map((v) => {
+        const days = daysBetween(v.openAt, v.closeAt || todayISO()) || 0;
+        return {
+          label: v.name || "Vaga",
+          value: Number(days.toFixed(1)),
+          tooltipValue: `${days.toFixed(1)} dias${v.closeAt ? "" : " (em aberto)"}`
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+  }
+
   /* Rótulo (filial) que agrupa um treinamento: usa o shortName gravado no
      lançamento; para lançamentos antigos, tenta localizar a filial pelo texto
      do cadastro. */
@@ -139,12 +178,15 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Agregação para o gráfico de barras do Treinamento: soma a carga horária
-     por filial (loja) no período filtrado. */
-  function treinamentoBarByFilial() {
+     por filial (loja) no período filtrado. `stateOverride` (opcional) troca
+     o estado usado — vem do filtro de estado próprio do gráfico de
+     Treinamento, independente do filtro de estado da aba. */
+  function treinamentoBarByFilial(stateOverride) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
+    const entries = filteredEntries(ind, stateOverride);
     const byFilial = new Map();
-    filteredEntries(ind).forEach((e) => {
+    entries.forEach((e) => {
       const filial = treinamentoFilialLabel(e.meta);
       byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
@@ -158,10 +200,11 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Lançamentos de treinamento de uma filial (usados ao clicar na barra). */
-  function treinamentoFilialEntries(label) {
+  function treinamentoFilialEntries(label, stateOverride) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
-    return filteredEntries(ind).filter((e) => treinamentoFilialLabel(e.meta) === label);
+    const entries = filteredEntries(ind, stateOverride);
+    return entries.filter((e) => treinamentoFilialLabel(e.meta) === label);
   }
 
   /* Agregação para o gráfico de barras dos Custos Totais: soma os custos
@@ -350,6 +393,17 @@ export function useDashboardData(filter, options = {}) {
           showTrend: false
         };
       }
+      if (ind.id === "tempo_contratacao") {
+        return {
+          id: "tempo_contratacao",
+          kind: "bar",
+          title: ind.name,
+          sub: "Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)",
+          unit: ind.unit,
+          valueFormat: "",
+          showTrend: false
+        };
+      }
       return { id: ind.id, kind: "line", title: ind.name, sub: "Evolução no período", unit: ind.unit };
     });
   });
@@ -381,6 +435,8 @@ export function useDashboardData(filter, options = {}) {
         ind.id !== "turnover_entradas" &&
         ind.id !== "turnover_saidas" &&
         ind.id !== "custo_contratacao" &&
+        ind.id !== "custo_total" &&
+        ind.id !== "retencao" &&
         ind.id !== "treinamento"
     )
       .map((ind) => {
@@ -393,10 +449,17 @@ export function useDashboardData(filter, options = {}) {
           ];
         }
         const value = indicatorCurrentValue(ind);
+        /* O rótulo do KPI de Tempo médio de contratação já mostra o valor
+           arredondado (ver decimals no config); sem isto a barra do
+           Panorama desenhava o número cru (ex.: "16.333333333333332"). */
+        const displayValue =
+          ind.id === "tempo_contratacao" && value !== null
+            ? Number(value.toFixed(ind.decimals ?? 1))
+            : value;
         return [
           {
             label: ind.name,
-            value,
+            value: displayValue,
             tooltipValue: value === null ? "sem dados" : formatValue(ind, value),
             /* Antes só "custo_total" ganhava este formato — "custo_diaria"
                (mesmo tipo "currency") caía no rótulo padrão e desenhava o
@@ -485,6 +548,112 @@ export function useDashboardData(filter, options = {}) {
     return formatValue(ind, entry.value);
   }
 
+  /* ---------- Cockpit: gráfico central por KPI selecionado ---------- */
+  const COCKPIT_AVG_TYPES = ["percent", "days", "months"];
+  const NO_PERIODO_MONTH = "0001-01";
+
+  /* Monta os dados do gráfico grande do Cockpit a partir do KPI selecionado
+     (ou o Panorama atual quando nenhum está selecionado). Mesma regra de
+     agregação usada nos cards de "Evolução por indicador" (ver
+     KpiChartCard.vue), centralizada aqui para reaproveitar no Cockpit. */
+  function cockpitChartFor(kpiId, treinamentoState) {
+    if (!kpiId) {
+      return {
+        id: null,
+        kind: "bar",
+        title: "Panorama atual",
+        sub: "Último valor por indicador",
+        data: panorama.value,
+        valueFormat: ""
+      };
+    }
+
+    if (kpiId === "turnover_total" || kpiId === "turnover_entradas") {
+      return {
+        id: "turnover_entradas",
+        kind: "pie",
+        title: "Turnover",
+        sub: "Entradas vs Saídas",
+        data: chartPieData("turnover_entradas"),
+        valueFormat: ""
+      };
+    }
+    if (kpiId === "turnover_experiencia") {
+      return {
+        id: "turnover_experiencia",
+        kind: "pie",
+        title: "Turnover (Experiência)",
+        sub: "Entradas vs Saídas",
+        data: chartPieData("turnover_experiencia"),
+        valueFormat: ""
+      };
+    }
+    if (kpiId === "headcount") {
+      return {
+        id: "headcount",
+        kind: "bar",
+        title: "Headcount",
+        sub: "Por estado",
+        data: headcountBarByState(),
+        valueFormat: ""
+      };
+    }
+    if (kpiId === "custo_total") {
+      return {
+        id: "custo_total",
+        kind: "bar",
+        title: "Custos Totais",
+        sub: "Soma dos custos por filial no período filtrado",
+        data: custosBarByFilial(),
+        valueFormat: "currency"
+      };
+    }
+    if (kpiId === "treinamento") {
+      return {
+        id: "treinamento",
+        kind: "bar",
+        title: "Treinamento",
+        sub: "Carga horária por filial no período filtrado",
+        data: treinamentoBarByFilial(treinamentoState),
+        valueFormat: "hours"
+      };
+    }
+    if (kpiId === "tempo_contratacao") {
+      return {
+        id: "tempo_contratacao",
+        kind: "bar",
+        title: "Tempo médio de contratação",
+        sub: "Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)",
+        data: vacanciesBarByOpen(),
+        valueFormat: ""
+      };
+    }
+
+    const ind = getIndicatorById(kpiId);
+    if (!ind) {
+      return { id: kpiId, kind: "bar", title: "", sub: "", data: [], valueFormat: "" };
+    }
+
+    let entries;
+    if (ind.id === "absenteismo") entries = absenteismoDailySeries();
+    else if (ind.id === "custo_diaria") entries = diariaDailySeries(diariaShowSemPeriodo.value);
+    else entries = filteredEntries(ind);
+
+    const method = COCKPIT_AVG_TYPES.includes(ind.type) ? "avg" : "sum";
+    const monthly = aggregateByMonth(entries, method);
+    const rows = [];
+    let semPeriodo = null;
+    monthly.forEach((m) => {
+      const row = { label: formatMonthLabel(m.date), value: m.value, tooltipValue: formatValue(ind, m.value) };
+      if (m.date === NO_PERIODO_MONTH) semPeriodo = { ...row, label: "Sem período" };
+      else rows.push(row);
+    });
+    if (semPeriodo) rows.push(semPeriodo);
+
+    const valueFormat = ind.type === "currency" ? "currency" : ind.type === "hours" ? "hours" : "";
+    return { id: ind.id, kind: "bar", title: ind.name, sub: "Evolução no período", data: rows, valueFormat };
+  }
+
   return {
     filteredEntries,
     absenteismoTypeTotals,
@@ -501,6 +670,8 @@ export function useDashboardData(filter, options = {}) {
     selectKpi,
     kpiChartCards,
     chartPieData,
+    vacanciesBarByOpen,
+    cockpitChartFor,
     panorama,
     tableRows,
     formatEntryValue,

@@ -294,6 +294,111 @@ export function loadedStates() {
   return _loadedStates;
 }
 
+/* Janela inicial de lançamentos: em vez de baixar o histórico inteiro de um
+   estado (que só cresce com o tempo), a carga inicial traz só os últimos N
+   meses via a rota paginada /api/lancamentos/:estado (que já suporta
+   data_de/data_ate com índice dedicado no banco). Períodos mais antigos são
+   buscados sob demanda quando o filtro de data do dashboard pedir por eles
+   (ver ensureLancamentosSince). `_coveredSince[estado]`: string ISO = data
+   mais antiga garantidamente carregada; `null` = já tem o histórico
+   completo (fallback ou carga antiga); `undefined` = ainda não se sabe. */
+const LANCAMENTOS_WINDOW_MONTHS = 24;
+const LANCAMENTOS_PAGE_LIMIT = 500;
+const _coveredSince = {};
+
+function isoMonthsAgo(months) {
+  const d = new Date();
+  d.setDate(1); // evita overflow (ex.: dia 31 num mês sem dia 31) ao voltar meses
+  d.setMonth(d.getMonth() - months);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
+}
+
+function shiftDayISO(iso, deltaDays) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + deltaDays);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/* Pagina a rota REST de lançamentos (limite 500/página) até completar o
+   intervalo pedido. `dataAte` opcional (sem teto = até hoje). */
+async function fetchLancamentosRange(state, dataDe, dataAte) {
+  const suffix = state.toLowerCase();
+  const rows = [];
+  let page = 1;
+  for (;;) {
+    const params = new URLSearchParams({ limit: String(LANCAMENTOS_PAGE_LIMIT), page: String(page) });
+    if (dataDe) params.set("data_de", dataDe);
+    if (dataAte) params.set("data_ate", dataAte);
+    const res = await apiFetch(`/api/lancamentos/${suffix}?${params.toString()}`);
+    const pageRows = (res && res.data) || [];
+    rows.push(...pageRows);
+    const totalPages = (res && res.pagination && res.pagination.totalPages) || 0;
+    if (!pageRows.length || page >= totalPages) break;
+    page += 1;
+  }
+  return rows;
+}
+
+/* Lançamentos da carga inicial de um estado: tenta a janela recente
+   (paginada); se a rota falhar por qualquer motivo, cai para o download
+   completo de antes (mesmo formato de resultado que fetchTable). */
+async function fetchLancamentosInitial(state, suffix) {
+  const windowStart = isoMonthsAgo(LANCAMENTOS_WINDOW_MONTHS);
+  try {
+    const data = await fetchLancamentosRange(state, windowStart, null);
+    _coveredSince[state] = windowStart;
+    return { data };
+  } catch (err) {
+    console.error(`[API] Falha ao paginar lançamentos_${suffix} por período, baixando tudo:`, err);
+    try {
+      const full = await apiFetch(`/api/data/lancamentos_${suffix}`);
+      _coveredSince[state] = null; // já tem o histórico completo
+      return { data: full && full.data ? full.data : [] };
+    } catch (fallbackErr) {
+      return { error: fallbackErr };
+    }
+  }
+}
+
+/* Estende a janela de lançamentos já carregada para trás quando o filtro de
+   período do dashboard pede uma data anterior ao que já está em memória.
+   Não faz nada quando o estado ainda não foi carregado (a hidratação normal
+   cuida disso), quando já tem o histórico completo, ou quando a data pedida
+   já está coberta. */
+export async function ensureLancamentosSince(next, neededStartISO) {
+  if (!neededStartISO) return;
+  const states = next === "todos" ? STATES.slice() : [next];
+  const targets = states.filter((s) => {
+    if (!_loadedStates[s]) return false;
+    const covered = _coveredSince[s];
+    if (covered === null || covered === undefined) return false;
+    return neededStartISO < covered;
+  });
+  if (!targets.length) return;
+
+  beginLoading("Carregando período anterior...");
+  try {
+    await Promise.all(
+      targets.map(async (s) => {
+        const suffix = s.toLowerCase();
+        const dataAte = shiftDayISO(_coveredSince[s], -1);
+        try {
+          const rows = await fetchLancamentosRange(s, neededStartISO, dataAte);
+          rows.forEach((r) => DataCache.setItem(`lancamentos_${suffix}`, r.id, r));
+          mergeFromRemote({ entries: mapRemoteEntries(rows) });
+          _coveredSince[s] = neededStartISO;
+        } catch (err) {
+          console.error(`[API] Falha ao estender o período carregado de ${s}:`, err);
+        }
+      })
+    );
+  } finally {
+    endLoading();
+  }
+}
+
 /* Baixa os dados dos estados informados, exibindo a tela de carregamento
    enquanto houver rede. */
 export async function hydrate(state) {
@@ -326,7 +431,7 @@ async function _hydrate(state) {
       }
     };
     const [lan, vac, col, fil, dep] = await Promise.all([
-      fetchTable(`lancamentos_${suffix}`),
+      fetchLancamentosInitial(s, suffix),
       fetchTable(`vagas_${suffix}`),
       fetchTable(`colaboradores_${suffix}`),
       fetchTable(`filiais_${suffix}`),
@@ -338,6 +443,7 @@ async function _hydrate(state) {
       // sessão autenticada ainda). Assim o estado é baixado novamente no
       // próximo acesso — evita telas vazias por estado "marcado" sem dados.
       errored.forEach((res) => console.error("[API]", res.error.message));
+      delete _coveredSince[s];
       return false;
     }
 
@@ -384,9 +490,13 @@ function stateCachedKeys(suffix) {
 }
 
 /* Reconstrói em memória (merge, sem apagar o resto) o estado a partir das
-   chaves do sessionStorage. Reusa os mesmos mapeamentos do download. */
+   chaves do sessionStorage. Reusa os mesmos mapeamentos do download.
+   Também recalcula `_coveredSince[state]` a partir da data mais antiga
+   presente no cache — necessário porque esse controle vive só em memória e
+   se perde a cada F5, mas o cache local (sessionStorage) sobrevive. */
 function mergeStateFromCache(suffix, state) {
   const payload = { entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
+  let minLancamentoDate = null;
   stateCachedKeys(suffix).forEach((key) => {
     const item = DataCache.readItem(key);
     if (!item || !item.id) return;
@@ -400,6 +510,7 @@ function mergeStateFromCache(suffix, state) {
         value: Number(item.valor),
         meta: item.meta || null
       });
+      if (item.data && (!minLancamentoDate || item.data < minLancamentoDate)) minLancamentoDate = item.data;
     } else if (tabela.indexOf("colaboradores_") === 0) {
       payload.employees.push(mapRemoteEmployee(item, state));
     } else if (tabela.indexOf("vagas_") === 0) {
@@ -412,6 +523,9 @@ function mergeStateFromCache(suffix, state) {
   });
   Object.keys(payload.entries).forEach((k) => payload.entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
   mergeFromRemote(payload);
+  /* Sem nenhum lançamento em cache ainda: assume a janela padrão como
+     coberta (seguro — no pior caso dispara uma busca extra depois). */
+  _coveredSince[state] = minLancamentoDate || isoMonthsAgo(LANCAMENTOS_WINDOW_MONTHS);
 }
 
 /* Carrega estado(s) priorizando o cache local + delta sync (egress mínimo):
@@ -468,7 +582,10 @@ async function _hydrateState(next) {
       return true;
     }
     // Delta indisponível: recarrega por completo para não exibir dados velhos.
-    pending.forEach((s) => delete _loadedStates[s]);
+    pending.forEach((s) => {
+      delete _loadedStates[s];
+      delete _coveredSince[s];
+    });
   }
 
   return hydrate(pending.length === 1 ? pending[0] : "todos");
@@ -559,6 +676,7 @@ function loadLocalIntoMemory() {
 
   const data = { entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
   const tablesSeen = {};
+  const minLancamentoByState = {};
 
   keys.forEach((key) => {
     const item = DataCache.readItem(key);
@@ -579,6 +697,9 @@ function loadLocalIntoMemory() {
         value: Number(item.valor),
         meta: item.meta || null
       });
+      if (item.data && (!minLancamentoByState[estado] || item.data < minLancamentoByState[estado])) {
+        minLancamentoByState[estado] = item.data;
+      }
     } else if (tabela.indexOf("colaboradores_") === 0) {
       data.employees.push(mapRemoteEmployee(item, estado));
     } else if (tabela.indexOf("vagas_") === 0) {
@@ -594,10 +715,14 @@ function loadLocalIntoMemory() {
   replaceFromCache(data);
 
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
   STATES.forEach((s) => {
     const suffix = s.toLowerCase();
     if (tablesSeen["lancamentos_" + suffix] || tablesSeen["colaboradores_" + suffix]) {
       _loadedStates[s] = true;
+      /* Ver mergeStateFromCache: recalcula a cada boot pois esse controle
+         só existe em memória. */
+      _coveredSince[s] = minLancamentoByState[s] || isoMonthsAgo(LANCAMENTOS_WINDOW_MONTHS);
     }
   });
   return true;
@@ -619,6 +744,7 @@ export async function hydrateWithDelta(state) {
   if (!hasLocal) {
     console.info("[API] Primeiro acesso — baixando dados completos.");
     Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+    Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
     return await hydrate(state);
   }
 
@@ -628,6 +754,7 @@ export async function hydrateWithDelta(state) {
     console.info("[API] Delta indisponível — baixando dados completos (fallback).");
     DataCache.resetAll();
     Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+    Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
     resetData();
     return await hydrate(state);
   }
@@ -671,6 +798,7 @@ export function resetLocalState() {
   discardPendingWrites();
   resetData();
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
   DataCache.resetAll();
 }
 
@@ -683,6 +811,7 @@ export async function reloadData() {
   DataCache.resetAll();
   resetData();
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
   await hydrate(DEFAULT_STATE);
 }
 

@@ -229,6 +229,17 @@ export function probationTurnoverCount(state) {
   return listEmployees(state).filter((e) => e.type === "experiencia" && e.status === "desligado").length;
 }
 
+/* Tempo médio de contratação: para cada vaga aberta (com data de abertura),
+   conta os dias até o fechamento — ou, enquanto ela seguir aberta, até hoje.
+   Assim a média já reflete vagas em andamento, não só as já fechadas. */
+export function avgHiringDays(state) {
+  const list = listVacancies(state).filter((v) => v.openAt);
+  if (!list.length) return null;
+  const today = todayISO();
+  const total = list.reduce((sum, v) => sum + (daysBetween(v.openAt, v.closeAt || today) || 0), 0);
+  return total / list.length;
+}
+
 export function computedSnapshot(indId, state) {
   switch (indId) {
     case "headcount":
@@ -243,6 +254,8 @@ export function computedSnapshot(indId, state) {
       return permanenceAvgDays(state);
     case "turnover_experiencia":
       return probationTurnoverCount(state);
+    case "tempo_contratacao":
+      return avgHiringDays(state);
     default:
       return null;
   }
@@ -252,27 +265,35 @@ export function computedSnapshot(indId, state) {
 
 export function syncAll() {
   const today = todayISO();
-  const computedIds = COMPUTED_INDICATORS.map((i) => i.id);
+  /* "tempo_contratacao" tem seu próprio ciclo de vida (syncVacancyIndicator,
+     chamado sempre logo abaixo, independente de haver colaboradores) — fica
+     de fora daqui para não gravar e imediatamente sobrescrever a mesma
+     entrada a cada chamada. */
+  const computedIds = COMPUTED_INDICATORS.map((i) => i.id).filter((id) => id !== "tempo_contratacao");
   const states = activeStates();
 
   states.forEach((state) => {
     const list = listEmployees(state);
     if (!list.length) {
       computedIds.forEach((id) => removeEntryForDate(id, today, state));
-      return;
+    } else {
+      upsertEntryForDate("headcount", today, headcount(state), null, state);
+      upsertEntryForDate("turnover_entradas", today, turnoverEntradas(state), null, state);
+      upsertEntryForDate("turnover_saidas", today, turnoverSaidas(state), null, state);
+      const retention = retentionPct(state);
+      if (retention !== null) {
+        upsertEntryForDate("retencao", today, Number(retention.toFixed(1)), null, state);
+      }
+      const permanence = permanenceAvgDays(state);
+      if (permanence !== null) {
+        upsertEntryForDate("tempo_permanencia", today, Number(permanence.toFixed(1)), null, state);
+      }
+      upsertEntryForDate("turnover_experiencia", today, probationTurnoverCount(state), null, state);
     }
-    upsertEntryForDate("headcount", today, headcount(state), null, state);
-    upsertEntryForDate("turnover_entradas", today, turnoverEntradas(state), null, state);
-    upsertEntryForDate("turnover_saidas", today, turnoverSaidas(state), null, state);
-    const retention = retentionPct(state);
-    if (retention !== null) {
-      upsertEntryForDate("retencao", today, Number(retention.toFixed(1)), null, state);
-    }
-    const permanence = permanenceAvgDays(state);
-    if (permanence !== null) {
-      upsertEntryForDate("tempo_permanencia", today, Number(permanence.toFixed(1)), null, state);
-    }
-    upsertEntryForDate("turnover_experiencia", today, probationTurnoverCount(state), null, state);
+    /* Recalcula sempre (mesmo sem colaboradores no estado): reflete vagas
+       abertas em relação a "hoje" mesmo que nada tenha sido tocado nelas
+       desde a última sincronização. */
+    syncVacancyIndicator(state);
   });
 
   /* Reconcilia o custo das vagas: garante um lançamento para toda vaga com
@@ -426,14 +447,12 @@ function removeVacancyCost(vacancyId) {
 }
 
 function syncVacancyIndicator(state) {
-  const closed = listVacancies(state).filter((v) => v.closeAt && v.openAt);
   const today = todayISO();
-  if (!closed.length) {
+  const avg = avgHiringDays(state);
+  if (avg === null) {
     removeEntryForDate("tempo_contratacao", today, state);
     return;
   }
-  const total = closed.reduce((sum, v) => sum + (daysBetween(v.openAt, v.closeAt) || 0), 0);
-  const avg = total / closed.length;
   upsertEntryForDate("tempo_contratacao", today, Number(avg.toFixed(1)), null, state);
 }
 

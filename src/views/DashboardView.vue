@@ -3,12 +3,13 @@ import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } f
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
-import PresentationModal from "@/components/dashboard/PresentationModal.vue";
 import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
+import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
+import StatePills from "@/components/dashboard/StatePills.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
@@ -16,6 +17,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
+import { useTreinamentoStateFilter } from "@/composables/useTreinamentoStateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
@@ -55,8 +57,19 @@ const {
   formatDate
 } = dashboard;
 
+const activeTab = ref("cockpit");
+const TAB_ORDER = ["visao-geral", "cockpit"];
+/* Direção da animação de arrasto: 1 = arrasta para a esquerda (indo para a
+   aba à direita), -1 = arrasta para a direita (voltando para a aba à
+   esquerda). Usada para escolher a transição (slide-left/slide-right). */
+const tabDirection = ref(1);
+function switchTab(tab) {
+  if (tab === activeTab.value) return;
+  tabDirection.value = TAB_ORDER.indexOf(tab) > TAB_ORDER.indexOf(activeTab.value) ? 1 : -1;
+  activeTab.value = tab;
+}
+
 const launchOpen = ref(false);
-const presentationOpen = ref(false);
 const headcountOpen = ref(false);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
@@ -72,9 +85,13 @@ const treinamentoFilialRows = ref([]);
 function onTreinamentoBarClick({ label }) {
   if (!label) return;
   treinamentoFilialLabel.value = label;
-  treinamentoFilialRows.value = dashboard.treinamentoFilialEntries(label);
+  treinamentoFilialRows.value = dashboard.treinamentoFilialEntries(label, treinamentoStateFilter.value);
   treinamentoFilialOpen.value = true;
 }
+
+/* Filtro de estado próprio do gráfico de Treinamento — independente do
+   filtro de estado da aba (StateFilter, no TopBar). Ver useTreinamentoStateFilter. */
+const { treinamentoStateFilter, setTreinamentoStateFilter } = useTreinamentoStateFilter();
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const kpiSearch = ref("");
@@ -202,7 +219,7 @@ async function handleBulkDelete() {
 const custosBarData = computed(() => dashboard.custosBarByFilial());
 
 /* Dados do gráfico de barras de Treinamento (carga horária por filial). */
-const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
+const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial(treinamentoStateFilter.value));
 
 const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
 
@@ -222,6 +239,7 @@ function lineEntries(card) {
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
+  if (card.id === "tempo_contratacao") return dashboard.vacanciesBarByOpen();
   return [];
 }
 
@@ -281,7 +299,6 @@ function onMenuClick(action) {
   else if (action === "csv") toCSV();
   else if (action === "template") downloadTemplate();
   else if (action === "import") fileInput.value?.click();
-  else if (action === "presentation") presentationOpen.value = true;
   else if (action === "reload") handleReload();
 }
 
@@ -470,7 +487,7 @@ onActivated(() => {
 <template>
   <div>
     <!-- ===== HERO ===== -->
-    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div class="mb-6 grid grid-cols-1 items-center gap-4 sm:grid-cols-3">
       <div class="flex items-center gap-3">
         <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Gente &amp; Gestão</h1>
         <button
@@ -485,7 +502,36 @@ onActivated(() => {
         </button>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center justify-center">
+        <div class="inline-flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Modo de visualização">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === 'visao-geral'"
+            class="rounded-full px-4 py-1.5 text-sm font-semibold transition"
+            :class="activeTab === 'visao-geral'
+              ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
+              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
+            @click="switchTab('visao-geral')"
+          >
+            Visão Geral
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === 'cockpit'"
+            class="rounded-full px-4 py-1.5 text-sm font-semibold transition"
+            :class="activeTab === 'cockpit'
+              ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
+              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
+            @click="switchTab('cockpit')"
+          >
+            Cockpit
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-start gap-2 sm:justify-end">
         <DateRangeFilter :range="df" title="Período" />
 
         <div class="relative" @click.stop>
@@ -518,13 +564,23 @@ onActivated(() => {
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
         </template>
         <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('reload')">Recarregar Dados</button>
-        <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
-        <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('presentation')">⛶ Apresentação</button>
         </div>
         <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden @change="onImportFile" />
         </div>
       </div>
     </div>
+
+    <!-- ===== VISÃO GERAL / COCKPIT (com animação de arrasto lateral) ===== -->
+    <transition :name="tabDirection === 1 ? 'slide-left' : 'slide-right'" mode="out-in">
+    <CockpitPanel
+      v-if="activeTab === 'cockpit'"
+      key="cockpit"
+      :dashboard="dashboard"
+      :show-values="showValues"
+      @toggle-show-values="toggleShowValues"
+    />
+
+    <div v-else key="visao-geral">
 
     <!-- ===== KPIs ===== -->
     <div class="mb-3 flex flex-wrap items-center gap-2">
@@ -614,6 +670,7 @@ onActivated(() => {
           ref="panoramaChartRef"
           :data="panorama"
           :show-values="showValues"
+          :show-trend="false"
           title="Panorama atual"
           subtitle="Último valor por indicador"
         />
@@ -668,26 +725,31 @@ onActivated(() => {
       ref="treinamentoChartRef"
       class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
     >
-      <div class="mb-4 flex items-start justify-between gap-2">
+      <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
         <div>
           <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Treinamento — Carga horária por filial</h2>
           <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma das horas de treinamento por filial no período filtrado</span>
         </div>
-        <button
-          v-if="treinamentoBarData.length"
-          type="button"
-          class="icon-btn-sm"
-          title="Tela cheia"
-          aria-label="Ver gráfico de Treinamento em tela cheia"
-          @click="treinamentoBarChartRef?.openFullscreen()"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-          </svg>
-        </button>
+        <div class="flex justify-start sm:justify-center">
+          <StatePills :model-value="treinamentoStateFilter" @update:model-value="setTreinamentoStateFilter" />
+        </div>
+        <div class="flex justify-start sm:justify-end">
+          <button
+            v-if="treinamentoBarData.length"
+            type="button"
+            class="icon-btn-sm"
+            title="Tela cheia"
+            aria-label="Ver gráfico de Treinamento em tela cheia"
+            @click="treinamentoBarChartRef?.openFullscreen()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
+        </div>
       </div>
       <BarChart
         v-if="treinamentoBarData.length"
@@ -696,6 +758,7 @@ onActivated(() => {
         :show-values="showValues"
         value-format="hours"
         :show-trend="true"
+        :height-px="480"
         bars-clickable
         title="Treinamento — Carga horária por filial"
         subtitle="Soma das horas de treinamento por filial no período filtrado"
@@ -801,6 +864,9 @@ onActivated(() => {
       </div>
     </section>
 
+    </div>
+    </transition>
+
     <LaunchModal
       v-if="launchOpen"
       :open="launchOpen"
@@ -809,7 +875,6 @@ onActivated(() => {
       @close="closeLaunch"
       @saved="onSaved"
     />
-    <PresentationModal v-if="presentationOpen" :open="presentationOpen" @close="presentationOpen = false" />
     <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
     <VacanciesModal
       v-if="vacanciesOpen"
@@ -872,6 +937,29 @@ onActivated(() => {
 </template>
 
 <style scoped>
+/* Animação de "arrasto" lateral ao trocar entre Visão Geral e Cockpit. */
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+.slide-left-enter-from {
+  transform: translateX(28px);
+  opacity: 0;
+}
+.slide-left-leave-to {
+  transform: translateX(-28px);
+  opacity: 0;
+}
+.slide-right-enter-from {
+  transform: translateX(-28px);
+  opacity: 0;
+}
+.slide-right-leave-to {
+  transform: translateX(28px);
+  opacity: 0;
+}
 .dropdown-item {
   display: block;
   width: 100%;

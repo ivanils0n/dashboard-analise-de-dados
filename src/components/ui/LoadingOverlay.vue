@@ -7,67 +7,92 @@ defineProps({
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="show"
-      class="fixed inset-0 z-[120] flex flex-col items-center justify-center gap-6 bg-white/85 backdrop-blur-sm dark:bg-zinc-950/85"
-      role="status"
-      aria-live="polite"
-    >
-      <div class="ball-stage">
-        <span class="ball"></span>
-        <span class="ball-shadow"></span>
+    <Transition name="gg-loading-fade">
+      <div
+        v-if="show"
+        class="fixed inset-0 z-[120] flex flex-col items-center justify-center gap-7 bg-white/92 backdrop-blur-md dark:bg-zinc-950/92"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="gg-spinner" aria-hidden="true">
+          <span class="gg-spinner-track"></span>
+          <span class="gg-spinner-arc"></span>
+        </div>
+
+        <div class="flex flex-col items-center gap-3">
+          <p class="text-sm font-semibold tracking-wide text-zinc-700 dark:text-zinc-200">{{ label }}</p>
+          <div class="gg-progress">
+            <span class="gg-progress-fill"></span>
+          </div>
+        </div>
       </div>
-      <p class="text-sm font-medium text-zinc-600 dark:text-zinc-300">{{ label }}</p>
-    </div>
+    </Transition>
   </Teleport>
 </template>
 
 <style scoped>
-.ball-stage {
+.gg-loading-fade-enter-active,
+.gg-loading-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.gg-loading-fade-enter-from,
+.gg-loading-fade-leave-to {
+  opacity: 0;
+}
+
+.gg-spinner {
   position: relative;
-  display: flex;
-  height: 88px;
-  width: 96px;
-  align-items: flex-end;
-  justify-content: center;
+  height: 58px;
+  width: 58px;
 }
-.ball {
-  display: block;
-  height: 26px;
-  width: 26px;
-  border-radius: 9999px;
-  background: linear-gradient(160deg, #f87171, #dc2626);
-  box-shadow: 0 6px 14px rgb(220 38 38 / 0.35);
-  animation: gg-ball-bounce 0.62s cubic-bezier(0.28, 0.84, 0.42, 1) infinite alternate;
-}
-.ball-shadow {
+.gg-spinner-track {
   position: absolute;
-  bottom: 2px;
-  left: 50%;
-  height: 7px;
-  width: 34px;
-  margin-left: -17px;
+  inset: 0;
   border-radius: 9999px;
-  background: rgb(24 24 27 / 0.35);
-  filter: blur(1px);
-  animation: gg-ball-shadow 0.62s cubic-bezier(0.28, 0.84, 0.42, 1) infinite alternate;
+  border: 3px solid rgb(228 228 231);
 }
-@keyframes gg-ball-bounce {
+:global(.dark) .gg-spinner-track {
+  border-color: rgb(63 63 70);
+}
+.gg-spinner-arc {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  border-top-color: var(--color-accent, #ef4444);
+  border-right-color: var(--color-accent, #ef4444);
+  animation: gg-spin 0.85s cubic-bezier(0.5, 0.05, 0.5, 0.95) infinite;
+}
+@keyframes gg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gg-progress {
+  height: 3px;
+  width: 168px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgb(228 228 231);
+}
+:global(.dark) .gg-progress {
+  background: rgb(63 63 70);
+}
+.gg-progress-fill {
+  display: block;
+  height: 100%;
+  width: 35%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--color-accent, #ef4444), transparent);
+  animation: gg-progress-sweep 1.4s ease-in-out infinite;
+}
+@keyframes gg-progress-sweep {
   0% {
-    transform: translateY(0) scale(1.08, 0.82);
+    transform: translateX(-120%);
   }
   100% {
-    transform: translateY(-62px) scale(0.94, 1.1);
-  }
-}
-@keyframes gg-ball-shadow {
-  0% {
-    transform: scaleX(1);
-    opacity: 0.4;
-  }
-  100% {
-    transform: scaleX(0.45);
-    opacity: 0.12;
+    transform: translateX(380%);
   }
 }
 </style>

@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Badge from "@/components/ui/Badge.vue";
+import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import { getIndicatorById } from "@/lib/config";
 import { aggregateByMonth, formatMonthLabel, formatValue } from "@/lib/utils";
 
@@ -92,6 +93,10 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
       :show-values="showValues"
       :show-trend="false"
       :value-format="monthlyValueFormat"
+    />
+    <HiringGoalsLegend
+      v-if="card.id === 'tempo_contratacao'"
+      class="mt-2 border-t border-zinc-100 pt-2 dark:border-zinc-800"
     />
   </div>
 </template>

@@ -1,10 +1,10 @@
 import { reactive } from "vue";
-import { DEFAULT_STATE } from "@/lib/config";
+import { DEFAULT_STATE, DEFAULT_FILTER_STATE } from "@/lib/config";
 import { hydrateState } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 
 const state = reactive({
-  current: DEFAULT_STATE,
+  current: DEFAULT_FILTER_STATE,
   revision: 0
 });
 

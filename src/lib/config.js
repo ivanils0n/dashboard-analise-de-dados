@@ -49,12 +49,17 @@ export const INDICATORS = [
   {
     id: "tempo_contratacao",
     name: "Tempo médio de contratação",
-    desc: "Prazo entre abertura e fechamento da vaga",
+    desc: "Prazo entre abertura e fechamento da vaga (vagas abertas contam até hoje)",
     type: "days",
     unit: "dias",
     decimals: 1,
     higherIsBetter: false,
-    computed: false,
+    /* Calculado sob demanda (ver avgHiringDays em lib/employees.js), como os
+       demais indicadores "computed" — assim o valor do card sempre reflete
+       o dia atual, sem depender do filtro de período escolhido. `manual`
+       continua true: é o que faz o indicador aparecer no seletor do
+       LaunchModal, que abre o formulário de vagas (form "vaga"). */
+    computed: true,
     manual: true,
     form: "vaga"
   },
@@ -146,6 +151,11 @@ export const COMPUTED_INDICATORS = INDICATORS.filter((i) => i.computed);
 
 export const STATES = ["RO", "AM", "PA"];
 export const DEFAULT_STATE = "RO";
+/* Estado inicial do filtro global (ao lado do usuário/menu) ao abrir o
+   dashboard. Separado de DEFAULT_STATE porque este último também é usado
+   como estado concreto de fallback (formulários, criação de registros) —
+   nesses casos "todos" não seria um estado válido. */
+export const DEFAULT_FILTER_STATE = "todos";
 
 export const STATE_NAMES = { RO: "Rondônia", AM: "Amazonas", PA: "Pará" };
 

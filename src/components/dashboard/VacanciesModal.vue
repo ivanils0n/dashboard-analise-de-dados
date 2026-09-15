@@ -3,6 +3,7 @@ import { reactive, computed, watch, ref, nextTick, onMounted, onBeforeUnmount } 
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import Badge from "@/components/ui/Badge.vue";
+import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import { STATES, STATE_NAMES } from "@/lib/config";
 import { listVacancies, formatVacancyTempo, deleteVacancies } from "@/lib/employees";
 import { getBranchById } from "@/lib/store";
@@ -300,6 +301,8 @@ watch(rows, () => nextTick(updateTableWidths));
           <p class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ closedCount }}</p>
         </div>
       </div>
+
+      <HiringGoalsLegend v-if="!allPeriods" size="md" class="-mt-1" />
 
       <!-- Filtros -->
       <div class="rounded-xl border border-zinc-200 px-3 py-3 dark:border-zinc-800">

@@ -2,7 +2,11 @@ import type { Context } from "hono";
 import type { AppEnv, Pagination } from "../types";
 
 export const DEFAULT_LIMIT = 50;
-export const MAX_LIMIT = 100;
+/* 500 equilibra menos round-trips (o dashboard agora pagina lançamentos por
+   janela de data, ver useDashboardData/db.js no frontend) sem sobrecarregar
+   uma única query — o LIMIT/OFFSET simples do Postgres/CockroachDB lida bem
+   com esse tamanho de página. */
+export const MAX_LIMIT = 500;
 
 // Lê ?page=1&limit=50 com limites seguros.
 export function parsePagination(c: Context<AppEnv>): { page: number; limit: number } {
