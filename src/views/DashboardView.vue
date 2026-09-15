@@ -832,6 +832,7 @@ onActivated(() => {
       title="Custo da diária geral — Lançamentos"
       subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, período e diária"
       :columns="diariaColumns"
+      default-this-month
       @close="diariaEntriesOpen = false"
       @edit="onEntriesEdit"
     />
@@ -842,6 +843,7 @@ onActivated(() => {
       title="Treinamentos — Lançamentos"
       subtitle="Registros de treinamento por colaborador (cargo, loja, tema, carga horária e modalidade)"
       :columns="treinamentoColumns"
+      default-this-month
       @close="treinamentoEntriesOpen = false"
       @edit="onEntriesEdit"
     />

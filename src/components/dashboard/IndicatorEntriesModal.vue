@@ -12,7 +12,6 @@ import {
   lastDayOfMonthISO,
   monthYm,
   firstDayOfYm,
-  lastDayOfYm,
   singleMonthOfRange,
   ymLabel,
   ymShortLabel,
@@ -21,7 +20,8 @@ import {
   addMonthsYm,
   normalizeText,
   formatHoursClock,
-  compareDateDesc
+  compareDateDesc,
+  todayISO
 } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { useDialog } from "@/composables/useDialog";
@@ -62,6 +62,7 @@ const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: pr
 const applied = ref(props.defaultThisMonth);
 const form = reactive({
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE,
+  filial: "todos",
   search: "",
   from: props.defaultThisMonth ? firstDayOfMonthISO() : "",
   to: props.defaultThisMonth ? lastDayOfMonthISO() : ""
@@ -70,6 +71,7 @@ const form = reactive({
 watch(
   () => form.estado,
   async (state) => {
+    form.filial = "todos";
     applied.value = false;
     try {
       await hydrateState(state === "todos" ? "todos" : state);
@@ -105,21 +107,43 @@ function setThisMonthPeriod() {
 }
 
 /* Período = um mês anterior ao selecionado, a cada clique
-   (ex.: Set/2026 -> Ago/2026 -> Jul/2026). */
+   (ex.: Set/2026 -> Ago/2026 -> Jul/2026). Mesmo comportamento do filtro de
+   data da aba Dashboard (DateRangeFilter): só recua a data "De", sem mexer
+   na data "Até". */
 function setLastMonthPeriod() {
-  const base = singleMonthOfRange(form.from, form.to) || (form.from ? ymOf(form.from) : currentYm());
-  const ym = addMonthsYm(base, -1);
+  const baseStart = form.from || todayISO();
+  const ym = addMonthsYm(ymOf(baseStart) || currentYm(), -1);
   form.from = firstDayOfYm(ym);
-  form.to = lastDayOfYm(ym);
   applied.value = false;
 }
 
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+  form.filial = "todos";
   form.search = "";
   form.from = "";
   form.to = "";
   applied.value = false;
+}
+
+/* Sigla da filial do lançamento — lida direto do próprio registro, sem
+   depender do cadastro de Filiais (evita "sumir" do filtro por causa de
+   texto digitado à mão, filial renomeada/excluída ou estado divergente no
+   cadastro). Usa meta.shortName quando existe (ex.: Custos Totais); senão a
+   primeira palavra de meta.filial, que segue o padrão "SIGLA Nome da
+   filial" (Diárias e Treinamento). */
+function entryFilialKey(entry) {
+  const m = entry.meta || {};
+  if (m.shortName) return normalizeText(m.shortName).trim();
+  const text = normalizeText(m.filial || "").trim();
+  return text.split(/\s+/)[0] || "";
+}
+
+function entryFilialLabel(entry) {
+  const m = entry.meta || {};
+  if (m.shortName) return String(m.shortName).trim();
+  const text = String(m.filial || "").trim();
+  return text.split(/\s+/)[0] || "";
 }
 
 /* Rótulo do período selecionado quando é um único mês. */
@@ -185,8 +209,11 @@ function formatValue(entry) {
 
 /* ---------- Linhas ---------- */
 
-const rows = computed(() => {
-  if (!applied.value) return [];
+/* Lançamentos filtrados por estado, período e busca — ANTES do filtro de
+   filial. Não depende de `applied` (ver comentário abaixo), pois alimenta o
+   dropdown de filiais, que deve refletir os filtros já em uso mesmo antes de
+   clicar em "Buscar registros". */
+function filteredByEstadoPeriodoBusca() {
   let list = getEntriesFor(props.indicatorId, form.estado).slice();
 
   if (form.from && form.to && form.to < form.from) return [];
@@ -202,10 +229,75 @@ const rows = computed(() => {
     });
   }
 
-  list.sort(
-    (a, b) => compareDateDesc(a.date, b.date) || String(b.id || "").localeCompare(String(a.id || ""))
-  );
   return list;
+}
+
+/* Filiais que de fato aparecem nos lançamentos filtrados (estado, período e
+   busca — nunca a própria filial, senão selecionar uma a faria "sumir" das
+   opções), em ordem alfabética pela sigla. Independente de `applied`: senão,
+   ao escolher uma filial o filtro reseta `applied` e a lista ficaria vazia
+   momentaneamente, desfazendo a própria seleção. */
+const SEM_FILIAL = "__sem_filial__";
+
+const filialOptions = computed(() => {
+  const list = filteredByEstadoPeriodoBusca();
+  const map = new Map();
+  let hasSemFilial = false;
+  list.forEach((e) => {
+    const key = entryFilialKey(e);
+    if (!key) {
+      hasSemFilial = true;
+      return;
+    }
+    if (!map.has(key)) map.set(key, entryFilialLabel(e));
+  });
+  const opts = Array.from(map, ([key, label]) => ({ key, label })).sort((a, b) =>
+    a.label.localeCompare(b.label, "pt-BR")
+  );
+  if (hasSemFilial) opts.push({ key: SEM_FILIAL, label: "Sem filial" });
+  return opts;
+});
+
+/* Mesma base filtrada, mas só entra na tabela depois de "Buscar registros". */
+const preFilialEntries = computed(() => (applied.value ? filteredByEstadoPeriodoBusca() : []));
+
+/* Se a filial selecionada deixar de aparecer nas opções (filtros mudaram),
+   volta para "Todas". */
+watch(filialOptions, (opts) => {
+  if (form.filial !== "todos" && !opts.some((f) => f.key === form.filial)) {
+    form.filial = "todos";
+  }
+});
+
+const rows = computed(() => {
+  let list = preFilialEntries.value;
+
+  if (form.filial !== "todos") {
+    list =
+      form.filial === SEM_FILIAL
+        ? list.filter((e) => !entryFilialKey(e))
+        : list.filter((e) => entryFilialKey(e) === form.filial);
+  }
+
+  list = list
+    .slice()
+    .sort((a, b) => compareDateDesc(a.date, b.date) || String(b.id || "").localeCompare(String(a.id || "")));
+  return list;
+});
+
+/* Soma dos valores exibidos (só faz sentido para indicadores monetários). */
+const totalValue = computed(() => rows.value.reduce((sum, e) => sum + (Number(e.value) || 0), 0));
+
+/* Quantidade de colaboradores distintos nos registros exibidos (só quando o
+   indicador tem coluna de colaborador, ex.: Diárias e Treinamento). */
+const hasEmployeeColumn = computed(() => props.columns.some((c) => c.meta === "employeeName"));
+const uniqueEmployeeCount = computed(() => {
+  const ids = new Set();
+  rows.value.forEach((e) => {
+    const key = e.meta && (e.meta.employeeId || e.meta.employeeName);
+    if (key) ids.add(key);
+  });
+  return ids.size;
 });
 
 async function removeRow(entry) {
@@ -329,12 +421,37 @@ watch(rows, () => nextTick(updateTableWidths));
     @close="close"
   >
     <div class="flex flex-col gap-3">
+      <div v-if="indicator.type === 'currency' || hasEmployeeColumn" class="flex flex-wrap gap-2">
+        <div
+          v-if="indicator.type === 'currency'"
+          class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-red-500/25 dark:bg-red-500/10"
+        >
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total no filtro</span>
+          <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatCurrency(totalValue) }}</span>
+        </div>
+        <div
+          v-if="hasEmployeeColumn"
+          class="flex w-fit flex-col gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Colaboradores</span>
+          <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ uniqueEmployeeCount }}</span>
+        </div>
+      </div>
+
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div class="flex flex-col gap-1.5 sm:w-56">
           <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
           <select v-model="form.estado" class="input-field">
             <option value="todos">Todos Estados</option>
             <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
+          </select>
+        </div>
+
+        <div class="flex flex-col gap-1.5 sm:w-40">
+          <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+          <select v-model="form.filial" class="input-field">
+            <option value="todos">Todas</option>
+            <option v-for="f in filialOptions" :key="f.key" :value="f.key">{{ f.label }}</option>
           </select>
         </div>
 

@@ -14,13 +14,13 @@ import {
   lastDayOfMonthISO,
   monthYm,
   firstDayOfYm,
-  lastDayOfYm,
   singleMonthOfRange,
   ymLabel,
   ymOf,
   currentYm,
   addMonthsYm,
-  normalizeText
+  normalizeText,
+  todayISO
 } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { useDialog } from "@/composables/useDialog";
@@ -43,6 +43,7 @@ function editRow(v) {
 
 const form = reactive({
   estado: filters.current !== "todos" ? filters.current : "todos",
+  filial: "todos",
   search: "",
   from: props.allPeriods ? "" : firstDayOfMonthISO(),
   to: props.allPeriods ? "" : lastDayOfMonthISO(),
@@ -52,6 +53,7 @@ const form = reactive({
 watch(
   () => form.estado,
   async (state) => {
+    form.filial = "todos";
     try {
       await hydrateState(state === "todos" ? "todos" : state);
     } catch (err) {
@@ -66,16 +68,18 @@ function setThisMonth() {
 }
 
 /* Período = um mês anterior ao selecionado, a cada clique
-   (ex.: Set/2026 -> Ago/2026 -> Jul/2026). */
+   (ex.: Set/2026 -> Ago/2026 -> Jul/2026). Mesmo comportamento do filtro de
+   data da aba Dashboard (DateRangeFilter): só recua a data "De", sem mexer
+   na data "Até". */
 function setLastMonth() {
-  const base = singleMonthOfRange(form.from, form.to) || (form.from ? ymOf(form.from) : currentYm());
-  const ym = addMonthsYm(base, -1);
+  const baseStart = form.from || todayISO();
+  const ym = addMonthsYm(ymOf(baseStart) || currentYm(), -1);
   form.from = firstDayOfYm(ym);
-  form.to = lastDayOfYm(ym);
 }
 
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : "todos";
+  form.filial = "todos";
   form.search = "";
   form.from = props.allPeriods ? "" : firstDayOfMonthISO();
   form.to = props.allPeriods ? "" : lastDayOfMonthISO();
@@ -100,8 +104,9 @@ function openAtDate(v) {
   return v && v.openAt ? String(v.openAt).slice(0, 10) : "";
 }
 
-/* Lista base (estado + período + busca), antes do filtro de status. */
-const baseList = computed(() => {
+/* Lista base (estado + período + busca), ANTES dos filtros de filial e de
+   status. É a raiz tanto da tabela quanto da lista de filiais do dropdown. */
+const scopedList = computed(() => {
   let list = listVacancies(form.estado);
 
   if (form.from) list = list.filter((v) => openAtDate(v) >= form.from);
@@ -118,8 +123,57 @@ const baseList = computed(() => {
   return list;
 });
 
+const SEM_FILIAL = "__sem_filial__";
+
+/* + filtro de filial (mantém o mesmo escopo usado antes para os contadores
+   de abertas/fechadas, que não consideram o filtro de status). */
+const baseList = computed(() => {
+  let list = scopedList.value;
+  if (form.filial !== "todos") {
+    list =
+      form.filial === SEM_FILIAL
+        ? list.filter((v) => !v.filialId)
+        : list.filter((v) => v.filialId === form.filial);
+  }
+  return list;
+});
+
 const openCount = computed(() => baseList.value.filter((v) => !v.closeAt).length);
 const closedCount = computed(() => baseList.value.filter((v) => v.closeAt).length);
+
+/* Filiais que de fato aparecem na tabela (estado, período, busca e status —
+   mas não a própria filial, senão selecionar uma a faria sumir da lista),
+   em ordem alfabética pela sigla. Resolve a filial direto pelo filialId da
+   vaga (sem filtrar o cadastro por estado, que pode divergir). */
+const filialOptions = computed(() => {
+  let list = scopedList.value;
+  if (form.status === "abertas") list = list.filter((v) => !v.closeAt);
+  else if (form.status === "fechadas") list = list.filter((v) => v.closeAt);
+  const map = new Map();
+  let hasSemFilial = false;
+  list.forEach((v) => {
+    if (!v.filialId) {
+      hasSemFilial = true;
+      return;
+    }
+    if (map.has(v.filialId)) return;
+    const b = getBranchById(v.filialId);
+    map.set(v.filialId, b ? b.shortName || b.name || v.filialId : v.filialId);
+  });
+  const opts = Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) =>
+    a.label.localeCompare(b.label, "pt-BR")
+  );
+  if (hasSemFilial) opts.push({ id: SEM_FILIAL, label: "Sem filial" });
+  return opts;
+});
+
+/* Se a filial selecionada deixar de aparecer nas opções (filtros mudaram),
+   volta para "Todas". */
+watch(filialOptions, (opts) => {
+  if (form.filial !== "todos" && !opts.some((b) => b.id === form.filial)) {
+    form.filial = "todos";
+  }
+});
 
 const rows = computed(() => {
   if (form.status === "abertas") return baseList.value.filter((v) => !v.closeAt);
@@ -256,6 +310,13 @@ watch(rows, () => nextTick(updateTableWidths));
               <select v-model="form.estado" class="input-field">
                 <option value="todos">Todos Estados</option>
                 <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5 sm:w-40">
+              <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+              <select v-model="form.filial" class="input-field">
+                <option value="todos">Todas</option>
+                <option v-for="f in filialOptions" :key="f.id" :value="f.id">{{ f.label }}</option>
               </select>
             </div>
             <div class="flex flex-1 flex-col gap-1.5">

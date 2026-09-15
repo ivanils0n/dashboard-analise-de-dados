@@ -21,11 +21,12 @@ const { state: filters } = useFilters();
 const { show: toast } = useToast();
 const canEdit = canEditData();
 
-/* Filtros locais: a tabela só carrega após "Buscar colaboradores". */
-const applied = ref(false);
+/* Filtros locais: já abre com os colaboradores carregados. */
+const applied = ref(true);
 const form = reactive({
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE,
   department: "todos",
+  filial: "todos",
   search: ""
 });
 
@@ -35,6 +36,7 @@ watch(
   () => form.estado,
   async (state) => {
     form.department = "todos";
+    form.filial = "todos";
     applied.value = false;
     try {
       await hydrateState(state === "todos" ? "todos" : state);
@@ -58,13 +60,16 @@ function apply() {
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   form.department = "todos";
+  form.filial = "todos";
   form.search = "";
   applied.value = false;
 }
 
-/* Headcount = colaboradores ativos. */
-const rows = computed(() => {
-  if (!applied.value) return [];
+/* Headcount = colaboradores ativos, filtrados por estado, departamento e
+   busca — ANTES do filtro de filial. Não depende de `applied` (ver
+   comentário abaixo): alimenta o dropdown de filiais, que deve refletir os
+   filtros já em uso mesmo antes de clicar em "Buscar colaboradores". */
+function filteredByEstadoDeptoBusca() {
   let list = listEmployees(form.estado).filter((e) => e.status === "ativo");
 
   if (form.department !== "todos") {
@@ -78,6 +83,59 @@ const rows = computed(() => {
       const filialText = filial ? `${filial.shortName} ${filial.name}` : "";
       return normalizeText(`${e.name} ${e.sector} ${e.user} ${filialText}`).includes(q);
     });
+  }
+
+  return list;
+}
+
+/* Filiais que de fato aparecem nos colaboradores filtrados (estado,
+   departamento e busca — nunca a própria filial), em ordem alfabética pela
+   sigla. Resolve a filial direto pelo filialId do colaborador (sem filtrar o
+   cadastro por estado, que pode divergir do estado do colaborador) — evita
+   que a filial "suma" do filtro. Independente de `applied`: senão, ao
+   escolher uma filial o filtro reseta `applied` e a lista ficaria vazia
+   momentaneamente, desfazendo a própria seleção. */
+const SEM_FILIAL = "__sem_filial__";
+
+const filialOptions = computed(() => {
+  const list = filteredByEstadoDeptoBusca();
+  const map = new Map();
+  let hasSemFilial = false;
+  list.forEach((e) => {
+    if (!e.filialId) {
+      hasSemFilial = true;
+      return;
+    }
+    if (map.has(e.filialId)) return;
+    const b = getBranchById(e.filialId);
+    map.set(e.filialId, b ? b.shortName || b.name || e.filialId : e.filialId);
+  });
+  const opts = Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) =>
+    a.label.localeCompare(b.label, "pt-BR")
+  );
+  if (hasSemFilial) opts.push({ id: SEM_FILIAL, label: "Sem filial" });
+  return opts;
+});
+
+/* Mesma base filtrada, mas só entra na tabela depois de "Buscar colaboradores". */
+const preFilialRows = computed(() => (applied.value ? filteredByEstadoDeptoBusca() : []));
+
+/* Se a filial selecionada deixar de aparecer nas opções (filtros mudaram),
+   volta para "Todas". */
+watch(filialOptions, (opts) => {
+  if (form.filial !== "todos" && !opts.some((b) => b.id === form.filial)) {
+    form.filial = "todos";
+  }
+});
+
+const rows = computed(() => {
+  let list = preFilialRows.value;
+
+  if (form.filial !== "todos") {
+    list =
+      form.filial === SEM_FILIAL
+        ? list.filter((e) => !e.filialId)
+        : list.filter((e) => e.filialId === form.filial);
   }
 
   return list.slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -193,7 +251,7 @@ function close() {
     @close="close"
   >
     <!-- Filtros -->
-    <div class="grid gap-3 sm:grid-cols-2">
+    <div class="grid gap-3 sm:grid-cols-3">
       <div class="flex flex-col gap-1.5">
         <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
         <select v-model="form.estado" class="input-field">
@@ -207,6 +265,14 @@ function close() {
         <select v-model="form.department" class="input-field">
           <option value="todos">Departamentos: Todos</option>
           <option v-for="d in depOptions" :key="d.id" :value="d.id">{{ d.name }}</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+        <select v-model="form.filial" class="input-field">
+          <option value="todos">Todas</option>
+          <option v-for="f in filialOptions" :key="f.id" :value="f.id">{{ f.label }}</option>
         </select>
       </div>
     </div>

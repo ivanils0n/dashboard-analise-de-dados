@@ -40,10 +40,11 @@ function onCanvasClick(evt) {
   const points = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, true);
   if (!points.length) return;
   const index = points[0].index;
+  const realValues = chart.__realBarValues;
   emit("bar-click", {
     index,
     label: chart.data.labels[index],
-    value: chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
+    value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
   });
 }
 

@@ -94,9 +94,9 @@ function onKeydown(e) {
       <PieChart :data="kpi.pieData" :show-values="showValues" height="h-28" />
     </div>
 
-    <!-- Headcount, Custos Totais, Treinamento e Custo de contratação: apenas o total, centralizado (sem mini gráfico) -->
+    <!-- Headcount, Custos Totais, Treinamento, Custo de contratação e Custo da diária geral: apenas o total, centralizado (sem mini gráfico) -->
     <div
-      v-else-if="kpi.id === 'headcount' || kpi.id === 'custo_total' || kpi.id === 'treinamento' || kpi.id === 'custo_contratacao'"
+      v-else-if="kpi.id === 'headcount' || kpi.id === 'custo_total' || kpi.id === 'treinamento' || kpi.id === 'custo_contratacao' || kpi.id === 'custo_diaria'"
       class="flex flex-1 flex-col items-center justify-center px-1 py-6"
     >
       <p

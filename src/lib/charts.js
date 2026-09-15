@@ -27,6 +27,17 @@ export const ABSENTEEISM_COLORS = ["#ef4444", "#f59e0b", "#94a3b8"];
 /* Cor neutra da segunda fatia da pizza — legível em temas claro e escuro. */
 export const PIE_SECONDARY = "#94a3b8";
 
+/* Transformação de escala (raiz quadrada) aplicada às barras: comprime a
+   altura de valores muito grandes em relação aos pequenos, evitando que
+   um ou dois itens (ex.: uma filial com custo muito acima das demais)
+   dominem visualmente o gráfico e apaguem as outras barras. Preserva a
+   ordem e o zero — só a altura desenhada muda; rótulos e tooltips sempre
+   mostram o valor real (ver chart.__realBarValues). */
+function scaleTransform(v) {
+  const n = Number(v) || 0;
+  return Math.sign(n) * Math.sqrt(Math.abs(n));
+}
+
 const valueLabelsPlugin = {
   id: "valueLabels",
   afterDatasetsDraw(chart) {
@@ -80,13 +91,17 @@ function drawValueLabels(chart) {
     ctx.fillStyle = p.text;
     const isBar = chart.config.type === "bar";
     const perIndex = chart.__valueFormats || [];
+    const realBarValues = chart.__realBarValues;
     chart.data.datasets.forEach((ds, di) => {
       const meta = chart.getDatasetMeta(di);
       if (!meta) return;
       const total = meta.data.length;
       let lastX = -Infinity;
       meta.data.forEach((el, i) => {
-        const val = ds.data[i];
+        /* Barras com transformação de escala: o dataset guarda o valor
+           transformado (altura desenhada), mas o rótulo sempre mostra o
+           valor real. */
+        const val = isBar && di === 0 && realBarValues ? realBarValues[i] : ds.data[i];
         if (val == null) return;
         /* Em gráficos compactos (mini sparklines) evita sobrepor rótulos,
            mas sempre desenha o último ponto. */
@@ -517,13 +532,16 @@ export function updateBarChart(chart, panorama, options = {}) {
     p.tooltipValue != null ? p.tooltipValue : p.tooltip
   );
   chart.__valueFormats = panorama.map((p) => p.format || null);
+  /* Valores reais (sem transformação) — usados pelos rótulos, tooltip de
+     fallback e pelo clique na barra. */
+  chart.__realBarValues = values;
 
   chart.data = {
     labels,
     datasets: [
       {
         label: "Último valor",
-        data: values,
+        data: values.map(scaleTransform),
         backgroundColor: ACCENT,
         hoverBackgroundColor: ACCENT_HOVER,
         borderRadius: 6,
@@ -534,18 +552,22 @@ export function updateBarChart(chart, panorama, options = {}) {
 
   chart.options.plugins.tooltip.callbacks = {
     /* O título do tooltip já é o rótulo (nome do indicador/filial); aqui
-       mostramos apenas o valor, sem repetir o nome. */
-    label: (context) => String(tooltips[context.dataIndex] ?? context.raw)
+       mostramos apenas o valor real (nunca o transformado). */
+    label: (context) => String(tooltips[context.dataIndex] ?? values[context.dataIndex])
   };
 
-  /* Linha de tendência — média móvel de 2 períodos (MM2). */
+  /* Linha de tendência — média móvel de 2 períodos (MM2), calculada sobre os
+     valores reais e depois levada para a mesma escala transformada das
+     barras (senão ficaria desalinhada visualmente). */
   const ma2 = values.map((v, i) => {
     const cur = Number(v) || 0;
     if (i === 0) return cur;
     return (Number(values[i - 1]) + cur) / 2;
   });
   chart.__trendLine =
-    options.trend !== false && values.length ? { data: ma2, label: "Tendência (MM2)" } : null;
+    options.trend !== false && values.length
+      ? { data: ma2.map(scaleTransform), label: "Tendência (MM2)" }
+      : null;
 
   /* Gráficos de barras não usam a linha de média. */
   chart.__meanLine = null;

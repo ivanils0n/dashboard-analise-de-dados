@@ -186,20 +186,19 @@ export function useDashboardData(filter, options = {}) {
 
   /* Fonte única do "valor atual" de um indicador: usada tanto pelos KPIs
      quanto pelo Panorama atual — ambos precisam mostrar exatamente o mesmo
-     número. Para "Custo da diária geral", soma os lançamentos sem competência
-     definida quando "Mostrar sem período" está ativo (e só então). */
+     número. Para "Custo da diária geral" (média), inclui os lançamentos sem
+     competência definida na agregação quando "Mostrar sem período" está
+     ativo (e só então), recalculando a média sobre a lista combinada. */
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
       return computedSnapshot(ind.id, currentState());
     }
-    let value = aggregateList(ind, filteredEntries(ind));
+    let list = filteredEntries(ind);
     if (ind.id === "custo_diaria" && diariaShowSemPeriodo.value) {
       const sem = diariaSemPeriodoEntries();
-      if (sem.length) {
-        value = (Number(value) || 0) + sem.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
-      }
+      if (sem.length) list = list.concat(sem);
     }
-    return value;
+    return aggregateList(ind, list);
   }
 
   /* ---------- KPIs ---------- */
