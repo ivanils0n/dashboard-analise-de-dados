@@ -4,10 +4,11 @@ import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
+import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import StatePills from "@/components/dashboard/StatePills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import { applyCockpitDefaultDateOnce } from "@/composables/useDateFilter";
-import { useTreinamentoStateFilter } from "@/composables/useTreinamentoStateFilter";
+import { useChartStateFilter } from "@/composables/useChartStateFilter";
 import { formatValue } from "@/lib/utils";
 
 /* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
@@ -19,7 +20,7 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["toggle-show-values"]);
+const emit = defineEmits(["toggle-show-values", "edit-vacancy"]);
 
 /* Na primeira vez que o Cockpit é aberto na sessão, o período compartilhado
    parte do mês anterior em vez do mês corrente (ver applyCockpitDefaultDateOnce). */
@@ -29,8 +30,9 @@ const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
 
 /* Filtro de estado próprio do gráfico de Treinamento — independente do
-   filtro de estado da aba. Ver useTreinamentoStateFilter. */
-const { treinamentoStateFilter, setTreinamentoStateFilter } = useTreinamentoStateFilter();
+   filtro de estado da aba. Ver useChartStateFilter. */
+const { chartStateFilter: treinamentoStateFilter, setChartStateFilter: setTreinamentoStateFilter } =
+  useChartStateFilter();
 
 /* Painel central: Panorama atual quando nada está selecionado, ou o
    gráfico do KPI clicado (linha mensal, barras por filial/estado ou pizza
@@ -48,8 +50,15 @@ function select(id) {
   props.dashboard.selectKpi(selectedKpiId.value === id ? null : id);
 }
 
+/* Turnover (pizza): sem número total isolado — mostra as duas taxas da
+   pizza (Entrada/Saída) já formatadas em %, em vez do total combinado. */
 function overallValueText(kpi) {
-  if (kpi.kind === "pie") return String(kpi.value ?? 0);
+  if (kpi.kind === "pie") {
+    const pct = { type: "percent", decimals: 1 };
+    return (kpi.pieData || [])
+      .map((d) => `${d.label} ${formatValue(pct, d.value)}`)
+      .join(" · ");
+  }
   if (kpi.current === null || kpi.current === undefined) return "—";
   return formatValue({ type: kpi.type, decimals: kpi.decimals ?? 1 }, kpi.current);
 }
@@ -61,11 +70,31 @@ const treinamentoFilialOpen = ref(false);
 const treinamentoFilialLabel = ref("");
 const treinamentoFilialRows = ref([]);
 
-function onCenterBarClick({ label }) {
-  if (centerChart.value.id !== "treinamento" || !label) return;
-  treinamentoFilialLabel.value = label;
-  treinamentoFilialRows.value = props.dashboard.treinamentoFilialEntries(label, treinamentoStateFilter.value);
-  treinamentoFilialOpen.value = true;
+function onCenterBarClick({ index, label }) {
+  if (centerChart.value.id === "treinamento") {
+    if (!label) return;
+    treinamentoFilialLabel.value = label;
+    treinamentoFilialRows.value = props.dashboard.treinamentoFilialEntries(label, treinamentoStateFilter.value);
+    treinamentoFilialOpen.value = true;
+    return;
+  }
+  if (centerChart.value.id === "tempo_contratacao") {
+    const row = centerChart.value.data[index];
+    if (!row || !row.vacancyId) return;
+    vacancyDetailId.value = row.vacancyId;
+    vacancyDetailOpen.value = true;
+  }
+}
+
+/* Clique numa barra do gráfico de Tempo médio de contratação: abre o
+   detalhe da vaga; "Editar" ali repassa para a Visão geral (que hospeda o
+   formulário de lançamento). */
+const vacancyDetailOpen = ref(false);
+const vacancyDetailId = ref(null);
+
+function onVacancyDetailEdit(vacancyId) {
+  vacancyDetailOpen.value = false;
+  emit("edit-vacancy", vacancyId);
 }
 
 /* Tela cheia do gráfico central, com navegação entre os KPIs sem precisar
@@ -162,7 +191,7 @@ function goNextKpi() {
               :show-trend="!!selectedKpiId"
               :value-format="centerChart.valueFormat"
               :height-px="480"
-              :bars-clickable="centerChart.id === 'treinamento'"
+              :bars-clickable="centerChart.id === 'treinamento' || centerChart.id === 'tempo_contratacao'"
               @bar-click="onCenterBarClick"
             />
             <HiringGoalsLegend
@@ -222,6 +251,14 @@ function goNextKpi() {
       @close="treinamentoFilialOpen = false"
     />
 
+    <VacancyDetailModal
+      v-if="vacancyDetailOpen"
+      :open="vacancyDetailOpen"
+      :vacancy-id="vacancyDetailId"
+      @close="vacancyDetailOpen = false"
+      @edit="onVacancyDetailEdit"
+    />
+
     <Modal
       v-if="fullscreenOpen"
       fullscreen
@@ -271,7 +308,7 @@ function goNextKpi() {
             :show-trend="!!selectedKpiId"
             :value-format="centerChart.valueFormat"
             fluid
-            :bars-clickable="centerChart.id === 'treinamento'"
+            :bars-clickable="centerChart.id === 'treinamento' || centerChart.id === 'tempo_contratacao'"
             @bar-click="onCenterBarClick"
           />
         </div>

@@ -1,62 +1,77 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
-import { firstDayOfMonthISO, lastDayOfMonthISO, todayISO, formatDate, firstDayOfYm, ymOf, currentYm, addMonthsYm } from "@/lib/utils";
+import {
+  MONTHS_SHORT,
+  ymOf,
+  ymLabel,
+  currentYm,
+  addMonthsYm,
+  firstDayOfYm,
+  lastDayOfYm,
+  singleMonthOfRange,
+  yearOptions
+} from "@/lib/utils";
 
-/* Filtro de período compacto: um único campo "01/01/2026 - 31/01/2026".
-   Ao clicar, abre um dropdown com os seletores de data.
-   `range` é um objeto reativo { start, end } atualizado in-place. */
+/* Filtro de período: um único mês fixo (ex.: "Ago/2026"), não mais um
+   intervalo de dias. `range` continua sendo um objeto reativo { start, end }
+   (compatibilidade com o resto do app, que filtra por data) — só que agora
+   sempre corresponde exatamente ao 1º e ao último dia do mês escolhido. */
 const props = defineProps({
   range: { type: Object, required: true },
-  title: { type: String, default: "Período" },
+  title: { type: String, default: "Mês" },
   align: { type: String, default: "right" }
 });
 
 const open = ref(false);
-const draft = reactive({ start: "", end: "" });
+const draft = reactive({ ym: currentYm() });
 
-const label = computed(() => {
+const currentRangeYm = computed(() => {
   const s = props.range && props.range.start;
   const e = props.range && props.range.end;
-  if (s && e) return `${formatDate(s)} - ${formatDate(e)}`;
-  if (s) return `a partir de ${formatDate(s)}`;
-  if (e) return `até ${formatDate(e)}`;
-  return props.title;
+  return singleMonthOfRange(s, e) || (s ? ymOf(s) : "");
 });
 
-const active = computed(() => !!(props.range && (props.range.start || props.range.end)));
+const label = computed(() => {
+  const ym = currentRangeYm.value;
+  return ym ? ymLabel(ym) : props.title;
+});
+
+const active = computed(() => !!currentRangeYm.value);
+
+const years = yearOptions(5, 1);
+
+const draftMonthNum = computed(() => (draft.ym ? Number(draft.ym.split("-")[1]) : new Date().getMonth() + 1));
+const draftYearNum = computed(() => (draft.ym ? Number(draft.ym.split("-")[0]) : new Date().getFullYear()));
+
+function setDraftMonth(m) {
+  draft.ym = `${draftYearNum.value}-${String(m).padStart(2, "0")}`;
+}
+function setDraftYear(y) {
+  draft.ym = `${y}-${String(draftMonthNum.value).padStart(2, "0")}`;
+}
 
 function toggle() {
   open.value = !open.value;
   if (open.value) {
-    draft.start = props.range ? props.range.start || "" : "";
-    draft.end = props.range ? props.range.end || "" : "";
+    draft.ym = currentRangeYm.value || currentYm();
   }
 }
 
 function apply() {
   if (!props.range) return;
-  props.range.start = draft.start;
-  props.range.end = draft.end;
+  props.range.start = firstDayOfYm(draft.ym);
+  props.range.end = lastDayOfYm(draft.ym);
   open.value = false;
 }
-function setThisMonth() {
-  draft.start = firstDayOfMonthISO();
-  draft.end = lastDayOfMonthISO();
-}
 
-/* Volta um mês no campo "De" a cada clique (Set -> Ago -> Jul ...).
-   As mudanças ficam apenas no rascunho: o filtro só é aplicado
-   quando o usuário clica em "Aplicar". */
-function setLastMonth() {
-  const baseStart = draft.start || (props.range && props.range.start) || todayISO();
-  const ym = addMonthsYm(ymOf(baseStart) || currentYm(), -1);
-  draft.start = firstDayOfYm(ym);
+function setPrevMonth() {
+  draft.ym = addMonthsYm(draft.ym, -1);
 }
-
-/* Preenche o dia de hoje (início = fim = hoje); aplica só no "Aplicar". */
-function setToday() {
-  draft.start = todayISO();
-  draft.end = todayISO();
+function setNextMonth() {
+  draft.ym = addMonthsYm(draft.ym, 1);
+}
+function setCurrentMonth() {
+  draft.ym = currentYm();
 }
 
 function onDocClick() {
@@ -85,7 +100,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
         <line x1="8" y1="2" x2="8" y2="6" />
         <line x1="3" y1="10" x2="21" y2="10" />
       </svg>
-      <span class="whitespace-nowrap tabular-nums">{{ label }}</span>
+      <span class="whitespace-nowrap tabular-nums capitalize">{{ label }}</span>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <polyline points="6 9 12 15 18 9" />
       </svg>
@@ -93,28 +108,36 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
 
     <div
       v-if="open"
-      class="absolute z-40 mt-2 w-72 rounded-xl border border-zinc-200 bg-white shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
+      class="absolute z-40 mt-2 w-64 rounded-xl border border-zinc-200 bg-white shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
       :class="align === 'right' ? 'right-0' : 'left-0'"
     >
-      <div class="grid grid-cols-2 gap-2 p-3">
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-medium text-zinc-500 dark:text-zinc-400">De</label>
-          <input v-model="draft.start" type="date" class="input-field" aria-label="Data início" />
+      <div class="flex flex-col gap-2 p-3">
+        <div class="flex items-center justify-between gap-2">
+          <button type="button" class="btn-ghost btn-sm" aria-label="Mês anterior" @click="setPrevMonth">‹</button>
+          <select v-model="draftYearNum" class="input-field flex-1 text-center" aria-label="Ano" @change="setDraftYear(Number($event.target.value))">
+            <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+          </select>
+          <button type="button" class="btn-ghost btn-sm" aria-label="Próximo mês" @click="setNextMonth">›</button>
         </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Até</label>
-          <input v-model="draft.end" type="date" class="input-field" aria-label="Data fim" />
+        <div class="grid grid-cols-4 gap-1.5">
+          <button
+            v-for="(m, i) in MONTHS_SHORT"
+            :key="m"
+            type="button"
+            class="rounded-lg px-2 py-1.5 text-xs font-medium transition"
+            :class="draftMonthNum === i + 1
+              ? 'bg-accent text-white'
+              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'"
+            @click="setDraftMonth(i + 1)"
+          >
+            {{ m }}
+          </button>
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
-        <span class="text-[11px] text-zinc-400 dark:text-zinc-500">Aplique as alterações em “Aplicar”.</span>
-        <div class="flex items-center gap-2">
-          <button type="button" class="btn-ghost btn-sm" @click="setLastMonth">Mês anterior</button>
-          <button type="button" class="btn-ghost btn-sm" @click="setThisMonth">Mês atual</button>
-          <button type="button" class="btn-ghost btn-sm" @click="setToday">Hoje</button>
-          <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
-        </div>
+      <div class="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+        <button type="button" class="btn-ghost btn-sm" @click="setCurrentMonth">Mês atual</button>
+        <button type="button" class="btn-primary btn-sm" @click="apply">Aplicar</button>
       </div>
     </div>
   </div>

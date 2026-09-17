@@ -1,7 +1,8 @@
 import { query, withClient, withTransaction } from "../db/pool";
 import { ENTITIES, tableName } from "../db/tables";
 import type { EntityDef, Estado } from "../db/tables";
-import { recordChange } from "./audit";
+import { recordChange, recordChanges } from "./audit";
+import type { ChangeEntry } from "./audit";
 import { buildCreatePayload, buildUpdatePayload, buildUpsertPayload } from "../utils/validation";
 import type { Bindings } from "../types";
 
@@ -158,6 +159,10 @@ export async function deleteRecord(
 }
 
 // Escrita em lote (upsert/delete) usada pela sincronização do frontend.
+// Agrupa por formato de linha (mesmo conjunto de colunas) e grava cada grupo
+// em um único INSERT multi-linha, em vez de um round-trip por item — uma
+// importação de planilha com centenas de linhas fazia antes 2-3 idas ao
+// Postgres por linha, tudo sequencial dentro da mesma transação.
 export async function bulkWrite(
   env: Bindings,
   entityKey: string,
@@ -169,45 +174,81 @@ export async function bulkWrite(
   const table = tableName(entityKey, estado);
 
   return withTransaction(env, async (client) => {
-    let upserted = 0;
+    const changes: ChangeEntry[] = [];
+
+    // Linhas com o mesmo conjunto de colunas (assinatura) entram no mesmo
+    // INSERT em lote — não dá para misturar formatos diferentes na mesma
+    // instrução VALUES sem corromper campos que uma linha não enviou.
+    const groups = new Map<string, { keys: string[]; payloads: Record<string, unknown>[] }>();
     for (const item of upserts) {
       if (!item || typeof item !== "object") continue;
       const payload = buildUpsertPayload(entity, item as Record<string, unknown>, estado);
       if (!payload.id) payload.id = crypto.randomUUID();
 
       const keys = Object.keys(payload);
+      const signature = keys.slice().sort().join(",");
+      let group = groups.get(signature);
+      if (!group) {
+        group = { keys, payloads: [] };
+        groups.set(signature, group);
+      }
+      group.payloads.push(payload);
+    }
+
+    let upserted = 0;
+    for (const { keys, payloads } of groups.values()) {
       const columns = [...keys];
-      const valueExprs = keys.map((_, index) => `$${index + 1}`);
       const updates = keys.filter((key) => key !== "id").map((key) => `${key} = excluded.${key}`);
       if (entity.hasUpdatedAt) {
         columns.push("atualizado_em");
-        valueExprs.push("now()");
         updates.push("atualizado_em = now()");
       }
       const conflict = updates.length ? `do update set ${updates.join(", ")}` : "do nothing";
-      const sql = `insert into public.${table} (${columns.join(", ")}) values (${valueExprs.join(", ")}) on conflict (id) ${conflict} returning *`;
 
-      const { rows } = await client.query(sql, keys.map((key) => payload[key]));
-      const row = rows[0] ?? payload;
-      await recordChange(client, table, String(row.id), "upsert", row);
-      upserted++;
+      const params: unknown[] = [];
+      const rowsSql = payloads.map((payload) => {
+        const placeholders = keys.map((key) => {
+          params.push(payload[key]);
+          return `$${params.length}`;
+        });
+        if (entity.hasUpdatedAt) placeholders.push("now()");
+        return `(${placeholders.join(", ")})`;
+      });
+
+      const sql = `insert into public.${table} (${columns.join(", ")}) values ${rowsSql.join(", ")} on conflict (id) ${conflict} returning *`;
+      const { rows } = await client.query(sql, params);
+      rows.forEach((row: Record<string, unknown>) => {
+        changes.push({ tabela: table, registroId: String(row.id), operacao: "upsert", dados: row });
+      });
+      upserted += rows.length;
     }
+
+    // Deduplica ids: o mesmo registro pode ter sido marcado para exclusão
+    // mais de uma vez no mesmo lote (ex.: cliques repetidos antes do flush).
+    const deleteIds = [
+      ...new Set(
+        deletes
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => String(value))
+          .filter(Boolean)
+      )
+    ];
 
     let deleted = 0;
-    for (const value of deletes) {
-      if (value === null || value === undefined) continue;
-      const id = String(value);
-      if (!id) continue;
-      const existing = await client.query(`select * from public.${table} where id = $1 limit 1`, [id]);
-      const row = existing.rows[0];
-      // Registro ausente: nada a excluir. Gravar o changelog aqui criaria uma
-      // entrada fantasma (dados null) e avançaria a versão do delta à toa.
-      if (!row) continue;
-
-      await client.query(`delete from public.${table} where id = $1`, [id]);
-      await recordChange(client, table, id, "delete", row);
-      deleted++;
+    if (deleteIds.length) {
+      const existing = await client.query(`select * from public.${table} where id = any($1::text[])`, [
+        deleteIds
+      ]);
+      if (existing.rows.length) {
+        await client.query(`delete from public.${table} where id = any($1::text[])`, [deleteIds]);
+        existing.rows.forEach((row: Record<string, unknown>) => {
+          changes.push({ tabela: table, registroId: String(row.id), operacao: "delete", dados: row });
+        });
+        deleted = existing.rows.length;
+      }
     }
+
+    await recordChanges(client, changes);
 
     return { upserts: upserted, deletes: deleted };
   });

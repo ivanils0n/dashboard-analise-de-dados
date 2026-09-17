@@ -3,10 +3,12 @@ import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } f
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
-import HeadcountModal from "@/components/dashboard/HeadcountModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
+import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
+import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
+import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
 import StatePills from "@/components/dashboard/StatePills.vue";
@@ -17,7 +19,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
-import { useTreinamentoStateFilter } from "@/composables/useTreinamentoStateFilter";
+import { useChartStateFilter } from "@/composables/useChartStateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
@@ -70,12 +72,14 @@ function switchTab(tab) {
 }
 
 const launchOpen = ref(false);
-const headcountOpen = ref(false);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
+const mensalEntriesOpen = ref(false);
+const mensalEntriesIndicatorId = ref(null);
 const vacanciesOpen = ref(false);
 const vacancyAllPeriods = ref(false);
+const permanenciaOpen = ref(false);
 
 /* Modal ao clicar em uma barra do gráfico de Treinamento (por filial). */
 const treinamentoFilialOpen = ref(false);
@@ -89,9 +93,29 @@ function onTreinamentoBarClick({ label }) {
   treinamentoFilialOpen.value = true;
 }
 
+/* Modal ao clicar em uma barra do gráfico de Tempo médio de contratação
+   (uma barra por vaga) — mostra os dados da vaga, com opção de editar. */
+const vacancyDetailOpen = ref(false);
+const vacancyDetailId = ref(null);
+
+function onHiringBarClick({ vacancyId }) {
+  if (!vacancyId) return;
+  vacancyDetailId.value = vacancyId;
+  vacancyDetailOpen.value = true;
+}
+
+function onVacancyDetailEdit(vacancyId) {
+  vacancyDetailOpen.value = false;
+  onVacancyEdit(vacancyId);
+}
+
 /* Filtro de estado próprio do gráfico de Treinamento — independente do
-   filtro de estado da aba (StateFilter, no TopBar). Ver useTreinamentoStateFilter. */
-const { treinamentoStateFilter, setTreinamentoStateFilter } = useTreinamentoStateFilter();
+   filtro de estado da aba (StateFilter, no TopBar). Ver useChartStateFilter. */
+const { chartStateFilter: treinamentoStateFilter, setChartStateFilter: setTreinamentoStateFilter } =
+  useChartStateFilter();
+/* Mesma ideia para o gráfico de Tempo médio de contratação — instância
+   própria e independente da de Treinamento. */
+const { chartStateFilter: hiringStateFilter, setChartStateFilter: setHiringStateFilter } = useChartStateFilter();
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const kpiSearch = ref("");
@@ -101,12 +125,15 @@ const showValues = ref(storedShowValues === null ? true : storedShowValues === "
 watch(showValues, (v) => safeSetItem(localStore, SHOW_VALUES_KEY, v ? "1" : "0"));
 const custosChartRef = ref(null);
 const treinamentoChartRef = ref(null);
+const hiringChartRef = ref(null);
 const panoramaChartRef = ref(null);
 const custosBarChartRef = ref(null);
 const treinamentoBarChartRef = ref(null);
+const hiringBarChartRef = ref(null);
 const editingRow = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
+const viewIndicatorTarget = ref(null);
 
 /* Colunas exibidas no modal de registros (clique direito no KPI). */
 const diariaColumns = [
@@ -140,6 +167,14 @@ const custosColumns = [
   { label: "Estado", meta: "estado" },
   { label: "Custos", value: true },
   { label: "%", meta: "percent", percent: true }
+];
+
+/* Colunas do modal de registros dos indicadores "mensal" (Absenteísmo,
+   Tempo de permanência, Retenção). */
+const mensalColumns = [
+  { label: "Mês", month: true },
+  { label: "Estado", meta: "estado" },
+  { label: "Valor", value: true }
 ];
 
 const scrollRef = ref(null);
@@ -221,6 +256,11 @@ const custosBarData = computed(() => dashboard.custosBarByFilial());
 /* Dados do gráfico de barras de Treinamento (carga horária por filial). */
 const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial(treinamentoStateFilter.value));
 
+/* Dados do gráfico de barras de Tempo médio de contratação (uma barra por
+   vaga aberta no período) — mesmo gráfico que já existia na faixa "Evolução
+   por indicador", agora com seção própria abaixo de Treinamento. */
+const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStateFilter.value));
+
 const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
 
 /* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
@@ -229,7 +269,6 @@ const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
 function lineEntries(card) {
   if (card.kind !== "line") return [];
   const ind = getIndicatorById(card.id);
-  if (ind && ind.id === "absenteismo") return dashboard.absenteismoDailySeries();
   if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries(diariaShowSemPeriodo.value);
   return filteredEntries(ind);
 }
@@ -239,7 +278,8 @@ function lineEntries(card) {
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
-  if (card.id === "tempo_contratacao") return dashboard.vacanciesBarByOpen();
+  if (card.id === "tempo_permanencia") return dashboard.turnoverTenureBarByMonth();
+  if (card.id === "retencao") return dashboard.retentionBarByMonth();
   return [];
 }
 
@@ -250,6 +290,7 @@ function openLaunch() {
   }
   editTarget.value = null;
   editVacancyTarget.value = null;
+  viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
 
@@ -257,6 +298,16 @@ function closeLaunch() {
   launchOpen.value = false;
   editTarget.value = null;
   editVacancyTarget.value = null;
+  viewIndicatorTarget.value = null;
+}
+
+/* Botão direito no KPI de Turnover/Turnover (Exp): abre o Lançamento já na
+   aba Histórico do indicador, sem exigir perfil de edição (só leitura). */
+function openLaunchView(indicatorId) {
+  editTarget.value = null;
+  editVacancyTarget.value = null;
+  viewIndicatorTarget.value = indicatorId;
+  launchOpen.value = true;
 }
 
 /* Editar uma vaga a partir do histórico (botão direito no KPI de contratação). */
@@ -281,7 +332,10 @@ function onEntriesEdit({ indicatorId, entry }) {
   diariaEntriesOpen.value = false;
   treinamentoEntriesOpen.value = false;
   custosEntriesOpen.value = false;
+  mensalEntriesOpen.value = false;
   editTarget.value = { indicatorId, entry };
+  editVacancyTarget.value = null;
+  viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
 
@@ -423,19 +477,35 @@ function onSelectKpi(id) {
       treinamentoChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (id === "tempo_contratacao") {
+      hiringChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     scrollToKpiChart(id);
   });
 }
 
 /* Clique direito em um KPI abre o modal correspondente:
-   Headcount → detalhes de salários/custos; Diárias, Treinamento e
-   Custos Totais → registros. */
+   Headcount/Retenção → colaboradores do mês filtrado (aba Histórico do
+   Lançamento) — Retenção vem do próprio quadro do Headcount, não tem mais
+   lançamento manual próprio; Diárias, Treinamento e Custos Totais →
+   registros; Absenteísmo → histórico do lançamento mensal; Turnover →
+   histórico de lançamentos de quantidade (aba Histórico do Lançamento);
+   Tempo de permanência → modal próprio (importação por planilha de
+   colaborador/admissão/demissão). */
 function onKpiContext(id) {
-  if (id === "headcount") headcountOpen.value = true;
+  if (id === "headcount" || id === "retencao") openLaunchView("headcount");
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "treinamento") treinamentoEntriesOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
-  else if (id === "tempo_contratacao") {
+  else if (id === "absenteismo") {
+    mensalEntriesIndicatorId.value = id;
+    mensalEntriesOpen.value = true;
+  } else if (id === "turnover") {
+    openLaunchView(id);
+  } else if (id === "tempo_permanencia") {
+    permanenciaOpen.value = true;
+  } else if (id === "tempo_contratacao") {
     vacancyAllPeriods.value = false;
     vacanciesOpen.value = true;
   } else if (id === "custo_contratacao") {
@@ -450,8 +520,7 @@ function onKpiContext(id) {
 function scrollToKpiChart(indicatorId) {
   const scroll = scrollRef.value;
   if (!scroll) return;
-  let targetId = indicatorId;
-  if (targetId === "turnover_total") targetId = "turnover_entradas";
+  const targetId = indicatorId;
   const card = scroll.querySelector(`[data-indicator-card="${targetId}"]`);
   if (!card) return;
   scroll.scrollTo({ left: card.offsetLeft - (scroll.clientWidth - card.offsetWidth) / 2, behavior: "smooth" });
@@ -578,6 +647,7 @@ onActivated(() => {
       :dashboard="dashboard"
       :show-values="showValues"
       @toggle-show-values="toggleShowValues"
+      @edit-vacancy="onVacancyEdit"
     />
 
     <div v-else key="visao-geral">
@@ -683,7 +753,7 @@ onActivated(() => {
       >
         <div class="mb-4 flex items-start justify-between gap-2">
           <div>
-            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custos Totais — Evolução dos Indicadores</h2>
+            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de folha de salário — Evolução dos Indicadores</h2>
             <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
           </div>
           <button
@@ -691,7 +761,7 @@ onActivated(() => {
             type="button"
             class="icon-btn-sm"
             title="Tela cheia"
-            aria-label="Ver gráfico de Custos Totais em tela cheia"
+            aria-label="Ver gráfico de Custo de folha de salário em tela cheia"
             @click="custosBarChartRef?.openFullscreen()"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -708,13 +778,13 @@ onActivated(() => {
           :data="custosBarData"
           :show-values="showValues"
           value-format="currency"
-          title="Custos Totais — Evolução dos Indicadores"
+          title="Custo de folha de salário — Evolução dos Indicadores"
           subtitle="Soma dos custos por filial no período filtrado"
         />
         <div v-else class="p-6">
           <EmptyState
             title="Sem custos no período"
-            text="Use o botão “Lançar dados” (Custos Totais) para registrar os custos do período ou ajuste o filtro."
+            text="Use o botão “Lançar dados” (Custo de folha de salário) para registrar os custos do período ou ajuste o filtro."
           />
         </div>
       </section>
@@ -770,6 +840,58 @@ onActivated(() => {
           text="Use o botão “Lançar dados” (Treinamento) para registrar as horas ou ajuste o filtro."
         />
       </div>
+    </section>
+
+    <!-- ===== TEMPO MÉDIO DE CONTRATAÇÃO ===== -->
+    <section
+      ref="hiringChartRef"
+      class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tempo médio de contratação</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)</span>
+        </div>
+        <div class="flex justify-start sm:justify-center">
+          <StatePills :model-value="hiringStateFilter" @update:model-value="setHiringStateFilter" />
+        </div>
+        <div class="flex justify-start sm:justify-end">
+          <button
+            v-if="hiringBarData.length"
+            type="button"
+            class="icon-btn-sm"
+            title="Tela cheia"
+            aria-label="Ver gráfico de Tempo médio de contratação em tela cheia"
+            @click="hiringBarChartRef?.openFullscreen()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <BarChart
+        v-if="hiringBarData.length"
+        ref="hiringBarChartRef"
+        :data="hiringBarData"
+        :show-values="showValues"
+        :show-trend="true"
+        :height-px="480"
+        bars-clickable
+        title="Tempo médio de contratação"
+        subtitle="Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)"
+        @bar-click="onHiringBarClick"
+      />
+      <div v-else class="p-6">
+        <EmptyState
+          title="Sem vagas no período"
+          text="Use o botão “Lançar dados” (Vaga) para registrar uma vaga ou ajuste o filtro."
+        />
+      </div>
+      <HiringGoalsLegend size="md" class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800" />
     </section>
 
     <!-- ===== LANÇAMENTOS ===== -->
@@ -872,16 +994,28 @@ onActivated(() => {
       :open="launchOpen"
       :edit-entry="editTarget"
       :edit-vacancy-id="editVacancyTarget"
+      :view-indicator-id="viewIndicatorTarget"
       @close="closeLaunch"
       @saved="onSaved"
     />
-    <HeadcountModal v-if="headcountOpen" :open="headcountOpen" @close="headcountOpen = false" />
     <VacanciesModal
       v-if="vacanciesOpen"
       :open="vacanciesOpen"
       :all-periods="vacancyAllPeriods"
       @close="vacanciesOpen = false"
       @edit="onVacancyEdit"
+    />
+    <VacancyDetailModal
+      v-if="vacancyDetailOpen"
+      :open="vacancyDetailOpen"
+      :vacancy-id="vacancyDetailId"
+      @close="vacancyDetailOpen = false"
+      @edit="onVacancyDetailEdit"
+    />
+    <PermanenciaModal
+      v-if="permanenciaOpen"
+      :open="permanenciaOpen"
+      @close="permanenciaOpen = false"
     />
     <TrainingFilialModal
       v-if="treinamentoFilialOpen"
@@ -897,7 +1031,6 @@ onActivated(() => {
       title="Custo da diária geral — Lançamentos"
       subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, período e diária"
       :columns="diariaColumns"
-      default-this-month
       @close="diariaEntriesOpen = false"
       @edit="onEntriesEdit"
     />
@@ -908,7 +1041,6 @@ onActivated(() => {
       title="Treinamentos — Lançamentos"
       subtitle="Registros de treinamento por colaborador (cargo, loja, tema, carga horária e modalidade)"
       :columns="treinamentoColumns"
-      default-this-month
       @close="treinamentoEntriesOpen = false"
       @edit="onEntriesEdit"
     />
@@ -916,11 +1048,20 @@ onActivated(() => {
       v-if="custosEntriesOpen"
       :open="custosEntriesOpen"
       indicator-id="custo_total"
-      title="Custos Totais — Lançamentos"
+      title="Custo de folha de salário — Lançamentos"
       subtitle="Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)"
       :columns="custosColumns"
-      default-this-month
       @close="custosEntriesOpen = false"
+      @edit="onEntriesEdit"
+    />
+    <IndicatorEntriesModal
+      v-if="mensalEntriesOpen"
+      :open="mensalEntriesOpen"
+      :indicator-id="mensalEntriesIndicatorId"
+      :title="`${getIndicatorById(mensalEntriesIndicatorId)?.name || ''} — Lançamentos`"
+      subtitle="Lançamento mensal por estado"
+      :columns="mensalColumns"
+      @close="mensalEntriesOpen = false"
       @edit="onEntriesEdit"
     />
     <EditEntryModal

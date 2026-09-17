@@ -47,7 +47,8 @@ const valueText = computed(() =>
 const contextHint = computed(() => {
   switch (props.kpi.id) {
     case "headcount":
-      return "Botão direito: detalhes de custos";
+    case "retencao":
+      return "Botão direito: colaboradores do mês";
     case "custo_diaria":
       return "Botão direito: lançamentos de diárias";
     case "treinamento":
@@ -58,6 +59,12 @@ const contextHint = computed(() => {
       return "Botão direito: histórico de vagas";
     case "custo_contratacao":
       return "Botão direito: histórico de vagas";
+    case "absenteismo":
+      return "Botão direito: lançamentos mensais";
+    case "turnover":
+    case "turnover_experiencia":
+    case "tempo_permanencia":
+      return "Botão direito: histórico de registros";
     default:
       return "";
   }
@@ -88,15 +95,29 @@ function onKeydown(e) {
       <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ kpi.name }}</span>
     </div>
 
-    <!-- Turnover: pizza -->
+    <!-- Turnover: pizza (sem número total isolado — as % ficam no gráfico) -->
     <div v-if="kpi.kind === 'pie'" class="mt-1">
-      <p class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ kpi.value }}</p>
       <PieChart :data="kpi.pieData" :show-values="showValues" height="h-28" />
     </div>
 
-    <!-- Headcount, Custos Totais, Treinamento, Custo de contratação e Custo da diária geral: apenas o total, centralizado (sem mini gráfico) -->
+    <!-- Indicadores lançados por mês (um único ponto no filtro atual): apenas
+         o total, centralizado (sem mini gráfico, que precisa de mais de um
+         ponto para mostrar tendência). Headcount e Turnover (Exp) também
+         entram aqui: contam registros da própria tabela (headcount/turnover),
+         não lançamentos genéricos — kpi.entries sempre viria vazio para eles,
+         então o mini gráfico de linha nunca teria dado para desenhar. -->
     <div
-      v-else-if="kpi.id === 'headcount' || kpi.id === 'custo_total' || kpi.id === 'treinamento' || kpi.id === 'custo_contratacao' || kpi.id === 'custo_diaria'"
+      v-else-if="[
+        'headcount',
+        'custo_total',
+        'treinamento',
+        'custo_contratacao',
+        'custo_diaria',
+        'absenteismo',
+        'tempo_permanencia',
+        'retencao',
+        'turnover_experiencia'
+      ].includes(kpi.id)"
       class="flex flex-1 flex-col items-center justify-center px-1 py-6"
     >
       <p

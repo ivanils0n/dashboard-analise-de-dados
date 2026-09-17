@@ -216,7 +216,6 @@ function handleSubmit() {
     if (dep) data.departmentId = dep.id;
   }
 
-  if (!data.id) data.countsTurnover = true;
   if (data.status === "desligado" && form.firedAt) {
     data.firedAt = form.firedAt + "T00:00:00";
   }
@@ -614,7 +613,7 @@ function statusTone(status) {
             {{ form.id ? "Editar colaborador" : "Novo colaborador" }}
           </h2>
           <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-400">
-            Headcount, Turnover, Retenção e demais indicadores são calculados automaticamente.
+            Headcount, Retenção e demais indicadores são calculados automaticamente. Turnover é lançado manualmente na aba de Lançamento.
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -786,7 +785,6 @@ function statusTone(status) {
               <th class="px-5 py-3 font-semibold">Entrada</th>
               <th class="px-5 py-3 font-semibold">Registro</th>
               <th class="px-5 py-3 font-semibold">Última atualização</th>
-              <th class="px-5 py-3 font-semibold">Turnover</th>
               <th class="px-5 py-3"></th>
             </tr>
           </thead>
@@ -822,10 +820,6 @@ function statusTone(status) {
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ e.hiredAt ? formatDate(e.hiredAt) : "—" }}</td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ formatDateTime(e.createdAt) }}</td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ formatDateTime(e.updatedAt) }}</td>
-              <td class="px-5 py-3">
-                <span v-if="e.countsTurnover" class="text-green-600 dark:text-green-400" title="Conta no turnover">✓</span>
-                <span v-else>—</span>
-              </td>
               <td class="px-5 py-3 text-right">
                 <div class="flex justify-end gap-2">
                   <button type="button" class="btn-ghost-sm" @click="edit(e.id)">Editar</button>

@@ -4,7 +4,17 @@ import { reactive } from "vue";
 import { createId, compareDateAsc } from "./utils";
 
 export function emptyData() {
-  return { version: 1, entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
+  return {
+    version: 1,
+    entries: {},
+    employees: [],
+    vacancies: [],
+    turnovers: [],
+    permanencias: [],
+    headcounts: [],
+    branches: [],
+    departments: []
+  };
 }
 
 const data = reactive(emptyData());
@@ -184,6 +194,69 @@ export function getVacancyById(id) {
   return getVacancies().find((v) => v.id === id) || null;
 }
 
+export function getTurnovers() {
+  return data.turnovers;
+}
+
+export function upsertTurnover(turnover) {
+  const idx = data.turnovers.findIndex((t) => t.id === turnover.id);
+  if (idx >= 0) data.turnovers[idx] = turnover;
+  else data.turnovers.push(turnover);
+  if (ok()) remote.turnoverSaved(turnover);
+}
+
+export function deleteTurnover(id) {
+  const t = data.turnovers.find((x) => x.id === id);
+  data.turnovers = data.turnovers.filter((x) => x.id !== id);
+  if (ok()) remote.turnoverRemoved(id, t ? t.estado : null);
+}
+
+export function getTurnoverById(id) {
+  return getTurnovers().find((t) => t.id === id) || null;
+}
+
+export function getPermanencias() {
+  return data.permanencias;
+}
+
+export function upsertPermanencia(record) {
+  const idx = data.permanencias.findIndex((p) => p.id === record.id);
+  if (idx >= 0) data.permanencias[idx] = record;
+  else data.permanencias.push(record);
+  if (ok()) remote.permanenciaSaved(record);
+}
+
+export function deletePermanencia(id) {
+  const p = data.permanencias.find((x) => x.id === id);
+  data.permanencias = data.permanencias.filter((x) => x.id !== id);
+  if (ok()) remote.permanenciaRemoved(id, p ? p.estado : null);
+}
+
+export function getPermanenciaById(id) {
+  return getPermanencias().find((p) => p.id === id) || null;
+}
+
+export function getHeadcounts() {
+  return data.headcounts;
+}
+
+export function upsertHeadcount(record) {
+  const idx = data.headcounts.findIndex((h) => h.id === record.id);
+  if (idx >= 0) data.headcounts[idx] = record;
+  else data.headcounts.push(record);
+  if (ok()) remote.headcountSaved(record);
+}
+
+export function deleteHeadcount(id) {
+  const h = data.headcounts.find((x) => x.id === id);
+  data.headcounts = data.headcounts.filter((x) => x.id !== id);
+  if (ok()) remote.headcountRemoved(id, h ? h.estado : null);
+}
+
+export function getHeadcountById(id) {
+  return getHeadcounts().find((h) => h.id === id) || null;
+}
+
 export function getBranches() {
   return data.branches;
 }
@@ -236,6 +309,9 @@ export function replaceFromCache(cached) {
     d.entries = cached.entries && typeof cached.entries === "object" ? cached.entries : {};
     d.employees = Array.isArray(cached.employees) ? cached.employees : [];
     d.vacancies = Array.isArray(cached.vacancies) ? cached.vacancies : [];
+    d.turnovers = Array.isArray(cached.turnovers) ? cached.turnovers : [];
+    d.permanencias = Array.isArray(cached.permanencias) ? cached.permanencias : [];
+    d.headcounts = Array.isArray(cached.headcounts) ? cached.headcounts : [];
     d.branches = Array.isArray(cached.branches) ? cached.branches : [];
     d.departments = Array.isArray(cached.departments) ? cached.departments : [];
   }
@@ -252,7 +328,7 @@ export function mergeFromRemote(remoteData) {
     });
     data.entries[indicatorId].sort((a, b) => compareDateAsc(a.date, b.date));
   });
-  ["employees", "vacancies", "branches", "departments"].forEach((key) => {
+  ["employees", "vacancies", "turnovers", "permanencias", "headcounts", "branches", "departments"].forEach((key) => {
     (remoteData[key] || []).forEach((item) => {
       if (!data[key].some((x) => x.id === item.id)) data[key].push({ ...item });
     });

@@ -8,22 +8,15 @@ import { hydrateState } from "@/lib/db";
 import {
   formatDate,
   formatCurrency,
-  firstDayOfMonthISO,
-  lastDayOfMonthISO,
-  monthYm,
-  firstDayOfYm,
   singleMonthOfRange,
   ymLabel,
   ymShortLabel,
-  ymOf,
-  currentYm,
-  addMonthsYm,
   normalizeText,
   formatHoursClock,
-  compareDateDesc,
-  todayISO
+  compareDateDesc
 } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
+import { dateFilter } from "@/composables/useDateFilter";
 import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
@@ -45,9 +38,7 @@ const props = defineProps({
   indicatorId: { type: String, required: true },
   title: { type: String, default: "" },
   subtitle: { type: String, default: "" },
-  columns: { type: Array, default: () => [] },
-  /* Inicia já filtrado pelo mês vigente (ex.: Custos Totais). */
-  defaultThisMonth: { type: Boolean, default: false }
+  columns: { type: Array, default: () => [] }
 });
 
 const emit = defineEmits(["close", "edit"]);
@@ -59,20 +50,19 @@ const canEdit = canEditData();
 
 const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: props.indicatorId });
 
-const applied = ref(props.defaultThisMonth);
+/* Sem filtro de data manual aqui — segue sempre o mês selecionado no filtro
+   global do dashboard (DateRangeFilter), sem opção de sobrepor dentro do
+   modal. */
 const form = reactive({
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE,
   filial: "todos",
-  search: "",
-  from: props.defaultThisMonth ? firstDayOfMonthISO() : "",
-  to: props.defaultThisMonth ? lastDayOfMonthISO() : ""
+  search: ""
 });
 
 watch(
   () => form.estado,
   async (state) => {
     form.filial = "todos";
-    applied.value = false;
     try {
       await hydrateState(state === "todos" ? "todos" : state);
     } catch (err) {
@@ -81,49 +71,10 @@ watch(
   }
 );
 
-watch(
-  () => form.search,
-  () => {
-    applied.value = false;
-  }
-);
-
-watch(
-  () => [form.from, form.to],
-  () => {
-    applied.value = false;
-  }
-);
-
-function apply() {
-  applied.value = true;
-}
-
-/* Período = mês vigente (dinâmico) */
-function setThisMonthPeriod() {
-  form.from = firstDayOfMonthISO();
-  form.to = lastDayOfMonthISO();
-  applied.value = false;
-}
-
-/* Período = um mês anterior ao selecionado, a cada clique
-   (ex.: Set/2026 -> Ago/2026 -> Jul/2026). Mesmo comportamento do filtro de
-   data da aba Dashboard (DateRangeFilter): só recua a data "De", sem mexer
-   na data "Até". */
-function setLastMonthPeriod() {
-  const baseStart = form.from || todayISO();
-  const ym = addMonthsYm(ymOf(baseStart) || currentYm(), -1);
-  form.from = firstDayOfYm(ym);
-  applied.value = false;
-}
-
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   form.filial = "todos";
   form.search = "";
-  form.from = "";
-  form.to = "";
-  applied.value = false;
 }
 
 /* Sigla da filial do lançamento — lida direto do próprio registro, sem
@@ -146,9 +97,9 @@ function entryFilialLabel(entry) {
   return text.split(/\s+/)[0] || "";
 }
 
-/* Rótulo do período selecionado quando é um único mês. */
+/* Rótulo do mês selecionado no filtro global do dashboard. */
 const selectedMonthLabel = computed(() => {
-  const ym = singleMonthOfRange(form.from, form.to);
+  const ym = singleMonthOfRange(dateFilter.start, dateFilter.end);
   return ym ? ymLabel(ym) : "";
 });
 
@@ -209,17 +160,13 @@ function formatValue(entry) {
 
 /* ---------- Linhas ---------- */
 
-/* Lançamentos filtrados por estado, período e busca — ANTES do filtro de
-   filial. Não depende de `applied` (ver comentário abaixo), pois alimenta o
-   dropdown de filiais, que deve refletir os filtros já em uso mesmo antes de
-   clicar em "Buscar registros". */
+/* Lançamentos filtrados por estado, período (mês do filtro global do
+   dashboard) e busca — ANTES do filtro de filial. */
 function filteredByEstadoPeriodoBusca() {
   let list = getEntriesFor(props.indicatorId, form.estado).slice();
 
-  if (form.from && form.to && form.to < form.from) return [];
-
-  if (form.from) list = list.filter((e) => e.date >= form.from);
-  if (form.to) list = list.filter((e) => e.date <= form.to);
+  if (dateFilter.start) list = list.filter((e) => e.date >= dateFilter.start);
+  if (dateFilter.end) list = list.filter((e) => e.date <= dateFilter.end);
 
   const q = normalizeText(form.search).trim();
   if (q) {
@@ -234,9 +181,7 @@ function filteredByEstadoPeriodoBusca() {
 
 /* Filiais que de fato aparecem nos lançamentos filtrados (estado, período e
    busca — nunca a própria filial, senão selecionar uma a faria "sumir" das
-   opções), em ordem alfabética pela sigla. Independente de `applied`: senão,
-   ao escolher uma filial o filtro reseta `applied` e a lista ficaria vazia
-   momentaneamente, desfazendo a própria seleção. */
+   opções), em ordem alfabética pela sigla. */
 const SEM_FILIAL = "__sem_filial__";
 
 const filialOptions = computed(() => {
@@ -258,8 +203,7 @@ const filialOptions = computed(() => {
   return opts;
 });
 
-/* Mesma base filtrada, mas só entra na tabela depois de "Buscar registros". */
-const preFilialEntries = computed(() => (applied.value ? filteredByEstadoPeriodoBusca() : []));
+const preFilialEntries = computed(() => filteredByEstadoPeriodoBusca());
 
 /* Se a filial selecionada deixar de aparecer nas opções (filtros mudaram),
    volta para "Todas". */
@@ -461,46 +405,16 @@ watch(rows, () => nextTick(updateTableWidths));
         </div>
 
         <div class="flex gap-2">
-          <button type="button" class="btn-primary" @click="apply">Buscar registros</button>
           <button type="button" class="btn-ghost" @click="clearFilters">Limpar</button>
         </div>
       </div>
 
-      <div class="rounded-xl border border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
-        <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
-          <div class="flex flex-col gap-1">
-            <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Período</span>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                class="chip"
-                :class="singleMonthOfRange(form.from, form.to) === monthYm(0) ? 'chip-active' : ''"
-                @click="setThisMonthPeriod"
-              >
-                Mês atual
-              </button>
-              <button
-                type="button"
-                class="chip"
-                :class="singleMonthOfRange(form.from, form.to) === monthYm(-1) ? 'chip-active' : ''"
-                @click="setLastMonthPeriod"
-              >
-                Mês anterior
-              </button>
-            </div>
-          </div>
-          <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-            <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">De</label>
-            <input v-model="form.from" type="date" class="input-field" />
-          </div>
-          <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-            <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Até</label>
-            <input v-model="form.to" type="date" class="input-field" />
-          </div>
-          <span v-if="selectedMonthLabel" class="pb-1 text-xs font-medium text-zinc-400">
-            Exibindo {{ selectedMonthLabel }}
-          </span>
-        </div>
+      <div class="flex items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span class="font-semibold uppercase tracking-wide text-zinc-400">Período</span>
+        <span>
+          Mês selecionado no filtro do dashboard{{ selectedMonthLabel ? ":" : "." }}
+          <strong v-if="selectedMonthLabel" class="text-zinc-800 dark:text-zinc-100 capitalize">{{ selectedMonthLabel }}</strong>
+        </span>
       </div>
 
       <div v-if="canEdit && selectedRows.length" class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
@@ -576,15 +490,8 @@ watch(rows, () => nextTick(updateTableWidths));
         </div>
       </div>
 
-      <div v-else-if="applied">
-        <EmptyState title="Nenhum registro encontrado" text="Ajuste o estado ou a busca e tente novamente." />
-      </div>
-
       <div v-else>
-        <EmptyState
-          title="Aguardando filtros"
-          text="Selecione o estado (opcional) e clique em “Buscar registros” para listar os lançamentos."
-        />
+        <EmptyState title="Nenhum registro encontrado" text="Ajuste o estado, a filial ou a busca, ou troque o mês no filtro do dashboard." />
       </div>
     </div>
   </Modal>

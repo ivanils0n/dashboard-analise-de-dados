@@ -19,6 +19,29 @@ export async function recordChange(
   );
 }
 
+export type ChangeEntry = {
+  tabela: string;
+  registroId: string;
+  operacao: Operacao;
+  dados: unknown;
+};
+
+// Grava várias entradas do changelog em um único round-trip (usado por
+// bulkWrite, que processa dezenas/centenas de registros por chamada).
+export async function recordChanges(client: Client, changes: ChangeEntry[]) {
+  if (!changes.length) return;
+  const params: unknown[] = [];
+  const rows = changes.map((c) => {
+    params.push(c.tabela, c.registroId, c.operacao, c.dados);
+    const base = params.length - 4;
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+  });
+  await client.query(
+    `insert into public.registro_alteracoes (tabela, registro_id, operacao, dados) values ${rows.join(", ")}`,
+    params
+  );
+}
+
 type ListChangesOptions = {
   page: number;
   limit: number;

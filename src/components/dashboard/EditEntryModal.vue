@@ -22,9 +22,10 @@ const emit = defineEmits(["close", "saved"]);
 const { show: toast } = useToast();
 
 const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: props.indicatorId, type: "number" });
-const isCustoTotal = computed(() => props.indicatorId === "custo_total");
-const isTreinamento = computed(() => props.indicatorId === "treinamento");
-const usesMonth = computed(() => isCustoTotal.value || isTreinamento.value);
+/* Todo indicador lançado por competência (mês/ano) — não mais por dia
+   exato — edita a data como mês/ano aqui também. */
+const MONTHLY_FORMS = ["custo_total", "treinamento", "diaria", "mensal"];
+const usesMonth = computed(() => MONTHLY_FORMS.includes(indicator.value.form));
 
 const form = reactive({
   date: "",
@@ -170,12 +171,14 @@ function save() {
           </select>
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">{{ isCustoTotal ? "Custos (R$)" : "Carga horária (horas)" }}</label>
-          <input v-model="form.value" type="text" inputmode="decimal" class="input-field text-right tabular-nums" :placeholder="isCustoTotal ? '0,00' : '0'" />
+          <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            Valor{{ indicator.type === "currency" ? " (R$)" : indicator.type === "hours" ? " (horas)" : indicator.unit ? ` (${indicator.unit})` : "" }}
+          </label>
+          <input v-model="form.value" type="text" inputmode="decimal" class="input-field text-right tabular-nums" :placeholder="indicator.type === 'currency' ? '0,00' : '0'" />
         </div>
       </div>
 
-      <!-- Demais indicadores: data + valor -->
+      <!-- Demais indicadores: data exata + valor -->
       <div v-else class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data</label>

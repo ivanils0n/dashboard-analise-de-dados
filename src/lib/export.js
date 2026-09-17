@@ -110,7 +110,7 @@ export function toXLSX() {
 
   // ---- Planilha 3: Equipe ----
   const employeeRows = [
-    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"]
+    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"]
   ];
   getEmployees().forEach((e) => {
     const cost = getLatestForMeta("custo_contratacao", "employeeId", e.id);
@@ -123,7 +123,6 @@ export function toXLSX() {
       e.hiredAt ? String(e.hiredAt).split("T")[0] : null,
       STATUS_LABELS[e.status] || e.status,
       TYPE_LABELS[e.type] || e.type,
-      e.countsTurnover ? "Sim" : "Não",
       e.createdAt,
       e.updatedAt,
       cost ? Number(cost.value) : null,
@@ -143,7 +142,7 @@ export function toXLSX() {
     ]);
   });
   const sheetEmployees = XLSX.utils.aoa_to_sheet(safeRows(employeeRows));
-  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 14 }];
+  sheetEmployees["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(workbook, sheetEmployees, "Equipe");
 
   // ---- Planilha 4: Filiais ----
@@ -186,8 +185,8 @@ export function downloadTemplate() {
   XLSX.utils.book_append_sheet(workbook, entriesSheet, "Lançamentos");
 
   const teamSheet = XLSX.utils.aoa_to_sheet([
-    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"],
-    ["Maria Silva", "RH", "Analista de RH", "3375", "2026-08-19", "Ativo", "Efetivado", "Não", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, 200, 400, 350, 280, 0, 150, 0, 300, "João Souza", "Carlos Lima", "RO", "PVH 1"]
+    ["Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"],
+    ["Maria Silva", "RH", "Analista de RH", "3375", "2026-08-19", "Ativo", "Efetivado", "2026-08-19T09:00:00", "2026-08-19T09:00:00", 2500, 3500, 200, 400, 350, 280, 0, 150, 0, 300, "João Souza", "Carlos Lima", "RO", "PVH 1"]
   ]);
   XLSX.utils.book_append_sheet(workbook, teamSheet, "Equipe");
 
@@ -260,7 +259,7 @@ function parseDateText(raw) {
 /* ---------- Planilha EQUIPE ---------- */
 
 export const EQUIPE_TEMPLATE_HEADER = [
-  "Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Conta no turnover", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"
+  "Colaborador", "Setor", "Cargo", "Usuário", "Entrada", "Status", "Tipo", "Registro", "Última atualização", "Custo de contratação (R$)", "Salário (R$)", "Vale-transporte (R$)", "Vale-alimentação (R$)", "INSS (R$)", "FGTS (R$)", "IRRF (R$)", "Premiação art. 62 (R$)", "Premiação loja (R$)", "Comissão (R$)", "Líder imediato", "Gerente regional", "Estado", "Filial"
 ];
 
 /* Lê a planilha "Equipe" e devolve candidatos a colaborador (sem gravar).
@@ -277,7 +276,6 @@ export function parseEmployeeSheet(sheet, defaultEstado = null) {
   const iHired = findCol("entrada");
   const iStatus = findCol("status");
   const iType = findCol("tipo");
-  const iTurnover = findCol("conta no turnover");
   const iCreated = findCol("registro");
   const iUpdated = findCol("última atualização", "ultima atualizacao");
   const iCost = headerRow.findIndex((h) => String(h ?? "").toLowerCase().startsWith("custo"));
@@ -327,7 +325,6 @@ export function parseEmployeeSheet(sheet, defaultEstado = null) {
     const hiredAt = parseDateText(cellAt(row, iHired));
     const status = normalizeStatus(cellAt(row, iStatus));
     const type = normalizeType(cellAt(row, iType));
-    const countsTurnover = normalizeBool(cellAt(row, iTurnover));
     const costValue = moneyNum(cellAt(row, iCost));
 
     const employee = valid
@@ -353,7 +350,6 @@ export function parseEmployeeSheet(sheet, defaultEstado = null) {
           hiredAt,
           status,
           type,
-          countsTurnover,
           createdAt,
           updatedAt,
           firedAt: status === "desligado" ? updatedAt : null
@@ -368,7 +364,7 @@ export function parseEmployeeSheet(sheet, defaultEstado = null) {
 export function downloadEquipeTemplate() {
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(safeRows([EQUIPE_TEMPLATE_HEADER]));
-  sheet["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 14 }];
+  sheet["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Equipe");
   XLSX.writeFile(workbook, `gente-gestao-template-equipe_${todayISO()}.xlsx`);
 }
@@ -597,6 +593,33 @@ export function parseVagasSheet(sheet) {
   return out;
 }
 
+/* Exporta uma lista de vagas (já filtrada pela tela que chama) para xlsx,
+   no mesmo layout do template de importação — com Status e Tempo (dias)
+   adicionados ao final para conferência. */
+export function exportVagas(list) {
+  const workbook = XLSX.utils.book_new();
+  const rows = [[...VAGA_TEMPLATE_HEADER, "Status", "Tempo (dias)"]];
+  (list || []).forEach((v) => {
+    const branch = v.filialId ? getBranchById(v.filialId) : null;
+    const days = v.openAt && v.closeAt ? (new Date(v.closeAt) - new Date(v.openAt)) / 86400000 : null;
+    rows.push([
+      v.name || "",
+      v.openAt ? String(v.openAt).slice(0, 10) : "",
+      v.closeAt ? String(v.closeAt).slice(0, 10) : "",
+      v.tipoContratacao ? String(v.tipoContratacao).toUpperCase() : "",
+      v.salario != null ? Number(v.salario) : null,
+      v.estado || "",
+      branch ? branch.shortName || branch.name : "",
+      v.closeAt ? "Fechada" : "Aberta",
+      days === null || isNaN(days) ? null : Number(days.toFixed(1))
+    ]);
+  });
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows(rows));
+  sheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Vagas");
+  XLSX.writeFile(workbook, `gente-gestao-vagas_${todayISO()}.xlsx`);
+}
+
 export function downloadVagasTemplate() {
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(
@@ -609,6 +632,307 @@ export function downloadVagasTemplate() {
   sheet["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Vagas");
   XLSX.writeFile(workbook, `gente-gestao-template-vagas_${todayISO()}.xlsx`);
+}
+
+/* ---------- Planilha TURNOVER (quantidade admitida/demitida por filial) ---------- */
+
+export const TURNOVER_TEMPLATE_HEADER = ["Filial", "Mês de referência", "Admitidos", "Demitidos", "Ativos", "Estado"];
+
+/* Lê a planilha de turnover e devolve linhas normalizadas.
+   Campos por linha: { filialText, mesReferencia, admitidos, demitidos, ativos, estado } —
+   não depende de colaboradores: é só a quantidade admitida/demitida/ativa na
+   filial naquele mês (ver turnoverQuantitiesInRange em lib/employees.js).
+   "Ativos" substitui o Headcount no cálculo do Turnover (%). */
+export function parseTurnoverSheet(sheet) {
+  const rows = sheetRows(sheet, { raw: false });
+  /* Mês lido também no formato cru (raw:true): células de data reais chegam
+     como número de série do Excel, evitando o texto formatado no locale
+     errado (mesmo cuidado de parseDiariaSheet, ver parseDiariaMes). */
+  const rawRows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iFilial = headFind(headerRow, ["filial", "abreviado", "loja"]);
+  const iMes = headFind(headerRow, ["mesdereferencia", "referencia", "mes", "periodo", "competencia"]);
+  const iAdmitidos = headFind(headerRow, ["admitidos", "admissoes"]);
+  const iDemitidos = headFind(headerRow, ["demitidos", "demissoes", "desligamentos"]);
+  const iAtivos = headFind(headerRow, ["ativos", "headcount", "quadro"]);
+  const iEstado = headFind(headerRow, ["estado"]);
+  if (iMes < 0) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const mesText = String(cellAt(row, iMes)).trim();
+    const mesRaw = cellAt(rawRows[i] || [], iMes);
+    const mesInfo = parseDiariaMes(mesRaw !== "" ? mesRaw : mesText);
+    if (!mesInfo.ok) continue;
+    const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
+
+    out.push({
+      filialText: String(cellAt(row, iFilial)).trim(),
+      mesReferencia: mesInfo.mes,
+      admitidos: Math.max(0, Math.round(Number(cellAt(row, iAdmitidos)) || 0)),
+      demitidos: Math.max(0, Math.round(Number(cellAt(row, iDemitidos)) || 0)),
+      ativos: Math.max(0, Math.round(Number(cellAt(row, iAtivos)) || 0)),
+      estado: STATES.includes(estadoRaw) ? estadoRaw : null
+    });
+  }
+  return out;
+}
+
+/* Exporta uma lista de lançamentos de turnover (já filtrada pela tela que
+   chama) para xlsx, no mesmo layout do template de importação. */
+export function exportTurnover(list, filename) {
+  const workbook = XLSX.utils.book_new();
+  const rows = [TURNOVER_TEMPLATE_HEADER];
+  (list || []).forEach((t) => {
+    const branch = t.filialId ? getBranchById(t.filialId) : null;
+    rows.push([
+      branch ? branch.shortName || branch.name : "",
+      t.mesReferencia || "",
+      Number(t.admitidos) || 0,
+      Number(t.demitidos) || 0,
+      Number(t.ativos) || 0,
+      t.estado || ""
+    ]);
+  });
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows(rows));
+  sheet["!cols"] = [{ wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Turnover");
+  XLSX.writeFile(workbook, `gente-gestao-${filename || "turnover"}_${todayISO()}.xlsx`);
+}
+
+export function downloadTurnoverTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      TURNOVER_TEMPLATE_HEADER,
+      ["PVH1", "08/2026", 5, 3, 120, "RO"],
+      ["MAO1", "08/2026", 2, 4, 85, "AM"]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Turnover");
+  XLSX.writeFile(workbook, `gente-gestao-template-turnover_${todayISO()}.xlsx`);
+}
+
+/* ---------- Planilha TEMPO MÉDIO DE PERMANÊNCIA ---------- */
+
+export const PERMANENCIA_TEMPLATE_HEADER = ["Colaborador", "Data de admissão", "Data de demissão", "Estado"];
+
+/* Lê a planilha de permanência e devolve linhas normalizadas.
+   Campos por linha: { colaboradorText, dataAdmissao, dataDemissao, estado } —
+   registro independente do Turnover, usado só para o KPI Tempo médio de
+   permanência (ver turnoverAvgTenureDays em lib/employees.js). */
+export function parsePermanenciaSheet(sheet) {
+  const rows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iColaborador = headFind(headerRow, ["colaborador", "nome"]);
+  const iAdmissao = headFind(headerRow, ["datadeadmissao", "admissao"]);
+  const iDemissao = headFind(headerRow, ["datadedemissao", "demissao", "desligamento"]);
+  const iEstado = headFind(headerRow, ["estado"]);
+  if (iColaborador < 0) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const colaboradorText = String(cellAt(row, iColaborador)).trim();
+    if (!colaboradorText) continue;
+    const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
+
+    out.push({
+      colaboradorText,
+      dataAdmissao: parseDateText(cellAt(row, iAdmissao)),
+      dataDemissao: parseDateText(cellAt(row, iDemissao)),
+      estado: STATES.includes(estadoRaw) ? estadoRaw : null
+    });
+  }
+  return out;
+}
+
+/* Exporta uma lista de registros de permanência (já filtrada pela tela que
+   chama) para xlsx, no mesmo layout do template de importação. */
+export function exportPermanencia(list) {
+  const workbook = XLSX.utils.book_new();
+  const rows = [PERMANENCIA_TEMPLATE_HEADER];
+  (list || []).forEach((p) => {
+    rows.push([
+      p.colaborador || "",
+      p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : "",
+      p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : "",
+      p.estado || ""
+    ]);
+  });
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows(rows));
+  sheet["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Permanência");
+  XLSX.writeFile(workbook, `gente-gestao-permanencia_${todayISO()}.xlsx`);
+}
+
+export function downloadPermanenciaTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      PERMANENCIA_TEMPLATE_HEADER,
+      ["MARIA DA SILVA", "2026-03-10", "2026-08-15", "RO"],
+      ["JOÃO SOUZA", "2026-01-05", "2026-08-20", "AM"]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Permanência");
+  XLSX.writeFile(workbook, `gente-gestao-template-permanencia_${todayISO()}.xlsx`);
+}
+
+/* ---------- Planilha HEADCOUNT ---------- */
+
+export const HEADCOUNT_TEMPLATE_HEADER = [
+  "Código",
+  "Colaborador",
+  "Empresa",
+  "Função",
+  "Remuneração",
+  "Data de admissão",
+  "Estado"
+];
+
+/* Lê a planilha de headcount e devolve linhas normalizadas.
+   Campos por linha:
+     { codigo, colaboradorText, empresaText, funcaoText, remuneracao, dataAdmissao, estado }
+   Não há mais coluna de "mês de lançamento": o quadro traz sempre todos os
+   colaboradores, e o filtro por mês do dashboard usa a Data de admissão como
+   base (ver activeInMonth em lib/employees.js). */
+export function parseHeadcountSheet(sheet) {
+  const rows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iCodigo = headFind(headerRow, ["codigo", "matricula"]);
+  const iColaborador = headFind(headerRow, ["colaborador", "nome"]);
+  const iEmpresa = headFind(headerRow, ["empresa", "filial", "abreviado", "loja"]);
+  const iFuncao = headFind(headerRow, ["funcao", "cargo"]);
+  const iRemuneracao = headFind(headerRow, ["remuneracao", "salario"]);
+  const iAdmissao = headFind(headerRow, ["datadeadmissao", "admissao"]);
+  const iEstado = headFind(headerRow, ["estado"]);
+  if (iColaborador < 0) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const colaboradorText = String(cellAt(row, iColaborador)).trim();
+    if (!colaboradorText) continue;
+    const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
+
+    out.push({
+      codigo: String(cellAt(row, iCodigo)).trim(),
+      colaboradorText,
+      /* A filial só é resolvida depois, já com o estado definitivo da linha
+         (coluna Estado ou o estado padrão do lançamento) — evita cruzar com
+         uma filial de outro estado que reaproveite o mesmo nome abreviado. */
+      empresaText: String(cellAt(row, iEmpresa)).trim(),
+      funcaoText: String(cellAt(row, iFuncao)).trim(),
+      remuneracao: moneyNum(cellAt(row, iRemuneracao)),
+      dataAdmissao: parseDateText(cellAt(row, iAdmissao)),
+      estado: STATES.includes(estadoRaw) ? estadoRaw : null
+    });
+  }
+  return out;
+}
+
+/* Exporta uma lista de registros de headcount (já filtrada pela tela que
+   chama) para xlsx, no mesmo layout do template de importação. */
+export function exportHeadcount(list) {
+  const workbook = XLSX.utils.book_new();
+  const rows = [HEADCOUNT_TEMPLATE_HEADER];
+  (list || []).forEach((h) => {
+    const branch = h.filialId ? getBranchById(h.filialId) : null;
+    rows.push([
+      h.codigo || "",
+      h.colaborador || "",
+      branch ? branch.shortName || branch.name : "",
+      h.funcao || "",
+      h.remuneracao != null ? Number(h.remuneracao) : null,
+      h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "",
+      h.estado || ""
+    ]);
+  });
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows(rows));
+  sheet["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Headcount");
+  XLSX.writeFile(workbook, `gente-gestao-headcount_${todayISO()}.xlsx`);
+}
+
+export function downloadHeadcountTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      HEADCOUNT_TEMPLATE_HEADER,
+      ["3375", "MARIA DA SILVA", "PVH1", "ANALISTA DE RH", 3500, "2024-03-10", "RO"],
+      ["4210", "JOÃO SOUZA", "MAO1", "ASSISTENTE ADMINISTRATIVO", 2200, "2025-01-05", "AM"]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Headcount");
+  XLSX.writeFile(workbook, `gente-gestao-template-headcount_${todayISO()}.xlsx`);
+}
+
+/* ---------- Planilha HEADCOUNT — Demitidos (altera o status, não cria
+   registro novo) ---------- */
+
+export const HEADCOUNT_DEMITIDOS_TEMPLATE_HEADER = ["Colaborador", "Data de admissão", "Data de desligamento"];
+
+/* Lê a planilha de demitidos (todos os meses de uma vez) e devolve linhas
+   normalizadas. Campos por linha: { codigo, colaboradorText, dataAdmissao,
+   demitidoMes } — localiza pelo Nome quem já está lançado no headcount (ver
+   findHeadcountMatches); quando o nome bate em mais de um registro, a tela
+   pede para escolher qual é qual (ver onHeadcountDemitidosImportFile). O
+   template não traz mais coluna de Código, mas uma planilha antiga que ainda
+   tenha essa coluna continua funcionando (usada junto do Nome para achar o
+   colaborador certo). Data de admissão é opcional: quando o colaborador é
+   achado no headcount, a Data de admissão de lá tem prioridade sobre a da
+   planilha; quando não é achado (lançado direto no Turnover), só a da
+   planilha alimenta o KPI Tempo de permanência. Cada linha carrega o próprio
+   mês de desligamento — não há mês único escolhido na tela. */
+export function parseHeadcountDemitidosSheet(sheet) {
+  const rows = sheetRows(sheet);
+  const headerRow = rows[0] || [];
+  const iCodigo = headFind(headerRow, ["codigo", "matricula"]);
+  const iColaborador = headFind(headerRow, ["colaborador", "nome"]);
+  const iAdmissao = headFind(headerRow, ["datadeadmissao", "admissao"]);
+  const iDesligamento = headFind(headerRow, ["datadedesligamento", "desligamento", "demissao", "datadedemissao"]);
+  if (iColaborador < 0) return [];
+
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    const colaboradorText = String(cellAt(row, iColaborador)).trim();
+    if (!colaboradorText) continue;
+    const codigo = iCodigo >= 0 ? String(cellAt(row, iCodigo)).trim() : "";
+    const dataAdmissao = parseDateText(cellAt(row, iAdmissao));
+    const dataDesligamento = parseDateText(cellAt(row, iDesligamento));
+    out.push({
+      codigo,
+      colaboradorText,
+      dataAdmissao,
+      dataDesligamento,
+      demitidoMes: dataDesligamento ? dataDesligamento.slice(0, 7) : null
+    });
+  }
+  return out;
+}
+
+export function downloadHeadcountDemitidosTemplate() {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(
+    safeRows([
+      HEADCOUNT_DEMITIDOS_TEMPLATE_HEADER,
+      ["MARIA DA SILVA", "2026-03-10", "2026-06-30"],
+      ["JOÃO SOUZA", "2026-01-05", "2026-08-15"]
+    ])
+  );
+  sheet["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, "Demitidos");
+  XLSX.writeFile(workbook, `gente-gestao-template-headcount-demitidos_${todayISO()}.xlsx`);
 }
 
 export function importWorkbook(wb, currentState) {
@@ -863,7 +1187,3 @@ function normalizeType(raw) {
   return "experiencia";
 }
 
-function normalizeBool(raw) {
-  const s = String(raw || "").trim().toLowerCase();
-  return s === "sim" || s === "true" || s === "1" || s === "s";
-}

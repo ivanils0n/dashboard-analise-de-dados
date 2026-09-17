@@ -279,12 +279,20 @@ export function createPieChart(canvas) {
           padding: 12,
           cornerRadius: 8,
           callbacks: {
-            label: (context) => ` ${context.label}: ${context.raw}`
+            /* Único uso atual (Turnover): cada fatia já é uma taxa (%), não
+               uma contagem — formata com 1 casa decimal e o sufixo "%". */
+            label: (context) => ` ${context.label}: ${formatPiePercent(context.raw)}`
           }
         }
       }
     }
   });
+}
+
+export function formatPiePercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  return num.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 }
 
 /* data: [{ label, value }] */

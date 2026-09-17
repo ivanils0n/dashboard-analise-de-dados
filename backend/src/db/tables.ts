@@ -83,7 +83,6 @@ export const ENTITIES: Record<string, EntityDef> = {
         values: ["ativo", "desligado", "afastado"]
       },
       { name: "tipo", type: "text", required: true, values: ["efetivado", "experiencia"] },
-      { name: "conta_turnover", type: "boolean", notNull: true },
       { name: "criado_em", type: "timestamptz", readOnly: true },
       { name: "atualizado_em", type: "timestamptz", readOnly: true },
       { name: "desligado_em", type: "timestamptz" }
@@ -97,7 +96,11 @@ export const ENTITIES: Record<string, EntityDef> = {
     filters: [
       { param: "tipo_contratacao", column: "tipo_contratacao", kind: "eq" },
       { param: "filial_id", column: "filial_id", kind: "eq" },
-      { param: "aberta", column: "fechada_em", kind: "isnull" }
+      { param: "aberta", column: "fechada_em", kind: "isnull" },
+      // Usados pelo card de Tempo médio de contratação para baixar só as
+      // vagas do período filtrado, em vez da lista inteira do estado.
+      { param: "data_de", column: "aberta_em", kind: "gte" },
+      { param: "data_ate", column: "aberta_em", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
@@ -106,6 +109,68 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "fechada_em", type: "timestamptz" },
       { name: "salario", type: "number" },
       { name: "tipo_contratacao", type: "text", values: ["clt", "pj"] },
+      { name: "filial_id", type: "text" },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  headcount: {
+    key: "headcount",
+    label: "Headcount",
+    orderBy: "mes_referencia desc",
+    search: ["codigo", "colaborador", "funcao"],
+    filters: [
+      { param: "data_de", column: "mes_referencia", kind: "gte" },
+      { param: "data_ate", column: "mes_referencia", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "codigo", type: "text" },
+      { name: "colaborador", type: "text", required: true },
+      { name: "funcao", type: "text" },
+      { name: "remuneracao", type: "number" },
+      { name: "data_admissao", type: "date" },
+      { name: "mes_referencia", type: "date", required: true },
+      { name: "status", type: "text", values: ["ativo", "demitido"], notNull: true },
+      { name: "demitido_mes", type: "date" },
+      { name: "filial_id", type: "text" },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  turnover: {
+    key: "turnover",
+    label: "Turnover",
+    orderBy: "mes_referencia desc",
+    search: [],
+    filters: [
+      { param: "filial_id", column: "filial_id", kind: "eq" },
+      { param: "data_de", column: "mes_referencia", kind: "gte" },
+      { param: "data_ate", column: "mes_referencia", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "filial_id", type: "text" },
+      { name: "mes_referencia", type: "date", required: true },
+      { name: "admitidos", type: "number", notNull: true },
+      { name: "demitidos", type: "number", notNull: true },
+      { name: "ativos", type: "number", notNull: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  permanencia: {
+    key: "permanencia",
+    label: "Tempo médio de permanência",
+    orderBy: "data_demissao desc",
+    search: ["colaborador"],
+    filters: [
+      { param: "filial_id", column: "filial_id", kind: "eq" },
+      { param: "data_de", column: "data_demissao", kind: "gte" },
+      { param: "data_ate", column: "data_demissao", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "colaborador", type: "text", required: true },
+      { name: "data_admissao", type: "date", required: true },
+      { name: "data_demissao", type: "date", required: true },
       { name: "filial_id", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]

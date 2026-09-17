@@ -3,10 +3,10 @@
    lançamentos, garantindo que KPIs e gráficos sigam exatamente a mesma lógica. */
 
 /* Identificadores cujo valor do período é a SOMA dos lançamentos. */
-const SUM_INDICATORS = new Set(["absenteismo", "treinamento", "custo_total", "custo_contratacao"]);
+const SUM_INDICATORS = new Set(["absenteismo", "treinamento", "custo_total"]);
 
-/* Identificador cujo valor do período é a MÉDIA dos lançamentos. */
-const AVG_INDICATORS = new Set(["custo_diaria"]);
+/* Identificadores cujo valor do período é a MÉDIA dos lançamentos. */
+const AVG_INDICATORS = new Set(["custo_diaria", "custo_contratacao"]);
 
 export function aggregationKind(ind) {
   if (!ind) return "last";
@@ -32,18 +32,4 @@ export function aggregateEntries(ind, list) {
   if (raw === null || raw === undefined || raw === "") return null;
   const last = Number(raw);
   return Number.isFinite(last) ? last : null;
-}
-
-/* Totais do Absenteísmo por tipo (falta/atraso/afastamento). */
-export function absenteismoTotals(list) {
-  const totals = { falta: 0, atraso: 0, afastamento: 0 };
-  (list || []).forEach((e) => {
-    const type = e.meta && e.meta.type;
-    /* hasOwnProperty, não `in`: `in` também casa com o protótipo
-       ("toString", "constructor"...) e criaria chaves espúrias no total. */
-    if (Object.prototype.hasOwnProperty.call(totals, type)) {
-      totals[type] += Number(e.value) || 0;
-    }
-  });
-  return totals;
 }

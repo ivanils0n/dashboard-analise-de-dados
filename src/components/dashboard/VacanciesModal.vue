@@ -8,28 +8,17 @@ import { STATES, STATE_NAMES } from "@/lib/config";
 import { listVacancies, formatVacancyTempo, deleteVacancies } from "@/lib/employees";
 import { getBranchById } from "@/lib/store";
 import { hydrateState } from "@/lib/db";
-import {
-  formatDate,
-  formatCurrency,
-  firstDayOfMonthISO,
-  lastDayOfMonthISO,
-  monthYm,
-  firstDayOfYm,
-  singleMonthOfRange,
-  ymLabel,
-  ymOf,
-  currentYm,
-  addMonthsYm,
-  normalizeText,
-  todayISO
-} from "@/lib/utils";
+import { formatDate, formatCurrency, singleMonthOfRange, ymLabel, normalizeText } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
+import { dateFilter } from "@/composables/useDateFilter";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* Quando true, não filtra por período (mostra todas as vagas). */
+  /* Quando true, não filtra por período (mostra todas as vagas) — usado por
+     Custo de contratação. Quando false, segue sempre o mês selecionado no
+     filtro global do dashboard, sem opção de sobrepor aqui. */
   allPeriods: { type: Boolean, default: false }
 });
 const emit = defineEmits(["close", "edit"]);
@@ -46,10 +35,11 @@ const form = reactive({
   estado: filters.current !== "todos" ? filters.current : "todos",
   filial: "todos",
   search: "",
-  from: props.allPeriods ? "" : firstDayOfMonthISO(),
-  to: props.allPeriods ? "" : lastDayOfMonthISO(),
   status: "todas"
 });
+
+const periodFrom = computed(() => (props.allPeriods ? "" : dateFilter.start));
+const periodTo = computed(() => (props.allPeriods ? "" : dateFilter.end));
 
 watch(
   () => form.estado,
@@ -63,32 +53,15 @@ watch(
   }
 );
 
-function setThisMonth() {
-  form.from = firstDayOfMonthISO();
-  form.to = lastDayOfMonthISO();
-}
-
-/* Período = um mês anterior ao selecionado, a cada clique
-   (ex.: Set/2026 -> Ago/2026 -> Jul/2026). Mesmo comportamento do filtro de
-   data da aba Dashboard (DateRangeFilter): só recua a data "De", sem mexer
-   na data "Até". */
-function setLastMonth() {
-  const baseStart = form.from || todayISO();
-  const ym = addMonthsYm(ymOf(baseStart) || currentYm(), -1);
-  form.from = firstDayOfYm(ym);
-}
-
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : "todos";
   form.filial = "todos";
   form.search = "";
-  form.from = props.allPeriods ? "" : firstDayOfMonthISO();
-  form.to = props.allPeriods ? "" : lastDayOfMonthISO();
   form.status = "todas";
 }
 
 const selectedMonthLabel = computed(() => {
-  const ym = singleMonthOfRange(form.from, form.to);
+  const ym = singleMonthOfRange(periodFrom.value, periodTo.value);
   return ym ? ymLabel(ym) : "";
 });
 
@@ -110,8 +83,8 @@ function openAtDate(v) {
 const scopedList = computed(() => {
   let list = listVacancies(form.estado);
 
-  if (form.from) list = list.filter((v) => openAtDate(v) >= form.from);
-  if (form.to) list = list.filter((v) => openAtDate(v) <= form.to);
+  if (periodFrom.value) list = list.filter((v) => openAtDate(v) >= periodFrom.value);
+  if (periodTo.value) list = list.filter((v) => openAtDate(v) <= periodTo.value);
 
   const q = normalizeText(form.search).trim();
   if (q) {
@@ -219,7 +192,7 @@ async function handleBulkDelete() {
 
 /* Limpa a seleção quando os filtros mudam (evita IDs fora da visão). */
 watch(
-  () => [form.estado, form.from, form.to, form.search, form.status],
+  () => [form.estado, periodFrom.value, periodTo.value, form.search, form.status],
   () => {
     selectedIds.value = new Set();
   }
@@ -337,38 +310,11 @@ watch(rows, () => nextTick(updateTableWidths));
             <button type="button" class="btn-ghost" @click="clearFilters">Limpar</button>
           </div>
 
-          <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
-            <div class="flex flex-col gap-1">
-              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Período</span>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  class="chip"
-                  :class="singleMonthOfRange(form.from, form.to) === monthYm(0) ? 'chip-active' : ''"
-                  @click="setThisMonth"
-                >
-                  Mês atual
-                </button>
-                <button
-                  type="button"
-                  class="chip"
-                  :class="singleMonthOfRange(form.from, form.to) === monthYm(-1) ? 'chip-active' : ''"
-                  @click="setLastMonth"
-                >
-                  Mês anterior
-                </button>
-              </div>
-            </div>
-            <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-              <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">De</label>
-              <input v-model="form.from" type="date" class="input-field" />
-            </div>
-            <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-              <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Até</label>
-              <input v-model="form.to" type="date" class="input-field" />
-            </div>
-            <span v-if="selectedMonthLabel" class="pb-1 text-xs font-medium text-zinc-400">
-              Exibindo {{ selectedMonthLabel }}
+          <div v-if="!allPeriods" class="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <span class="font-semibold uppercase tracking-wide text-zinc-400">Período</span>
+            <span>
+              Mês selecionado no filtro do dashboard{{ selectedMonthLabel ? ":" : "." }}
+              <strong v-if="selectedMonthLabel" class="text-zinc-800 dark:text-zinc-100 capitalize">{{ selectedMonthLabel }}</strong>
             </span>
           </div>
         </div>

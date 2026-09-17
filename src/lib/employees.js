@@ -1,7 +1,7 @@
 /* Domínio da Equipe: recalcula e grava snapshots diários dos indicadores
    computados (headcount, turnover, permanência, retenção) e administra vagas. */
 
-import { COMPUTED_INDICATORS, STATES } from "./config";
+import { STATES } from "./config";
 import {
   useData,
   getEmployeeById,
@@ -11,6 +11,18 @@ import {
   upsertVacancy,
   deleteVacancy,
   getVacancyById,
+  getTurnovers,
+  upsertTurnover,
+  deleteTurnover,
+  getTurnoverById,
+  getPermanencias,
+  upsertPermanencia,
+  deletePermanencia,
+  getPermanenciaById,
+  getHeadcounts,
+  upsertHeadcount,
+  deleteHeadcount,
+  getHeadcountById,
   addEntry,
   updateEntry,
   removeEntry,
@@ -64,13 +76,15 @@ export function normalizeBranchKey(value) {
 }
 
 /* Localiza a filial pelo nome abreviado (shortName), tolerando as variações
-   acima. Devolve a filial ou null. */
-export function findBranchByShortName(text) {
+   acima. Quando `estado` é informado, exige que a filial pertença a ele —
+   evita cruzar com uma filial de outro estado que reaproveite o mesmo nome
+   abreviado. Devolve a filial ou null. */
+export function findBranchByShortName(text, estado) {
   const key = normalizeBranchKey(text);
   if (!key) return null;
-  return (
-    useData().branches.find((b) => normalizeBranchKey(b.shortName) === key) || null
-  );
+  let list = useData().branches;
+  if (estado && estado !== "todos") list = list.filter((b) => sameState(b.estado, estado));
+  return list.find((b) => normalizeBranchKey(b.shortName) === key) || null;
 }
 
 /* Converte valor monetário opcional em número (null quando vazio). */
@@ -127,7 +141,6 @@ export function saveEmployee(employeeData) {
     hiredAt: employeeData.hiredAt || null,
     status: employeeData.status,
     type: employeeData.type,
-    countsTurnover: !!employeeData.countsTurnover,
     departmentId: employeeData.departmentId || null,
     filialId: employeeData.filialId || null,
     liderImediato: employeeData.liderImediato != null ? String(employeeData.liderImediato) : null,
@@ -188,72 +201,44 @@ function metricsFrom(list) {
   const m = { total: list.length, ativos: 0, entradas: 0, saidas: 0 };
   list.forEach((e) => {
     if (e.status === "ativo") m.ativos += 1;
-    if (e.type === "efetivado" && e.countsTurnover && e.status === "ativo") m.entradas += 1;
-    if (e.type === "efetivado" && e.countsTurnover && e.status === "desligado") m.saidas += 1;
+    if (e.type === "efetivado" && e.status === "ativo") m.entradas += 1;
+    if (e.type === "efetivado" && e.status === "desligado") m.saidas += 1;
   });
   return m;
 }
 
 /* ---------- Cálculos ---------- */
 
-export function headcount(state) {
-  return listEmployees(state).filter((e) => e.status === "ativo").length;
+/* Média dos dias entre abertura e fechamento de uma lista de vagas — só as
+   já fechadas contam (vagas ainda abertas não têm um tempo de contratação
+   definitivo ainda). Pura (sem depender do store), reaproveitada tanto pelo
+   snapshot diário local (avgHiringDays) quanto pelo card do dashboard, que
+   busca as vagas do período direto da API (ver fetchVagasInRange em lib/db). */
+export function averageHiringDays(list) {
+  const closed = (list || []).filter((v) => v.openAt && v.closeAt);
+  if (!closed.length) return null;
+  const total = closed.reduce((sum, v) => sum + (daysBetween(v.openAt, v.closeAt) || 0), 0);
+  return total / closed.length;
 }
 
-export function turnoverEntradas(state) {
-  return listEmployees(state).filter((e) => e.type === "efetivado" && e.countsTurnover && e.status === "ativo").length;
-}
-
-export function turnoverSaidas(state) {
-  return listEmployees(state).filter((e) => e.type === "efetivado" && e.countsTurnover && e.status === "desligado").length;
-}
-
-export function retentionPct(state) {
-  const list = listEmployees(state);
-  if (!list.length) return null;
-  const kept = list.filter((e) => e.status === "ativo").length;
-  return (kept / list.length) * 100;
-}
-
-export function permanenceAvgDays(state) {
-  const desligados = listEmployees(state).filter((e) => e.status === "desligado" && e.firedAt);
-  if (!desligados.length) return null;
-  const total = desligados.reduce((sum, e) => {
-    const days = daysBetween(e.hiredAt || e.createdAt, e.firedAt) || 0;
-    return sum + Math.max(1, Math.ceil(days));
-  }, 0);
-  return total / desligados.length;
-}
-
-export function probationTurnoverCount(state) {
-  return listEmployees(state).filter((e) => e.type === "experiencia" && e.status === "desligado").length;
-}
-
-/* Tempo médio de contratação: para cada vaga aberta (com data de abertura),
-   conta os dias até o fechamento — ou, enquanto ela seguir aberta, até hoje.
-   Assim a média já reflete vagas em andamento, não só as já fechadas. */
+/* Tempo médio de contratação a partir das vagas já carregadas no store,
+   sem filtro de período — usado só pelo snapshot diário (syncVacancyIndicator).
+   O card do dashboard não usa mais esta função: busca as vagas do período
+   filtrado direto da API (fetchVagasInRange), em vez de depender da lista
+   completa de vagas já carregada em memória. */
 export function avgHiringDays(state) {
-  const list = listVacancies(state).filter((v) => v.openAt);
-  if (!list.length) return null;
-  const today = todayISO();
-  const total = list.reduce((sum, v) => sum + (daysBetween(v.openAt, v.closeAt || today) || 0), 0);
-  return total / list.length;
+  return averageHiringDays(listVacancies(state));
 }
 
+/* Indicadores "computed" exibidos no dashboard — não inclui
+   "tempo_contratacao": o card busca as vagas do período direto da API (ver
+   useDashboardData.js), então não passa mais por este snapshot local.
+   Headcount, Retenção e Tempo de permanência não entram mais aqui: viraram
+   lançamento manual mensal (form "mensal"). */
 export function computedSnapshot(indId, state) {
   switch (indId) {
     case "headcount":
-      return headcount(state);
-    case "turnover_entradas":
-      return turnoverEntradas(state);
-    case "turnover_saidas":
-      return turnoverSaidas(state);
-    case "retencao":
-      return retentionPct(state);
-    case "tempo_permanencia":
-      return permanenceAvgDays(state);
-    case "turnover_experiencia":
-      return probationTurnoverCount(state);
+      return headcountCount(state);
     case "tempo_contratacao":
       return avgHiringDays(state);
     default:
@@ -263,38 +248,13 @@ export function computedSnapshot(indId, state) {
 
 /* ---------- Snapshots dos indicadores computados ---------- */
 
+/* Retenção e Tempo de permanência deixaram de ser calculados a
+   partir da Equipe: agora são lançamentos manuais mensais (form "mensal"),
+   como Custo da diária/Treinamento/Custo de folha — por isso não têm mais
+   snapshot automático aqui. Só "tempo_contratacao" (vagas) e o custo das
+   vagas continuam recalculados automaticamente. */
 export function syncAll() {
-  const today = todayISO();
-  /* "tempo_contratacao" tem seu próprio ciclo de vida (syncVacancyIndicator,
-     chamado sempre logo abaixo, independente de haver colaboradores) — fica
-     de fora daqui para não gravar e imediatamente sobrescrever a mesma
-     entrada a cada chamada. */
-  const computedIds = COMPUTED_INDICATORS.map((i) => i.id).filter((id) => id !== "tempo_contratacao");
-  const states = activeStates();
-
-  states.forEach((state) => {
-    const list = listEmployees(state);
-    if (!list.length) {
-      computedIds.forEach((id) => removeEntryForDate(id, today, state));
-    } else {
-      upsertEntryForDate("headcount", today, headcount(state), null, state);
-      upsertEntryForDate("turnover_entradas", today, turnoverEntradas(state), null, state);
-      upsertEntryForDate("turnover_saidas", today, turnoverSaidas(state), null, state);
-      const retention = retentionPct(state);
-      if (retention !== null) {
-        upsertEntryForDate("retencao", today, Number(retention.toFixed(1)), null, state);
-      }
-      const permanence = permanenceAvgDays(state);
-      if (permanence !== null) {
-        upsertEntryForDate("tempo_permanencia", today, Number(permanence.toFixed(1)), null, state);
-      }
-      upsertEntryForDate("turnover_experiencia", today, probationTurnoverCount(state), null, state);
-    }
-    /* Recalcula sempre (mesmo sem colaboradores no estado): reflete vagas
-       abertas em relação a "hoje" mesmo que nada tenha sido tocado nelas
-       desde a última sincronização. */
-    syncVacancyIndicator(state);
-  });
+  activeStates().forEach((state) => syncVacancyIndicator(state));
 
   /* Reconcilia o custo das vagas: garante um lançamento para toda vaga com
      salário (inclusive as criadas antes desta regra). */
@@ -461,4 +421,372 @@ export function formatVacancyTempo(vacancy) {
   const days = daysBetween(vacancy.openAt, vacancy.closeAt);
   if (days === null || isNaN(days)) return "—";
   return days.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " dias";
+}
+
+function dateWithinRange(dateVal, range) {
+  if (!dateVal) return false;
+  const d = String(dateVal).slice(0, 10);
+  if (range.start && d < range.start) return false;
+  if (range.end && d > range.end) return false;
+  return true;
+}
+
+/* ---------- Turnover (lançamento manual por quantidade) ----------
+   Não depende mais de colaboradores individuais: cada lançamento é só uma
+   quantidade de admitidos e demitidos por filial num mês de referência
+   (lançado à mão ou importado por planilha). O valor não aparece na Equipe —
+   é puramente visual no KPI de Turnover e alimenta o cálculo de outros KPIs
+   (Turnover %, Retenção). Calculado sob demanda, como "tempo_contratacao" é
+   para vagas. */
+
+export function listTurnoverEntries(state) {
+  let list = getTurnovers();
+  if (state && state !== "todos") {
+    list = list.filter((t) => sameState(t.estado, state));
+  }
+  return list
+    .slice()
+    .sort((a, b) => String(b.mesReferencia || "").localeCompare(String(a.mesReferencia || "")));
+}
+
+/* Compara um mês "YYYY-MM" com um período { start, end } (datas
+   "YYYY-MM-DD"), reduzindo o período ao mês correspondente antes de
+   comparar — evita a comparação lexicográfica errada entre "2026-01" e
+   "2026-01-15" que dateWithinRange faria com um mês "solto". */
+function monthWithinRange(ym, range) {
+  if (!ym) return false;
+  if (!range) return true;
+  const startYm = range.start ? String(range.start).slice(0, 7) : null;
+  const endYm = range.end ? String(range.end).slice(0, 7) : null;
+  if (startYm && ym < startYm) return false;
+  if (endYm && ym > endYm) return false;
+  return true;
+}
+
+/* Soma de admitidos/demitidos/ativos lançados no período (mês) filtrado —
+   base do Turnover (%) e das Novas contratações da Retenção. `ativos` é a
+   quantidade de colaboradores ativos no período, lançada junto (substitui o
+   Headcount no cálculo do Turnover — ver turnoverRateStats). `range` null
+   soma o total já lançado. */
+export function turnoverQuantitiesInRange(state, range) {
+  const list = listTurnoverEntries(state);
+  const filtered = range ? list.filter((t) => monthWithinRange(t.mesReferencia, range)) : list;
+  return filtered.reduce(
+    (acc, t) => {
+      acc.admitidos += Number(t.admitidos) || 0;
+      acc.demitidos += Number(t.demitidos) || 0;
+      acc.ativos += Number(t.ativos) || 0;
+      return acc;
+    },
+    { admitidos: 0, demitidos: 0, ativos: 0 }
+  );
+}
+
+export function addTurnoverEntry({ filialId = null, mesReferencia, admitidos = 0, demitidos = 0, ativos = 0, estado }) {
+  const record = {
+    id: createId(),
+    filialId: filialId || null,
+    mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
+    admitidos: Number(admitidos) || 0,
+    demitidos: Number(demitidos) || 0,
+    ativos: Number(ativos) || 0,
+    estado: estado || null
+  };
+  upsertTurnover(record);
+  return record;
+}
+
+export function updateTurnoverEntry(id, { filialId, mesReferencia, admitidos, demitidos, ativos, estado }) {
+  const record = getTurnoverById(id);
+  if (!record) return null;
+  const updated = {
+    ...record,
+    filialId: filialId !== undefined ? filialId || null : record.filialId,
+    mesReferencia:
+      mesReferencia !== undefined ? (mesReferencia ? String(mesReferencia).slice(0, 7) : null) : record.mesReferencia,
+    admitidos: admitidos !== undefined ? Number(admitidos) || 0 : record.admitidos,
+    demitidos: demitidos !== undefined ? Number(demitidos) || 0 : record.demitidos,
+    ativos: ativos !== undefined ? Number(ativos) || 0 : record.ativos,
+    estado: estado !== undefined ? estado || null : record.estado
+  };
+  upsertTurnover(updated);
+  return updated;
+}
+
+export function deleteTurnoverEntry(id) {
+  deleteTurnover(id);
+}
+
+/* Exclusão em lote (aba Histórico do Lançamento). */
+export function deleteTurnoverEntries(ids) {
+  (ids || []).forEach((id) => deleteTurnover(id));
+}
+
+/* ---------- Tempo médio de permanência (lançamento manual por planilha) ----------
+   Registro próprio, independente do Turnover: colaborador, Data de admissão
+   e Data de demissão, importados por planilha (modal dedicado). Usado só
+   para o KPI "Tempo médio de permanência" — não conta admissão/demissão no
+   Turnover nem no Headcount. */
+
+export function listPermanenciaRecords(state) {
+  let list = getPermanencias();
+  if (state && state !== "todos") {
+    list = list.filter((p) => sameState(p.estado, state));
+  }
+  return list
+    .slice()
+    .sort((a, b) => String(b.dataDemissao || "").localeCompare(String(a.dataDemissao || "")));
+}
+
+/* Média de dias entre Data de admissão e Data de demissão dos registros de
+   permanência — só entram registros com as duas datas preenchidas. Filtrado
+   no período pela data de demissão. */
+export function turnoverAvgTenureDays(state, range) {
+  let list = listPermanenciaRecords(state).filter((p) => p.dataAdmissao && p.dataDemissao);
+  if (range) list = list.filter((p) => dateWithinRange(p.dataDemissao, range));
+  if (!list.length) return null;
+  const total = list.reduce((sum, p) => sum + (daysBetween(p.dataAdmissao, p.dataDemissao) || 0), 0);
+  return total / list.length;
+}
+
+export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filialId = null, estado }) {
+  const record = {
+    id: createId(),
+    colaborador: String(colaborador || "").toUpperCase(),
+    dataAdmissao: dataAdmissao || null,
+    dataDemissao: dataDemissao || null,
+    filialId: filialId || null,
+    estado: estado || null
+  };
+  upsertPermanencia(record);
+  return record;
+}
+
+export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDemissao, filialId, estado }) {
+  const record = getPermanenciaById(id);
+  if (!record) return null;
+  const updated = {
+    ...record,
+    colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
+    dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
+    dataDemissao: dataDemissao !== undefined ? dataDemissao || null : record.dataDemissao,
+    filialId: filialId !== undefined ? filialId || null : record.filialId,
+    estado: estado !== undefined ? estado || null : record.estado
+  };
+  upsertPermanencia(updated);
+  return updated;
+}
+
+export function deletePermanenciaRecord(id) {
+  deletePermanencia(id);
+}
+
+/* Exclusão em lote (modal de Tempo médio de permanência). */
+export function deletePermanenciaRecords(ids) {
+  (ids || []).forEach((id) => deletePermanencia(id));
+}
+
+/* ---------- Headcount (quadro persistente de colaboradores) ----------
+   Cada colaborador vira um registro próprio (código, colaborador, função,
+   remuneração, data de admissão), lançado uma vez e mantido daí em diante
+   — não é reimportado todo mês. O quadro sempre traz TODOS os colaboradores
+   já lançados; o filtro por mês (ex.: ago/2026) reconstrói "como estava
+   naquele mês" usando a Data de admissão como base — conta quem já tinha
+   sido admitido até aquele mês (ver activeInMonth) — e nunca inclui quem já
+   foi desligado até esse mês. "status"/"demitidoMes" registram o
+   desligamento (importação de "demitidos", que só altera o status — não
+   cria registro novo). */
+
+function activeInMonth(h, ym) {
+  const admissaoYm = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 7) : null;
+  if (admissaoYm && admissaoYm > ym) return false; // ainda não tinha sido admitido
+  if (h.status === "demitido" && h.demitidoMes && h.demitidoMes <= ym) return false; // já desligado
+  return true;
+}
+
+/* Lista o quadro "como estava" no mês `mesReferencia` (formato "YYYY-MM").
+   Sem mês informado, devolve todos os registros (cadastro completo, sem
+   reconstrução histórica) — usado pela busca por código na importação. */
+export function listHeadcountRecords(state, mesReferencia) {
+  let list = getHeadcounts();
+  if (state && state !== "todos") {
+    list = list.filter((h) => sameState(h.estado, state));
+  }
+  if (mesReferencia) list = list.filter((h) => activeInMonth(h, mesReferencia));
+  return list
+    .slice()
+    .sort((a, b) => String(a.colaborador || "").localeCompare(String(b.colaborador || "")));
+}
+
+export function headcountCount(state, mesReferencia) {
+  return listHeadcountRecords(state, mesReferencia).length;
+}
+
+/* Contagem no período (reconstrução "como estava" no mês do período) —
+   `range` null cai no total de registros já lançados (sem reconstrução). */
+export function headcountCountInRange(state, range) {
+  let list = getHeadcounts();
+  if (state && state !== "todos") list = list.filter((h) => sameState(h.estado, state));
+  if (!range) return list.length;
+  const ym = String(range.end || range.start || "").slice(0, 7);
+  if (!ym) return list.length;
+  return list.filter((h) => activeInMonth(h, ym)).length;
+}
+
+/* Localiza um colaborador do headcount pelo código (usado pelas importações
+   de "novos colaboradores" — evita duplicar quem já existe — e de
+   "demitidos" — localiza quem terá o status alterado). Comparação
+   tolerante a espaços/caixa. Quando `filialId` é informado (mesmo `null`),
+   a busca exige empresa igual — duas filiais podem reaproveitar o mesmo
+   código; quando omitido (`undefined`), cai no código isolado (compat.). */
+export function findHeadcountByCodigo(state, codigo, filialId) {
+  const key = String(codigo || "").trim().toLowerCase();
+  if (!key) return null;
+  let list = getHeadcounts();
+  if (state && state !== "todos") list = list.filter((h) => sameState(h.estado, state));
+  list = list.filter((h) => String(h.codigo || "").trim().toLowerCase() === key);
+  if (filialId !== undefined) {
+    const fid = filialId || null;
+    return list.find((h) => (h.filialId || null) === fid) || null;
+  }
+  return list[0] || null;
+}
+
+/* Localiza colaboradores do headcount por Código + Nome (usado pela
+   importação de "demitidos" — não depende mais de Empresa). Nome comparado
+   normalizado (ver normalizePersonName), tolerante a acentos/caixa/espaços.
+   Busca primeiro por Código + Nome; se nada bater (ex.: código divergente na
+   planilha), cai para busca só pelo Nome. Devolve todos os registros
+   encontrados — mais de um significa duplicidade, que a tela trata pedindo
+   para escolher qual é qual. */
+export function findHeadcountMatches(state, codigo, colaborador) {
+  const nameKey = normalizePersonName(colaborador);
+  if (!nameKey) return [];
+  let list = getHeadcounts();
+  if (state && state !== "todos") list = list.filter((h) => sameState(h.estado, state));
+
+  const codeKey = String(codigo || "").trim().toLowerCase();
+  if (codeKey) {
+    const byCodeAndName = list.filter(
+      (h) => String(h.codigo || "").trim().toLowerCase() === codeKey && normalizePersonName(h.colaborador) === nameKey
+    );
+    if (byCodeAndName.length) return byCodeAndName;
+  }
+
+  return list.filter((h) => normalizePersonName(h.colaborador) === nameKey);
+}
+
+export function addHeadcountRecord({
+  codigo = null,
+  colaborador,
+  funcao = null,
+  remuneracao = null,
+  dataAdmissao = null,
+  mesReferencia,
+  filialId = null,
+  estado
+}) {
+  const record = {
+    id: createId(),
+    codigo: codigo != null ? String(codigo) : null,
+    colaborador: String(colaborador || "").toUpperCase(),
+    funcao: funcao != null ? String(funcao).toUpperCase() : null,
+    remuneracao: moneyOrNull(remuneracao),
+    dataAdmissao: dataAdmissao || null,
+    mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
+    status: "ativo",
+    demitidoMes: null,
+    filialId: filialId || null,
+    estado: estado || null
+  };
+  upsertHeadcount(record);
+  return record;
+}
+
+export function updateHeadcountRecord(
+  id,
+  { codigo, colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, status, demitidoMes, filialId, estado }
+) {
+  const record = getHeadcountById(id);
+  if (!record) return null;
+  const updated = {
+    ...record,
+    codigo: codigo !== undefined ? (codigo != null ? String(codigo) : null) : record.codigo,
+    colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
+    funcao: funcao !== undefined ? (funcao != null ? String(funcao).toUpperCase() : null) : record.funcao,
+    remuneracao: remuneracao !== undefined ? moneyOrNull(remuneracao) : record.remuneracao,
+    dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
+    mesReferencia:
+      mesReferencia !== undefined ? (mesReferencia ? String(mesReferencia).slice(0, 7) : null) : record.mesReferencia,
+    status: status !== undefined ? (status === "demitido" ? "demitido" : "ativo") : record.status,
+    demitidoMes:
+      demitidoMes !== undefined ? (demitidoMes ? String(demitidoMes).slice(0, 7) : null) : record.demitidoMes,
+    filialId: filialId !== undefined ? filialId || null : record.filialId,
+    estado: estado !== undefined ? estado || null : record.estado
+  };
+  upsertHeadcount(updated);
+  return updated;
+}
+
+/* Marca o colaborador como demitido a partir do mês informado (importação
+   de "demitidos") — só altera o status, não cria um registro novo. */
+export function markHeadcountDemitido(id, demitidoMes) {
+  return updateHeadcountRecord(id, { status: "demitido", demitidoMes });
+}
+
+export function deleteHeadcountRecord(id) {
+  deleteHeadcount(id);
+}
+
+/* Exclusão em lote (aba Histórico do Lançamento). */
+export function deleteHeadcountRecords(ids) {
+  (ids || []).forEach((id) => deleteHeadcount(id));
+}
+
+/* ---------- Cálculo do Turnover (%) e Turnover de Saída (%) ----------
+   Turnover(%)           = (((admissões + demissões) / 2) / ativos) * 100
+   Turnover de Saída(%)  = (demissões / ativos) * 100
+
+   Admissões, demissões e ativos vêm todos diretamente da quantidade lançada
+   (ou importada) por filial no mês filtrado (`range`) — ver
+   turnoverQuantitiesInRange. "Ativos" substitui o Headcount no cálculo: o
+   Turnover não depende mais do quadro lançado no KPI de Headcount. */
+export function turnoverRateStats(state, range) {
+  const { admitidos: admissoes, demitidos: desligamentos, ativos: headcountAtual } = turnoverQuantitiesInRange(
+    state,
+    range
+  );
+  const turnoverPct = headcountAtual ? ((admissoes + desligamentos) / 2 / headcountAtual) * 100 : null;
+  const turnoverEntradaPct = headcountAtual ? (admissoes / headcountAtual) * 100 : null;
+  const turnoverSaidaPct = headcountAtual ? (desligamentos / headcountAtual) * 100 : null;
+  return {
+    admissoes,
+    desligamentos,
+    headcountAtual,
+    turnoverPct,
+    turnoverEntradaPct,
+    turnoverSaidaPct
+  };
+}
+
+/* ---------- Cálculo da Retenção (%) ----------
+   Retenção(%) = ((Headcount final - Novas contratações) / Headcount inicial) × 100
+
+   Headcount final   = quadro reconstruído no último dia do mês filtrado (`range`).
+   Headcount inicial = quadro reconstruído no último dia do mês ANTERIOR
+                        (`prevRange`), ou seja, "como estava" no primeiro dia
+                        do mês filtrado.
+   Novas contratações = quantidade de admitidos lançada no Turnover para o
+                         mês filtrado (mesma fonte do KPI de Turnover). */
+export function retentionRate(state, range, prevRange) {
+  const headcountFinal = headcountCountInRange(state, range);
+  const headcountInicial = headcountCountInRange(state, prevRange);
+  const novasContratacoes = turnoverQuantitiesInRange(state, range).admitidos;
+  const retencaoPct = headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
+  return {
+    headcountInicial,
+    headcountFinal,
+    novasContratacoes,
+    retencaoPct
+  };
 }

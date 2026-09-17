@@ -111,6 +111,14 @@ export function compareDateDesc(a, b) {
   return String(b || "").localeCompare(String(a || ""));
 }
 
+/* Desloca uma data ISO (YYYY-MM-DD) em N dias (negativo = para trás). */
+export function shiftDaysISO(iso, deltaDays) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + deltaDays);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /* Agrega lançamentos por dia (soma dos valores na mesma data), usado na
    evolução de indicadores com múltiplos registros por dia (ex.: diárias). */
 export function aggregateByDay(entries) {

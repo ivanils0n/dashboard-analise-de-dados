@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
-import { createPieChart, updatePieChart, setShowValues } from "@/lib/charts";
+import { createPieChart, updatePieChart, setShowValues, formatPiePercent } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
 const props = defineProps({
@@ -16,7 +16,7 @@ function mountChart() {
   if (!canvas.value) return;
   chart = createPieChart(canvas.value);
   updatePieChart(chart, props.data);
-  setShowValues(chart, props.showValues);
+  setShowValues(chart, props.showValues, { formatter: formatPiePercent });
 }
 
 function unmountChart() {
@@ -51,7 +51,7 @@ watch(
 watch(
   () => props.showValues,
   (show) => {
-    if (chart) setShowValues(chart, show);
+    if (chart) setShowValues(chart, show, { formatter: formatPiePercent });
   }
 );
 </script>

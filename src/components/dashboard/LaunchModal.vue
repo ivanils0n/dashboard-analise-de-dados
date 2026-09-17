@@ -3,14 +3,11 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
 import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
-import EmployeePicker from "@/components/dashboard/EmployeePicker.vue";
 import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
 import {
   MANUAL_INDICATORS,
-  ABSENTEEISM_TYPES,
-  ABSENTEEISM_OPTIONS,
   STATES,
   STATE_NAMES,
   DEFAULT_STATE,
@@ -24,6 +21,8 @@ import {
   getLatestForMeta,
   getEmployeeById,
   getVacancyById,
+  getTurnoverById,
+  getHeadcountById,
   getEmployees,
   getDepartmentById,
   getBranchById
@@ -39,7 +38,20 @@ import {
   listVacancies,
   formatVacancyTempo,
   findEmployeesByName,
-  findBranchByShortName
+  findBranchByShortName,
+  listTurnoverEntries,
+  addTurnoverEntry,
+  updateTurnoverEntry,
+  deleteTurnoverEntry,
+  deleteTurnoverEntries,
+  listHeadcountRecords,
+  addHeadcountRecord,
+  updateHeadcountRecord,
+  markHeadcountDemitido,
+  findHeadcountByCodigo,
+  findHeadcountMatches,
+  deleteHeadcountRecord,
+  deleteHeadcountRecords
 } from "@/lib/employees";
 import {
   readWorkbookFile,
@@ -47,18 +59,48 @@ import {
   downloadTreinamentoTemplate,
   parseVagasSheet,
   downloadVagasTemplate,
+  exportVagas,
   parseDiariaSheet,
-  downloadDiariaTemplate
+  downloadDiariaTemplate,
+  parseTurnoverSheet,
+  downloadTurnoverTemplate,
+  exportTurnover,
+  parseHeadcountSheet,
+  downloadHeadcountTemplate,
+  exportHeadcount,
+  parseHeadcountDemitidosSheet,
+  downloadHeadcountDemitidosTemplate
 } from "@/lib/export";
-import { todayISO, firstDayOfMonthISO, formatDate, formatValue, formatCurrency, currentYm, MONTHS_SHORT, yearOptions, maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR, parseHoursBR, formatHoursClock, normalizeText } from "@/lib/utils";
+import {
+  todayISO,
+  formatDate,
+  formatValue,
+  formatCurrency,
+  currentYm,
+  MONTHS_SHORT,
+  yearOptions,
+  maskCurrencyInput,
+  normalizeCurrencyInput,
+  parseCurrencyBR,
+  parseHoursBR,
+  formatHoursClock,
+  normalizeText,
+  daysBetween,
+  singleMonthOfRange,
+  ymLabel
+} from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
+import { dateFilter } from "@/composables/useDateFilter";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   editEntry: { type: Object, default: null },
-  editVacancyId: { type: String, default: null }
+  editVacancyId: { type: String, default: null },
+  /* Abre direto na aba Histórico de um indicador (ex.: Turnover, vindo do
+     botão direito no card do KPI), sem pré-selecionar nenhum registro. */
+  viewIndicatorId: { type: String, default: null }
 });
 const emit = defineEmits(["close", "saved"]);
 
@@ -166,8 +208,7 @@ const custosTot = reactive({
 });
 
 /* ---------- Absenteísmo (ocorrência) ---------- */
-const sub = reactive({ kind: null, employee: null }); // kind: "ocorrencia" | "salario"
-const occ = reactive({ motivo: "falta", inicio: "", fim: "" });
+const sub = reactive({ kind: null, employee: null }); // kind: "salario"
 const salario = reactive({ value: "" });
 
 const estado = ref("");
@@ -199,9 +240,21 @@ function initModal() {
   resetTreinamento();
   resetCustosTot();
   resetVagaForm();
+  vacancySearch.value = "";
+  vacancyOnlyNegative.value = false;
   selectedVacancyIds.value = new Set();
   Object.keys(closeDates).forEach((k) => delete closeDates[k]);
   bulkCloseDate.value = todayISO();
+  resetTurnoverForm();
+  turnoverSearch.value = "";
+  selectedTurnoverIds.value = new Set();
+  resetHeadcountForm();
+  headcountSearch.value = "";
+  headcountFilterFilialId.value = null;
+  headcountDemitidosResult.value = null;
+  headcountDemitidosPending.value = [];
+  selectedHeadcountIds.value = new Set();
+  resetMensalForm();
 
   /* Modo edição: pré-preenche o formulário do lançamento selecionado. */
   if (props.editEntry && props.editEntry.entry && props.editEntry.indicatorId) {
@@ -216,6 +269,14 @@ function initModal() {
     indicatorId.value = "tempo_contratacao";
     buildForm();
     editVacancy(props.editVacancyId);
+    return;
+  }
+
+  /* Abre direto no histórico de um indicador (botão direito no KPI). */
+  if (props.viewIndicatorId) {
+    indicatorId.value = props.viewIndicatorId;
+    buildForm();
+    showTab("historico");
     return;
   }
 
@@ -271,6 +332,13 @@ function prefillEdit(indId, entry) {
     custosTot.percent = m.percent != null ? String(m.percent) : "";
     showTab("custos");
     return;
+  }
+
+  if (getIndicatorById(indId) && getIndicatorById(indId).form === "mensal") {
+    editingMensalId.value = entry.id;
+    mensal.estado = m.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
+    mensal.mes = entry.date ? String(entry.date).slice(0, 7) : currentYm();
+    mensal.valor = entry.value != null ? String(entry.value) : "";
   }
 }
 
@@ -339,6 +407,12 @@ const tabs = computed(() => {
         { id: "nova", label: "Nova vaga" },
         { id: "historico", label: "Histórico" }
       ];
+    case "turnover":
+    case "headcount":
+      return [
+        { id: "novo", label: "Novo" },
+        { id: "historico", label: "Histórico" }
+      ];
     case "custo":
       return [
         { id: "colaborador", label: "Colaborador" },
@@ -369,6 +443,9 @@ const submitLabel = computed(() => {
   switch (indicator.value.form) {
     case "vaga":
       return "Concluir";
+    case "turnover":
+    case "headcount":
+      return "Concluir";
     case "diaria":
       return "Salvar diária";
     case "treinamento":
@@ -382,7 +459,16 @@ const submitLabel = computed(() => {
 
 const canSubmitForm = computed(() => {
   const f = indicator.value && indicator.value.form;
-  return f === "vaga" || f === "custo" || f === "diaria" || f === "treinamento" || f === "custo_total";
+  return (
+    f === "vaga" ||
+    f === "turnover" ||
+    f === "headcount" ||
+    f === "custo" ||
+    f === "diaria" ||
+    f === "treinamento" ||
+    f === "custo_total" ||
+    f === "mensal"
+  );
 });
 
 function buildForm() {
@@ -393,57 +479,16 @@ function showTab(id) {
   activeTab.value = id;
 }
 
-/* ---------- Absenteísmo (evento por colaborador) ---------- */
+/* ---------- Salário dos Colaboradores ---------- */
 
 const pickerDefaultState = computed(() =>
   filters.current === "todos" ? DEFAULT_STATE : filters.current
 );
 
-function openOccurrence(employee) {
-  if (!employee) return;
-  sub.employee = employee;
-  occ.motivo = "falta";
-  occ.inicio = firstDayOfMonthISO();
-  occ.fim = todayISO();
-  sub.kind = "ocorrencia";
-}
-
 function closeSub() {
   sub.kind = null;
   sub.employee = null;
 }
-
-/* Define o período da ocorrência como o dia de hoje. */
-function setOccurrenceToday() {
-  occ.inicio = todayISO();
-  occ.fim = todayISO();
-}
-
-function saveOccurrence() {
-  const emp = sub.employee;
-  if (!emp) return toast("Selecione um colaborador na lista.");
-  if (!occ.inicio || !occ.fim) return toast("Informe o período da ocorrência.");
-  if (occ.fim < occ.inicio) return toast("A data fim deve ser posterior à data início.");
-
-  const state = emp.estado || null;
-  addEntry("absenteismo", {
-    date: occ.inicio,
-    value: 1,
-    state,
-      meta: {
-        type: occ.motivo,
-        periodEnd: occ.fim,
-        employeeId: emp.id,
-        employeeName: String(emp.name).toUpperCase()
-      }
-  });
-  emit("saved");
-  const motivo = ABSENTEEISM_TYPES[occ.motivo] || occ.motivo;
-  toast(`Ocorrência registrada para ${emp.name} (${motivo}).`);
-  closeSub();
-}
-
-/* ---------- Salário dos Colaboradores ---------- */
 
 function openSalary(employee) {
   if (!employee) return;
@@ -485,6 +530,38 @@ function saveSalary() {
 /* ---------- Vaga ---------- */
 
 const vacancies = computed(() => listVacancies(filters.current));
+
+/* Busca da aba Histórico (vaga, tipo, filial, estado). */
+const vacancySearch = ref("");
+/* Dias de contratação de uma vaga fechada; null se ainda em aberto ou sem
+   datas válidas. Pode ser negativo quando o fechamento foi lançado antes da
+   abertura (erro de digitação) — é o que o filtro abaixo identifica. */
+function vacancyDays(v) {
+  if (!v || !v.openAt || !v.closeAt) return null;
+  const days = daysBetween(v.openAt, v.closeAt);
+  return days === null || isNaN(days) ? null : days;
+}
+/* Mostra só vagas com tempo de contratação negativo (data de fechamento
+   anterior à de abertura), para facilitar achar e corrigir esses lançamentos. */
+const vacancyOnlyNegative = ref(false);
+const filteredVacancies = computed(() => {
+  const q = normalizeText(vacancySearch.value).trim();
+  let list = vacancies.value;
+  if (q) {
+    list = list.filter((v) =>
+      normalizeText(
+        [v.name, tipoContratacaoLabel(v.tipoContratacao), vacancyFilial(v), v.estado || ""].join(" ")
+      ).includes(q)
+    );
+  }
+  if (vacancyOnlyNegative.value) {
+    list = list.filter((v) => {
+      const days = vacancyDays(v);
+      return days !== null && days < 0;
+    });
+  }
+  return list;
+});
 
 /* Totais do histórico de vagas (abertas x fechadas). */
 const vacancyStats = computed(() => {
@@ -676,6 +753,13 @@ async function onVagaImportFile(e) {
   }
 }
 
+/* Exporta as vagas conforme os filtros atuais da aba Histórico (busca e
+   "somente dias negativos"). */
+function handleExportVagas() {
+  if (!filteredVacancies.value.length) return toast("Nenhuma vaga para exportar com os filtros atuais.");
+  exportVagas(filteredVacancies.value);
+}
+
 function closeVacancyById(id) {
   const date = closeDateFor(id);
   const vacancy = getVacancyById(id);
@@ -710,8 +794,8 @@ const selectedVacancies = computed(() =>
 );
 const allVacanciesSelected = computed(
   () =>
-    vacancies.value.length > 0 &&
-    vacancies.value.every((v) => selectedVacancyIds.value.has(v.id))
+    filteredVacancies.value.length > 0 &&
+    filteredVacancies.value.every((v) => selectedVacancyIds.value.has(v.id))
 );
 
 function toggleVacancy(id) {
@@ -723,7 +807,7 @@ function toggleVacancy(id) {
 
 function toggleVacanciesAll() {
   if (allVacanciesSelected.value) selectedVacancyIds.value = new Set();
-  else selectedVacancyIds.value = new Set(vacancies.value.map((v) => v.id));
+  else selectedVacancyIds.value = new Set(filteredVacancies.value.map((v) => v.id));
 }
 
 async function handleBulkVacancyDelete() {
@@ -758,6 +842,669 @@ function handleBulkVacancyClose() {
   selectedVacancyIds.value = new Set();
   emit("saved");
   toast(`${list.length} vaga(s) fechada(s) — tempo de contratação e custo registrados.`);
+}
+
+/* ---------- Turnover (quantidade lançada manualmente) ----------
+   Não depende mais de colaboradores individuais: cada lançamento é só a
+   quantidade de admitidos/demitidos de uma filial num mês de referência
+   (lançado à mão ou importado por planilha) — puramente visual no KPI de
+   Turnover, mas usada no cálculo de Turnover (%) e Retenção (ver
+   turnoverRateStats/retentionRate em lib/employees.js). */
+const turnover = reactive({
+  filialId: null,
+  mesReferencia: "",
+  admitidos: "",
+  demitidos: "",
+  ativos: ""
+});
+const editingTurnoverId = ref(null);
+const turnoverImportInput = ref(null);
+const turnoverSearch = ref("");
+const selectedTurnoverIds = ref(new Set());
+
+function resetTurnoverForm() {
+  turnover.filialId = null;
+  turnover.mesReferencia = "";
+  turnover.admitidos = "";
+  turnover.demitidos = "";
+  turnover.ativos = "";
+  editingTurnoverId.value = null;
+}
+
+const turnoverBranches = computed(() =>
+  listBranches(estado.value === "todos" ? "todos" : estado.value)
+);
+
+function submitTurnover() {
+  if (!turnover.mesReferencia) return toast("Informe o mês de referência.");
+  const st = effectiveVagaEstado();
+  const payload = {
+    filialId: turnover.filialId,
+    mesReferencia: turnover.mesReferencia,
+    admitidos: Number(turnover.admitidos) || 0,
+    demitidos: Number(turnover.demitidos) || 0,
+    ativos: Number(turnover.ativos) || 0,
+    estado: st
+  };
+
+  if (editingTurnoverId.value) {
+    updateTurnoverEntry(editingTurnoverId.value, payload);
+    toast("Turnover atualizado.");
+  } else {
+    addTurnoverEntry(payload);
+    toast("Turnover lançado.");
+  }
+
+  resetTurnoverForm();
+  showTab("historico");
+  emit("saved");
+}
+
+function editTurnover(id) {
+  const t = getTurnoverById(id);
+  if (!t) return;
+  editingTurnoverId.value = id;
+  turnover.filialId = t.filialId || null;
+  turnover.mesReferencia = t.mesReferencia || "";
+  turnover.admitidos = t.admitidos != null ? String(t.admitidos) : "";
+  turnover.demitidos = t.demitidos != null ? String(t.demitidos) : "";
+  turnover.ativos = t.ativos != null ? String(t.ativos) : "";
+  if (t.estado && t.estado !== estado.value) estado.value = t.estado;
+  showTab("novo");
+}
+
+async function removeTurnover(id) {
+  const t = getTurnoverById(id);
+  if (!t) return;
+  const ok = await confirm({
+    title: "Excluir lançamento?",
+    message: "O registro de Turnover será removido permanentemente.",
+    confirmText: "Excluir",
+    danger: true
+  });
+  if (!ok) return;
+  deleteTurnoverEntry(id);
+  emit("saved");
+  toast("Registro excluído.");
+}
+
+/* ---------- Histórico (aba Histórico) ---------- */
+const turnoverList = computed(() => listTurnoverEntries(filters.current));
+
+function turnoverFilial(t) {
+  const b = t && t.filialId ? getBranchById(t.filialId) : null;
+  return b ? b.name || b.shortName : "";
+}
+
+const filteredTurnover = computed(() => {
+  const q = normalizeText(turnoverSearch.value).trim();
+  let list = turnoverList.value;
+  if (q) {
+    list = list.filter((t) =>
+      normalizeText([turnoverFilial(t), t.mesReferencia || "", t.estado || ""].join(" ")).includes(q)
+    );
+  }
+  return list;
+});
+
+/* ---------- Seleção múltipla de turnover (aba Histórico) ---------- */
+const selectedTurnovers = computed(() => turnoverList.value.filter((t) => selectedTurnoverIds.value.has(t.id)));
+const allTurnoverSelected = computed(
+  () =>
+    filteredTurnover.value.length > 0 &&
+    filteredTurnover.value.every((t) => selectedTurnoverIds.value.has(t.id))
+);
+
+function toggleTurnoverRow(id) {
+  const next = new Set(selectedTurnoverIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedTurnoverIds.value = next;
+}
+
+function toggleTurnoverAll() {
+  if (allTurnoverSelected.value) selectedTurnoverIds.value = new Set();
+  else selectedTurnoverIds.value = new Set(filteredTurnover.value.map((t) => t.id));
+}
+
+async function handleBulkTurnoverDelete() {
+  const list = selectedTurnovers.value;
+  const n = list.length;
+  if (!n) return;
+  const ok = await confirm({
+    title: `Excluir ${n} registro(s)?`,
+    message: "Os registros selecionados serão removidos permanentemente.",
+    confirmText: `Excluir ${n}`,
+    danger: true
+  });
+  if (!ok) return;
+  deleteTurnoverEntries(list.map((t) => t.id));
+  selectedTurnoverIds.value = new Set();
+  emit("saved");
+  toast(`${n} registro(s) excluído(s).`);
+}
+
+/* ---------- Importação de turnover por planilha ---------- */
+function turnoverSheetToUse(wb) {
+  if (wb.Sheets["Turnover"]) return wb.Sheets["Turnover"];
+  const keys = Object.keys(wb.Sheets || {});
+  return keys.length ? wb.Sheets[keys[0]] : null;
+}
+
+async function onTurnoverImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    await hydrateState("todos");
+    const wb = await readWorkbookFile(file);
+    const sheet = turnoverSheetToUse(wb);
+    const parsed = sheet ? parseTurnoverSheet(sheet) : [];
+    if (!parsed.length) {
+      toast("Nenhum registro encontrado na planilha. Use o template de turnover.");
+      return;
+    }
+    let ok = 0;
+    let skipped = 0;
+    parsed.forEach((row) => {
+      if (!row.mesReferencia) {
+        skipped++;
+        return;
+      }
+      const est = row.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
+      /* Cruza a Filial com o Estado definitivo da linha — evita achar a
+         filial errada quando o nome abreviado se repete em outro estado. */
+      const branch = row.filialText ? findBranchByShortName(row.filialText, est) : null;
+      addTurnoverEntry({
+        filialId: branch ? branch.id : null,
+        mesReferencia: row.mesReferencia,
+        admitidos: row.admitidos,
+        demitidos: row.demitidos,
+        ativos: row.ativos,
+        estado: est
+      });
+      ok++;
+    });
+    emit("saved");
+    toast(
+      `Importação concluída — ${ok} registro(s) lançado(s)${skipped ? ` · ${skipped} ignorado(s)` : ""}.`
+    );
+    showTab("historico");
+  } catch (err) {
+    console.error(err);
+    toast("Não foi possível ler a planilha de turnover.");
+  }
+}
+
+function handleExportTurnover() {
+  if (!filteredTurnover.value.length) return toast("Nenhum registro para exportar com os filtros atuais.");
+  exportTurnover(filteredTurnover.value, "turnover");
+}
+
+/* ---------- Headcount (quadro de colaboradores lançado por mês) ---------- */
+const headcount = reactive({
+  codigo: "",
+  colaborador: "",
+  funcao: "",
+  remuneracao: "",
+  dataAdmissao: "",
+  filialId: null
+});
+const editingHeadcountId = ref(null);
+const headcountImportInput = ref(null);
+const headcountDemitidosImportInput = ref(null);
+const headcountDemitidosResult = ref(null);
+const headcountDemitidosPending = ref([]);
+const headcountDemitidosTotal = ref(0);
+const headcountDemitidosCounts = ref(null);
+const headcountSearch = ref("");
+const headcountFilterFilialId = ref(null);
+const selectedHeadcountIds = ref(new Set());
+
+/* Empresas (filiais) disponíveis para o headcount, conforme o estado selecionado. */
+const headcountBranches = computed(() =>
+  listBranches(estado.value === "todos" ? "todos" : estado.value)
+);
+
+/* Empresas do filtro do Histórico — só as que realmente têm colaborador na
+   tabela (mês/estado do filtro do dashboard), não o cadastro inteiro de
+   filiais. */
+const headcountFilterBranches = computed(() => {
+  const seen = new Map();
+  headcountList.value.forEach((h) => {
+    if (!h.filialId || seen.has(h.filialId)) return;
+    const b = getBranchById(h.filialId);
+    if (b) seen.set(h.filialId, b);
+  });
+  return Array.from(seen.values()).sort((a, b) =>
+    String(a.shortName || "").localeCompare(String(b.shortName || ""))
+  );
+});
+
+function resetHeadcountForm() {
+  headcount.codigo = "";
+  headcount.colaborador = "";
+  headcount.funcao = "";
+  headcount.remuneracao = "";
+  headcount.dataAdmissao = "";
+  headcount.filialId = null;
+  editingHeadcountId.value = null;
+}
+
+function onHeadcountSalaryInput(ev) {
+  headcount.remuneracao = maskCurrencyInput(ev.target.value);
+}
+function onHeadcountSalaryBlur() {
+  headcount.remuneracao = normalizeCurrencyInput(headcount.remuneracao);
+}
+
+function submitHeadcount() {
+  const nome = headcount.colaborador.trim();
+  if (!nome) return toast("Informe o colaborador.");
+  if (!headcount.dataAdmissao) return toast("Informe a data de admissão.");
+  const st = effectiveVagaEstado();
+  const remuneracaoText = normalizeCurrencyInput(headcount.remuneracao);
+  const remuneracao = remuneracaoText === "" ? null : parseCurrencyBR(remuneracaoText);
+  if (remuneracao !== null && isNaN(remuneracao)) return toast("Informe uma remuneração válida (R$).");
+
+  const payload = {
+    codigo: headcount.codigo,
+    colaborador: nome,
+    funcao: headcount.funcao,
+    remuneracao,
+    dataAdmissao: headcount.dataAdmissao,
+    /* O quadro não tem mais "mês de lançamento" próprio — o filtro por mês
+       usa a Data de admissão como base (ver activeInMonth em employees.js). */
+    mesReferencia: String(headcount.dataAdmissao).slice(0, 7),
+    filialId: headcount.filialId,
+    estado: st
+  };
+
+  if (editingHeadcountId.value) {
+    updateHeadcountRecord(editingHeadcountId.value, payload);
+    toast(`Headcount atualizado para ${nome}.`);
+  } else {
+    addHeadcountRecord(payload);
+    toast(`Headcount lançado para ${nome} (admissão em ${formatDate(headcount.dataAdmissao)}).`);
+  }
+
+  resetHeadcountForm();
+  showTab("historico");
+  emit("saved");
+}
+
+function editHeadcount(id) {
+  const h = getHeadcountById(id);
+  if (!h) return;
+  editingHeadcountId.value = id;
+  headcount.codigo = h.codigo || "";
+  headcount.colaborador = h.colaborador || "";
+  headcount.funcao = h.funcao || "";
+  headcount.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
+  headcount.dataAdmissao = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "";
+  headcount.filialId = h.filialId || null;
+  if (h.estado && h.estado !== estado.value) estado.value = h.estado;
+  showTab("novo");
+}
+
+async function removeHeadcount(id) {
+  const h = getHeadcountById(id);
+  if (!h) return;
+  const ok = await confirm({
+    title: "Excluir registro?",
+    message: `O registro de "${h.colaborador}" será removido permanentemente.`,
+    confirmText: "Excluir",
+    danger: true
+  });
+  if (!ok) return;
+  deleteHeadcountRecord(id);
+  emit("saved");
+  toast("Registro excluído.");
+}
+
+/* ---------- Histórico (aba Histórico) ----------
+   Sempre travado no mês selecionado no filtro global do dashboard (sem
+   filtro de data manual aqui) — "mostrando os colaboradores desse mês". */
+const headcountViewMonth = computed(() => singleMonthOfRange(dateFilter.start, dateFilter.end) || currentYm());
+const headcountViewMonthLabel = computed(() => ymLabel(headcountViewMonth.value));
+
+const headcountList = computed(() => listHeadcountRecords(filters.current, headcountViewMonth.value));
+
+function headcountBranchLabel(h) {
+  const b = h && h.filialId ? getBranchById(h.filialId) : null;
+  return b ? `${b.shortName} — ${b.name}` : "";
+}
+
+const filteredHeadcount = computed(() => {
+  let list = headcountList.value;
+  if (headcountFilterFilialId.value) {
+    list = list.filter((h) => h.filialId === headcountFilterFilialId.value);
+  }
+  const q = normalizeText(headcountSearch.value).trim();
+  if (!q) return list;
+  return list.filter((h) =>
+    normalizeText([h.codigo, h.colaborador, h.funcao, h.estado || "", headcountBranchLabel(h)].join(" ")).includes(q)
+  );
+});
+
+/* ---------- Seleção múltipla de headcount (aba Histórico) ---------- */
+const selectedHeadcounts = computed(() => headcountList.value.filter((h) => selectedHeadcountIds.value.has(h.id)));
+const allHeadcountSelected = computed(
+  () =>
+    filteredHeadcount.value.length > 0 &&
+    filteredHeadcount.value.every((h) => selectedHeadcountIds.value.has(h.id))
+);
+
+function toggleHeadcountRow(id) {
+  const next = new Set(selectedHeadcountIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedHeadcountIds.value = next;
+}
+
+function toggleHeadcountAll() {
+  if (allHeadcountSelected.value) selectedHeadcountIds.value = new Set();
+  else selectedHeadcountIds.value = new Set(filteredHeadcount.value.map((h) => h.id));
+}
+
+async function handleBulkHeadcountDelete() {
+  const list = selectedHeadcounts.value;
+  const n = list.length;
+  if (!n) return;
+  const ok = await confirm({
+    title: `Excluir ${n} registro(s)?`,
+    message: "Os registros selecionados serão removidos permanentemente.",
+    confirmText: `Excluir ${n}`,
+    danger: true
+  });
+  if (!ok) return;
+  deleteHeadcountRecords(list.map((h) => h.id));
+  selectedHeadcountIds.value = new Set();
+  emit("saved");
+  toast(`${n} registro(s) excluído(s).`);
+}
+
+/* ---------- Importação de headcount por planilha ---------- */
+function headcountSheetToUse(wb) {
+  if (wb.Sheets["Headcount"]) return wb.Sheets["Headcount"];
+  const keys = Object.keys(wb.Sheets || {});
+  return keys.length ? wb.Sheets[keys[0]] : null;
+}
+
+/* "Novos colaboradores": só cria registro para quem ainda não existe no
+   headcount (verificado por Empresa + Código) — evita duplicar quem já foi
+   lançado antes, já que o headcount agora é um quadro persistente, não
+   reimportado todo mês. Quando encontra duplicidade, avisa e pergunta se
+   quer importar mesmo assim (em vez de ignorar direto). */
+async function onHeadcountImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const wb = await readWorkbookFile(file);
+    const sheet = headcountSheetToUse(wb);
+    const parsed = sheet ? parseHeadcountSheet(sheet) : [];
+    if (!parsed.length) {
+      toast("Nenhum registro encontrado na planilha. Use o template de headcount.");
+      return;
+    }
+
+    const toImport = [];
+    const duplicates = [];
+    let skipped = 0;
+    parsed.forEach((row) => {
+      if (!row.colaboradorText || !row.dataAdmissao) {
+        skipped++;
+        return;
+      }
+      const est = row.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
+      /* Cruza a Empresa com o Estado definitivo da linha — evita achar a
+         filial errada quando o nome abreviado se repete em outro estado. */
+      const empresa = row.empresaText ? findBranchByShortName(row.empresaText, est) : null;
+      const filialId = empresa ? empresa.id : null;
+      const dup = row.codigo && findHeadcountByCodigo(est, row.codigo, filialId);
+      const item = {
+        codigo: row.codigo,
+        colaborador: row.colaboradorText,
+        funcao: row.funcaoText,
+        remuneracao: row.remuneracao,
+        dataAdmissao: row.dataAdmissao,
+        mesReferencia: String(row.dataAdmissao).slice(0, 7),
+        filialId,
+        estado: est
+      };
+      if (dup) duplicates.push(item);
+      else toImport.push(item);
+    });
+
+    let importDuplicates = false;
+    if (duplicates.length) {
+      importDuplicates = await confirm({
+        title: "Colaboradores já cadastrados",
+        message: `${duplicates.length} registro(s) já existem no headcount (mesma empresa e código). Deseja importar mesmo assim?`,
+        confirmText: "Importar mesmo assim",
+        cancelText: "Ignorar duplicados"
+      });
+    }
+
+    const finalList = importDuplicates ? toImport.concat(duplicates) : toImport;
+    finalList.forEach((item) => addHeadcountRecord(item));
+
+    emit("saved");
+    const parts = [`${finalList.length} colaborador(es) lançado(s)`];
+    if (duplicates.length) {
+      parts.push(
+        importDuplicates
+          ? `${duplicates.length} duplicado(s) importado(s) mesmo assim`
+          : `${duplicates.length} já existente(s) ignorado(s) (mesma empresa e código)`
+      );
+    }
+    if (skipped) parts.push(`${skipped} ignorado(s)`);
+    toast("Importação concluída — " + parts.join(" · "));
+    showTab("historico");
+  } catch (err) {
+    console.error(err);
+    toast("Não foi possível ler a planilha de headcount.");
+  }
+}
+
+/* "Demitidos": não cria registro novo — localiza o colaborador pelo Código +
+   Nome (sem depender mais de Empresa) e muda o status para "demitido" a
+   partir do mês de desligamento da própria linha. A planilha traz demitidos
+   de todos os meses de uma vez (sem mês único escolhido na tela); quem já
+   estiver demitido simplesmente é pulado. Quando Código + Nome batem em mais
+   de um colaborador do headcount (duplicidade), a linha fica pendente e a
+   tela abre um modal pedindo para escolher qual é qual antes de fechar o
+   resumo final. */
+function headcountDemitidosSheetToUse(wb) {
+  if (wb.Sheets["Demitidos"]) return wb.Sheets["Demitidos"];
+  const keys = Object.keys(wb.Sheets || {});
+  return keys.length ? wb.Sheets[keys[0]] : null;
+}
+
+/* Aplica o desligamento a um registro já resolvido do headcount (seja pelo
+   match direto, seja pela escolha manual na duplicidade) — soma nos
+   contadores do resumo final. Só altera o status do headcount: não cria mais
+   nada no Turnover (que virou lançamento de quantidade, não por colaborador)
+   nem no Tempo médio de permanência (que agora tem seu próprio modal e
+   importação, ver PermanenciaModal.vue). */
+function applyHeadcountDemitido(match, demitidoMes, counts) {
+  if (match.status === "demitido") {
+    counts.jaDemitidos++;
+    return;
+  }
+  markHeadcountDemitido(match.id, demitidoMes);
+  counts.alterados++;
+}
+
+function finishHeadcountDemitidosImport() {
+  emit("saved");
+  headcountDemitidosResult.value = {
+    total: headcountDemitidosTotal.value,
+    ...headcountDemitidosCounts.value
+  };
+  showTab("historico");
+}
+
+async function onHeadcountDemitidosImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const wb = await readWorkbookFile(file);
+    const sheet = headcountDemitidosSheetToUse(wb);
+    const parsed = sheet ? parseHeadcountDemitidosSheet(sheet) : [];
+    if (!parsed.length) {
+      toast("Nenhum código encontrado na planilha. Use o template de demitidos.");
+      return;
+    }
+    const est = effectiveVagaEstado();
+
+    const counts = {
+      alterados: 0,
+      jaDemitidos: 0,
+      semData: 0,
+      naoEncontrado: 0,
+      naoResolvidos: 0
+    };
+    const pending = [];
+
+    parsed.forEach((row) => {
+      /* A "Data de desligamento" vem de cada linha da planilha — sem seletor
+         de mês na tela, linha sem data é ignorada. */
+      if (!row.demitidoMes) {
+        counts.semData++;
+        return;
+      }
+      const matches = findHeadcountMatches(est, row.codigo, row.colaboradorText);
+      if (!matches.length) {
+        counts.naoEncontrado++;
+        return;
+      }
+      if (matches.length > 1) {
+        pending.push({
+          codigo: row.codigo,
+          colaboradorText: row.colaboradorText,
+          demitidoMes: row.demitidoMes,
+          candidates: matches,
+          selectedId: null
+        });
+        return;
+      }
+      applyHeadcountDemitido(matches[0], row.demitidoMes, counts);
+    });
+
+    headcountDemitidosTotal.value = parsed.length;
+    headcountDemitidosCounts.value = counts;
+
+    if (pending.length) {
+      headcountDemitidosPending.value = pending;
+    } else {
+      finishHeadcountDemitidosImport();
+    }
+  } catch (err) {
+    console.error(err);
+    toast("Não foi possível ler a planilha de demitidos.");
+  }
+}
+
+/* Resolve as duplicidades (Código + Nome batendo em mais de um colaborador):
+   aplica o desligamento à opção escolhida em cada uma; quem ficou sem
+   escolha entra em "naoResolvidos" no resumo final. */
+function confirmHeadcountDemitidosPending() {
+  const counts = { ...headcountDemitidosCounts.value };
+  headcountDemitidosPending.value.forEach((item) => {
+    const match = item.selectedId ? item.candidates.find((c) => c.id === item.selectedId) : null;
+    if (!match) {
+      counts.naoResolvidos++;
+      return;
+    }
+    applyHeadcountDemitido(match, item.demitidoMes, counts);
+  });
+  headcountDemitidosCounts.value = counts;
+  headcountDemitidosPending.value = [];
+  finishHeadcountDemitidosImport();
+}
+
+/* Pula todas as duplicidades pendentes sem aplicar nada. */
+function skipHeadcountDemitidosPending() {
+  const counts = { ...headcountDemitidosCounts.value };
+  counts.naoResolvidos += headcountDemitidosPending.value.length;
+  headcountDemitidosCounts.value = counts;
+  headcountDemitidosPending.value = [];
+  finishHeadcountDemitidosImport();
+}
+
+function handleExportHeadcount() {
+  if (!filteredHeadcount.value.length) return toast("Nenhum registro para exportar com os filtros atuais.");
+  exportHeadcount(filteredHeadcount.value);
+}
+
+/* ---------- Lançamento mensal (Absenteísmo, Tempo de
+   permanência, Retenção) ---------- */
+const mensal = reactive({
+  estado: DEFAULT_STATE,
+  mes: currentYm(),
+  valor: ""
+});
+const editingMensalId = ref(null);
+const mensalYearOptions = yearOptions(4, 1);
+
+const mensalMonthNum = computed(() => (mensal.mes ? Number(mensal.mes.split("-")[1]) : new Date().getMonth() + 1));
+const mensalYearNum = computed(() => (mensal.mes ? Number(mensal.mes.split("-")[0]) : new Date().getFullYear()));
+
+function setMensalMonth(m) {
+  mensal.mes = `${mensalYearNum.value}-${String(m).padStart(2, "0")}`;
+}
+function setMensalYear(y) {
+  mensal.mes = `${y}-${String(mensalMonthNum.value).padStart(2, "0")}`;
+}
+function setMensalCurrentMonth() {
+  mensal.mes = currentYm();
+}
+
+function resetMensalForm() {
+  mensal.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+  mensal.mes = currentYm();
+  mensal.valor = "";
+  editingMensalId.value = null;
+}
+
+function submitMensal() {
+  const ind = indicator.value;
+  if (!ind) return;
+  if (!mensal.mes) return toast("Informe o mês.");
+  const raw = String(mensal.valor).trim();
+  if (raw === "" || isNaN(Number(raw)) || Number(raw) < 0) {
+    return toast(`Informe um valor válido para ${ind.name}.`);
+  }
+  const value = Number(raw);
+  const payload = {
+    date: `${mensal.mes}-01`,
+    value,
+    state: mensal.estado,
+    meta: { estado: mensal.estado, competencia: mensal.mes }
+  };
+
+  if (editingMensalId.value) {
+    updateEntry(ind.id, editingMensalId.value, payload);
+    toast(`${ind.name} atualizado para ${MONTHS_SHORT[mensalMonthNum.value - 1]}/${mensalYearNum.value}.`);
+  } else {
+    /* Um lançamento por mês/estado: lançar de novo no mesmo mês substitui o
+       valor anterior em vez de duplicar a linha. */
+    const existing = getEntriesFor(ind.id, mensal.estado).find(
+      (e) => e.date === payload.date && e.meta && e.meta.estado === mensal.estado
+    );
+    if (existing) {
+      updateEntry(ind.id, existing.id, payload);
+    } else {
+      addEntry(ind.id, payload);
+    }
+    toast(`${ind.name} lançado para ${MONTHS_SHORT[mensalMonthNum.value - 1]}/${mensalYearNum.value}: ${value}.`);
+  }
+
+  emit("saved");
+  resetMensalForm();
 }
 
 /* ---------- Custo ---------- */
@@ -1517,12 +2264,15 @@ function submitCustosTotal() {
 function handleSubmit() {
   if (!indicator.value) return;
   const form = indicator.value.form;
-  if (form === "absenteismo" || form === "salario") return; // ações nos submodais
+  if (form === "salario") return; // ações no submodal
   if (form === "custo") return submitCusto();
   if (form === "diaria") return submitDiaria();
   if (form === "treinamento") return submitTreinamento();
   if (form === "custo_total") return submitCustosTotal();
   if (form === "vaga") emit("close");
+  if (form === "turnover") emit("close");
+  if (form === "headcount") emit("close");
+  if (form === "mensal") emit("close");
 }
 
 function close() {
@@ -1607,13 +2357,55 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- ===== ABSENTEÍSMO ===== -->
-      <template v-if="indicator.form === 'absenteismo'">
-        <EmployeePicker
-          :default-state="pickerDefaultState"
-          helper="Clique em um colaborador para registrar a ocorrência (motivo e período)."
-          @select="openOccurrence"
-        />
+      <!-- ===== LANÇAMENTO MENSAL (Headcount, Absenteísmo, Tempo de permanência, Retenção) ===== -->
+      <template v-if="indicator.form === 'mensal'">
+        <div class="flex flex-col gap-4">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label for="mensalEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <select id="mensalEstado" v-model="mensal.estado" class="input-field">
+                <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês</label>
+              <div class="flex items-center gap-2">
+                <select class="input-field" :value="mensalMonthNum" @change="setMensalMonth(Number($event.target.value))">
+                  <option v-for="(m, i) in MONTHS_SHORT" :key="m" :value="i + 1">{{ m }}</option>
+                </select>
+                <select class="input-field" :value="mensalYearNum" @change="setMensalYear(Number($event.target.value))">
+                  <option v-for="y in mensalYearOptions" :key="y" :value="y">{{ y }}</option>
+                </select>
+                <button type="button" class="btn-ghost btn-sm shrink-0" @click="setMensalCurrentMonth">Atual</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1.5 sm:w-64">
+            <label for="mensalValor" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              {{ indicator.name }} ({{ indicator.unit }})
+            </label>
+            <input
+              id="mensalValor"
+              v-model="mensal.valor"
+              type="number"
+              min="0"
+              step="any"
+              class="input-field"
+              :placeholder="indicator.type === 'percent' ? '0,0' : '0'"
+            />
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-primary" @click="submitMensal">
+              {{ editingMensalId ? "Salvar alterações" : "+ Lançar" }}
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Um lançamento por mês/estado — lançar de novo no mesmo mês substitui o valor anterior.
+            Clique com o botão direito no card do indicador para ver o histórico.
+          </p>
+        </div>
       </template>
 
       <!-- ===== SALÁRIO DOS COLABORADORES ===== -->
@@ -1715,6 +2507,28 @@ onUnmounted(() => {
             Nenhuma vaga cadastrada. Adicione uma vaga na aba "Nova vaga".
           </p>
 
+          <div v-if="vacancies.length" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="flex flex-1 flex-col gap-1.5">
+              <label for="vacancySearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
+              <input
+                id="vacancySearch"
+                v-model="vacancySearch"
+                type="search"
+                class="input-field"
+                placeholder="Vaga, tipo, filial, estado..."
+              />
+            </div>
+            <label class="flex items-center gap-2 pb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              <input
+                type="checkbox"
+                class="h-4 w-4 cursor-pointer accent-red-600"
+                v-model="vacancyOnlyNegative"
+              />
+              Somente dias negativos (ex.: -10)
+            </label>
+            <button type="button" class="btn-ghost btn-sm" @click="handleExportVagas">Exportar vagas</button>
+          </div>
+
           <div v-if="vacancies.length" class="grid grid-cols-3 gap-2">
             <div class="rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
               <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Total de vagas</span>
@@ -1757,8 +2571,17 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <p
+            v-if="vacancies.length && !filteredVacancies.length"
+            class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400"
+          >
+            {{ vacancyOnlyNegative
+              ? "Nenhuma vaga com dias negativos encontrada."
+              : "Nenhuma vaga encontrada para essa busca." }}
+          </p>
+
           <div
-            v-for="v in vacancies"
+            v-for="v in filteredVacancies"
             :key="v.id"
             class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
             :class="selectedVacancyIds.has(v.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
@@ -1783,8 +2606,13 @@ onUnmounted(() => {
                 <span v-if="v.salario != null" class="text-xs text-zinc-500 dark:text-zinc-400">
                   Salário: {{ formatCurrency(v.salario) }}
                 </span>
-                <span v-if="v.closeAt" class="text-xs text-zinc-500 dark:text-zinc-400">
+                <span
+                  v-if="v.closeAt"
+                  class="text-xs"
+                  :class="vacancyDays(v) < 0 ? 'font-semibold text-red-600 dark:text-red-400' : 'text-zinc-500 dark:text-zinc-400'"
+                >
                   Fechamento: {{ formatDate(v.closeAt) }} · Tempo: {{ formatVacancyTempo(v) }}
+                  <span v-if="vacancyDays(v) < 0">⚠</span>
                 </span>
               </div>
               <div class="flex flex-wrap items-center gap-2">
@@ -1800,6 +2628,357 @@ onUnmounted(() => {
                 />
                 <button v-if="!v.closeAt" type="button" class="btn-primary btn-sm" @click="closeVacancyById(v.id)">Fechar vaga</button>
                 <button type="button" class="btn-danger-ghost btn-sm" @click="removeVacancy(v.id)">Excluir</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ===== TURNOVER / TURNOVER (EXP) ===== -->
+      <template v-if="indicator.form === 'turnover'">
+        <div v-show="activeTab === 'novo'" class="flex flex-col gap-4">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="flex flex-col gap-1.5">
+              <label for="turnoverEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <select id="turnoverEstado" v-model="estado" class="input-field">
+                <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="turnoverFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+              <select id="turnoverFilial" v-model="turnover.filialId" class="input-field">
+                <option :value="null">— Sem filial —</option>
+                <option v-for="b in turnoverBranches" :key="b.id" :value="b.id">{{ b.name }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="turnoverMes" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês de referência</label>
+              <input id="turnoverMes" v-model="turnover.mesReferencia" type="month" class="input-field" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="turnoverAdmitidos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Admitidos no período</label>
+              <input id="turnoverAdmitidos" v-model="turnover.admitidos" type="number" min="0" step="1" class="input-field" placeholder="0" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="turnoverDemitidos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Demitidos no período</label>
+              <input id="turnoverDemitidos" v-model="turnover.demitidos" type="number" min="0" step="1" class="input-field" placeholder="0" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="turnoverAtivos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Ativos no período</label>
+              <input id="turnoverAtivos" v-model="turnover.ativos" type="number" min="0" step="1" class="input-field" placeholder="0" />
+            </div>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Não é preciso informar colaboradores — só a quantidade admitida, demitida e ativa no mês, por filial. "Ativos"
+            substitui o Headcount no cálculo: Turnover (%) = ((Admitidos + Demitidos) / 2) / Ativos × 100 — não depende mais do
+            KPI de Headcount. Admitidos também alimenta as Novas contratações da Retenção.
+          </p>
+
+          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar por planilha</strong>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Colunas: Filial · Mês de referência · Admitidos · Demitidos · Ativos · Estado.
+                  A filial é cruzada com o cadastro da aba Filiais.
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="downloadTurnoverTemplate">Baixar template</button>
+                <button type="button" class="btn-primary btn-sm" @click="turnoverImportInput?.click()">Importar planilha</button>
+                <input ref="turnoverImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onTurnoverImportFile" />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-primary" @click="submitTurnover">
+              {{ editingTurnoverId ? "Salvar alterações" : "+ Lançar turnover" }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Importar demitidos: só muda o status no headcount — fica fora da aba "Novo"/"Histórico", visível nas duas. -->
+        <div class="rounded-xl border border-dashed border-red-300 p-3 dark:border-red-900/50">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar demitidos</strong>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                Colunas: Colaborador · Data de admissão (opcional) · Data de desligamento. Pode trazer demitidos de todos os meses
+                numa planilha só — cada linha usa a própria data. Localiza pelo Nome quem já está no headcount (a Empresa não é
+                necessária). Se o nome bater em mais de um colaborador, a tela pede para escolher qual é qual. Só muda o status
+                para "demitido" no headcount — quem já estiver demitido é pulado sem alterar nada, e nome que não bater com
+                ninguém no headcount é ignorado (não cria lançamento novo). Para registrar o tempo de permanência, use o modal
+                próprio "Tempo médio de permanência".
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" class="btn-ghost btn-sm" @click="downloadHeadcountDemitidosTemplate">Baixar template</button>
+              <button type="button" class="btn-danger-ghost btn-sm" @click="headcountDemitidosImportInput?.click()">Importar planilha</button>
+              <input
+                ref="headcountDemitidosImportInput"
+                type="file"
+                hidden
+                accept=".xlsx,.xls,.csv"
+                @change="onHeadcountDemitidosImportFile"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div v-show="activeTab === 'historico'" class="flex flex-col gap-3">
+          <p v-if="!turnoverList.length" class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            Nenhum registro lançado. Adicione um lançamento na aba "Novo".
+          </p>
+
+          <div v-if="turnoverList.length" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="flex flex-1 flex-col gap-1.5">
+              <label for="turnoverSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
+              <input
+                id="turnoverSearch"
+                v-model="turnoverSearch"
+                type="search"
+                class="input-field"
+                placeholder="Filial, mês, estado..."
+              />
+            </div>
+            <button type="button" class="btn-ghost btn-sm" @click="handleExportTurnover">Exportar</button>
+          </div>
+
+          <div v-if="turnoverList.length" class="flex flex-wrap items-center justify-between gap-2">
+            <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                class="h-4 w-4 cursor-pointer accent-red-600"
+                :checked="allTurnoverSelected"
+                aria-label="Selecionar todos os registros"
+                @change="toggleTurnoverAll"
+              />
+              Selecionar todos
+            </label>
+            <div v-if="selectedTurnovers.length" class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+                {{ selectedTurnovers.length }} selecionado(s)
+              </span>
+              <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkTurnoverDelete">Excluir selecionados</button>
+            </div>
+          </div>
+
+          <p
+            v-if="turnoverList.length && !filteredTurnover.length"
+            class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400"
+          >
+            Nenhum registro encontrado para essa busca.
+          </p>
+
+          <div
+            v-for="t in filteredTurnover"
+            :key="t.id"
+            class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
+            :class="selectedTurnoverIds.has(t.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+          >
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+              :checked="selectedTurnoverIds.has(t.id)"
+              aria-label="Selecionar registro"
+              @change="toggleTurnoverRow(t.id)"
+            />
+            <div class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-0.5">
+                <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ turnoverFilial(t) || "— Sem filial —" }}</strong>
+                <span v-if="t.mesReferencia || t.estado" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  {{ [t.mesReferencia ? ymLabel(t.mesReferencia) : "", t.estado].filter(Boolean).join(" · ") }}
+                </span>
+                <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Admitidos: {{ t.admitidos || 0 }} · Demitidos: {{ t.demitidos || 0 }} · Ativos: {{ t.ativos || 0 }}
+                </span>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="editTurnover(t.id)">Editar</button>
+                <button type="button" class="btn-danger-ghost btn-sm" @click="removeTurnover(t.id)">Excluir</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ===== HEADCOUNT ===== -->
+      <template v-if="indicator.form === 'headcount'">
+        <div v-show="activeTab === 'novo'" class="flex flex-col gap-4">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="hcCodigo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Código</label>
+              <input id="hcCodigo" v-model="headcount.codigo" type="text" class="input-field" placeholder="Ex.: 3375" />
+            </div>
+            <div class="flex flex-col gap-1.5 sm:col-span-1 lg:col-span-2">
+              <label for="hcColaborador" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
+              <input id="hcColaborador" v-model="headcount.colaborador" v-upper type="text" class="input-field uppercase" placeholder="Nome do colaborador" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="hcEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
+              <select id="hcEmpresa" v-model="headcount.filialId" class="input-field">
+                <option :value="null">— Sem empresa —</option>
+                <option v-for="b in headcountBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcFuncao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Função</label>
+              <input id="hcFuncao" v-model="headcount.funcao" v-upper type="text" class="input-field uppercase" placeholder="Ex.: ANALISTA DE RH" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcRemuneracao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Remuneração (R$)</label>
+              <input
+                id="hcRemuneracao"
+                class="input-field text-right tabular-nums"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                placeholder="0,00"
+                :value="headcount.remuneracao"
+                @input="onHeadcountSalaryInput"
+                @blur="onHeadcountSalaryBlur"
+              />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcAdmissao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de admissão</label>
+              <input id="hcAdmissao" v-model="headcount.dataAdmissao" type="date" class="input-field" required />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="hcEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <select id="hcEstado" v-model="estado" class="input-field">
+                <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
+              </select>
+            </div>
+          </div>
+
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            O quadro traz sempre todos os colaboradores lançados — o filtro por mês do dashboard usa a Data de admissão
+            como base: mostra quem já tinha sido admitido até aquele mês e ainda não foi desligado.
+          </p>
+
+          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar novos colaboradores</strong>
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Colunas: Código · Colaborador · Empresa · Função · Remuneração · Data de admissão · Estado.
+                  Quem já existir (mesma Empresa e Código) é avisado antes de importar.
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="downloadHeadcountTemplate">Baixar template</button>
+                <button type="button" class="btn-primary btn-sm" @click="headcountImportInput?.click()">Importar planilha</button>
+                <input ref="headcountImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onHeadcountImportFile" />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-primary" @click="submitHeadcount">
+              {{ editingHeadcountId ? "Salvar alterações" : "+ Lançar headcount" }}
+            </button>
+          </div>
+        </div>
+
+        <div v-show="activeTab === 'historico'" class="flex flex-col gap-3">
+          <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            Mostrando colaboradores de <strong class="text-zinc-800 dark:text-zinc-100 capitalize">{{ headcountViewMonthLabel }}</strong>
+            — mesmo mês selecionado no filtro do dashboard.
+          </div>
+
+          <p v-if="!headcountList.length" class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            Nenhum colaborador lançado para este mês. Adicione um lançamento na aba "Novo" ou ajuste o mês no filtro do dashboard.
+          </p>
+
+          <div v-if="headcountList.length" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="flex flex-1 flex-col gap-1.5">
+              <label for="headcountSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
+              <input
+                id="headcountSearch"
+                v-model="headcountSearch"
+                type="search"
+                class="input-field"
+                placeholder="Código, colaborador, função, estado..."
+              />
+            </div>
+            <div class="flex flex-col gap-1.5 sm:w-56">
+              <label for="headcountFilterEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
+              <select id="headcountFilterEmpresa" v-model="headcountFilterFilialId" class="input-field">
+                <option :value="null">Todas as empresas</option>
+                <option v-for="b in headcountFilterBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
+              </select>
+            </div>
+            <button type="button" class="btn-ghost btn-sm" @click="handleExportHeadcount">Exportar</button>
+          </div>
+
+          <div v-if="headcountList.length" class="flex flex-wrap items-center justify-between gap-2">
+            <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                class="h-4 w-4 cursor-pointer accent-red-600"
+                :checked="allHeadcountSelected"
+                aria-label="Selecionar todos os registros"
+                @change="toggleHeadcountAll"
+              />
+              Selecionar todos
+            </label>
+            <div v-if="selectedHeadcounts.length" class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+                {{ selectedHeadcounts.length }} selecionado(s)
+              </span>
+              <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkHeadcountDelete">Excluir selecionados</button>
+            </div>
+          </div>
+
+          <p
+            v-if="headcountList.length && !filteredHeadcount.length"
+            class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400"
+          >
+            Nenhum registro encontrado para essa busca.
+          </p>
+
+          <div
+            v-for="h in filteredHeadcount"
+            :key="h.id"
+            class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
+            :class="selectedHeadcountIds.has(h.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+          >
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+              :checked="selectedHeadcountIds.has(h.id)"
+              aria-label="Selecionar registro"
+              @change="toggleHeadcountRow(h.id)"
+            />
+            <div class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex flex-col gap-0.5">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ h.colaborador }}</strong>
+                  <Badge v-if="h.status === 'demitido'" tone="dark">Demitido em {{ ymLabel(h.demitidoMes) }}</Badge>
+                </div>
+                <span v-if="h.codigo || h.funcao || h.estado || headcountBranchLabel(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  {{ [h.codigo, headcountBranchLabel(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}
+                </span>
+                <span v-if="h.remuneracao != null" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Remuneração: {{ formatCurrency(h.remuneracao) }}
+                </span>
+                <span v-if="h.dataAdmissao" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Admissão: {{ formatDate(h.dataAdmissao) }}
+                </span>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="btn-ghost btn-sm" @click="editHeadcount(h.id)">Editar</button>
+                <button type="button" class="btn-danger-ghost btn-sm" @click="removeHeadcount(h.id)">Excluir</button>
               </div>
             </div>
           </div>
@@ -2210,52 +3389,6 @@ onUnmounted(() => {
       </div>
     </form>
 
-    <!-- ===== Submodal: ocorrência de Absenteísmo ===== -->
-    <Teleport to="body">
-      <div
-        v-if="sub.kind === 'ocorrencia' && sub.employee"
-        class="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 py-10"
-        @click.self="closeSub"
-      >
-        <form class="slide-up w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900" novalidate @submit.prevent="saveOccurrence">
-          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <div>
-              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Registrar ocorrência</h3>
-              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ sub.employee.name }} · {{ sub.employee.sector }}
-              </p>
-            </div>
-            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="closeSub">&times;</button>
-          </div>
-
-          <div class="flex flex-col gap-4 px-6 py-5">
-            <div class="flex flex-col gap-1.5">
-              <label for="occMotivo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Motivo</label>
-              <select id="occMotivo" v-model="occ.motivo" class="input-field">
-                <option v-for="key in ABSENTEEISM_OPTIONS" :key="key" :value="key">{{ ABSENTEEISM_TYPES[key] }}</option>
-              </select>
-            </div>
-            <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
-              <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-                <label for="occInicio" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data início</label>
-                <input id="occInicio" v-model="occ.inicio" type="date" class="input-field" />
-              </div>
-              <div class="flex min-w-[150px] flex-1 flex-col gap-1.5">
-                <label for="occFim" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data fim</label>
-                <input id="occFim" v-model="occ.fim" type="date" class="input-field" />
-              </div>
-              <button type="button" class="btn-ghost" @click="setOccurrenceToday">Hoje</button>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <button type="button" class="btn-ghost" @click="closeSub">Cancelar</button>
-            <button type="submit" class="btn-primary">Salvar ocorrência</button>
-          </div>
-        </form>
-      </div>
-    </Teleport>
-
     <!-- ===== Submodal: Salário do colaborador ===== -->
     <Teleport to="body">
       <div
@@ -2474,6 +3607,93 @@ onUnmounted(() => {
     </Teleport>
 
     <LoadingOverlay :show="trImporting" label="Importando treinamentos..." />
+  </Modal>
+
+  <!-- Duplicidade na importação de demitidos: mesmo Código + Nome batendo em
+       mais de um colaborador do headcount — escolher qual é qual. -->
+  <Modal
+    v-if="headcountDemitidosPending.length"
+    title="Duplicidade encontrada"
+    subtitle="Esse nome (e código, quando informado) apareceu em mais de um colaborador do headcount — escolha qual é qual para cada um."
+    max-width="max-w-xl"
+    @close="skipHeadcountDemitidosPending"
+  >
+    <div class="flex flex-col gap-4">
+      <div
+        v-for="(item, idx) in headcountDemitidosPending"
+        :key="idx"
+        class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
+      >
+        <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+          {{ item.colaboradorText }} <span class="font-normal text-zinc-400"><template v-if="item.codigo">· código {{ item.codigo }} </template><template v-if="item.dataAdmissao">· admissão {{ formatDate(item.dataAdmissao) }} </template>· desligamento {{ formatDate(item.demitidoMes + "-01") }}</span>
+        </p>
+        <div class="mt-2 flex flex-col gap-2">
+          <label
+            v-for="c in item.candidates"
+            :key="c.id"
+            class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition"
+            :class="item.selectedId === c.id
+              ? 'border-accent bg-accent/5 dark:border-red-500 dark:bg-red-500/10'
+              : 'border-zinc-200 dark:border-zinc-700'"
+          >
+            <input
+              type="radio"
+              class="mt-0.5 accent-red-600"
+              :name="'headcount-demitido-dup-' + idx"
+              :value="c.id"
+              v-model="item.selectedId"
+            />
+            <span class="flex flex-col">
+              <span class="font-medium text-zinc-800 dark:text-zinc-100">
+                {{ headcountBranchLabel(c) || "Sem empresa" }}<span v-if="c.funcao"> · {{ c.funcao }}</span>
+              </span>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                Admissão: {{ c.dataAdmissao ? formatDate(c.dataAdmissao) : "—" }} · Estado: {{ c.estado || "—" }}
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" class="btn-ghost" @click="skipHeadcountDemitidosPending">Pular todos</button>
+      <button type="button" class="btn-primary" @click="confirmHeadcountDemitidosPending">Confirmar</button>
+    </div>
+  </Modal>
+
+  <!-- Resumo da importação de demitidos do Headcount -->
+  <Modal
+    v-if="headcountDemitidosResult"
+    title="Importação de demitidos concluída"
+    max-width="max-w-md"
+    @close="headcountDemitidosResult = null"
+  >
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <span class="text-sm text-zinc-600 dark:text-zinc-300">Alterados para demitido</span>
+        <strong class="text-lg text-accent-hover dark:text-red-400">{{ headcountDemitidosResult.alterados }}</strong>
+      </div>
+      <div class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <span class="text-sm text-zinc-600 dark:text-zinc-300">Já estavam demitidos (ignorados)</span>
+        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.jaDemitidos }}</strong>
+      </div>
+      <div v-if="headcountDemitidosResult.naoEncontrado" class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <span class="text-sm text-zinc-600 dark:text-zinc-300">Colaborador não encontrado no headcount</span>
+        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.naoEncontrado }}</strong>
+      </div>
+      <div v-if="headcountDemitidosResult.semData" class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <span class="text-sm text-zinc-600 dark:text-zinc-300">Sem data de desligamento (ignorados)</span>
+        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.semData }}</strong>
+      </div>
+      <div v-if="headcountDemitidosResult.naoResolvidos" class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <span class="text-sm text-zinc-600 dark:text-zinc-300">Duplicidade não resolvida (ignorados)</span>
+        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.naoResolvidos }}</strong>
+      </div>
+      <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ headcountDemitidosResult.total }} linha(s) lida(s) na planilha.</p>
+    </div>
+    <div class="mt-5 flex justify-end">
+      <button type="button" class="btn-primary" @click="headcountDemitidosResult = null">Entendi</button>
+    </div>
   </Modal>
 </template>
 

@@ -22,73 +22,96 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1.5rem;
-      background: #fff;
+      gap: 1.75rem;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(8px);
       font-family: Inter, system-ui, sans-serif;
     }
     .dark #app-loading {
-      background: #09090b;
+      background: rgba(9, 9, 11, 0.92);
     }
     #app-loading p {
       margin: 0;
       font-size: 0.875rem;
-      font-weight: 500;
-      color: #52525b;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #3f3f46;
+      text-align: center;
     }
     .dark #app-loading p {
-      color: #d4d4d8;
+      color: #e4e4e7;
     }
-    #app-loading .gg-loader {
+    #app-loading .gg-spinner {
       position: relative;
-      display: flex;
-      height: 88px;
-      width: 96px;
-      align-items: flex-end;
-      justify-content: center;
+      height: 58px;
+      width: 58px;
     }
-    #app-loading .gg-ball {
-      display: block;
-      height: 26px;
-      width: 26px;
-      border-radius: 9999px;
-      background: linear-gradient(160deg, #f87171, #dc2626);
-      box-shadow: 0 6px 14px rgba(220, 38, 38, 0.35);
-      animation: gg-ball-bounce 0.62s cubic-bezier(0.28, 0.84, 0.42, 1) infinite alternate;
-    }
-    #app-loading .gg-ball-shadow {
+    #app-loading .gg-spinner-track {
       position: absolute;
-      bottom: 2px;
-      left: 50%;
-      height: 7px;
-      width: 34px;
-      margin-left: -17px;
+      inset: 0;
       border-radius: 9999px;
-      background: rgba(24, 24, 27, 0.35);
-      filter: blur(1px);
-      animation: gg-ball-shadow 0.62s cubic-bezier(0.28, 0.84, 0.42, 1) infinite alternate;
+      border: 3px solid #e4e4e7;
     }
-    @keyframes gg-ball-bounce {
-      0% { transform: translateY(0) scale(1.08, 0.82); }
-      100% { transform: translateY(-62px) scale(0.94, 1.1); }
+    .dark #app-loading .gg-spinner-track {
+      border-color: #3f3f46;
     }
-    @keyframes gg-ball-shadow {
-      0% { transform: scaleX(1); opacity: 0.4; }
-      100% { transform: scaleX(0.45); opacity: 0.12; }
+    #app-loading .gg-spinner-arc {
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      border: 3px solid transparent;
+      border-top-color: #ef4444;
+      border-right-color: #ef4444;
+      animation: gg-spin 0.85s cubic-bezier(0.5, 0.05, 0.5, 0.95) infinite;
+    }
+    @keyframes gg-spin {
+      to { transform: rotate(360deg); }
+    }
+    #app-loading .gg-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    #app-loading .gg-progress {
+      height: 3px;
+      width: 168px;
+      overflow: hidden;
+      border-radius: 9999px;
+      background: #e4e4e7;
+    }
+    .dark #app-loading .gg-progress {
+      background: #3f3f46;
+    }
+    #app-loading .gg-progress-fill {
+      display: block;
+      height: 100%;
+      width: 35%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, transparent, #ef4444, transparent);
+      animation: gg-progress-sweep 1.4s ease-in-out infinite;
+    }
+    @keyframes gg-progress-sweep {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(380%); }
     }
   </style>
-  <script type="module" crossorigin src="./assets/app-VIVNzUF6.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/vue-D4yvPv-f.js">
-  <link rel="modulepreload" crossorigin href="./assets/vue-router-CBi2-FJT.js">
-  <link rel="stylesheet" crossorigin href="./assets/app-B--ol-H4.css">
+  <script type="module" crossorigin src="./assets/app-EgWS94WA.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vue-DA93xRpE.js">
+  <link rel="modulepreload" crossorigin href="./assets/vue-router-BdtI6OqN.js">
+  <link rel="stylesheet" crossorigin href="./assets/app-SaKddrhr.css">
 </head>
 <body>
   <div id="app"></div>
   <div id="app-loading" role="status" aria-live="polite">
-    <div class="gg-loader">
-      <span class="gg-ball"></span>
-      <span class="gg-ball-shadow"></span>
+    <div class="gg-spinner">
+      <span class="gg-spinner-track"></span>
+      <span class="gg-spinner-arc"></span>
     </div>
-    <p>Carregando informações...</p>
+    <div class="gg-col">
+      <p>Carregando informações...</p>
+      <div class="gg-progress"><span class="gg-progress-fill"></span></div>
+    </div>
   </div>
 </body>
 </html>

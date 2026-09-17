@@ -4,7 +4,14 @@
 import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
-import { bindRemote, mergeFromRemote, replaceFromCache, resetData, upsertInList, useData } from "./store";
+import {
+  bindRemote,
+  mergeFromRemote,
+  replaceFromCache,
+  resetData,
+  upsertInList,
+  useData
+} from "./store";
 import { sessionStore, compareDateAsc } from "./utils";
 import { beginLoading, endLoading } from "../composables/useLoading";
 
@@ -53,7 +60,6 @@ function employeeToRow(emp) {
     entrada_em: emp.hiredAt ? String(emp.hiredAt).split("T")[0] : null,
     status: emp.status || "ativo",
     tipo: emp.type || "efetivado",
-    conta_turnover: !!emp.countsTurnover,
     department_id: emp.departmentId || null,
     filial_id: emp.filialId || null,
     lider_imediato: emp.liderImediato != null ? String(emp.liderImediato) : null,
@@ -82,6 +88,45 @@ function vacancyToRow(vacancy) {
     tipo_contratacao: vacancy.tipoContratacao || null,
     filial_id: vacancy.filialId || null,
     estado_sigla: vacancy.estado || null
+  };
+}
+
+function turnoverToRow(t) {
+  return {
+    id: t.id,
+    filial_id: t.filialId || null,
+    mes_referencia: t.mesReferencia ? `${String(t.mesReferencia).slice(0, 7)}-01` : null,
+    admitidos: Number(t.admitidos) || 0,
+    demitidos: Number(t.demitidos) || 0,
+    ativos: Number(t.ativos) || 0,
+    estado_sigla: t.estado || null
+  };
+}
+
+function permanenciaToRow(p) {
+  return {
+    id: p.id,
+    colaborador: p.colaborador ?? "",
+    data_admissao: p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : null,
+    data_demissao: p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : null,
+    filial_id: p.filialId || null,
+    estado_sigla: p.estado || null
+  };
+}
+
+function headcountToRow(h) {
+  return {
+    id: h.id,
+    codigo: h.codigo != null ? String(h.codigo) : null,
+    colaborador: h.colaborador ?? "",
+    funcao: h.funcao != null ? String(h.funcao) : null,
+    remuneracao: h.remuneracao != null ? Number(h.remuneracao) : null,
+    data_admissao: h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : null,
+    mes_referencia: h.mesReferencia ? `${String(h.mesReferencia).slice(0, 7)}-01` : null,
+    status: h.status === "demitido" ? "demitido" : "ativo",
+    demitido_mes: h.demitidoMes ? `${String(h.demitidoMes).slice(0, 7)}-01` : null,
+    filial_id: h.filialId || null,
+    estado_sigla: h.estado || null
   };
 }
 
@@ -190,6 +235,24 @@ export function registerRemote() {
     vacancyRemoved(id, estado) {
       _enqueue(stateTable("vagas", estado), id, { type: "delete", id });
     },
+    turnoverSaved(turnover) {
+      _enqueue(stateTable("turnover", turnover.estado), turnover.id, { type: "upsert", row: turnoverToRow(turnover) });
+    },
+    turnoverRemoved(id, estado) {
+      _enqueue(stateTable("turnover", estado), id, { type: "delete", id });
+    },
+    permanenciaSaved(record) {
+      _enqueue(stateTable("permanencia", record.estado), record.id, { type: "upsert", row: permanenciaToRow(record) });
+    },
+    permanenciaRemoved(id, estado) {
+      _enqueue(stateTable("permanencia", estado), id, { type: "delete", id });
+    },
+    headcountSaved(record) {
+      _enqueue(stateTable("headcount", record.estado), record.id, { type: "upsert", row: headcountToRow(record) });
+    },
+    headcountRemoved(id, estado) {
+      _enqueue(stateTable("headcount", estado), id, { type: "delete", id });
+    },
     branchSaved(branch) {
       _enqueue(stateTable("filiais", branch.estado), branch.id, { type: "upsert", row: branchToRow(branch) });
     },
@@ -231,7 +294,6 @@ function mapRemoteEmployee(row, impliedState) {
     hiredAt: row.entrada_em ? String(row.entrada_em).split("T")[0] + "T00:00:00" : null,
     status: row.status || "ativo",
     type: row.tipo || "efetivado",
-    countsTurnover: !!row.conta_turnover,
     departmentId: row.department_id || null,
     filialId: row.filial_id || null,
     liderImediato: row.lider_imediato != null ? String(row.lider_imediato) : null,
@@ -258,6 +320,45 @@ function mapRemoteVacancy(row, impliedState) {
     closeAt: row.fechada_em,
     salario: row.salario != null ? Number(row.salario) : null,
     tipoContratacao: row.tipo_contratacao || null,
+    filialId: row.filial_id || null,
+    estado: row.estado_sigla || impliedState || null
+  };
+}
+
+function mapRemoteTurnover(row, impliedState) {
+  return {
+    id: row.id,
+    filialId: row.filial_id || null,
+    mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
+    admitidos: row.admitidos != null ? Number(row.admitidos) : 0,
+    demitidos: row.demitidos != null ? Number(row.demitidos) : 0,
+    ativos: row.ativos != null ? Number(row.ativos) : 0,
+    estado: row.estado_sigla || impliedState || null
+  };
+}
+
+function mapRemotePermanencia(row, impliedState) {
+  return {
+    id: row.id,
+    colaborador: row.colaborador ?? "",
+    dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
+    dataDemissao: row.data_demissao ? String(row.data_demissao).slice(0, 10) : null,
+    filialId: row.filial_id || null,
+    estado: row.estado_sigla || impliedState || null
+  };
+}
+
+function mapRemoteHeadcount(row, impliedState) {
+  return {
+    id: row.id,
+    codigo: row.codigo != null ? String(row.codigo) : null,
+    colaborador: row.colaborador ?? "",
+    funcao: row.funcao != null ? String(row.funcao) : null,
+    remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
+    dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
+    mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
+    status: row.status === "demitido" ? "demitido" : "ativo",
+    demitidoMes: row.demitido_mes ? String(row.demitido_mes).slice(0, 7) : null,
     filialId: row.filial_id || null,
     estado: row.estado_sigla || impliedState || null
   };
@@ -341,6 +442,38 @@ async function fetchLancamentosRange(state, dataDe, dataAte) {
   return rows;
 }
 
+/* Busca as vagas de um estado abertas dentro do período informado (paginado,
+   via /api/vagas/:estado?data_de=&data_ate=). Usada só pelo card de Tempo
+   médio de contratação — não grava no cache local nem no store global: as
+   demais telas (modal de Vagas, Headcount, aba "Vaga" do Lançamento, e a
+   sincronização de custo por vaga) continuam com a lista completa já
+   carregada por hydrateOneState, sem depender do filtro de data do
+   dashboard. `dataDe`/`dataAte` (opcionais, "YYYY-MM-DD") vêm do filtro de
+   período; sem eles, baixa todas as vagas do estado (paginado). */
+async function fetchVagasRangeOneState(state, dataDe, dataAte) {
+  const suffix = state.toLowerCase();
+  const rows = [];
+  let page = 1;
+  for (;;) {
+    const params = new URLSearchParams({ limit: "500", page: String(page) });
+    if (dataDe) params.set("data_de", dataDe);
+    if (dataAte) params.set("data_ate", `${dataAte}T23:59:59`);
+    const res = await apiFetch(`/api/vagas/${suffix}?${params.toString()}`);
+    const pageRows = (res && res.data) || [];
+    rows.push(...pageRows.map((r) => mapRemoteVacancy(r, state)));
+    const totalPages = (res && res.pagination && res.pagination.totalPages) || 0;
+    if (!pageRows.length || page >= totalPages) break;
+    page += 1;
+  }
+  return rows;
+}
+
+export async function fetchVagasInRange(state, dataDe, dataAte) {
+  const states = state === "todos" ? STATES.slice() : [state];
+  const lists = await Promise.all(states.map((s) => fetchVagasRangeOneState(s, dataDe, dataAte)));
+  return lists.flat();
+}
+
 /* Lançamentos da carga inicial de um estado: tenta a janela recente
    (paginada); se a rota falhar por qualquer motivo, cai para o download
    completo de antes (mesmo formato de resultado que fetchTable). */
@@ -413,7 +546,7 @@ export async function hydrate(state) {
   }
 }
 
-/* Baixa e grava em cache as 5 tabelas de um único estado. Cada estado é
+/* Baixa e grava em cache as 6 tabelas de um único estado. Cada estado é
    isolado dos demais (ver _hydrate): a falha de um (ex.: timeout numa
    consulta grande) não impede os outros de serem carregados e marcados. */
 async function hydrateOneState(s) {
@@ -426,14 +559,17 @@ async function hydrateOneState(s) {
       return { error: err };
     }
   };
-  const [lan, vac, col, fil, dep] = await Promise.all([
+  const [lan, vac, tur, per, hc, col, fil, dep] = await Promise.all([
     fetchLancamentosInitial(s, suffix),
     fetchTable(`vagas_${suffix}`),
+    fetchTable(`turnover_${suffix}`),
+    fetchTable(`permanencia_${suffix}`),
+    fetchTable(`headcount_${suffix}`),
     fetchTable(`colaboradores_${suffix}`),
     fetchTable(`filiais_${suffix}`),
     fetchTable(`departamentos_${suffix}`)
   ]);
-  const errored = [lan, vac, col, fil, dep].filter((res) => res && res.error);
+  const errored = [lan, vac, tur, per, hc, col, fil, dep].filter((res) => res && res.error);
   if (errored.length) {
     // Não marca o estado como carregado quando a consulta falha (ex.: sem
     // sessão autenticada ainda). Assim o estado é baixado novamente no
@@ -446,12 +582,18 @@ async function hydrateOneState(s) {
   const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
   const rowsLan = rowsOf(lan);
   const rowsVac = rowsOf(vac);
+  const rowsTur = rowsOf(tur);
+  const rowsPer = rowsOf(per);
+  const rowsHc = rowsOf(hc);
   const rowsCol = rowsOf(col);
   const rowsFil = rowsOf(fil);
   const rowsDep = rowsOf(dep);
 
   rowsLan.forEach((r) => DataCache.setItem(`lancamentos_${suffix}`, r.id, r));
   rowsVac.forEach((r) => DataCache.setItem(`vagas_${suffix}`, r.id, r));
+  rowsTur.forEach((r) => DataCache.setItem(`turnover_${suffix}`, r.id, r));
+  rowsPer.forEach((r) => DataCache.setItem(`permanencia_${suffix}`, r.id, r));
+  rowsHc.forEach((r) => DataCache.setItem(`headcount_${suffix}`, r.id, r));
   rowsCol.forEach((r) => DataCache.setItem(`colaboradores_${suffix}`, r.id, r));
   rowsFil.forEach((r) => DataCache.setItem(`filiais_${suffix}`, r.id, r));
   rowsDep.forEach((r) => DataCache.setItem(`departamentos_${suffix}`, r.id, r));
@@ -459,6 +601,9 @@ async function hydrateOneState(s) {
   mergeFromRemote({
     entries: mapRemoteEntries(rowsLan),
     vacancies: rowsVac.map((r) => mapRemoteVacancy(r, s)),
+    turnovers: rowsTur.map((r) => mapRemoteTurnover(r, s)),
+    permanencias: rowsPer.map((r) => mapRemotePermanencia(r, s)),
+    headcounts: rowsHc.map((r) => mapRemoteHeadcount(r, s)),
     employees: rowsCol.map((r) => mapRemoteEmployee(r, s)),
     branches: rowsFil.map((r) => mapRemoteBranch(r, s)),
     departments: rowsDep.map((r) => mapRemoteDepartment(r, s))
@@ -489,7 +634,7 @@ async function _hydrate(state) {
   return results.every(Boolean);
 }
 
-const STATE_TABLES = ["lancamentos_", "vagas_", "colaboradores_", "filiais_", "departamentos_"];
+const STATE_TABLES = ["lancamentos_", "vagas_", "turnover_", "permanencia_", "headcount_", "colaboradores_", "filiais_", "departamentos_"];
 
 function stateCachedKeys(suffix) {
   const out = [];
@@ -506,7 +651,7 @@ function stateCachedKeys(suffix) {
    presente no cache — necessário porque esse controle vive só em memória e
    se perde a cada F5, mas o cache local (sessionStorage) sobrevive. */
 function mergeStateFromCache(suffix, state) {
-  const payload = { entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
+  const payload = { entries: {}, employees: [], vacancies: [], turnovers: [], permanencias: [], headcounts: [], branches: [], departments: [] };
   let minLancamentoDate = null;
   stateCachedKeys(suffix).forEach((key) => {
     const item = DataCache.readItem(key);
@@ -526,6 +671,12 @@ function mergeStateFromCache(suffix, state) {
       payload.employees.push(mapRemoteEmployee(item, state));
     } else if (tabela.indexOf("vagas_") === 0) {
       payload.vacancies.push(mapRemoteVacancy(item, state));
+    } else if (tabela.indexOf("permanencia_") === 0) {
+      payload.permanencias.push(mapRemotePermanencia(item, state));
+    } else if (tabela.indexOf("turnover_") === 0) {
+      payload.turnovers.push(mapRemoteTurnover(item, state));
+    } else if (tabela.indexOf("headcount_") === 0) {
+      payload.headcounts.push(mapRemoteHeadcount(item, state));
     } else if (tabela.indexOf("filiais_") === 0) {
       payload.branches.push(mapRemoteBranch(item, state));
     } else if (tabela.indexOf("departamentos_") === 0) {
@@ -636,6 +787,12 @@ function _removeFromMemory(tabela, id) {
     data.employees = data.employees.filter((e) => e.id !== id);
   } else if (tabela.indexOf("vagas_") === 0) {
     data.vacancies = data.vacancies.filter((v) => v.id !== id);
+  } else if (tabela.indexOf("permanencia_") === 0) {
+    data.permanencias = data.permanencias.filter((p) => p.id !== id);
+  } else if (tabela.indexOf("turnover_") === 0) {
+    data.turnovers = data.turnovers.filter((t) => t.id !== id);
+  } else if (tabela.indexOf("headcount_") === 0) {
+    data.headcounts = data.headcounts.filter((h) => h.id !== id);
   } else if (tabela.indexOf("filiais_") === 0) {
     data.branches = data.branches.filter((b) => b.id !== id);
   } else if (tabela.indexOf("departamentos_") === 0) {
@@ -659,6 +816,12 @@ function _upsertInMemory(tabela, row, estado) {
     upsertInList(data.employees, mapRemoteEmployee(row, estado));
   } else if (tabela.indexOf("vagas_") === 0) {
     upsertInList(data.vacancies, mapRemoteVacancy(row, estado));
+  } else if (tabela.indexOf("permanencia_") === 0) {
+    upsertInList(data.permanencias, mapRemotePermanencia(row, estado));
+  } else if (tabela.indexOf("turnover_") === 0) {
+    upsertInList(data.turnovers, mapRemoteTurnover(row, estado));
+  } else if (tabela.indexOf("headcount_") === 0) {
+    upsertInList(data.headcounts, mapRemoteHeadcount(row, estado));
   } else if (tabela.indexOf("filiais_") === 0) {
     upsertInList(data.branches, mapRemoteBranch(row, estado));
   } else if (tabela.indexOf("departamentos_") === 0) {
@@ -685,7 +848,7 @@ function loadLocalIntoMemory() {
   const keys = DataCache.keys();
   if (!keys.length) return false;
 
-  const data = { entries: {}, employees: [], vacancies: [], branches: [], departments: [] };
+  const data = { entries: {}, employees: [], vacancies: [], turnovers: [], permanencias: [], headcounts: [], branches: [], departments: [] };
   const tablesSeen = {};
   const minLancamentoByState = {};
 
@@ -715,6 +878,12 @@ function loadLocalIntoMemory() {
       data.employees.push(mapRemoteEmployee(item, estado));
     } else if (tabela.indexOf("vagas_") === 0) {
       data.vacancies.push(mapRemoteVacancy(item, estado));
+    } else if (tabela.indexOf("permanencia_") === 0) {
+      data.permanencias.push(mapRemotePermanencia(item, estado));
+    } else if (tabela.indexOf("turnover_") === 0) {
+      data.turnovers.push(mapRemoteTurnover(item, estado));
+    } else if (tabela.indexOf("headcount_") === 0) {
+      data.headcounts.push(mapRemoteHeadcount(item, estado));
     } else if (tabela.indexOf("filiais_") === 0) {
       data.branches.push(mapRemoteBranch(item, estado));
     } else if (tabela.indexOf("departamentos_") === 0) {

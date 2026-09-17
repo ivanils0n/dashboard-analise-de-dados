@@ -4,47 +4,53 @@ export const INDICATORS = [
   {
     id: "headcount",
     name: "Headcount",
-    desc: "Número de colaboradores ativos (calculado pela equipe)",
+    desc: "Quadro de colaboradores (código, colaborador, função, remuneração, admissão) — o filtro por mês reconstrói quem já tinha sido admitido até aquele mês e ainda não foi desligado",
     type: "number",
     unit: "colaboradores",
     decimals: 0,
     higherIsBetter: true,
+    /* Quadro persistente (todos os colaboradores já lançados). O filtro por
+       mês do dashboard não restringe a importação — ele reconstrói "como
+       estava" naquele mês usando a Data de admissão como base (ver
+       activeInMonth em lib/employees.js): conta quem já tinha sido admitido
+       até o mês filtrado e exclui quem já havia sido desligado até ele. */
     computed: true,
-    manual: false
+    manual: true,
+    form: "headcount"
   },
   {
-    id: "turnover_entradas",
-    name: "Turnover - Entradas",
-    desc: "Colaboradores admitidos (marcados para contabilizar)",
-    type: "number",
-    unit: "entradas",
-    decimals: 0,
+    id: "turnover",
+    name: "Turnover",
+    desc: "((Admitidos + Demitidos) / 2) / Ativos × 100 — pizza mostra Entrada (admitidos) vs Saída (demitidos); quantidade lançada manualmente por filial e mês, sem depender de colaboradores nem do KPI de Headcount",
+    type: "percent",
+    unit: "%",
+    decimals: 1,
     higherIsBetter: false,
+    /* Não depende mais de colaboradores nem da aba Equipe: o usuário lança (ou
+       importa por planilha) a quantidade de admitidos, demitidos e ativos por
+       filial no mês — puramente visual no KPI, mas usada no cálculo de
+       Turnover (%) e Retenção (ver turnoverRateStats/retentionRate em
+       lib/employees.js). "Ativos" substitui o Headcount no cálculo — o
+       Turnover não depende mais do quadro lançado no KPI de Headcount. A
+       pizza do card funde Turnover de Entrada e Turnover de Saída num único
+       gráfico (Entrada = admitidos; Saída = demitidos), em vez de dois KPIs
+       separados. `manual: true` é o que faz aparecer no seletor do
+       LaunchModal. */
     computed: true,
-    manual: false
-  },
-  {
-    id: "turnover_saidas",
-    name: "Turnover - Saídas",
-    desc: "Colaboradores desligados (marcados para contabilizar)",
-    type: "number",
-    unit: "saídas",
-    decimals: 0,
-    higherIsBetter: false,
-    computed: true,
-    manual: false
+    manual: true,
+    form: "turnover"
   },
   {
     id: "absenteismo",
     name: "Absenteísmo",
-    desc: "Faltas, atestados e acidentes",
+    desc: "Faltas, atestados e acidentes, importados mensalmente",
     type: "number",
     unit: "ocorrências",
     decimals: 0,
     higherIsBetter: false,
     computed: false,
     manual: true,
-    form: "absenteismo"
+    form: "mensal"
   },
   {
     id: "tempo_contratacao",
@@ -66,7 +72,7 @@ export const INDICATORS = [
   {
     id: "custo_contratacao",
     name: "Custo de contratação",
-    desc: "Soma dos salários das vagas (abertas e fechadas)",
+    desc: "Média dos salários das vagas (abertas e fechadas)",
     type: "currency",
     unit: "R$",
     decimals: 2,
@@ -77,34 +83,49 @@ export const INDICATORS = [
   },
   {
     id: "tempo_permanencia",
-    name: "Tempo de permanência",
-    desc: "Tempo médio dos colaboradores desligados",
+    name: "Tempo médio de permanência",
+    desc: "Média de dias entre a Data de admissão e a Data de demissão, importada por planilha própria (colaborador, admissão, demissão)",
     type: "days",
     unit: "dias",
     decimals: 1,
     higherIsBetter: true,
+    /* Registro independente do Turnover (que virou só quantidade): tem seu
+       próprio modal (PermanenciaModal.vue), com lançamento manual e
+       importação por planilha (ver turnoverAvgTenureDays em
+       lib/employees.js). `manual: false` tira o indicador do seletor do
+       LaunchModal — o botão direito no KPI abre o modal dedicado em vez do
+       Lançamento. */
     computed: true,
     manual: false
   },
+  /* Turnover (Exp) desativado — indicador comentado, não aparece mais no
+     dashboard nem no seletor do LaunchModal.
   {
     id: "turnover_experiencia",
-    name: "Turnover no período de experiência",
-    desc: "Desligamentos de colaboradores em período de experiência",
+    name: "Turnover (Exp)",
+    desc: "Desligamentos em período de experiência, lançados manualmente",
     type: "number",
     unit: "desligamentos",
     decimals: 0,
     higherIsBetter: false,
     computed: true,
-    manual: false
+    manual: true,
+    form: "turnover_exp"
   },
+  */
   {
     id: "retencao",
     name: "Retenção",
-    desc: "Percentual de colaboradores ativos (efetivados ou em experiência)",
+    desc: "((Headcount final − Novas contratações) / Headcount inicial) × 100 — Headcount final: quadro no último dia do mês; Novas contratações: admissões no mês; Headcount inicial: quadro no primeiro dia do mês",
     type: "percent",
     unit: "%",
     decimals: 1,
     higherIsBetter: true,
+    /* Deixou de ser lançamento manual mensal: agora vem direto do quadro do
+       Headcount (Headcount inicial/final reconstruídos pela Data de
+       admissão, ver activeInMonth) e das admissões do mês (ver
+       retentionRate em lib/employees.js). `manual: false` tira o indicador
+       do seletor do LaunchModal — não existe mais formulário próprio. */
     computed: true,
     manual: false
   },
@@ -134,7 +155,7 @@ export const INDICATORS = [
   },
   {
     id: "custo_total",
-    name: "Custos Totais",
+    name: "Custo de folha de salário",
     desc: "Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)",
     type: "currency",
     unit: "R$",

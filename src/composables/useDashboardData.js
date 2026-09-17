@@ -1,7 +1,17 @@
 import { computed, ref, watch } from "vue";
-import { INDICATORS, getIndicatorById, ABSENTEEISM_TYPES, STATES } from "@/lib/config";
+import { INDICATORS, getIndicatorById, STATES } from "@/lib/config";
 import { getEntriesFor, getAllEntries, getBranches } from "@/lib/store";
-import { computedSnapshot, listEmployees, listVacancies } from "@/lib/employees";
+import {
+  computedSnapshot,
+  listVacancies,
+  listHeadcountRecords,
+  listPermanenciaRecords,
+  averageHiringDays,
+  turnoverAvgTenureDays,
+  headcountCountInRange,
+  turnoverRateStats,
+  retentionRate
+} from "@/lib/employees";
 import {
   formatValue,
   formatDate,
@@ -12,11 +22,16 @@ import {
   normalizeText,
   compareDateDesc,
   daysBetween,
-  todayISO
+  todayISO,
+  singleMonthOfRange,
+  addMonthsYm,
+  firstDayOfYm,
+  lastDayOfYm
 } from "@/lib/utils";
-import { aggregateEntries, absenteismoTotals } from "@/lib/metrics";
+import { aggregateEntries } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
-import { ensureLancamentosSince } from "@/lib/db";
+import { ensureLancamentosSince, fetchVagasInRange } from "@/lib/db";
+import { beginLoading, endLoading } from "@/composables/useLoading";
 
 /* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
    mas aparece em "Lançamentos recentes" com formatação de moeda. */
@@ -56,6 +71,32 @@ export function useDashboardData(filter, options = {}) {
     { immediate: true }
   );
 
+  /* Tempo médio de contratação: ao contrário dos demais indicadores
+     "computed", não reaproveita a lista de vagas já carregada em memória —
+     busca direto da API só as vagas abertas dentro do período filtrado
+     (fetchVagasInRange), para não depender do download completo de vagas do
+     estado. `hiringAvgToken` descarta respostas de buscas antigas que
+     cheguem fora de ordem (troca rápida de filtro/estado). */
+  const hiringAvg = ref(null);
+  let hiringAvgToken = 0;
+  watch(
+    () => [filter.start, filter.end, currentState()],
+    async ([start, end, s]) => {
+      const token = ++hiringAvgToken;
+      beginLoading();
+      try {
+        const rows = await fetchVagasInRange(s, start || null, end || null);
+        if (token === hiringAvgToken) hiringAvg.value = averageHiringDays(rows);
+      } catch (err) {
+        console.warn("[Dashboard] Falha ao buscar vagas do período:", err);
+        if (token === hiringAvgToken) hiringAvg.value = null;
+      } finally {
+        endLoading();
+      }
+    },
+    { immediate: true }
+  );
+
   function filterByRange(list) {
     const start = filter.start;
     const end = filter.end;
@@ -65,6 +106,18 @@ export function useDashboardData(filter, options = {}) {
       if (end && e.date > end) return false;
       return true;
     });
+  }
+
+  /* Custo de contratação passou a refletir só o salário das vagas (lançamento
+     automático de syncVacancyCost, meta.source "vaga") — lançamentos manuais
+     feitos pela aba "Custo" do Lançamento (por colaborador) continuam sendo
+     gravados e aparecem na tabela de Lançamentos, mas não entram mais na
+     média do KPI. */
+  function scopeEntries(ind, list) {
+    if (ind.id === "custo_contratacao") {
+      return list.filter((e) => e.meta && e.meta.source === "vaga");
+    }
+    return list;
   }
 
   /* Lançamentos "sem período" (ver diariaDailySeries) usam uma data-sentinela
@@ -77,25 +130,11 @@ export function useDashboardData(filter, options = {}) {
      global do filtro — usado pelo filtro de estado independente do gráfico
      de Treinamento (ver treinamentoBarByFilial/treinamentoFilialEntries). */
   function filteredEntries(ind, state) {
-    const withPeriod = getEntriesFor(ind.id, state || currentState()).filter(
-      (e) => !(e.meta && e.meta.semPeriodo)
+    const withPeriod = scopeEntries(
+      ind,
+      getEntriesFor(ind.id, state || currentState()).filter((e) => !(e.meta && e.meta.semPeriodo))
     );
     return filterByRange(withPeriod);
-  }
-
-  function absenteismoTypeTotals() {
-    const ind = getIndicatorById("absenteismo");
-    if (!ind) return { falta: 0, atraso: 0, afastamento: 0 };
-    return absenteismoTotals(filteredEntries(ind));
-  }
-
-  /* Série diária do Absenteísmo para o gráfico de evolução: soma as
-     ocorrências do dia (agregação total, sem visão individual).
-     Ex.: 1 falta + 1 atestado no mesmo dia => um único ponto com valor 2. */
-  function absenteismoDailySeries() {
-    const ind = getIndicatorById("absenteismo");
-    if (!ind) return [];
-    return aggregateByDay(filteredEntries(ind));
   }
 
   /* Série diária das diárias: soma o valor pago por dia (vários lançamentos
@@ -135,20 +174,26 @@ export function useDashboardData(filter, options = {}) {
     return aggregateEntries(ind, list);
   }
 
-  /* Headcount por estado (uma barra por estado) para o card de barras. */
+  /* Headcount por estado (uma barra por estado) para o card de barras.
+     Headcount é lançamento manual mensal (um registro por colaborador,
+     como Turnover) — conta os registros do mês filtrado em cada estado. */
   function headcountBarByState() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return STATES.map((s) => {
-      const value = computedSnapshot("headcount", s) || 0;
+      const value = headcountCountInRange(s, range) || 0;
       return { label: s, value, tooltipValue: String(value) };
     });
   }
 
   /* Vagas abertas no período filtrado (data de abertura dentro do range) para
-     o gráfico de barras do Cockpit (Tempo médio de contratação): uma barra
-     por vaga, com os dias decorridos até o fechamento — ou até hoje, se
-     ainda estiver aberta. */
-  function vacanciesBarByOpen() {
-    const vacs = listVacancies(currentState()).filter((v) => v.openAt);
+     o gráfico de barras do Cockpit e da Visão geral (Tempo médio de
+     contratação): uma barra por vaga, com os dias decorridos até o
+     fechamento — ou até hoje, se ainda estiver aberta. `stateOverride`
+     (opcional) troca o estado usado — vem do filtro de estado próprio do
+     gráfico, independente do filtro de estado da aba (mesmo padrão do
+     gráfico de Treinamento). */
+  function vacanciesBarByOpen(stateOverride) {
+    const vacs = listVacancies(stateOverride || currentState()).filter((v) => v.openAt);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
     return inRange
       .map((v) => {
@@ -156,7 +201,10 @@ export function useDashboardData(filter, options = {}) {
         return {
           label: v.name || "Vaga",
           value: Number(days.toFixed(1)),
-          tooltipValue: `${days.toFixed(1)} dias${v.closeAt ? "" : " (em aberto)"}`
+          tooltipValue: `${days.toFixed(1)} dias${v.closeAt ? "" : " (em aberto)"}`,
+          /* Identifica a vaga por trás da barra (nomes podem se repetir) —
+             usado ao clicar na barra para abrir o detalhe da vaga certa. */
+          vacancyId: v.id
         };
       })
       .sort((a, b) => b.value - a.value);
@@ -234,6 +282,30 @@ export function useDashboardData(filter, options = {}) {
      ativo (e só então), recalculando a média sobre a lista combinada. */
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
+      /* Tempo médio de contratação é o único indicador "computed" cujo
+         cálculo depende diretamente de datas (abertura da vaga) — por isso,
+         ao contrário dos demais (headcount, turnover, retenção...), respeita
+         o filtro de período do dashboard. Vem de `hiringAvg` (busca
+         assíncrona direto da API, ver watch acima), não do snapshot local. */
+      if (ind.id === "tempo_contratacao") {
+        return hiringAvg.value;
+      }
+      /* Headcount e Turnover (normal/Exp) seguem o filtro de período (mês)
+         ativo. Headcount reconstrói "como estava" no mês filtrado usando a
+         Data de admissão de cada colaborador como base (ver activeInMonth em
+         lib/employees.js) — sempre a partir do quadro completo, não de um
+         "mês de lançamento" próprio. Retenção e Tempo de permanência não são
+         mais "computed" (viraram lançamento manual mensal). */
+      const range = filter.start ? { start: filter.start, end: filter.end } : null;
+      if (ind.id === "headcount") return headcountCountInRange(currentState(), range);
+      /* Turnover é uma taxa (%), não a contagem bruta de desligamentos — ver
+         turnoverRateStats em lib/employees.js. Admissões usam como base o mês
+         anterior (previousMonthRange): conta colaboradores cuja Data de
+         admissão caiu naquele mês; Headcount é o do mês filtrado (sem
+         média). */
+      if (ind.id === "turnover") return turnoverRateStats(currentState(), range).turnoverPct;
+      if (ind.id === "tempo_permanencia") return turnoverAvgTenureDays(currentState(), range);
+      if (ind.id === "retencao") return retentionRate(currentState(), range, previousMonthRange()).retencaoPct;
       return computedSnapshot(ind.id, currentState());
     }
     let list = filteredEntries(ind);
@@ -244,21 +316,43 @@ export function useDashboardData(filter, options = {}) {
     return aggregateList(ind, list);
   }
 
+  /* Mês civil anterior ao mês selecionado no filtro — usado tanto pela seta
+     de variação (▲/▼) dos cards (comparar mês com o mês anterior) quanto pelo
+     cálculo do Turnover (%), que precisa do headcount/admissões do mês
+     anterior inteiro. O filtro do dashboard é sempre um mês fechado agora,
+     então isso NUNCA pode ser "duração igual em dias": meses têm tamanhos
+     diferentes (28–31 dias) — um filtro de março (31 dias) subtraindo 31 dias
+     não cai no 1º de fevereiro, cai em janeiro; um filtro de fevereiro (28)
+     só pega os últimos 28 dias de janeiro, perdendo os 3 primeiros. */
+  function previousMonthRange() {
+    const ym = filter.start ? singleMonthOfRange(filter.start, filter.end) : null;
+    if (!ym) return null;
+    const prevYm = addMonthsYm(ym, -1);
+    return { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
+  }
+
   /* ---------- KPIs ---------- */
 
   const kpis = computed(() => {
-    const visible = INDICATORS.filter((ind) => ind.id !== "turnover_saidas");
-    return visible.map((ind) => {
+    return INDICATORS.map((ind) => {
       const entries = filteredEntries(ind);
-      const allEntries = getEntriesFor(ind.id, currentState());
+      const allEntries = scopeEntries(ind, getEntriesFor(ind.id, currentState()));
       let current = indicatorCurrentValue(ind);
       let prev = null;
-      if (filter.start && allEntries.length) {
-        /* Exclui semPeriodo: a data-sentinela é sempre "antes" de filter.start,
-           então sem este filtro toda diária sem período entraria no "anterior"
-           e distorceria a seta de variação (▲/▼) do card. */
+      const prevMonthRangeForDelta = filter.start ? previousMonthRange() : null;
+      if (prevMonthRangeForDelta && allEntries.length) {
+        /* Mês civil anterior, imediatamente antes do mês filtrado — não
+           "tudo desde sempre" (comparar set/2026 contra anos de histórico
+           acumulado quase sempre dava seta de queda, mesmo num mês normal).
+           Exclui semPeriodo: a data-sentinela é sempre "antes" de qualquer
+           início de período, então sem este filtro toda diária sem período
+           entraria no "anterior" e distorceria a seta. */
+        const range = prevMonthRangeForDelta;
         const before = allEntries.filter(
-          (e) => e.date < filter.start && !(e.meta && e.meta.semPeriodo)
+          (e) =>
+            e.date >= range.start &&
+            e.date <= range.end &&
+            !(e.meta && e.meta.semPeriodo)
         );
         prev = before.length ? aggregateList(ind, before) : null;
       } else if (!filter.start && entries.length > 1) {
@@ -280,41 +374,35 @@ export function useDashboardData(filter, options = {}) {
         ? diariaSemPeriodoEntries().length
         : 0;
 
+      /* Indicadores "computed" (headcount, turnover, retenção, tempo de
+         permanência/contratação) não têm lançamentos manuais: `entries` é o
+         histórico de snapshots diários recalculados automaticamente (um por
+         dia em que o dashboard foi aberto), não algo que o usuário lançou.
+         Rotular isso como "N lançamentos" é enganoso — o card não exibe
+         contagem nenhuma para esses indicadores. */
       const totalCount = entries.length + extraCount;
-      const countText = totalCount === 1 ? "1 lançamento" : `${totalCount} lançamentos`;
+      const countText = ind.computed
+        ? ""
+        : totalCount === 1
+          ? "1 lançamento"
+          : `${totalCount} lançamentos`;
 
-      /* Card especial do Turnover (entradas vs saídas) */
-      if (ind.id === "turnover_entradas") {
-        const entradas = indicatorCurrentValue(getIndicatorById("turnover_entradas")) || 0;
-        const saidas = indicatorCurrentValue(getIndicatorById("turnover_saidas")) || 0;
+      /* Card especial do Turnover: sem número total isolado — a pizza mostra
+         a taxa de Entrada (admissões/headcount médio) e a de Saída
+         (desligamentos/headcount médio), cada fatia já em %, fundindo os
+         antigos KPIs "Turnover de Entrada" e "Turnover de Saída" num único
+         gráfico em vez de dois cards separados. */
+      if (ind.id === "turnover") {
+        const range = filter.start ? { start: filter.start, end: filter.end } : null;
+        const stats = turnoverRateStats(currentState(), range);
         return {
-          id: "turnover_total",
+          id: "turnover",
           kind: "pie",
           name: "Turnover",
-          value: entradas + saidas,
           countText,
           pieData: [
-            { label: "Entradas", value: entradas },
-            { label: "Saídas", value: saidas }
-          ]
-        };
-      }
-
-      /* Card especial do Turnover no período de experiência */
-      if (ind.id === "turnover_experiencia") {
-        const val = indicatorCurrentValue(ind) || 0;
-        const ativosExp = listEmployees(currentState()).filter(
-          (e) => e.type === "experiencia" && e.status === "ativo"
-        ).length;
-        return {
-          id: "turnover_experiencia",
-          kind: "pie",
-          name: "Turnover (Exp)",
-          value: val,
-          countText,
-          pieData: [
-            { label: "Entradas", value: ativosExp },
-            { label: "Saídas", value: val }
+            { label: "Entrada", value: stats.turnoverEntradaPct },
+            { label: "Saída", value: stats.turnoverSaidaPct }
           ]
         };
       }
@@ -354,32 +442,44 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* ---------- Faixa de gráficos por indicador ----------
-     "Custos Totais" e "Treinamento" saem desta faixa e ganham gráfico próprio
-     abaixo do Panorama (o KPI/card continua selecionável). */
+     "Custos Totais", "Treinamento" e "Tempo médio de contratação" saem desta
+     faixa e ganham gráfico próprio abaixo do Panorama (o KPI/card continua
+     selecionável). */
   const kpiChartCards = computed(() => {
     const visible = INDICATORS.filter(
       (ind) =>
-        ind.id !== "turnover_saidas" &&
         ind.id !== "custo_total" &&
-        ind.id !== "treinamento"
+        ind.id !== "treinamento" &&
+        ind.id !== "tempo_contratacao"
     );
     return visible.map((ind) => {
-      if (ind.id === "turnover_entradas") {
+      if (ind.id === "turnover") {
         return {
-          id: "turnover_entradas",
+          id: "turnover",
           kind: "pie",
           title: "Turnover",
-          sub: "Entradas vs Saídas",
+          sub: "Entrada vs Saída",
           unit: ""
         };
       }
-      if (ind.id === "turnover_experiencia") {
+      if (ind.id === "tempo_permanencia") {
         return {
-          id: "turnover_experiencia",
-          kind: "pie",
+          id: "tempo_permanencia",
+          kind: "bar",
           title: ind.name,
-          sub: "Entradas vs Saídas",
-          unit: ""
+          sub: "Por mês, no período filtrado",
+          unit: ind.unit,
+          valueFormat: ""
+        };
+      }
+      if (ind.id === "retencao") {
+        return {
+          id: "retencao",
+          kind: "bar",
+          title: ind.name,
+          sub: "Por mês, no período filtrado",
+          unit: ind.unit,
+          valueFormat: ""
         };
       }
       if (ind.id === "headcount") {
@@ -393,38 +493,59 @@ export function useDashboardData(filter, options = {}) {
           showTrend: false
         };
       }
-      if (ind.id === "tempo_contratacao") {
-        return {
-          id: "tempo_contratacao",
-          kind: "bar",
-          title: ind.name,
-          sub: "Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)",
-          unit: ind.unit,
-          valueFormat: "",
-          showTrend: false
-        };
-      }
       return { id: ind.id, kind: "line", title: ind.name, sub: "Evolução no período", unit: ind.unit };
     });
   });
 
-  function chartPieData(kind) {
-    if (kind === "turnover_entradas") {
-      const entradas = indicatorCurrentValue(getIndicatorById("turnover_entradas")) || 0;
-      const saidas = indicatorCurrentValue(getIndicatorById("turnover_saidas")) || 0;
-      return [
-        { label: "Entradas", value: entradas },
-        { label: "Saídas", value: saidas }
-      ];
-    }
-    const saidas = indicatorCurrentValue(getIndicatorById("turnover_experiencia")) || 0;
-    const ativosExp = listEmployees(currentState()).filter(
-      (e) => e.type === "experiencia" && e.status === "ativo"
-    ).length;
+  function chartPieData() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const stats = turnoverRateStats(currentState(), range);
     return [
-      { label: "Entradas", value: ativosExp },
-      { label: "Saídas", value: saidas }
+      { label: "Entrada", value: stats.turnoverEntradaPct },
+      { label: "Saída", value: stats.turnoverSaidaPct }
     ];
+  }
+
+  /* Série mensal do Tempo de permanência (média de dias entre admissão e
+     demissão) no período filtrado — agrupada pelo mês da Data de demissão
+     dos registros do modal de Tempo médio de permanência. */
+  function turnoverTenureBarByMonth() {
+    const list = listPermanenciaRecords(currentState())
+      .filter((p) => p.dataAdmissao && p.dataDemissao)
+      .map((p) => ({ date: String(p.dataDemissao).slice(0, 10), value: daysBetween(p.dataAdmissao, p.dataDemissao) || 0 }));
+    const monthly = aggregateByMonth(filterByRange(list), "avg");
+    return monthly.map((m) => ({
+      label: formatMonthLabel(m.date),
+      value: m.value,
+      tooltipValue: `${m.value.toFixed(1)} dias`
+    }));
+  }
+
+  /* Série mensal da Retenção (%) no período filtrado — como é uma taxa
+     reconstruída a partir do quadro do Headcount (não um evento com data
+     própria, como Turnover), percorre mês a mês dentro do filtro chamando
+     retentionRate para cada um. Sem filtro de período, cai no mês atual. */
+  function retentionBarByMonth() {
+    const state = currentState();
+    const startYm = filter.start ? String(filter.start).slice(0, 7) : todayISO().slice(0, 7);
+    const endYm = filter.end ? String(filter.end).slice(0, 7) : startYm;
+    const rows = [];
+    let ym = startYm;
+    let guard = 0;
+    while (ym <= endYm && guard < 120) {
+      const range = { start: firstDayOfYm(ym), end: lastDayOfYm(ym) };
+      const prevYm = addMonthsYm(ym, -1);
+      const prevRange = { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
+      const stats = retentionRate(state, range, prevRange);
+      rows.push({
+        label: formatMonthLabel(ym),
+        value: stats.retencaoPct,
+        tooltipValue: stats.retencaoPct != null ? `${stats.retencaoPct.toFixed(1)}%` : "—"
+      });
+      ym = addMonthsYm(ym, 1);
+      guard++;
+    }
+    return rows;
   }
 
   /* ---------- Panorama (barras) ---------- */
@@ -432,22 +553,13 @@ export function useDashboardData(filter, options = {}) {
   const panorama = computed(() => {
     return INDICATORS.filter(
       (ind) =>
-        ind.id !== "turnover_entradas" &&
-        ind.id !== "turnover_saidas" &&
+        ind.id !== "turnover" &&
         ind.id !== "custo_contratacao" &&
         ind.id !== "custo_total" &&
         ind.id !== "retencao" &&
         ind.id !== "treinamento"
     )
       .map((ind) => {
-        if (ind.id === "absenteismo") {
-          const t = absenteismoTypeTotals();
-          return [
-            { label: "Falta", value: t.falta, tooltipValue: String(t.falta) },
-            { label: "Atestado", value: t.atraso, tooltipValue: String(t.atraso) },
-            { label: "Acidente", value: t.afastamento, tooltipValue: String(t.afastamento) }
-          ];
-        }
         const value = indicatorCurrentValue(ind);
         /* O rótulo do KPI de Tempo médio de contratação já mostra o valor
            arredondado (ver decimals no config); sem isto a barra do
@@ -541,10 +653,6 @@ export function useDashboardData(filter, options = {}) {
     if (ind.form === "salario" && entry.meta && entry.meta.employeeName) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
-    if (ind.form === "absenteismo" && entry.meta) {
-      const label = ABSENTEEISM_TYPES[entry.meta.type] || entry.meta.type;
-      return `${formatValue(ind, entry.value)} · ${label}`;
-    }
     return formatValue(ind, entry.value);
   }
 
@@ -568,23 +676,13 @@ export function useDashboardData(filter, options = {}) {
       };
     }
 
-    if (kpiId === "turnover_total" || kpiId === "turnover_entradas") {
+    if (kpiId === "turnover") {
       return {
-        id: "turnover_entradas",
+        id: "turnover",
         kind: "pie",
         title: "Turnover",
-        sub: "Entradas vs Saídas",
-        data: chartPieData("turnover_entradas"),
-        valueFormat: ""
-      };
-    }
-    if (kpiId === "turnover_experiencia") {
-      return {
-        id: "turnover_experiencia",
-        kind: "pie",
-        title: "Turnover (Experiência)",
-        sub: "Entradas vs Saídas",
-        data: chartPieData("turnover_experiencia"),
+        sub: "Entrada vs Saída",
+        data: chartPieData(),
         valueFormat: ""
       };
     }
@@ -602,7 +700,7 @@ export function useDashboardData(filter, options = {}) {
       return {
         id: "custo_total",
         kind: "bar",
-        title: "Custos Totais",
+        title: "Custo de folha de salário",
         sub: "Soma dos custos por filial no período filtrado",
         data: custosBarByFilial(),
         valueFormat: "currency"
@@ -628,6 +726,26 @@ export function useDashboardData(filter, options = {}) {
         valueFormat: ""
       };
     }
+    if (kpiId === "tempo_permanencia") {
+      return {
+        id: "tempo_permanencia",
+        kind: "bar",
+        title: "Tempo médio de permanência",
+        sub: "Média de dias (admissão até desligamento) por mês, no período filtrado",
+        data: turnoverTenureBarByMonth(),
+        valueFormat: ""
+      };
+    }
+    if (kpiId === "retencao") {
+      return {
+        id: "retencao",
+        kind: "bar",
+        title: "Retenção",
+        sub: "(Headcount final − Novas contratações) / Headcount inicial, por mês",
+        data: retentionBarByMonth(),
+        valueFormat: ""
+      };
+    }
 
     const ind = getIndicatorById(kpiId);
     if (!ind) {
@@ -635,8 +753,7 @@ export function useDashboardData(filter, options = {}) {
     }
 
     let entries;
-    if (ind.id === "absenteismo") entries = absenteismoDailySeries();
-    else if (ind.id === "custo_diaria") entries = diariaDailySeries(diariaShowSemPeriodo.value);
+    if (ind.id === "custo_diaria") entries = diariaDailySeries(diariaShowSemPeriodo.value);
     else entries = filteredEntries(ind);
 
     const method = COCKPIT_AVG_TYPES.includes(ind.type) ? "avg" : "sum";
@@ -656,8 +773,6 @@ export function useDashboardData(filter, options = {}) {
 
   return {
     filteredEntries,
-    absenteismoTypeTotals,
-    absenteismoDailySeries,
     diariaDailySeries,
     diariaSemPeriodoCount,
     treinamentoBarByFilial,
@@ -670,6 +785,8 @@ export function useDashboardData(filter, options = {}) {
     selectKpi,
     kpiChartCards,
     chartPieData,
+    turnoverTenureBarByMonth,
+    retentionBarByMonth,
     vacanciesBarByOpen,
     cockpitChartFor,
     panorama,

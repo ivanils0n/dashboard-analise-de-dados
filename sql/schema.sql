@@ -33,6 +33,48 @@ create table if not exists public.vagas_ro (
 
 create index if not exists vagas_ro_estado_idx on public.vagas_ro (estado_sigla);
 
+create table if not exists public.headcount_ro (
+  id                text primary key,
+  codigo            text,
+  colaborador       text not null,
+  funcao            text,
+  remuneracao       numeric(12,2),
+  data_admissao     date,
+  mes_referencia    date not null,
+  status            text not null default 'ativo' check (status in ('ativo', 'demitido')),
+  demitido_mes      date,
+  filial_id         text,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists headcount_ro_estado_idx on public.headcount_ro (estado_sigla);
+create index if not exists headcount_ro_mes_idx on public.headcount_ro (mes_referencia);
+
+create table if not exists public.turnover_ro (
+  id                text primary key,
+  filial_id         text,
+  mes_referencia    date not null,
+  admitidos         integer not null default 0,
+  demitidos         integer not null default 0,
+  ativos            integer not null default 0,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists turnover_ro_estado_idx on public.turnover_ro (estado_sigla);
+create index if not exists turnover_ro_mes_idx on public.turnover_ro (mes_referencia);
+
+create table if not exists public.permanencia_ro (
+  id                text primary key,
+  colaborador       text not null,
+  data_admissao     date not null,
+  data_demissao     date not null,
+  filial_id         text,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists permanencia_ro_estado_idx on public.permanencia_ro (estado_sigla);
+create index if not exists permanencia_ro_demissao_idx on public.permanencia_ro (data_demissao);
+
 create table if not exists public.colaboradores_ro (
   id                text primary key,
   nome              text not null,
@@ -57,7 +99,6 @@ create table if not exists public.colaboradores_ro (
   entrada_em        date,
   status            text not null check (status in ('ativo', 'desligado', 'afastado')),
   tipo              text not null check (tipo in ('efetivado', 'experiencia')),
-  conta_turnover    boolean not null default false,
   criado_em         timestamptz not null default now(),
   atualizado_em     timestamptz,
   desligado_em      timestamptz
@@ -114,6 +155,48 @@ create table if not exists public.vagas_am (
 
 create index if not exists vagas_am_estado_idx on public.vagas_am (estado_sigla);
 
+create table if not exists public.headcount_am (
+  id                text primary key,
+  codigo            text,
+  colaborador       text not null,
+  funcao            text,
+  remuneracao       numeric(12,2),
+  data_admissao     date,
+  mes_referencia    date not null,
+  status            text not null default 'ativo' check (status in ('ativo', 'demitido')),
+  demitido_mes      date,
+  filial_id         text,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists headcount_am_estado_idx on public.headcount_am (estado_sigla);
+create index if not exists headcount_am_mes_idx on public.headcount_am (mes_referencia);
+
+create table if not exists public.turnover_am (
+  id                text primary key,
+  filial_id         text,
+  mes_referencia    date not null,
+  admitidos         integer not null default 0,
+  demitidos         integer not null default 0,
+  ativos            integer not null default 0,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists turnover_am_estado_idx on public.turnover_am (estado_sigla);
+create index if not exists turnover_am_mes_idx on public.turnover_am (mes_referencia);
+
+create table if not exists public.permanencia_am (
+  id                text primary key,
+  colaborador       text not null,
+  data_admissao     date not null,
+  data_demissao     date not null,
+  filial_id         text,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists permanencia_am_estado_idx on public.permanencia_am (estado_sigla);
+create index if not exists permanencia_am_demissao_idx on public.permanencia_am (data_demissao);
+
 create table if not exists public.colaboradores_am (
   id                text primary key,
   nome              text not null,
@@ -138,7 +221,6 @@ create table if not exists public.colaboradores_am (
   entrada_em        date,
   status            text not null check (status in ('ativo', 'desligado', 'afastado')),
   tipo              text not null check (tipo in ('efetivado', 'experiencia')),
-  conta_turnover    boolean not null default false,
   criado_em         timestamptz not null default now(),
   atualizado_em     timestamptz,
   desligado_em      timestamptz
@@ -195,6 +277,48 @@ create table if not exists public.vagas_pa (
 
 create index if not exists vagas_pa_estado_idx on public.vagas_pa (estado_sigla);
 
+create table if not exists public.headcount_pa (
+  id                text primary key,
+  codigo            text,
+  colaborador       text not null,
+  funcao            text,
+  remuneracao       numeric(12,2),
+  data_admissao     date,
+  mes_referencia    date not null,
+  status            text not null default 'ativo' check (status in ('ativo', 'demitido')),
+  demitido_mes      date,
+  filial_id         text,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists headcount_pa_estado_idx on public.headcount_pa (estado_sigla);
+create index if not exists headcount_pa_mes_idx on public.headcount_pa (mes_referencia);
+
+create table if not exists public.turnover_pa (
+  id                text primary key,
+  filial_id         text,
+  mes_referencia    date not null,
+  admitidos         integer not null default 0,
+  demitidos         integer not null default 0,
+  ativos            integer not null default 0,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists turnover_pa_estado_idx on public.turnover_pa (estado_sigla);
+create index if not exists turnover_pa_mes_idx on public.turnover_pa (mes_referencia);
+
+create table if not exists public.permanencia_pa (
+  id                text primary key,
+  colaborador       text not null,
+  data_admissao     date not null,
+  data_demissao     date not null,
+  filial_id         text,
+  estado_sigla      text references public.estados(sigla)
+);
+
+create index if not exists permanencia_pa_estado_idx on public.permanencia_pa (estado_sigla);
+create index if not exists permanencia_pa_demissao_idx on public.permanencia_pa (data_demissao);
+
 create table if not exists public.colaboradores_pa (
   id                text primary key,
   nome              text not null,
@@ -219,7 +343,6 @@ create table if not exists public.colaboradores_pa (
   entrada_em        date,
   status            text not null check (status in ('ativo', 'desligado', 'afastado')),
   tipo              text not null check (tipo in ('efetivado', 'experiencia')),
-  conta_turnover    boolean not null default false,
   criado_em         timestamptz not null default now(),
   atualizado_em     timestamptz,
   desligado_em      timestamptz
@@ -251,6 +374,12 @@ create table if not exists public.departamentos_pa (
 );
 
 create index if not exists departamentos_pa_estado_idx on public.departamentos_pa (estado_sigla);
+
+-- Turnover deixou de ser calculado a partir do colaborador (aba Equipe) e
+-- passou a ser lançado manualmente (ver tabelas turnover_ro/am/pa acima).
+alter table if exists public.colaboradores_ro drop column if exists conta_turnover;
+alter table if exists public.colaboradores_am drop column if exists conta_turnover;
+alter table if exists public.colaboradores_pa drop column if exists conta_turnover;
 
 create table if not exists public.usuarios (
   id         uuid primary key default gen_random_uuid(),
