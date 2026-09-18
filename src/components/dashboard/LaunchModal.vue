@@ -2578,7 +2578,7 @@ onUnmounted(() => {
             <label class="flex items-center gap-2 pb-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
               <input
                 type="checkbox"
-                class="h-4 w-4 cursor-pointer accent-red-600"
+                class="h-4 w-4 cursor-pointer accent-accent"
                 v-model="vacancyOnlyNegative"
               />
               Somente dias negativos (ex.: -10)
@@ -2593,7 +2593,7 @@ onUnmounted(() => {
             </div>
             <div class="rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
               <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Abertas</span>
-              <p class="text-xl font-bold tabular-nums text-accent-hover dark:text-red-400">{{ vacancyStats.abertas }}</p>
+              <p class="text-xl font-bold tabular-nums text-accent-hover dark:text-accent-light">{{ vacancyStats.abertas }}</p>
             </div>
             <div class="rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
               <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Fechadas</span>
@@ -2605,7 +2605,7 @@ onUnmounted(() => {
             <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
               <input
                 type="checkbox"
-                class="h-4 w-4 cursor-pointer accent-red-600"
+                class="h-4 w-4 cursor-pointer accent-accent"
                 :checked="allVacanciesSelected"
                 aria-label="Selecionar todas as vagas"
                 @change="toggleVacanciesAll"
@@ -2613,7 +2613,7 @@ onUnmounted(() => {
               Selecionar todas
             </label>
             <div v-if="selectedVacancies.length" class="flex flex-wrap items-center gap-2">
-              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
                 {{ selectedVacancies.length }} selecionada(s)
               </span>
               <input
@@ -2641,11 +2641,11 @@ onUnmounted(() => {
             v-for="v in filteredVacancies"
             :key="v.id"
             class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-            :class="selectedVacancyIds.has(v.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+            :class="selectedVacancyIds.has(v.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
           >
             <input
               type="checkbox"
-              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent"
               :checked="selectedVacancyIds.has(v.id)"
               aria-label="Selecionar vaga"
               @change="toggleVacancy(v.id)"
@@ -2792,7 +2792,7 @@ onUnmounted(() => {
           </p>
 
           <div v-if="turnoverList.length" class="flex flex-wrap gap-2">
-            <div class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-red-500/25 dark:bg-red-500/10">
+            <div class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-accent/25 dark:bg-accent/10">
               <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total admissões</span>
               <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.admitidos }}</span>
             </div>
@@ -2820,7 +2820,7 @@ onUnmounted(() => {
             <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
               <input
                 type="checkbox"
-                class="h-4 w-4 cursor-pointer accent-red-600"
+                class="h-4 w-4 cursor-pointer accent-accent"
                 :checked="allTurnoverSelected"
                 aria-label="Selecionar todos os registros"
                 @change="toggleTurnoverAll"
@@ -2828,7 +2828,7 @@ onUnmounted(() => {
               Selecionar todos
             </label>
             <div v-if="selectedTurnovers.length" class="flex flex-wrap items-center gap-2">
-              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
                 {{ selectedTurnovers.length }} selecionado(s)
               </span>
               <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkTurnoverDelete">Excluir selecionados</button>
@@ -2846,11 +2846,11 @@ onUnmounted(() => {
             v-for="t in filteredTurnover"
             :key="t.id"
             class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-            :class="selectedTurnoverIds.has(t.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+            :class="selectedTurnoverIds.has(t.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
           >
             <input
               type="checkbox"
-              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent"
               :checked="selectedTurnoverIds.has(t.id)"
               aria-label="Selecionar registro"
               @change="toggleTurnoverRow(t.id)"
@@ -3001,7 +3001,7 @@ onUnmounted(() => {
             <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
               <input
                 type="checkbox"
-                class="h-4 w-4 cursor-pointer accent-red-600"
+                class="h-4 w-4 cursor-pointer accent-accent"
                 :checked="allHeadcountSelected"
                 aria-label="Selecionar todos os registros"
                 @change="toggleHeadcountAll"
@@ -3009,7 +3009,7 @@ onUnmounted(() => {
               Selecionar todos
             </label>
             <div v-if="selectedHeadcounts.length" class="flex flex-wrap items-center gap-2">
-              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
                 {{ selectedHeadcounts.length }} selecionado(s)
               </span>
               <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkHeadcountDelete">Excluir selecionados</button>
@@ -3027,11 +3027,11 @@ onUnmounted(() => {
             v-for="h in filteredHeadcount"
             :key="h.id"
             class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-            :class="selectedHeadcountIds.has(h.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+            :class="selectedHeadcountIds.has(h.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
           >
             <input
               type="checkbox"
-              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent"
               :checked="selectedHeadcountIds.has(h.id)"
               aria-label="Selecionar registro"
               @change="toggleHeadcountRow(h.id)"
@@ -3077,7 +3077,7 @@ onUnmounted(() => {
               :key="e.id"
               type="button"
               class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="custo.employeeId === e.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              :class="custo.employeeId === e.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
               @click="pickEmployee(e)"
             >
               <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
@@ -3121,7 +3121,7 @@ onUnmounted(() => {
               :key="e.id"
               type="button"
               class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="diaria.employeeId === e.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              :class="diaria.employeeId === e.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
               @click="pickDiariaEmployee(e)"
             >
               <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
@@ -3133,7 +3133,7 @@ onUnmounted(() => {
           </p>
           <p v-if="diaria.query.trim()" class="text-xs">
             Colaborador não cadastrado?
-            <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="pickDiariaEmployeeManual">
+            <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="pickDiariaEmployeeManual">
               Lançar mesmo assim para "{{ diaria.query.trim() }}"
             </button>
           </p>
@@ -3172,7 +3172,7 @@ onUnmounted(() => {
             />
             <p class="text-xs">
               <span v-if="!diaria.employeeId" class="text-zinc-400 dark:text-zinc-500">Sem vínculo com o cadastro da Equipe. </span>
-              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('colaborador')">
+              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="showTab('colaborador')">
                 {{ diaria.employeeId ? "Trocar colaborador" : "Buscar colaborador cadastrado" }}
               </button>
             </p>
@@ -3260,7 +3260,7 @@ onUnmounted(() => {
               :key="e.id"
               type="button"
               class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="treinamento.employeeId === e.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              :class="treinamento.employeeId === e.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
               @click="pickTreinamentoEmployee(e)"
             >
               <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
@@ -3294,7 +3294,7 @@ onUnmounted(() => {
             <label for="trSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
             <input id="trSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="treinamentoEmployeeName" placeholder="Nenhum selecionado" />
             <p v-if="treinamento.employeeId" class="text-xs">
-              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('colaborador')">Trocar colaborador</button>
+              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="showTab('colaborador')">Trocar colaborador</button>
             </p>
           </div>
 
@@ -3372,7 +3372,7 @@ onUnmounted(() => {
               :key="b.id"
               type="button"
               class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="custosTot.branchId === b.id ? 'bg-accent/10 dark:bg-red-500/10' : ''"
+              :class="custosTot.branchId === b.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
               @click="pickCustosTotBranch(b)"
             >
               <span class="flex min-w-0 flex-col">
@@ -3396,7 +3396,7 @@ onUnmounted(() => {
             <label for="ctSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial selecionada</label>
             <input id="ctSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custosTotSelectedLabel" placeholder="Nenhuma filial selecionada" />
             <p v-if="custosTot.branchId" class="text-xs">
-              <button type="button" class="font-medium text-accent-hover dark:text-red-400" @click="showTab('filial')">Trocar filial</button>
+              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="showTab('filial')">Trocar filial</button>
             </p>
           </div>
 
@@ -3709,12 +3709,12 @@ onUnmounted(() => {
             :key="c.id"
             class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition"
             :class="item.selectedId === c.id
-              ? 'border-accent bg-accent/5 dark:border-red-500 dark:bg-red-500/10'
+              ? 'border-accent bg-accent/5 dark:border-accent dark:bg-accent/10'
               : 'border-zinc-200 dark:border-zinc-700'"
           >
             <input
               type="radio"
-              class="mt-0.5 accent-red-600"
+              class="mt-0.5 accent-accent"
               :name="'headcount-demitido-dup-' + idx"
               :value="c.id"
               v-model="item.selectedId"
@@ -3747,7 +3747,7 @@ onUnmounted(() => {
     <div class="flex flex-col gap-3">
       <div class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <span class="text-sm text-zinc-600 dark:text-zinc-300">Alterados para demitido</span>
-        <strong class="text-lg text-accent-hover dark:text-red-400">{{ headcountDemitidosResult.alterados }}</strong>
+        <strong class="text-lg text-accent-hover dark:text-accent-light">{{ headcountDemitidosResult.alterados }}</strong>
       </div>
       <div class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <span class="text-sm text-zinc-600 dark:text-zinc-300">Já estavam demitidos (ignorados)</span>
@@ -3785,8 +3785,8 @@ onUnmounted(() => {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -3795,7 +3795,7 @@ onUnmounted(() => {
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -3803,7 +3803,7 @@ onUnmounted(() => {
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-primary:disabled {
   opacity: 0.6;

@@ -205,8 +205,8 @@ const results = computed(() => {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -215,7 +215,7 @@ const results = computed(() => {
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -223,7 +223,7 @@ const results = computed(() => {
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-ghost {
   border-radius: 0.5rem;

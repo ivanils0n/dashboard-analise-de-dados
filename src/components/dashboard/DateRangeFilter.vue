@@ -93,7 +93,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       type="button"
       class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition"
       :class="active
-        ? 'border-accent/50 bg-accent/5 text-accent-hover dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-400'
+        ? 'border-accent/50 bg-accent/5 text-accent-hover dark:border-accent/40 dark:bg-accent/10 dark:text-accent-light'
         : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'"
       :aria-expanded="open"
       :title="title"
@@ -160,8 +160,8 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -170,7 +170,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.375rem 0.7rem;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -178,7 +178,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-ghost {
   border-radius: 0.5rem;

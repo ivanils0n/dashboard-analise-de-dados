@@ -161,7 +161,7 @@ function onKeydown(e) {
     >
       <input
         type="checkbox"
-        class="h-3.5 w-3.5 cursor-pointer accent-red-600"
+        class="h-3.5 w-3.5 cursor-pointer accent-accent"
         :checked="showSemPeriodo"
         @change="emit('toggle-sem-periodo', $event.target.checked)"
       />

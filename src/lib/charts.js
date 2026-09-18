@@ -28,9 +28,9 @@ export function chartPalette() {
   };
 }
 
-export const ACCENT = "#ef4444";
-export const ACCENT_HOVER = "#dc2626";
-export const ABSENTEEISM_COLORS = ["#ef4444", "#f59e0b", "#94a3b8"];
+export const ACCENT = "#E8AF3E";
+export const ACCENT_HOVER = "#B7791F";
+export const ABSENTEEISM_COLORS = ["#E8AF3E", "#b45309", "#94a3b8"];
 /* Cor neutra da segunda fatia da pizza — legível em temas claro e escuro. */
 export const PIE_SECONDARY = "#94a3b8";
 
@@ -468,9 +468,9 @@ export function updateLineChart(chart, indicator, entries) {
   const top = area.top !== undefined ? area.top : 0;
   const bottom = area.bottom !== undefined ? area.bottom : chart.height || 100;
   const gradient = ctx.createLinearGradient(0, top, 0, bottom);
-  gradient.addColorStop(0, "rgba(239, 68, 68, 0.38)");
-  gradient.addColorStop(0.55, "rgba(239, 68, 68, 0.14)");
-  gradient.addColorStop(1, "rgba(239, 68, 68, 0.02)");
+  gradient.addColorStop(0, "rgba(232, 175, 62, 0.38)");
+  gradient.addColorStop(0.55, "rgba(232, 175, 62, 0.14)");
+  gradient.addColorStop(1, "rgba(232, 175, 62, 0.02)");
 
   chart.data = {
     labels,
@@ -534,8 +534,8 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
 
   const area = chart.chartArea || {};
   const gradient = chart.ctx.createLinearGradient(0, area.top || 0, 0, area.bottom || chart.height || 100);
-  gradient.addColorStop(0, "rgba(239, 68, 68, 0.30)");
-  gradient.addColorStop(1, "rgba(239, 68, 68, 0.02)");
+  gradient.addColorStop(0, "rgba(232, 175, 62, 0.30)");
+  gradient.addColorStop(1, "rgba(232, 175, 62, 0.02)");
 
   chart.data = {
     labels,

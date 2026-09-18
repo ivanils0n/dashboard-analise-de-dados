@@ -312,7 +312,7 @@ function handleExport() {
         <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
           <input
             type="checkbox"
-            class="h-4 w-4 cursor-pointer accent-red-600"
+            class="h-4 w-4 cursor-pointer accent-accent"
             :checked="allVisibleSelected"
             aria-label="Selecionar todos os registros"
             @change="toggleSelectAll"
@@ -320,7 +320,7 @@ function handleExport() {
           Selecionar todos
         </label>
         <div v-if="selectedRows.length" class="flex flex-wrap items-center gap-2">
-          <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+          <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
             {{ selectedRows.length }} selecionado(s)
           </span>
           <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkDelete">Excluir selecionados</button>
@@ -332,12 +332,12 @@ function handleExport() {
           v-for="p in filteredList"
           :key="p.id"
           class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-          :class="selectedIds.has(p.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+          :class="selectedIds.has(p.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
         >
           <input
             v-if="canEdit"
             type="checkbox"
-            class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-red-600"
+            class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent"
             :checked="selectedIds.has(p.id)"
             aria-label="Selecionar registro"
             @change="toggleRow(p.id)"
@@ -382,8 +382,8 @@ function handleExport() {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);

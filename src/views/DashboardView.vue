@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from "vue";
+import { sidebarHidden } from "@/composables/useSidebar";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
@@ -738,6 +739,15 @@ onUnmounted(() => {
    baixar — antes ela piscava a cada visita mesmo com tudo já carregado. */
 onActivated(() => {
   hydrateState(filters.current).catch(() => {});
+  sidebarHidden.value = activeTab.value === "cockpit";
+});
+onDeactivated(() => {
+  sidebarHidden.value = false;
+});
+
+/* No Cockpit a sidebar fica oculta para dar mais espaço aos gráficos. */
+watch(activeTab, (tab) => {
+  sidebarHidden.value = tab === "cockpit";
 });
 </script>
 
@@ -796,6 +806,14 @@ onActivated(() => {
         >
           <span aria-hidden="true">⚠</span> Mês incompleto
         </span>
+        <button
+          v-if="activeTab === 'cockpit'"
+          type="button"
+          class="whitespace-nowrap rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          @click="toggleShowValues"
+        >
+          {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
+        </button>
         <DateRangeFilter :range="df" title="Período" @apply="showIncompleteNotice" />
 
         <div class="relative" @click.stop>
@@ -851,7 +869,6 @@ onActivated(() => {
       key="cockpit"
       :dashboard="dashboard"
       :show-values="showValues"
-      @toggle-show-values="toggleShowValues"
       @edit-vacancy="onVacancyEdit"
       @edit-permanencia="onPermanenciaEdit"
     />
@@ -1060,7 +1077,7 @@ onActivated(() => {
         :data="treinamentoBarData"
         :show-values="showValues"
         value-format="hours"
-        :show-trend="true"
+        :show-trend="false"
         :height-px="520"
         bars-clickable
         title="Treinamento — Carga horária por filial"
@@ -1187,7 +1204,7 @@ onActivated(() => {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <template v-if="canEdit && selectedRows.length">
-            <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+            <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
               {{ selectedRows.length }} selecionado(s)
             </span>
             <button type="button" class="btn-danger-solid-sm" @click="handleBulkDelete">Excluir selecionados</button>
@@ -1205,7 +1222,7 @@ onActivated(() => {
               <th v-if="canEdit" class="w-10 px-4 py-3 font-semibold">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  class="h-4 w-4 cursor-pointer accent-accent"
                   :checked="allVisibleSelected"
                   aria-label="Selecionar todos os lançamentos visíveis"
                   @change="toggleSelectAll"
@@ -1222,12 +1239,12 @@ onActivated(() => {
               v-for="{ entry, ind } in visibleTableRows"
               :key="entry.id"
               class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-              :class="selectedKeys.has(entry.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+              :class="selectedKeys.has(entry.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
             >
               <td v-if="canEdit" class="px-4 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  class="h-4 w-4 cursor-pointer accent-accent"
                   :checked="selectedKeys.has(entry.id)"
                   :aria-label="`Selecionar lançamento de ${ind.name}`"
                   @change="toggleRow(entry.id)"

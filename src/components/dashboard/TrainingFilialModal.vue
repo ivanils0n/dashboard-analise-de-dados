@@ -57,7 +57,7 @@ function close() {
   >
     <div class="flex flex-col gap-4">
       <div
-        class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/25 bg-accent/5 p-4 dark:border-red-500/25 dark:bg-red-500/10"
+        class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/25 bg-accent/5 p-4 dark:border-accent/25 dark:bg-accent/10"
       >
         <div>
           <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">

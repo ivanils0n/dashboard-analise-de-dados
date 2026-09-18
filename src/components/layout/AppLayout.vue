@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { authState } from "@/lib/auth";
 import TopBar from "./TopBar.vue";
 import SideBar from "./SideBar.vue";
+import { sidebarHidden } from "@/composables/useSidebar";
 
 /* O visitante tem acesso somente leitura ao dashboard e não exibe a sidebar.
    Lê o estado reativo (authState.profile) para reagir a login/logout. */
@@ -16,7 +17,7 @@ const isVisitor = computed(() => {
   <div class="min-h-screen bg-ice text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <TopBar />
     <div class="flex min-h-[calc(100vh-5rem)] items-start">
-      <SideBar v-if="!isVisitor" />
+      <SideBar v-if="!isVisitor && !sidebarHidden" />
       <main class="min-w-0 flex-1 px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <router-view v-slot="{ Component, route }">
           <transition name="page" mode="out-in">

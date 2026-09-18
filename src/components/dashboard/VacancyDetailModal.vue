@@ -141,7 +141,7 @@ async function remove() {
 <style scoped>
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -149,7 +149,7 @@ async function remove() {
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-danger-ghost {
   border-radius: 0.5rem;

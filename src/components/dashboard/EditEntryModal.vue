@@ -71,8 +71,14 @@ function setYear(y) {
   form.month = `${y}-${String(custosMonthNum.value).padStart(2, "0")}`;
 }
 
+/* Treinamento: a carga horária é o próprio "Valor (horas)" (é ele que entra na
+   soma do KPI e dos gráficos); meta.cargaHoraria é só uma cópia para a tabela
+   de lançamentos. Não é editável à parte — senão as duas divergem — e é
+   regravada a partir do valor em save(). */
+const isTreinamento = computed(() => indicator.value.form === "treinamento");
+
 function metaKeys() {
-  return Object.keys(form.meta);
+  return Object.keys(form.meta).filter((k) => !(isTreinamento.value && k === "cargaHoraria"));
 }
 function metaIsDate(key) {
   return DATE_KEYS.includes(key);
@@ -116,12 +122,21 @@ function parseValue() {
 
 function save() {
   const value = parseValue();
-  if (isNaN(value) || value < 0) {
+  /* parseHoursBR/parseCurrencyBR devolvem null (não NaN) para texto inválido. */
+  if (value === null || isNaN(value) || value < 0) {
     toast("Informe um valor válido.");
     return;
   }
 
+  /* Campos que o formulário não mostra (ver load) precisam ser preservados:
+     updateEntry substitui o meta inteiro, e sem `estado` o lançamento some dos
+     filtros por estado (getEntriesFor), sem `employeeName` some dos totais por
+     colaborador. */
+  const original = props.entry.meta && typeof props.entry.meta === "object" ? props.entry.meta : {};
   const meta = {};
+  ["estado", "employeeId", "employeeName", "competencia"].forEach((k) => {
+    if (original[k] !== undefined) meta[k] = original[k];
+  });
   metaKeys().forEach((k) => {
     const raw = form.meta[k];
     if (raw === "" || raw === null || raw === undefined) {
@@ -139,6 +154,7 @@ function save() {
     return;
   }
   if (usesMonth.value) meta.competencia = form.month;
+  if (isTreinamento.value) meta.cargaHoraria = value;
 
   updateEntry(props.indicatorId, props.entry.id, { date, value, meta });
   emit("saved");
@@ -225,8 +241,8 @@ function save() {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -235,7 +251,7 @@ function save() {
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -243,7 +259,7 @@ function save() {
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-ghost {
   border-radius: 0.5rem;

@@ -368,7 +368,7 @@ watch(rows, () => nextTick(updateTableWidths));
       <div v-if="indicator.type === 'currency' || hasEmployeeColumn" class="flex flex-wrap gap-2">
         <div
           v-if="indicator.type === 'currency'"
-          class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-red-500/25 dark:bg-red-500/10"
+          class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-accent/25 dark:bg-accent/10"
         >
           <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total no filtro</span>
           <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatCurrency(totalValue) }}</span>
@@ -418,7 +418,7 @@ watch(rows, () => nextTick(updateTableWidths));
       </div>
 
       <div v-if="canEdit && selectedRows.length" class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
           {{ selectedRows.length }} selecionado(s)
         </span>
         <button
@@ -442,7 +442,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <th v-if="canEdit" class="w-10 px-4 py-2.5 font-semibold">
                     <input
                       type="checkbox"
-                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      class="h-4 w-4 cursor-pointer accent-accent"
                       :checked="allVisibleSelected"
                       aria-label="Selecionar todos os registros visíveis"
                       @change="toggleSelectAll"
@@ -457,7 +457,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <td v-if="canEdit" class="px-4 py-2.5">
                     <input
                       type="checkbox"
-                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      class="h-4 w-4 cursor-pointer accent-accent"
                       :checked="selectedIds.has(entry.id)"
                       aria-label="Selecionar registro"
                       @change="toggleRow(entry)"
@@ -516,8 +516,8 @@ watch(rows, () => nextTick(updateTableWidths));
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -526,7 +526,7 @@ watch(rows, () => nextTick(updateTableWidths));
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -534,7 +534,7 @@ watch(rows, () => nextTick(updateTableWidths));
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-ghost {
   border-radius: 0.5rem;
@@ -569,8 +569,8 @@ watch(rows, () => nextTick(updateTableWidths));
   background-color: rgb(244 244 245);
 }
 .chip-active {
-  border-color: rgb(239 68 68);
-  background-color: rgb(239 68 68);
+  border-color: rgb(232 175 62);
+  background-color: rgb(232 175 62);
   color: #fff;
 }
 :global(.dark) .chip {

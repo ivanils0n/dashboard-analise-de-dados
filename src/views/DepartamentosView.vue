@@ -283,7 +283,7 @@ function metrics(d) {
       </div>
 
       <div v-if="selectedDepartments.length" class="flex flex-wrap items-center gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
           {{ selectedDepartments.length }} selecionado(s)
         </span>
         <button
@@ -302,7 +302,7 @@ function metrics(d) {
               <th class="w-10 px-4 py-3 font-semibold">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  class="h-4 w-4 cursor-pointer accent-accent"
                   :checked="allVisibleSelected"
                   aria-label="Selecionar todos os departamentos visíveis"
                   @change="toggleSelectAll"
@@ -323,12 +323,12 @@ function metrics(d) {
               v-for="d in tableList"
               :key="d.id"
               class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-              :class="selectedIds.has(d.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+              :class="selectedIds.has(d.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
             >
               <td class="px-4 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  class="h-4 w-4 cursor-pointer accent-accent"
                   :checked="selectedIds.has(d.id)"
                   :aria-label="`Selecionar ${d.name}`"
                   @change="toggleDepartment(d.id)"
@@ -382,8 +382,8 @@ function metrics(d) {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -406,7 +406,7 @@ function metrics(d) {
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -414,7 +414,7 @@ function metrics(d) {
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-ghost {
   border-radius: 0.5rem;

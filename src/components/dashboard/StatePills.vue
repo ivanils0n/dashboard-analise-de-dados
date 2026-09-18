@@ -66,7 +66,7 @@ const emit = defineEmits(["update:modelValue"]);
 }
 .state-pill.is-active {
   background-color: #fff;
-  color: var(--color-accent, #dc2626);
+  color: var(--color-accent, #B7791F);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(220, 38, 38, 0.15);
 }
 :global(.dark) .state-pills {
@@ -81,7 +81,7 @@ const emit = defineEmits(["update:modelValue"]);
 }
 :global(.dark) .state-pill.is-active {
   background-color: rgb(39 39 42);
-  color: #f87171;
+  color: #F2C766;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(248, 113, 113, 0.25);
 }
 </style>

@@ -356,7 +356,7 @@ export function parseHoursBR(input) {
     const h = parseInt(colon[1], 10);
     const m = parseInt(colon[2], 10);
     const s = colon[3] ? parseInt(colon[3], 10) : 0;
-    return Number((h + m / 60 + s / 3600).toFixed(4));
+    return Number((h + m / 60 + s / 3600).toFixed(6));
   }
   if (s.toLowerCase().includes("h")) {
     const hm = s.toLowerCase().match(/^(\d{1,4})\s*h\s*(\d{1,2})?$/);
@@ -364,7 +364,7 @@ export function parseHoursBR(input) {
       const h = parseInt(hm[1], 10);
       const m = hm[2] ? parseInt(hm[2], 10) : 0;
       if (m >= 60) return null;
-      return Number((h + m / 60).toFixed(4));
+      return Number((h + m / 60).toFixed(6));
     }
   }
 

@@ -750,7 +750,7 @@ function statusTone(status) {
       </div>
 
       <div v-if="selectedEmployees.length" class="flex flex-wrap items-center gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
           {{ selectedEmployees.length }} selecionado(s)
         </span>
         <button
@@ -769,7 +769,7 @@ function statusTone(status) {
               <th class="w-10 px-4 py-3 font-semibold">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  class="h-4 w-4 cursor-pointer accent-accent"
                   :checked="allVisibleSelected"
                   aria-label="Selecionar todos os colaboradores visíveis"
                   @change="toggleSelectAll"
@@ -793,12 +793,12 @@ function statusTone(status) {
               v-for="e in tableList"
               :key="e.id"
               class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-              :class="selectedIds.has(e.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+              :class="selectedIds.has(e.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
             >
               <td class="px-4 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-red-600"
+                  class="h-4 w-4 cursor-pointer accent-accent"
                   :checked="selectedIds.has(e.id)"
                   :aria-label="`Selecionar ${e.name}`"
                   @change="toggleEmployee(e.id)"
@@ -926,7 +926,7 @@ function statusTone(status) {
                   <td class="px-4 py-2.5">
                     <input
                       type="checkbox"
-                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      class="h-4 w-4 cursor-pointer accent-accent"
                       :checked="c.include"
                       :disabled="!c.item || !c.item.valid"
                       :aria-label="`Selecionar ${c.item?.name || 'linha'}`"
@@ -996,8 +996,8 @@ function statusTone(status) {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -1020,7 +1020,7 @@ function statusTone(status) {
 }
 .btn-primary {
   border-radius: 0.5rem;
-  background-color: #ef4444;
+  background-color: #E8AF3E;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -1028,7 +1028,7 @@ function statusTone(status) {
   transition: background-color 0.15s;
 }
 .btn-primary:hover {
-  background-color: #dc2626;
+  background-color: #B7791F;
 }
 .btn-ghost {
   border-radius: 0.5rem;

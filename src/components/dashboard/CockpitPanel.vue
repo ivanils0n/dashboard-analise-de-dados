@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
@@ -9,7 +9,6 @@ import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModa
 import StatePills from "@/components/dashboard/StatePills.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
-import { applyCockpitDefaultDateOnce } from "@/composables/useDateFilter";
 import { useChartStateFilter } from "@/composables/useChartStateFilter";
 import { formatValue } from "@/lib/utils";
 
@@ -22,11 +21,7 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["toggle-show-values", "edit-vacancy", "edit-permanencia"]);
-
-/* Na primeira vez que o Cockpit é aberto na sessão, o período compartilhado
-   parte do mês anterior em vez do mês corrente (ver applyCockpitDefaultDateOnce). */
-onMounted(applyCockpitDefaultDateOnce);
+const emit = defineEmits(["edit-vacancy", "edit-permanencia"]);
 
 const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
@@ -187,16 +182,6 @@ function goNextKpi() {
 
 <template>
   <div class="mt-2">
-    <div class="mb-4 flex justify-end">
-      <button
-        type="button"
-        class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-        @click="emit('toggle-show-values')"
-      >
-        {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
-      </button>
-    </div>
-
     <div class="grid gap-4 xl:grid-cols-[1fr_280px]">
       <div>
         <div class="grid gap-4 lg:grid-cols-[200px_1fr]">
@@ -280,7 +265,7 @@ function goNextKpi() {
               >
                 Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
               </div>
-              <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-red-500/25 dark:bg-red-500/10">
+              <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-accent/25 dark:bg-accent/10">
                 <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
                 <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
                   ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
@@ -288,14 +273,14 @@ function goNextKpi() {
               </div>
               <div class="flex flex-col items-center text-center">
                 <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retenção</span>
-                <strong class="text-7xl font-bold tabular-nums text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</strong>
+                <strong class="text-7xl font-bold tabular-nums text-accent dark:text-accent-light">{{ retencaoPctText(centerChart.data) }}</strong>
               </div>
             </div>
             <BarChart
               v-else
               :data="centerChart.data"
               :show-values="showValues"
-              :show-trend="!!selectedKpiId"
+              :show-trend="!!selectedKpiId && selectedKpiId !== 'treinamento'"
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
               :height-px="480"
@@ -345,7 +330,7 @@ function goNextKpi() {
             class="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition"
             :class="
               selectedKpiId === kpi.id
-                ? 'bg-accent/10 font-semibold text-accent-hover dark:text-red-400'
+                ? 'bg-accent/10 font-semibold text-accent-hover dark:text-accent-light'
                 : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
             "
             @click="select(kpi.id)"
@@ -451,7 +436,7 @@ function goNextKpi() {
             >
               Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
             </div>
-            <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-red-500/25 dark:bg-red-500/10">
+            <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-accent/25 dark:bg-accent/10">
               <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
               <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
                 ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
@@ -459,14 +444,14 @@ function goNextKpi() {
             </div>
             <div class="flex flex-col items-center text-center">
               <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retenção</span>
-              <strong class="text-7xl font-bold tabular-nums text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</strong>
+              <strong class="text-7xl font-bold tabular-nums text-accent dark:text-accent-light">{{ retencaoPctText(centerChart.data) }}</strong>
             </div>
           </div>
           <BarChart
             v-else
             :data="centerChart.data"
             :show-values="showValues"
-            :show-trend="!!selectedKpiId"
+            :show-trend="!!selectedKpiId && selectedKpiId !== 'treinamento'"
             :value-format="centerChart.valueFormat"
             :variant="centerChart.variant || 'bar'"
             fluid
@@ -514,7 +499,7 @@ function goNextKpi() {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: var(--color-accent, #dc2626);
+  background: var(--color-accent, #B7791F);
   opacity: 0;
   transition: opacity 0.18s ease;
 }
@@ -546,7 +531,7 @@ function goNextKpi() {
   font-variant-numeric: tabular-nums;
 }
 .cockpit-kpi-btn.is-active .cockpit-kpi-value {
-  color: var(--color-accent, #dc2626);
+  color: var(--color-accent, #B7791F);
 }
 :global(.dark) .cockpit-kpi-btn {
   border-color: rgb(63 63 70);
@@ -569,7 +554,7 @@ function goNextKpi() {
   color: rgb(244 244 245);
 }
 :global(.dark) .cockpit-kpi-btn.is-active .cockpit-kpi-value {
-  color: #f87171;
+  color: #F2C766;
 }
 .icon-btn-sm {
   display: flex;

@@ -267,7 +267,7 @@ watch(rows, () => nextTick(updateTableWidths));
       <div class="grid gap-3 sm:grid-cols-2">
         <div class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas abertas</span>
-          <p class="text-2xl font-bold text-accent-hover dark:text-red-400">{{ openCount }}</p>
+          <p class="text-2xl font-bold text-accent-hover dark:text-accent-light">{{ openCount }}</p>
         </div>
         <div class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas fechadas</span>
@@ -325,7 +325,7 @@ watch(rows, () => nextTick(updateTableWidths));
         v-if="canEdit && selectedRows.length"
         class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-red-400">
+        <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
           {{ selectedRows.length }} selecionada(s)
         </span>
         <button
@@ -350,7 +350,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <th v-if="canEdit" class="w-10 px-4 py-2.5 font-semibold">
                     <input
                       type="checkbox"
-                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      class="h-4 w-4 cursor-pointer accent-accent"
                       :checked="allVisibleSelected"
                       aria-label="Selecionar todas as vagas visíveis"
                       @change="toggleSelectAll"
@@ -373,12 +373,12 @@ watch(rows, () => nextTick(updateTableWidths));
                   v-for="v in rows"
                   :key="v.id"
                   class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-                  :class="selectedIds.has(v.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
+                  :class="selectedIds.has(v.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
                 >
                   <td v-if="canEdit" class="px-4 py-2.5">
                     <input
                       type="checkbox"
-                      class="h-4 w-4 cursor-pointer accent-red-600"
+                      class="h-4 w-4 cursor-pointer accent-accent"
                       :checked="selectedIds.has(v.id)"
                       aria-label="Selecionar vaga"
                       @change="toggleRow(v.id)"
@@ -442,8 +442,8 @@ watch(rows, () => nextTick(updateTableWidths));
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input-field:focus {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 2px rgb(239 68 68 / 0.2);
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
 }
 :global(.dark) .input-field {
   border-color: rgb(63 63 70);
@@ -502,8 +502,8 @@ watch(rows, () => nextTick(updateTableWidths));
   background-color: rgb(244 244 245);
 }
 .chip-active {
-  border-color: rgb(239 68 68);
-  background-color: rgb(239 68 68);
+  border-color: rgb(232 175 62);
+  background-color: rgb(232 175 62);
   color: #fff;
 }
 :global(.dark) .chip {

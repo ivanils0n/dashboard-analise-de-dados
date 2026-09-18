@@ -59,8 +59,8 @@ defineProps({
   inset: 0;
   border-radius: 9999px;
   border: 3px solid transparent;
-  border-top-color: var(--color-accent, #ef4444);
-  border-right-color: var(--color-accent, #ef4444);
+  border-top-color: var(--color-accent, #E8AF3E);
+  border-right-color: var(--color-accent, #E8AF3E);
   animation: gg-spin 0.85s cubic-bezier(0.5, 0.05, 0.5, 0.95) infinite;
 }
 @keyframes gg-spin {
@@ -84,7 +84,7 @@ defineProps({
   height: 100%;
   width: 35%;
   border-radius: 9999px;
-  background: linear-gradient(90deg, transparent, var(--color-accent, #ef4444), transparent);
+  background: linear-gradient(90deg, transparent, var(--color-accent, #E8AF3E), transparent);
   animation: gg-progress-sweep 1.4s ease-in-out infinite;
 }
 @keyframes gg-progress-sweep {

@@ -54,7 +54,7 @@ const retencaoText = computed(() => {
     </div>
     <div class="flex flex-col items-center">
       <span class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-xs'">Retenção</span>
-      <strong class="font-bold tabular-nums text-accent dark:text-red-400" :class="large ? 'text-7xl' : 'text-4xl'">{{ retencaoText }}</strong>
+      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-4xl'">{{ retencaoText }}</strong>
     </div>
   </div>
 </template>

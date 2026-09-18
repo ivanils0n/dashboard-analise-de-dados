@@ -60,7 +60,7 @@ let visibleItems = isAdmin
         type="button"
         class="group relative flex h-14 w-14 items-center justify-center overflow-visible rounded-xl transition"
         :class="route.name === item.name
-          ? 'bg-accent/15 text-red-400'
+          ? 'bg-accent/15 text-accent'
           : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'"
         :title="item.label"
         :aria-label="item.label"
