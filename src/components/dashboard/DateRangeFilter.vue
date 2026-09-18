@@ -22,6 +22,10 @@ const props = defineProps({
   align: { type: String, default: "right" }
 });
 
+/* "apply" avisa que o usuário aplicou um período — mesmo quando é o mesmo mês
+   já filtrado (nesse caso o `range` não muda e nenhum watcher dispararia). */
+const emit = defineEmits(["apply"]);
+
 const open = ref(false);
 const draft = reactive({ ym: currentYm() });
 
@@ -62,6 +66,7 @@ function apply() {
   props.range.start = firstDayOfYm(draft.ym);
   props.range.end = lastDayOfYm(draft.ym);
   open.value = false;
+  emit("apply");
 }
 
 function setPrevMonth() {

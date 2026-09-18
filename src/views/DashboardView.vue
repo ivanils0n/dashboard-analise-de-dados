@@ -30,6 +30,8 @@ import { getIndicatorById } from "@/lib/config";
 import { removeEntry, removeEntries } from "@/lib/store";
 import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText } from "@/lib/utils";
 import { syncAll } from "@/lib/employees";
+import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
+import Modal from "@/components/ui/Modal.vue";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
 import { reloadData, hydrateState } from "@/lib/db";
 
@@ -70,6 +72,49 @@ function switchTab(tab) {
   if (tab === activeTab.value) return;
   tabDirection.value = TAB_ORDER.indexOf(tab) > TAB_ORDER.indexOf(activeTab.value) ? 1 : -1;
   activeTab.value = tab;
+}
+
+/* ---------- Mês incompleto ----------
+   O menu marca/desmarca o mês filtrado (no estado do filtro) como "com
+   informações faltando". Toda vez que o filtro cai num mês marcado (trocar o
+   mês, aplicar o mesmo mês de novo, trocar o estado, abrir a tela, ou marcar o
+   mês pelo menu) o aviso aparece; um selo fica ao lado do filtro de período. */
+const filteredMonth = computed(() => singleMonthOfRange(df.start, df.end));
+const markedStates = computed(() => incompleteStates(filteredMonth.value, filters.current));
+const monthIncomplete = computed(() => markedStates.value.length > 0);
+const filteredMonthLabel = computed(() => (filteredMonth.value ? ymLabel(filteredMonth.value) : ""));
+
+const incompleteNoticeOpen = ref(false);
+
+function showIncompleteNotice() {
+  incompleteNoticeOpen.value = monthIncomplete.value;
+}
+
+watch(
+  [() => df.start, () => df.end, () => filters.current, () => filters.revision, monthIncomplete],
+  showIncompleteNotice,
+  { immediate: true }
+);
+
+function confirmIncompleteNotice() {
+  incompleteNoticeOpen.value = false;
+}
+
+function toggleMonthIncomplete() {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  if (!filteredMonth.value) {
+    toast("Selecione um único mês no filtro de período.");
+    return;
+  }
+  if (monthIncomplete.value) {
+    setMonthIncomplete(filteredMonth.value, filters.current, false);
+    toast(`${filteredMonthLabel.value} desmarcado como incompleto.`);
+    return;
+  }
+  setMonthIncomplete(filteredMonth.value, filters.current, true);
 }
 
 const launchOpen = ref(false);
@@ -492,6 +537,7 @@ function onMenuClick(action) {
   else if (action === "csv") toCSV();
   else if (action === "template") downloadTemplate();
   else if (action === "import") fileInput.value?.click();
+  else if (action === "incomplete") toggleMonthIncomplete();
   else if (action === "reload") handleReload();
 }
 
@@ -743,7 +789,14 @@ onActivated(() => {
       </div>
 
       <div class="flex items-center justify-start gap-2 sm:justify-end">
-        <DateRangeFilter :range="df" title="Período" />
+        <span
+          v-if="monthIncomplete"
+          class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+          :title="`${filteredMonthLabel} está marcado como incompleto`"
+        >
+          <span aria-hidden="true">⚠</span> Mês incompleto
+        </span>
+        <DateRangeFilter :range="df" title="Período" @apply="showIncompleteNotice" />
 
         <div class="relative" @click.stop>
         <button
@@ -772,6 +825,16 @@ onActivated(() => {
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('template')">Baixar template</button>
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('import')">Importar planilha</button>
+          <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
+          <button
+            type="button"
+            class="dropdown-item text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:text-zinc-100 dark:hover:bg-zinc-800"
+            :disabled="!filteredMonth"
+            :title="filteredMonth ? '' : 'Selecione um único mês no filtro de período'"
+            @click="onMenuClick('incomplete')"
+          >
+            {{ monthIncomplete ? "Desmarcar mês incompleto" : "Marcar mês como incompleto" }}{{ filteredMonth ? ` (${filteredMonthLabel})` : "" }}
+          </button>
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
         </template>
         <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('reload')">Recarregar Dados</button>
@@ -1310,6 +1373,33 @@ onActivated(() => {
       @close="editingRow = null"
       @saved="editingRow = null"
     />
+
+    <Modal
+      v-if="incompleteNoticeOpen"
+      title="Mês com informações incompletas"
+      :subtitle="filteredMonthLabel"
+      max-width="max-w-md"
+      @close="confirmIncompleteNotice"
+    >
+      <p class="text-sm text-zinc-700 dark:text-zinc-300">
+        O mês de <strong>{{ filteredMonthLabel }}</strong>
+        <template v-if="filters.current === 'todos'"> ({{ markedStates.join(", ") }})</template>
+        <template v-else> ({{ filters.current }})</template>
+        não está com todas as informações lançadas. Os indicadores e gráficos deste período podem não refletir o resultado final.
+      </p>
+      <p v-if="canEdit" class="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+        Para remover este aviso, use o menu e escolha “Desmarcar mês incompleto” com este mês filtrado.
+      </p>
+      <div class="mt-5 flex justify-end">
+        <button
+          type="button"
+          class="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent-hover"
+          @click="confirmIncompleteNotice"
+        >
+          Confirmar
+        </button>
+      </div>
+    </Modal>
 
     <LoadingOverlay :show="importing" :label="'Processando planilha...'" />
   </div>
