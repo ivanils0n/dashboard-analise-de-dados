@@ -105,10 +105,19 @@ function onCenterBarClick({ index, label }) {
     treinamentoFilialOpen.value = true;
     return;
   }
-  if (centerChart.value.id === "tempo_contratacao" || centerChart.value.id === "custo_contratacao") {
+  if (centerChart.value.id === "tempo_contratacao") {
     const row = centerChart.value.data[index];
     if (!row || !row.vacancyId) return;
     vacancyDetailId.value = row.vacancyId;
+    vacancyDetailFallback.value = null;
+    vacancyDetailOpen.value = true;
+    return;
+  }
+  if (centerChart.value.id === "custo_contratacao") {
+    const row = centerChart.value.data[index];
+    if (!row) return;
+    vacancyDetailId.value = row.vacancyId;
+    vacancyDetailFallback.value = { name: row.label, salario: row.value, date: row.date };
     vacancyDetailOpen.value = true;
     return;
   }
@@ -141,6 +150,7 @@ function onCenterBarContext({ index }) {
    formulário de lançamento). */
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
+const vacancyDetailFallback = ref(null);
 
 function onVacancyDetailEdit(vacancyId) {
   vacancyDetailOpen.value = false;
@@ -287,6 +297,7 @@ function goNextKpi() {
               :show-values="showValues"
               :show-trend="!!selectedKpiId"
               :value-format="centerChart.valueFormat"
+              :variant="centerChart.variant || 'bar'"
               :height-px="480"
               :bars-clickable="
                 centerChart.id === 'treinamento' ||
@@ -358,6 +369,7 @@ function goNextKpi() {
       v-if="vacancyDetailOpen"
       :open="vacancyDetailOpen"
       :vacancy-id="vacancyDetailId"
+      :fallback="vacancyDetailFallback"
       @close="vacancyDetailOpen = false"
       @edit="onVacancyDetailEdit"
     />
@@ -456,6 +468,7 @@ function goNextKpi() {
             :show-values="showValues"
             :show-trend="!!selectedKpiId"
             :value-format="centerChart.valueFormat"
+            :variant="centerChart.variant || 'bar'"
             fluid
             :bars-clickable="
               centerChart.id === 'treinamento' ||

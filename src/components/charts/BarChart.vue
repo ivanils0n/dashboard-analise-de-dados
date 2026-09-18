@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
 import Modal from "@/components/ui/Modal.vue";
-import { createBarChart, updateBarChart } from "@/lib/charts";
+import { createBarChart, updateBarChart, createSeriesLineChart, updateSeriesLineChart } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 import { formatCurrency, formatHoursClock } from "@/lib/utils";
 
@@ -15,6 +15,8 @@ const props = defineProps({
   fluid: { type: Boolean, default: false },
   /* Habilita o clique nas barras (emite "bar-click"). */
   barsClickable: { type: Boolean, default: false },
+  /* "line": mesmos dados, desenhados como linha (pontos clicáveis). */
+  variant: { type: String, default: "bar" },
   title: { type: String, default: "" },
   subtitle: { type: String, default: "" }
 });
@@ -76,19 +78,31 @@ function formatterFor(format) {
 function applyOptions() {
   if (!chart) return;
   const formatter = formatterFor(props.valueFormat);
-  chart.__valueLabels = { display: props.showValues, formatter };
+  /* Linha: sem números sobre os pontos — os valores ficam no tooltip. */
+  const display = props.showValues && props.variant !== "line";
+  chart.__valueLabels = { display, formatter };
   if (chart.options.plugins.valueLabels) {
-    chart.options.plugins.valueLabels.display = props.showValues;
+    chart.options.plugins.valueLabels.display = display;
     chart.options.plugins.valueLabels.formatter = formatter;
+  }
+}
+
+/* Desenha os dados no formato do variant atual (barras ou linha). */
+function refreshData() {
+  if (!chart) return;
+  if (props.variant === "line") {
+    updateSeriesLineChart(chart, props.data, { formatter: formatterFor(props.valueFormat) });
+  } else {
+    updateBarChart(chart, props.data, { trend: props.showTrend });
   }
 }
 
 function mountChart() {
   if (!canvas.value) return;
-  chart = createBarChart(canvas.value);
+  chart = props.variant === "line" ? createSeriesLineChart(canvas.value) : createBarChart(canvas.value);
   applyOptions();
   /* Uma única atualização no mount (evita múltiplos resizes). */
-  updateBarChart(chart, props.data, { trend: props.showTrend });
+  refreshData();
 }
 
 function unmountChart() {
@@ -112,11 +126,19 @@ watch(isDark, () => {
   mountChart();
 });
 
+/* O mesmo componente é reaproveitado ao trocar de KPI (ex.: no Cockpit); sem
+   recriar, o gráfico ficava no formato anterior (barras em vez de linha). */
+watch(
+  () => props.variant,
+  () => {
+    unmountChart();
+    mountChart();
+  }
+);
+
 watch(
   () => props.data,
-  (data) => {
-    if (chart) updateBarChart(chart, data, { trend: props.showTrend });
-  },
+  () => refreshData(),
   { deep: true }
 );
 
@@ -134,16 +156,13 @@ watch(
   () => {
     if (!chart) return;
     applyOptions();
-    updateBarChart(chart, props.data, { trend: props.showTrend });
+    refreshData();
   }
 );
 
 watch(
   () => props.showTrend,
-  () => {
-    if (!chart) return;
-    updateBarChart(chart, props.data, { trend: props.showTrend });
-  }
+  () => refreshData()
 );
 </script>
 
@@ -176,6 +195,7 @@ watch(
         :show-trend="showTrend"
         :value-format="valueFormat"
         :bars-clickable="barsClickable"
+        :variant="variant"
         fluid
         @bar-click="emit('bar-click', $event)"
         @bar-contextmenu="emit('bar-contextmenu', $event)"

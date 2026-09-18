@@ -277,29 +277,28 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Dados para o gráfico de barras do Custo médio de contratação: o salário
-     de cada vaga (um lançamento por vaga, ver syncVacancyCost em
-     employees.js) vira uma barra rotulada com a função (o nome da vaga é o
-     próprio nome da função, ex.: "ANALISTA DE RH"), com `vacancyId` para abrir
-     o detalhe da vaga ao clicar. Lançamentos sem vaga vinculada continuam
-     somados por função (sem clique). */
+  /* Dados do gráfico de linha do Custo médio de contratação: o salário de cada
+     vaga (um lançamento por vaga, ver syncVacancyCost em employees.js) vira um
+     ponto, em ordem cronológica, rotulado com a função (o nome da vaga é o
+     próprio nome da função, ex.: "ANALISTA DE RH"). `vacancyId` abre o detalhe
+     da vaga ao clicar; lançamentos sem vaga vinculada não têm clique. */
   function custoContratacaoBarByFuncao() {
     const ind = getIndicatorById("custo_contratacao");
     if (!ind) return [];
-    const rows = [];
-    const byFuncao = new Map();
-    filteredEntries(ind).forEach((e) => {
-      const meta = e.meta || {};
-      const funcao = meta.vacancyName || meta.funcao || "Sem função";
-      const value = Number(e.value) || 0;
-      if (meta.vacancyId) {
-        rows.push({ label: funcao, value, tooltipValue: formatCurrency(value), vacancyId: meta.vacancyId });
-      } else {
-        byFuncao.set(funcao, (byFuncao.get(funcao) || 0) + value);
-      }
-    });
-    byFuncao.forEach((value, label) => rows.push({ label, value, tooltipValue: formatCurrency(value) }));
-    return rows.filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
+    return filteredEntries(ind)
+      .map((e) => {
+        const meta = e.meta || {};
+        const value = Number(e.value) || 0;
+        return {
+          label: meta.vacancyName || meta.funcao || "Sem função",
+          value,
+          tooltipValue: `${formatCurrency(value)} — ${formatDate(e.date)}`,
+          vacancyId: meta.vacancyId || null,
+          date: String(e.date || "")
+        };
+      })
+      .filter((r) => r.value > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /* Agregação para o gráfico de barras do Custo médio da diária geral: soma
@@ -542,9 +541,10 @@ export function useDashboardData(filter, options = {}) {
           id: "custo_contratacao",
           kind: "bar",
           title: ind.name,
-          sub: "Valor total por função, no período filtrado",
+          sub: "Salário por vaga, no período filtrado",
           unit: ind.unit,
-          valueFormat: "currency"
+          valueFormat: "currency",
+          variant: "line"
         };
       }
       if (ind.id === "custo_diaria") {
@@ -836,9 +836,10 @@ export function useDashboardData(filter, options = {}) {
         id: "custo_contratacao",
         kind: "bar",
         title: "Custo médio de contratação",
-        sub: "Valor total por função, no período filtrado",
+        sub: "Salário por vaga, no período filtrado",
         data: custoContratacaoBarByFuncao(),
-        valueFormat: "currency"
+        valueFormat: "currency",
+        variant: "line"
       };
     }
     if (kpiId === "custo_diaria") {

@@ -104,11 +104,13 @@ function onTreinamentoBarClick({ label }) {
    (uma barra por vaga) — mostra os dados da vaga, com opção de editar. */
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
+const vacancyDetailFallback = ref(null);
 
 function onHiringBarClick({ index }) {
   const row = hiringBarData.value[index];
   if (!row || !row.vacancyId) return;
   vacancyDetailId.value = row.vacancyId;
+  vacancyDetailFallback.value = null;
   vacancyDetailOpen.value = true;
 }
 
@@ -125,8 +127,9 @@ function onHiringBarContext({ index }) {
 function onKpiCardBarClick(card, { index }) {
   if (card.id !== "custo_contratacao") return;
   const row = chartBarData(card)[index];
-  if (!row || !row.vacancyId) return;
+  if (!row) return;
   vacancyDetailId.value = row.vacancyId;
+  vacancyDetailFallback.value = { name: row.label, salario: row.value, date: row.date };
   vacancyDetailOpen.value = true;
 }
 
@@ -1185,6 +1188,7 @@ onActivated(() => {
       v-if="vacancyDetailOpen"
       :open="vacancyDetailOpen"
       :vacancy-id="vacancyDetailId"
+      :fallback="vacancyDetailFallback"
       @close="vacancyDetailOpen = false"
       @edit="onVacancyDetailEdit"
     />

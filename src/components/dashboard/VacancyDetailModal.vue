@@ -15,7 +15,11 @@ import { useToast } from "@/composables/useToast";
    lançamento usado pelo modal de Vagas, aba "Vaga") ou excluí-la. */
 const props = defineProps({
   open: { type: Boolean, default: false },
-  vacancyId: { type: String, default: null }
+  vacancyId: { type: String, default: null },
+  /* Dados do ponto clicado no gráfico de Custo médio de contratação
+     ({ name, salario, date }): mostrados, com o aviso "Falta de informações
+     suficientes", quando a vaga (ex.: em aberto) não é encontrada. */
+  fallback: { type: Object, default: null }
 });
 
 const emit = defineEmits(["close", "edit", "deleted"]);
@@ -111,6 +115,23 @@ async function remove() {
         <button type="button" class="btn-danger-ghost" @click="remove">Excluir</button>
         <button type="button" class="btn-primary" @click="edit">Editar</button>
       </div>
+    </div>
+
+    <div v-else-if="fallback" class="flex flex-col gap-4">
+      <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">{{ fallback.name || "Vaga" }}</h3>
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Salário</dt>
+          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ formatCurrency(fallback.salario) }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Data do lançamento</dt>
+          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ formatDate(fallback.date) }}</dd>
+        </div>
+      </dl>
+      <p class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
+        Falta de informações suficientes.
+      </p>
     </div>
 
     <div v-else class="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">Vaga não encontrada.</div>

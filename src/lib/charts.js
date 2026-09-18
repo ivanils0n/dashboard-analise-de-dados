@@ -483,6 +483,72 @@ export function updateLineChart(chart, indicator, entries) {
   chart.update();
 }
 
+/* Linha sobre categorias (uma por item, ex.: uma vaga por ponto) — mesmo
+   formato de dados do gráfico de barras (ver updateBarChart). */
+export function createSeriesLineChart(canvas) {
+  const chart = createLineChart(canvas);
+  chart.options.interaction = { mode: "nearest", intersect: true };
+  return chart;
+}
+
+/* rows: [{ label, value, tooltipValue? }]. options: { formatter } formata o
+   eixo Y. Só a linha: valores e nomes aparecem no tooltip ao passar o mouse. */
+export function updateSeriesLineChart(chart, rows, options = {}) {
+  if (!chart || !rows) return;
+  const p = chartPalette();
+  const formatter = typeof options.formatter === "function" ? options.formatter : (v) => v;
+  const labels = rows.map((r) => r.label);
+  const values = rows.map((r) => (r.value === null ? 0 : r.value));
+  const tooltips = rows.map((r) => (r.tooltipValue != null ? r.tooltipValue : r.tooltip));
+
+  chart.options.scales = {
+    x: {
+      grid: { display: false },
+      /* Sem nomes embaixo: a função aparece no tooltip ao passar o mouse. */
+      ticks: { display: false }
+    },
+    y: {
+      grid: { color: p.grid },
+      border: { display: false },
+      ticks: { color: p.tick, callback: (v) => formatter(v) },
+      beginAtZero: true,
+      grace: "12%"
+    }
+  };
+  chart.options.plugins.tooltip.callbacks = {
+    label: (context) => String(tooltips[context.dataIndex] ?? formatter(values[context.dataIndex]))
+  };
+
+  chart.__meanLine = null;
+  chart.__trendLine = null;
+
+  const area = chart.chartArea || {};
+  const gradient = chart.ctx.createLinearGradient(0, area.top || 0, 0, area.bottom || chart.height || 100);
+  gradient.addColorStop(0, "rgba(239, 68, 68, 0.30)");
+  gradient.addColorStop(1, "rgba(239, 68, 68, 0.02)");
+
+  chart.data = {
+    labels,
+    datasets: [
+      {
+        label: "Valor",
+        data: values,
+        borderColor: ACCENT,
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2.5,
+        pointBackgroundColor: ACCENT,
+        pointBorderWidth: 0,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointHitRadius: 14
+      }
+    ]
+  };
+  chart.update();
+}
+
 export function createBarChart(canvas) {
   const p = chartPalette();
   return new Chart(canvas, {

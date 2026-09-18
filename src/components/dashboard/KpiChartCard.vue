@@ -128,6 +128,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
       :value-format="card.valueFormat || ''"
       :height-px="stacked ? STACKED_HEIGHT_PX : undefined"
       :bars-clickable="card.id === 'custo_contratacao'"
+      :variant="card.variant || 'bar'"
       @bar-click="emit('bar-click', $event)"
     />
     <RetentionSummary v-else-if="card.kind === 'table'" :table-data="tableData" />
