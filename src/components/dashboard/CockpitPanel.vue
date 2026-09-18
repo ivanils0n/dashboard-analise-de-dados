@@ -105,7 +105,7 @@ function onCenterBarClick({ index, label }) {
     treinamentoFilialOpen.value = true;
     return;
   }
-  if (centerChart.value.id === "tempo_contratacao") {
+  if (centerChart.value.id === "tempo_contratacao" || centerChart.value.id === "custo_contratacao") {
     const row = centerChart.value.data[index];
     if (!row || !row.vacancyId) return;
     vacancyDetailId.value = row.vacancyId;
@@ -251,31 +251,34 @@ function goNextKpi() {
             <PieChart v-if="centerChart.kind === 'pie'" :data="centerChart.data" :show-values="showValues" height="h-[480px]" />
             <div v-else-if="centerChart.kind === 'table'" class="flex flex-col gap-4 py-2">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                   <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
                   <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountFinal) }}</p>
                 </div>
-                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                   <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Novas contratações</span>
                   <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.novasContratacoes) }}</p>
                 </div>
-                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                   <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount inicial</span>
                   <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountInicial) }}</p>
                 </div>
               </div>
               <div
                 v-if="centerChart.data?.missing?.length"
-                class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+                class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
               >
                 Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
               </div>
-              <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-red-500/25 dark:bg-red-500/10">
+              <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-red-500/25 dark:bg-red-500/10">
                 <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
                 <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
                   ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
-                  = <span class="text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</span>
                 </p>
+              </div>
+              <div class="flex flex-col items-center text-center">
+                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retenção</span>
+                <strong class="text-7xl font-bold tabular-nums text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</strong>
               </div>
             </div>
             <BarChart
@@ -288,6 +291,7 @@ function goNextKpi() {
               :bars-clickable="
                 centerChart.id === 'treinamento' ||
                 centerChart.id === 'tempo_contratacao' ||
+                centerChart.id === 'custo_contratacao' ||
                 centerChart.id === 'tempo_permanencia'
               "
               @bar-click="onCenterBarClick"
@@ -416,31 +420,34 @@ function goNextKpi() {
           <PieChart v-if="centerChart.kind === 'pie'" :data="centerChart.data" :show-values="showValues" height="h-full" />
           <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
                 <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountFinal) }}</p>
               </div>
-              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Novas contratações</span>
                 <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.novasContratacoes) }}</p>
               </div>
-              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                 <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount inicial</span>
                 <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountInicial) }}</p>
               </div>
             </div>
             <div
               v-if="centerChart.data?.missing?.length"
-              class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+              class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
             >
               Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
             </div>
-            <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-red-500/25 dark:bg-red-500/10">
+            <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-red-500/25 dark:bg-red-500/10">
               <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
               <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
                 ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
-                = <span class="text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</span>
               </p>
+            </div>
+            <div class="flex flex-col items-center text-center">
+              <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retenção</span>
+              <strong class="text-7xl font-bold tabular-nums text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</strong>
             </div>
           </div>
           <BarChart
@@ -453,6 +460,7 @@ function goNextKpi() {
             :bars-clickable="
               centerChart.id === 'treinamento' ||
               centerChart.id === 'tempo_contratacao' ||
+                centerChart.id === 'custo_contratacao' ||
               centerChart.id === 'tempo_permanencia'
             "
             @bar-click="onCenterBarClick"
@@ -482,7 +490,9 @@ function goNextKpi() {
   border: 1px solid rgb(228 228 231);
   background-color: #fff;
   padding: 0.75rem 0.9rem 0.7rem;
-  text-align: left;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
 }

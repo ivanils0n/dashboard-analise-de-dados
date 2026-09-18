@@ -3,6 +3,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Badge from "@/components/ui/Badge.vue";
+import Modal from "@/components/ui/Modal.vue";
+import RetentionSummary from "@/components/dashboard/RetentionSummary.vue";
 import { getIndicatorById } from "@/lib/config";
 import { aggregateByMonth, formatMonthLabel, formatValue } from "@/lib/utils";
 
@@ -17,8 +19,25 @@ const props = defineProps({
   /* Card "table" (ex.: Retenção): { headcountInicial, headcountFinal,
      novasContratacoes, retencaoPct }. */
   tableData: { type: Object, default: null },
-  showValues: { type: Boolean, default: false }
+  showValues: { type: Boolean, default: false },
+  /* Largura total (cards empilhados um abaixo do outro) em vez do card fixo
+     de 280px da faixa horizontal. */
+  stacked: { type: Boolean, default: false }
 });
+
+const emit = defineEmits(["bar-click"]);
+
+/* Altura do gráfico nos cards empilhados (padrão do BarChart: 288px). */
+const STACKED_HEIGHT_PX = 340;
+
+/* Tela cheia: gráficos de barras usam o modal do próprio BarChart; pizza e
+   Retenção (tabela) abrem o modal deste card. */
+const chartRef = ref(null);
+const fullscreenOpen = ref(false);
+function openFullscreen() {
+  if (props.card.kind === "pie" || props.card.kind === "table") fullscreenOpen.value = true;
+  else if (chartRef.value) chartRef.value.openFullscreen();
+}
 
 const flash = ref(false);
 let flashTimer = null;
@@ -58,16 +77,6 @@ const monthlyValueFormat = computed(() => {
   return "";
 });
 
-/* Card "table" (Retenção): cada valor cai em "—" quando ainda não há dado
-   suficiente (ex.: sem headcount inicial cadastrado). */
-function tableNum(v) {
-  return v === null || v === undefined ? "—" : v;
-}
-const retencaoText = computed(() => {
-  const v = props.tableData && props.tableData.retencaoPct;
-  return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
-});
-
 onMounted(() => {
   flash.value = true;
   flashTimer = setTimeout(() => (flash.value = false), 1800);
@@ -80,60 +89,67 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
 
 <template>
   <div
-    class="w-[280px] shrink-0 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-    :class="flash ? 'is-flash' : ''"
+    class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    :class="[stacked ? 'w-full p-5' : 'w-[280px] shrink-0 p-4', flash ? 'is-flash' : '']"
   >
     <div class="mb-3 flex items-start justify-between gap-2">
       <div>
         <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ card.title }}</h3>
         <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ card.sub }}</span>
       </div>
-      <Badge v-if="card.unit" tone="accent">{{ card.unit }}</Badge>
+      <div class="flex shrink-0 items-center gap-2">
+        <Badge v-if="card.unit" tone="accent">{{ card.unit }}</Badge>
+        <button
+          type="button"
+          class="icon-btn-sm"
+          title="Tela cheia"
+          :aria-label="`Ver gráfico ${card.title} em tela cheia`"
+          @click="openFullscreen"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+          </svg>
+        </button>
+      </div>
     </div>
 
-    <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" height="h-52" />
+    <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" :height="stacked ? 'h-[340px]' : 'h-52'" />
     <BarChart
       v-else-if="card.kind === 'bar'"
+      ref="chartRef"
+      :title="card.title"
+      :subtitle="card.sub"
       :data="barData"
       :show-values="showValues"
       :show-trend="card.showTrend !== false"
       :value-format="card.valueFormat || ''"
+      :height-px="stacked ? STACKED_HEIGHT_PX : undefined"
+      :bars-clickable="card.id === 'custo_contratacao'"
+      @bar-click="emit('bar-click', $event)"
     />
-    <div v-else-if="card.kind === 'table'" class="flex flex-col gap-3 text-sm">
-      <dl class="flex flex-col gap-2">
-        <div class="flex items-center justify-between">
-          <dt class="text-xs text-zinc-500 dark:text-zinc-400">Headcount final</dt>
-          <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ tableNum(tableData?.headcountFinal) }}</dd>
-        </div>
-        <div class="flex items-center justify-between">
-          <dt class="text-xs text-zinc-500 dark:text-zinc-400">Novas contratações</dt>
-          <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ tableNum(tableData?.novasContratacoes) }}</dd>
-        </div>
-        <div class="flex items-center justify-between">
-          <dt class="text-xs text-zinc-500 dark:text-zinc-400">Headcount inicial</dt>
-          <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ tableNum(tableData?.headcountInicial) }}</dd>
-        </div>
-      </dl>
-      <div
-        v-if="tableData?.missing?.length"
-        class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
-      >
-        Sem dado suficiente para calcular: {{ tableData.missing.join(", ") }}.
-      </div>
-      <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-        <div class="font-semibold text-zinc-500 dark:text-zinc-400">Cálculo</div>
-        <div class="mt-1 tabular-nums">
-          ({{ tableNum(tableData?.headcountFinal) }} − {{ tableNum(tableData?.novasContratacoes) }}) / {{ tableNum(tableData?.headcountInicial) }}
-          = <strong class="text-zinc-900 dark:text-zinc-100">{{ retencaoText }}</strong>
-        </div>
-      </div>
-    </div>
+    <RetentionSummary v-else-if="card.kind === 'table'" :table-data="tableData" />
     <BarChart
       v-else
+      ref="chartRef"
+      :title="card.title"
+      :subtitle="card.sub"
       :data="monthlyBarData"
       :show-values="showValues"
       :show-trend="false"
       :value-format="monthlyValueFormat"
+      :height-px="stacked ? STACKED_HEIGHT_PX : undefined"
     />
+
+    <Modal v-if="fullscreenOpen" fullscreen :title="card.title" :subtitle="card.sub" @close="fullscreenOpen = false">
+      <div class="h-[calc(100vh-190px)] min-h-[320px] w-full">
+        <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" height="h-full" />
+        <div v-else class="flex h-full items-center justify-center">
+          <RetentionSummary :table-data="tableData" large />
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>

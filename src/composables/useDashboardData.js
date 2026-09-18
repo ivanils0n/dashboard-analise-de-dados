@@ -277,27 +277,29 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Agregação para o gráfico de barras do Custo médio de contratação: soma o
-     salário das vagas (um lançamento por vaga, ver syncVacancyCost em
-     employees.js) por função — o nome da vaga é o próprio nome da função
-     (ex.: "ANALISTA DE RH") —, mostrando o valor total gasto em cada função
-     no período filtrado. */
+  /* Dados para o gráfico de barras do Custo médio de contratação: o salário
+     de cada vaga (um lançamento por vaga, ver syncVacancyCost em
+     employees.js) vira uma barra rotulada com a função (o nome da vaga é o
+     próprio nome da função, ex.: "ANALISTA DE RH"), com `vacancyId` para abrir
+     o detalhe da vaga ao clicar. Lançamentos sem vaga vinculada continuam
+     somados por função (sem clique). */
   function custoContratacaoBarByFuncao() {
     const ind = getIndicatorById("custo_contratacao");
     if (!ind) return [];
+    const rows = [];
     const byFuncao = new Map();
     filteredEntries(ind).forEach((e) => {
       const meta = e.meta || {};
       const funcao = meta.vacancyName || meta.funcao || "Sem função";
-      byFuncao.set(funcao, (byFuncao.get(funcao) || 0) + (Number(e.value) || 0));
+      const value = Number(e.value) || 0;
+      if (meta.vacancyId) {
+        rows.push({ label: funcao, value, tooltipValue: formatCurrency(value), vacancyId: meta.vacancyId });
+      } else {
+        byFuncao.set(funcao, (byFuncao.get(funcao) || 0) + value);
+      }
     });
-    return [...byFuncao.entries()]
-      .map(([label, value]) => ({
-        label,
-        value,
-        tooltipValue: formatCurrency(value)
-      }))
-      .sort((a, b) => b.value - a.value);
+    byFuncao.forEach((value, label) => rows.push({ label, value, tooltipValue: formatCurrency(value) }));
+    return rows.filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
   }
 
   /* Agregação para o gráfico de barras do Custo médio da diária geral: soma

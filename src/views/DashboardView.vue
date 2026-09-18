@@ -120,6 +120,16 @@ function onHiringBarContext({ index }) {
   onVacancyEdit(row.vacancyId);
 }
 
+/* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
+   vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
+function onKpiCardBarClick(card, { index }) {
+  if (card.id !== "custo_contratacao") return;
+  const row = chartBarData(card)[index];
+  if (!row || !row.vacancyId) return;
+  vacancyDetailId.value = row.vacancyId;
+  vacancyDetailOpen.value = true;
+}
+
 function onVacancyDetailEdit(vacancyId) {
   vacancyDetailOpen.value = false;
   onVacancyEdit(vacancyId);
@@ -240,6 +250,15 @@ const mensalColumns = [
 ];
 
 const scrollRef = ref(null);
+
+/* Gráficos por indicador: os que dividem a linha (2 por linha) vêm primeiro,
+   na ordem em que aparecem; os demais seguem em largura total. */
+const HALF_WIDTH_CARDS = ["headcount", "turnover", "absenteismo", "retencao"];
+const orderedKpiChartCards = computed(() => {
+  const half = HALF_WIDTH_CARDS.map((id) => kpiChartCards.value.find((c) => c.id === id)).filter(Boolean);
+  const rest = kpiChartCards.value.filter((c) => !HALF_WIDTH_CARDS.includes(c.id));
+  return [...half, ...rest];
+});
 let flashTimer = null;
 
 const canEdit = canEditData();
@@ -595,14 +614,13 @@ function onKpiContext(id) {
   }
 }
 
-/* Rola a faixa de gráficos até o card do indicador e o destaca. */
+/* Rola a página até o gráfico do indicador e o destaca. */
 function scrollToKpiChart(indicatorId) {
   const scroll = scrollRef.value;
   if (!scroll) return;
-  const targetId = indicatorId;
-  const card = scroll.querySelector(`[data-indicator-card="${targetId}"]`);
+  const card = scroll.querySelector(`[data-indicator-card="${indicatorId}"]`);
   if (!card) return;
-  scroll.scrollTo({ left: card.offsetLeft - (scroll.clientWidth - card.offsetWidth) / 2, behavior: "smooth" });
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
   card.classList.remove("is-flash");
   void card.offsetWidth;
   card.classList.add("is-flash");
@@ -764,7 +782,7 @@ onActivated(() => {
       </p>
     </section>
 
-    <!-- ===== EVOLUÇÃO POR INDICADOR ===== -->
+    <!-- ===== EVOLUÇÃO POR INDICADOR (desativado: faixa horizontal) =====
     <section class="mt-8">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -792,6 +810,30 @@ onActivated(() => {
         />
       </div>
     </section>
+    ===== FIM EVOLUÇÃO POR INDICADOR (desativado) ===== -->
+
+    <!-- ===== GRÁFICOS POR INDICADOR (um abaixo do outro) ===== -->
+    <div class="mt-8 flex justify-end">
+      <button type="button" class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800" @click="toggleShowValues">
+        {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
+      </button>
+    </div>
+    <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <KpiChartCard
+        v-for="card in orderedKpiChartCards"
+        :key="card.id"
+        stacked
+        :class="HALF_WIDTH_CARDS.includes(card.id) ? '' : 'lg:col-span-2'"
+        :card="card"
+        :entries="lineEntries(card)"
+        :pie-data="card.kind === 'pie' ? chartPieData(card.id) : []"
+        :bar-data="chartBarData(card)"
+        :table-data="chartTableData(card)"
+        :show-values="showValues"
+        :data-indicator-card="card.id"
+        @bar-click="onKpiCardBarClick(card, $event)"
+      />
+    </div>
 
     <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->
     <div class="mt-8 grid gap-4">
@@ -860,6 +902,7 @@ onActivated(() => {
           :data="custosBarData"
           :show-values="showValues"
           value-format="currency"
+          :height-px="340"
           title="Custo de folha de salário — Evolução dos Indicadores"
           subtitle="Soma dos custos por filial no período filtrado"
         />
@@ -910,7 +953,7 @@ onActivated(() => {
         :show-values="showValues"
         value-format="hours"
         :show-trend="true"
-        :height-px="480"
+        :height-px="520"
         bars-clickable
         title="Treinamento — Carga horária por filial"
         subtitle="Soma das horas de treinamento por filial no período filtrado"
@@ -962,7 +1005,7 @@ onActivated(() => {
         :data="hiringBarData"
         :show-values="showValues"
         :show-trend="true"
-        :height-px="480"
+        :height-px="520"
         bars-clickable
         title="Tempo médio de contratação"
         subtitle="Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)"
@@ -1012,7 +1055,7 @@ onActivated(() => {
         :data="permanenciaBarData"
         :show-values="showValues"
         :show-trend="true"
-        :height-px="480"
+        :height-px="520"
         bars-clickable
         title="Tempo médio de permanência"
         subtitle="Dias entre admissão e desligamento, por colaborador"
