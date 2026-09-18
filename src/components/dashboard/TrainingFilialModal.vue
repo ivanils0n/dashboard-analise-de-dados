@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import { getIndicatorById } from "@/lib/config";
 import { formatHoursClock, normalizeText } from "@/lib/utils";
 
 const props = defineProps({
@@ -50,7 +51,7 @@ function close() {
 <template>
   <Modal
     :title="`Treinamento — ${filial || 'Filial'}`"
-    subtitle="Horas de treinamento por colaborador no período filtrado"
+    :subtitle="getIndicatorById('treinamento')?.calc"
     :open="open"
     max-width="max-w-3xl"
     @close="close"

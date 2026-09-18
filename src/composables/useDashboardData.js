@@ -129,14 +129,11 @@ export function useDashboardData(filter, options = {}) {
      real e por isso NUNCA entram nas listas/agregados normais, mesmo sem
      filtro de data ativo (sentinela sempre "antes" de qualquer início de
      período). Só entram quando explicitamente pedidos (toggle "Mostrar sem
-     período" do KPI, tratado à parte em `kpis`).
-     `state`, quando informado, troca o estado usado no lugar do estado
-     global do filtro — usado pelo filtro de estado independente do gráfico
-     de Treinamento (ver treinamentoBarByFilial/treinamentoFilialEntries). */
-  function filteredEntries(ind, state) {
+     período" do KPI, tratado à parte em `kpis`). */
+  function filteredEntries(ind) {
     const withPeriod = scopeEntries(
       ind,
-      stateEntries(ind.id, state || currentState()).filter((e) => !(e.meta && e.meta.semPeriodo))
+      stateEntries(ind.id, currentState()).filter((e) => !(e.meta && e.meta.semPeriodo))
     );
     return filterByRange(withPeriod);
   }
@@ -192,12 +189,9 @@ export function useDashboardData(filter, options = {}) {
   /* Vagas abertas no período filtrado (data de abertura dentro do range) para
      o gráfico de barras do Cockpit e da Visão geral (Tempo médio de
      contratação): uma barra por vaga, com os dias decorridos até o
-     fechamento — ou até hoje, se ainda estiver aberta. `stateOverride`
-     (opcional) troca o estado usado — vem do filtro de estado próprio do
-     gráfico, independente do filtro de estado da aba (mesmo padrão do
-     gráfico de Treinamento). */
-  function vacanciesBarByOpen(stateOverride, statusFilter) {
-    let vacs = listVacancies(stateOverride || currentState()).filter((v) => v.openAt);
+     fechamento — ou até hoje, se ainda estiver aberta. */
+  function vacanciesBarByOpen(statusFilter) {
+    let vacs = listVacancies(currentState()).filter((v) => v.openAt);
     if (statusFilter === "abertas") vacs = vacs.filter((v) => !v.closeAt);
     else if (statusFilter === "fechadas") vacs = vacs.filter((v) => v.closeAt);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
@@ -232,13 +226,11 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Agregação para o gráfico de barras do Treinamento: soma a carga horária
-     por filial (loja) no período filtrado. `stateOverride` (opcional) troca
-     o estado usado — vem do filtro de estado próprio do gráfico de
-     Treinamento, independente do filtro de estado da aba. */
-  function treinamentoBarByFilial(stateOverride) {
+     por filial (loja) no período filtrado. */
+  function treinamentoBarByFilial() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
-    const entries = filteredEntries(ind, stateOverride);
+    const entries = filteredEntries(ind);
     const byFilial = new Map();
     entries.forEach((e) => {
       const filial = treinamentoFilialLabel(e.meta);
@@ -254,10 +246,10 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Lançamentos de treinamento de uma filial (usados ao clicar na barra). */
-  function treinamentoFilialEntries(label, stateOverride) {
+  function treinamentoFilialEntries(label) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
-    const entries = filteredEntries(ind, stateOverride);
+    const entries = filteredEntries(ind);
     return entries.filter((e) => treinamentoFilialLabel(e.meta) === label);
   }
 
@@ -309,7 +301,7 @@ export function useDashboardData(filter, options = {}) {
      o valor pago por colaborador no período filtrado. Inclui os lançamentos
      sem competência definida quando "Mostrar sem período" está ativo, igual
      ao KPI (ver indicatorCurrentValue). */
-  function custoDiariaBarByColaborador() {
+  function diariaBarEntries() {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
     let list = filteredEntries(ind);
@@ -317,10 +309,23 @@ export function useDashboardData(filter, options = {}) {
       const sem = diariaSemPeriodoEntries();
       if (sem.length) list = list.concat(sem);
     }
+    return list;
+  }
+
+  function diariaColaboradorName(entry) {
+    return (entry.meta && entry.meta.employeeName) || "Sem colaborador";
+  }
+
+  /* Diárias de um colaborador (a barra clicada), as mesmas que compõem o valor
+     da barra — usadas no modal de detalhe. */
+  function custoDiariaEntriesByColaborador(label) {
+    return diariaBarEntries().filter((e) => diariaColaboradorName(e) === label);
+  }
+
+  function custoDiariaBarByColaborador() {
     const byColaborador = new Map();
-    list.forEach((e) => {
-      const meta = e.meta || {};
-      const nome = meta.employeeName || "Sem colaborador";
+    diariaBarEntries().forEach((e) => {
+      const nome = diariaColaboradorName(e);
       byColaborador.set(nome, (byColaborador.get(nome) || 0) + (Number(e.value) || 0));
     });
     return [...byColaborador.entries()]
@@ -558,7 +563,9 @@ export function useDashboardData(filter, options = {}) {
           title: ind.name,
           sub: "Valor total por colaborador, no período filtrado",
           unit: ind.unit,
-          valueFormat: "currency"
+          valueFormat: "currency",
+          horizontal: true,
+          showTrend: false
         };
       }
       return { id: ind.id, kind: "line", title: ind.name, sub: "Evolução no período", unit: ind.unit };
@@ -577,12 +584,10 @@ export function useDashboardData(filter, options = {}) {
   /* Uma barra por colaborador desligado (registros do modal de Tempo médio
      de permanência), no período filtrado pela Data de demissão — nome do
      colaborador no rótulo e dias entre admissão e demissão como valor.
-     `stateOverride` (opcional) troca o estado usado — vem do filtro de
-     estado próprio do gráfico, independente do filtro de estado da aba
-     (mesmo padrão do gráfico de Treinamento). Cada barra carrega o id do
-     registro (permanenciaId), usado ao clicar para abrir o detalhe certo. */
-  function turnoverTenureBarByEmployee(stateOverride) {
-    const list = listPermanenciaRecords(stateOverride || currentState())
+     Cada barra carrega o id do registro (permanenciaId), usado ao clicar
+     para abrir o detalhe certo. */
+  function turnoverTenureBarByEmployee() {
+    const list = listPermanenciaRecords(currentState())
       .filter((p) => p.dataAdmissao && p.dataDemissao)
       .map((p) => ({
         date: String(p.dataDemissao).slice(0, 10),
@@ -746,7 +751,7 @@ export function useDashboardData(filter, options = {}) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Cockpit. */
-  function cockpitChartFor(kpiId, treinamentoState, hiringStatus, permanenciaState) {
+  function cockpitChartFor(kpiId, hiringStatus) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -804,7 +809,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Treinamento",
         sub: "Carga horária por filial no período filtrado",
-        data: treinamentoBarByFilial(treinamentoState),
+        data: treinamentoBarByFilial(),
         valueFormat: "hours"
       };
     }
@@ -814,7 +819,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Tempo médio de contratação",
         sub: "Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)",
-        data: vacanciesBarByOpen(null, hiringStatus),
+        data: vacanciesBarByOpen(hiringStatus),
         valueFormat: ""
       };
     }
@@ -824,7 +829,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Tempo médio de permanência",
         sub: "Dias entre admissão e desligamento, por colaborador",
-        data: turnoverTenureBarByEmployee(permanenciaState),
+        data: turnoverTenureBarByEmployee(),
         valueFormat: ""
       };
     }
@@ -894,6 +899,7 @@ export function useDashboardData(filter, options = {}) {
     custosBarByFilial,
     custoContratacaoBarByFuncao,
     custoDiariaBarByColaborador,
+    custoDiariaEntriesByColaborador,
     indicatorCurrentValue,
     kpis,
     selectedKpiId,

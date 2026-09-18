@@ -20,6 +20,7 @@ import { dateFilter } from "@/composables/useDateFilter";
 import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
+import { uniqueEmployeeCount } from "@/lib/metrics";
 
 /* Modal genérico de registros de um indicador manual. Cada coluna descreve
    como ler a célula a partir do lançamento:
@@ -37,7 +38,6 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   indicatorId: { type: String, required: true },
   title: { type: String, default: "" },
-  subtitle: { type: String, default: "" },
   columns: { type: Array, default: () => [] }
 });
 
@@ -235,14 +235,7 @@ const totalValue = computed(() => rows.value.reduce((sum, e) => sum + (Number(e.
 /* Quantidade de colaboradores distintos nos registros exibidos (só quando o
    indicador tem coluna de colaborador, ex.: Diárias e Treinamento). */
 const hasEmployeeColumn = computed(() => props.columns.some((c) => c.meta === "employeeName"));
-const uniqueEmployeeCount = computed(() => {
-  const ids = new Set();
-  rows.value.forEach((e) => {
-    const key = e.meta && (e.meta.employeeId || e.meta.employeeName);
-    if (key) ids.add(key);
-  });
-  return ids.size;
-});
+const employeeCount = computed(() => uniqueEmployeeCount(rows.value));
 
 async function removeRow(entry) {
   const ok = await confirm({
@@ -359,7 +352,7 @@ watch(rows, () => nextTick(updateTableWidths));
 <template>
   <Modal
     :title="title || indicator.name"
-    :subtitle="subtitle || indicator.desc || ''"
+    :subtitle="indicator.calc || ''"
     :open="open"
     max-width="max-w-7xl"
     @close="close"
@@ -378,7 +371,7 @@ watch(rows, () => nextTick(updateTableWidths));
           class="flex w-fit flex-col gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Colaboradores</span>
-          <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ uniqueEmployeeCount }}</span>
+          <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ employeeCount }}</span>
         </div>
       </div>
 

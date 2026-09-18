@@ -117,6 +117,21 @@ function drawValueLabels(chart) {
            mas sempre desenha o último ponto. */
         if (compact && i !== total - 1 && el.x - lastX < 24) return;
         const offset = isBar ? 5 : compact ? 4 : 9;
+        /* Barras deitadas (indexAxis "y"): o número fica na ponta da barra
+           (à direita). Com a linha de tendência ligada, sai à direita também
+           do ponto dela, para a linha não riscar o número. */
+        if (isBar && chart.options.indexAxis === "y") {
+          let tipX = el.x;
+          const trend = chart.__trendLine;
+          if (trend && Array.isArray(trend.data) && chart.scales.x && trend.data[i] != null) {
+            tipX = Math.max(tipX, chart.scales.x.getPixelForValue(Number(trend.data[i])) + 3);
+          }
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          const fmt = perIndex[i];
+          ctx.fillText(fmt === "currency" ? formatCurrency(val) : label(val), tipX + offset, el.y);
+          return;
+        }
         let y = el.y - offset;
         ctx.textBaseline = "bottom";
         if (y - (compact ? 10 : 13) < 0) {
@@ -194,8 +209,11 @@ function drawTrendLine(chart) {
   const t = chart.__trendLine;
   if (!t || !Array.isArray(t.data) || !t.data.length) return;
   const meta = chart.getDatasetMeta(0);
-  const yScale = chart.scales && chart.scales.y;
-  if (!meta || !yScale) return;
+  /* Barras deitadas (indexAxis "y"): o valor corre no eixo X e a categoria
+     fica na altura da barra. */
+  const horizontal = chart.options.indexAxis === "y";
+  const valueScale = chart.scales && (horizontal ? chart.scales.x : chart.scales.y);
+  if (!meta || !valueScale) return;
 
   const { ctx } = chart;
   ctx.save();
@@ -208,8 +226,9 @@ function drawTrendLine(chart) {
   t.data.forEach((val, i) => {
     const el = meta.data[i];
     if (!el || val === null || val === undefined || isNaN(Number(val))) return;
-    const x = el.x;
-    const y = yScale.getPixelForValue(Number(val));
+    const pos = valueScale.getPixelForValue(Number(val));
+    const x = horizontal ? pos : el.x;
+    const y = horizontal ? el.y : pos;
     points.push({ x, y });
     if (!started) {
       ctx.moveTo(x, y);
@@ -559,28 +578,26 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
   chart.update();
 }
 
-export function createBarChart(canvas) {
+/* options: { horizontal } — barras deitadas (uma categoria por linha, nome à
+   esquerda e barra crescendo para a direita) em vez de colunas em pé. */
+export function createBarChart(canvas, options = {}) {
   const p = chartPalette();
-  return new Chart(canvas, {
-    type: "bar",
-    data: { labels: [], datasets: [] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: { padding: { top: 24 } },
-      plugins: {
-        valueLabels: { display: false },
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: p.tooltip,
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
-          padding: 12,
-          cornerRadius: 8,
-          displayColors: false
+  const horizontal = !!options.horizontal;
+  const scales = horizontal
+    ? {
+        y: {
+          grid: { display: false },
+          ticks: { color: p.tick, font: { size: 11 }, autoSkip: false }
+        },
+        x: {
+          grid: { color: p.grid },
+          border: { display: false },
+          ticks: { display: false },
+          beginAtZero: true,
+          grace: "12%"
         }
-      },
-      scales: {
+      }
+    : {
         x: {
           grid: { display: false },
           ticks: {
@@ -598,7 +615,29 @@ export function createBarChart(canvas) {
           beginAtZero: true,
           grace: "12%"
         }
-      }
+      };
+  return new Chart(canvas, {
+    type: "bar",
+    data: { labels: [], datasets: [] },
+    options: {
+      indexAxis: horizontal ? "y" : "x",
+      responsive: true,
+      maintainAspectRatio: false,
+      /* Horizontal: folga à direita para o número não ser cortado. */
+      layout: { padding: horizontal ? { right: 80 } : { top: 24 } },
+      plugins: {
+        valueLabels: { display: false },
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: p.tooltip,
+          titleColor: "#ffffff",
+          bodyColor: "#ffffff",
+          padding: 12,
+          cornerRadius: 8,
+          displayColors: false
+        }
+      },
+      scales
     }
   });
 }

@@ -2,7 +2,7 @@
 import { reactive, computed, ref, watch } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
-import { STATES, STATE_NAMES, DEFAULT_STATE } from "@/lib/config";
+import { STATES, STATE_NAMES, DEFAULT_STATE, getIndicatorById } from "@/lib/config";
 import {
   listPermanenciaRecords,
   addPermanenciaRecord,
@@ -241,7 +241,7 @@ function handleExport() {
 <template>
   <Modal
     title="Tempo médio de permanência"
-    subtitle="Colaborador, Data de admissão e Data de demissão — usados só para o cálculo do tempo médio de permanência"
+    :subtitle="getIndicatorById('tempo_permanencia')?.calc"
     :open="open"
     max-width="max-w-4xl"
     @close="close"

@@ -10,10 +10,10 @@ import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
+import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
-import StatePills from "@/components/dashboard/StatePills.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
@@ -22,7 +22,6 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
-import { useChartStateFilter } from "@/composables/useChartStateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
@@ -141,8 +140,21 @@ const treinamentoFilialRows = ref([]);
 function onTreinamentoBarClick({ label }) {
   if (!label) return;
   treinamentoFilialLabel.value = label;
-  treinamentoFilialRows.value = dashboard.treinamentoFilialEntries(label, treinamentoStateFilter.value);
+  treinamentoFilialRows.value = dashboard.treinamentoFilialEntries(label);
   treinamentoFilialOpen.value = true;
+}
+
+/* Modal ao clicar em uma barra do gráfico de Custo médio da diária geral (um
+   colaborador por barra) — mostra os dados e as diárias do colaborador. */
+const diariaColabOpen = ref(false);
+const diariaColabName = ref("");
+const diariaColabRows = ref([]);
+
+function onDiariaBarClick({ label }) {
+  if (!label) return;
+  diariaColabName.value = label;
+  diariaColabRows.value = dashboard.custoDiariaEntriesByColaborador(label);
+  diariaColabOpen.value = true;
 }
 
 /* Modal ao clicar em uma barra do gráfico de Tempo médio de contratação
@@ -169,7 +181,8 @@ function onHiringBarContext({ index }) {
 
 /* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
    vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
-function onKpiCardBarClick({ card, barData }, { index }) {
+function onKpiCardBarClick({ card, barData }, { index, label }) {
+  if (card.id === "custo_diaria") return onDiariaBarClick({ label });
   if (card.id !== "custo_contratacao") return;
   const row = barData[index];
   if (!row) return;
@@ -221,20 +234,10 @@ function onPermanenciaEdit(recordId) {
   permanenciaOpen.value = true;
 }
 
-/* Filtro de estado próprio do gráfico de Treinamento — independente do
-   filtro de estado da aba (StateFilter, no TopBar). Ver useChartStateFilter. */
-const { chartStateFilter: treinamentoStateFilter, setChartStateFilter: setTreinamentoStateFilter } =
-  useChartStateFilter();
-/* Mesma ideia para o gráfico de Tempo médio de contratação — instância
-   própria e independente da de Treinamento. */
-const { chartStateFilter: hiringStateFilter, setChartStateFilter: setHiringStateFilter } = useChartStateFilter();
 /* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
-   contratação — independente do filtro de estado do mesmo gráfico. */
+   contratação. Os gráficos seguem o filtro de estado da aba (StateFilter, no
+   TopBar). */
 const hiringStatusFilter = ref("fechadas");
-/* Filtro de estado próprio do gráfico de Tempo médio de permanência —
-   independente do filtro de estado da aba. Começa em "RO". */
-const { chartStateFilter: permanenciaStateFilter, setChartStateFilter: setPermanenciaStateFilter } =
-  useChartStateFilter();
 const menuOpen = ref(false);
 const tableSearch = ref("");
 /* A tabela só refiltra 200 ms depois da última tecla: refiltrar e reordenar
@@ -409,13 +412,13 @@ async function handleBulkDelete() {
 const custosBarData = computed(() => dashboard.custosBarByFilial());
 
 /* Dados do gráfico de barras de Treinamento (carga horária por filial). */
-const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial(treinamentoStateFilter.value));
+const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
 
 /* Dados do gráfico de barras de Tempo médio de contratação (uma barra por
    vaga aberta no período) — mesmo gráfico que já existia na faixa "Evolução
    por indicador", agora com seção própria abaixo de Treinamento. */
-const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStateFilter.value, hiringStatusFilter.value));
-const permanenciaBarData = computed(() => dashboard.turnoverTenureBarByEmployee(permanenciaStateFilter.value));
+const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStatusFilter.value));
+const permanenciaBarData = computed(() => dashboard.turnoverTenureBarByEmployee());
 
 const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
 
@@ -871,6 +874,7 @@ watch(activeTab, (tab) => {
       :show-values="showValues"
       @edit-vacancy="onVacancyEdit"
       @edit-permanencia="onPermanenciaEdit"
+      @open-turnover="openLaunchView('turnover')"
     />
 
     <div v-else key="visao-geral">
@@ -1050,9 +1054,7 @@ watch(activeTab, (tab) => {
           <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Treinamento — Carga horária por filial</h2>
           <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma das horas de treinamento por filial no período filtrado</span>
         </div>
-        <div class="flex justify-start sm:justify-center">
-          <StatePills :model-value="treinamentoStateFilter" @update:model-value="setTreinamentoStateFilter" />
-        </div>
+        <div></div>
         <div class="flex justify-start sm:justify-end">
           <button
             v-if="treinamentoBarData.length"
@@ -1079,6 +1081,7 @@ watch(activeTab, (tab) => {
         value-format="hours"
         :show-trend="false"
         :height-px="520"
+        horizontal
         bars-clickable
         title="Treinamento — Carga horária por filial"
         subtitle="Soma das horas de treinamento por filial no período filtrado"
@@ -1103,7 +1106,6 @@ watch(activeTab, (tab) => {
           <span class="text-xs text-zinc-400 dark:text-zinc-400">Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)</span>
         </div>
         <div class="flex flex-col items-start gap-2 sm:items-center">
-          <StatePills :model-value="hiringStateFilter" @update:model-value="setHiringStateFilter" />
           <HiringStatusPills v-model="hiringStatusFilter" />
         </div>
         <div class="flex justify-start sm:justify-end">
@@ -1129,8 +1131,9 @@ watch(activeTab, (tab) => {
         ref="hiringBarChartRef"
         :data="hiringBarData"
         :show-values="showValues"
-        :show-trend="true"
+        :show-trend="false"
         :height-px="520"
+        horizontal
         bars-clickable
         title="Tempo médio de contratação"
         subtitle="Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)"
@@ -1153,9 +1156,7 @@ watch(activeTab, (tab) => {
           <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tempo médio de permanência</h2>
           <span class="text-xs text-zinc-400 dark:text-zinc-400">Dias entre admissão e desligamento, por colaborador</span>
         </div>
-        <div class="flex justify-start sm:justify-center">
-          <StatePills :model-value="permanenciaStateFilter" @update:model-value="setPermanenciaStateFilter" />
-        </div>
+        <div></div>
         <div class="flex justify-start sm:justify-end">
           <button
             v-if="permanenciaBarData.length"
@@ -1179,8 +1180,9 @@ watch(activeTab, (tab) => {
         ref="permanenciaBarChartRef"
         :data="permanenciaBarData"
         :show-values="showValues"
-        :show-trend="true"
+        :show-trend="false"
         :height-px="520"
+        horizontal
         bars-clickable
         title="Tempo médio de permanência"
         subtitle="Dias entre admissão e desligamento, por colaborador"
@@ -1342,12 +1344,18 @@ watch(activeTab, (tab) => {
       :entries="treinamentoFilialRows"
       @close="treinamentoFilialOpen = false"
     />
+    <DiariaColaboradorModal
+      v-if="diariaColabOpen"
+      :open="diariaColabOpen"
+      :colaborador="diariaColabName"
+      :entries="diariaColabRows"
+      @close="diariaColabOpen = false"
+    />
     <IndicatorEntriesModal
       v-if="diariaEntriesOpen"
       :open="diariaEntriesOpen"
       indicator-id="custo_diaria"
       title="Custo médio da diária geral — Lançamentos"
-      subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, período e diária"
       :columns="diariaColumns"
       @close="diariaEntriesOpen = false"
       @edit="onEntriesEdit"
@@ -1357,7 +1365,6 @@ watch(activeTab, (tab) => {
       :open="treinamentoEntriesOpen"
       indicator-id="treinamento"
       title="Treinamentos — Lançamentos"
-      subtitle="Registros de treinamento por colaborador (cargo, loja, tema, carga horária e modalidade)"
       :columns="treinamentoColumns"
       @close="treinamentoEntriesOpen = false"
       @edit="onEntriesEdit"
@@ -1367,7 +1374,6 @@ watch(activeTab, (tab) => {
       :open="custosEntriesOpen"
       indicator-id="custo_total"
       title="Custo de folha de salário — Lançamentos"
-      subtitle="Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)"
       :columns="custosColumns"
       @close="custosEntriesOpen = false"
       @edit="onEntriesEdit"
@@ -1377,7 +1383,6 @@ watch(activeTab, (tab) => {
       :open="mensalEntriesOpen"
       :indicator-id="mensalEntriesIndicatorId"
       :title="`${getIndicatorById(mensalEntriesIndicatorId)?.name || ''} — Lançamentos`"
-      subtitle="Lançamento mensal por estado"
       :columns="mensalColumns"
       @close="mensalEntriesOpen = false"
       @edit="onEntriesEdit"

@@ -4,12 +4,11 @@ import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
+import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
-import StatePills from "@/components/dashboard/StatePills.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
-import { useChartStateFilter } from "@/composables/useChartStateFilter";
 import { formatValue } from "@/lib/utils";
 
 /* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
@@ -21,40 +20,25 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["edit-vacancy", "edit-permanencia"]);
+const emit = defineEmits(["edit-vacancy", "edit-permanencia", "open-turnover"]);
 
 const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
 
-/* Filtro de estado próprio do gráfico de Treinamento — independente do
-   filtro de estado da aba. Ver useChartStateFilter. */
-const { chartStateFilter: treinamentoStateFilter, setChartStateFilter: setTreinamentoStateFilter } =
-  useChartStateFilter();
-
 /* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
    contratação, quando ele é o gráfico central. */
 const hiringStatusFilter = ref("fechadas");
-
-/* Filtro de estado próprio do gráfico de Tempo médio de permanência —
-   independente do filtro de estado da aba. Começa em "RO". */
-const { chartStateFilter: permanenciaStateFilter, setChartStateFilter: setPermanenciaStateFilter } =
-  useChartStateFilter();
 
 /* Painel central: Custo de folha de salário (padrão) quando nada está
    selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
    (linha mensal, barras por filial/estado ou pizza de turnover — ver
    cockpitChartFor em useDashboardData.js). */
 const centerChart = computed(() =>
-  props.dashboard.cockpitChartFor(
-    selectedKpiId.value,
-    treinamentoStateFilter.value,
-    hiringStatusFilter.value,
-    permanenciaStateFilter.value
-  )
+  props.dashboard.cockpitChartFor(selectedKpiId.value, hiringStatusFilter.value)
 );
 
 /* Divide os KPIs em duas faixas (esquerda e abaixo) para que fiquem ao
-   redor do gráfico central, com o Overall fixo à direita. */
+   redor do gráfico central, com o painel Indicadores fixo à direita. */
 const leftKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 0));
 const bottomKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 1));
 
@@ -74,7 +58,7 @@ function retencaoPctText(data) {
 
 /* Turnover (pizza): sem número total isolado — mostra as duas taxas da
    pizza (Entrada/Saída) já formatadas em %, em vez do total combinado. */
-function overallValueText(kpi) {
+function indicatorValueText(kpi) {
   if (kpi.kind === "pie") {
     const pct = { type: "percent", decimals: 1 };
     return (kpi.pieData || [])
@@ -92,11 +76,24 @@ const treinamentoFilialOpen = ref(false);
 const treinamentoFilialLabel = ref("");
 const treinamentoFilialRows = ref([]);
 
+/* Clique numa barra do gráfico de Custo médio da diária: abre o detalhe do
+   colaborador (dados e diárias do período). */
+const diariaColabOpen = ref(false);
+const diariaColabName = ref("");
+const diariaColabRows = ref([]);
+
 function onCenterBarClick({ index, label }) {
+  if (centerChart.value.id === "custo_diaria") {
+    if (!label) return;
+    diariaColabName.value = label;
+    diariaColabRows.value = props.dashboard.custoDiariaEntriesByColaborador(label);
+    diariaColabOpen.value = true;
+    return;
+  }
   if (centerChart.value.id === "treinamento") {
     if (!label) return;
     treinamentoFilialLabel.value = label;
-    treinamentoFilialRows.value = props.dashboard.treinamentoFilialEntries(label, treinamentoStateFilter.value);
+    treinamentoFilialRows.value = props.dashboard.treinamentoFilialEntries(label);
     treinamentoFilialOpen.value = true;
     return;
   }
@@ -161,6 +158,26 @@ function onPermanenciaDetailEdit(recordId) {
   emit("edit-permanencia", recordId);
 }
 
+/* Linha de tendência (MM2): fica de fora dos gráficos de barras deitadas
+   (Treinamento, Tempo médio de contratação, Tempo médio de permanência e
+   Custo médio da diária). */
+const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria"];
+const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
+
+/* Gráficos de barras deitadas (uma linha por filial/vaga/colaborador, com
+   rolagem). */
+const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria"];
+const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.value.id));
+
+/* Clique na pizza do Turnover: abre o modal de Turnover (hospedado na Visão
+   geral). Da tela cheia, fecha o modal do gráfico antes para não ficar por
+   cima. */
+function onPieClick() {
+  if (centerChart.value.id !== "turnover") return;
+  fullscreenOpen.value = false;
+  emit("open-turnover");
+}
+
 /* Tela cheia do gráfico central, com navegação entre os KPIs sem precisar
    fechar o modal. Índice 0 do ciclo é sempre o gráfico padrão (id null). */
 const fullscreenOpen = ref(false);
@@ -197,7 +214,7 @@ function goNextKpi() {
               @click="select(kpi.id)"
             >
               <span class="cockpit-kpi-name">{{ kpi.name }}</span>
-              <span class="cockpit-kpi-value">{{ overallValueText(kpi) }}</span>
+              <span class="cockpit-kpi-value">{{ indicatorValueText(kpi) }}</span>
             </button>
           </div>
 
@@ -208,14 +225,8 @@ function goNextKpi() {
                 <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
                 <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ centerChart.sub }}</span>
               </div>
-              <div v-if="centerChart.id === 'treinamento'" class="flex justify-start sm:justify-center">
-                <StatePills :model-value="treinamentoStateFilter" @update:model-value="setTreinamentoStateFilter" />
-              </div>
-              <div v-else-if="centerChart.id === 'tempo_contratacao'" class="flex justify-start sm:justify-center">
+              <div v-if="centerChart.id === 'tempo_contratacao'" class="flex justify-start sm:justify-center">
                 <HiringStatusPills v-model="hiringStatusFilter" />
-              </div>
-              <div v-else-if="centerChart.id === 'tempo_permanencia'" class="flex justify-start sm:justify-center">
-                <StatePills :model-value="permanenciaStateFilter" @update:model-value="setPermanenciaStateFilter" />
               </div>
               <div v-else></div>
               <div class="flex justify-start gap-2 sm:justify-end">
@@ -243,7 +254,14 @@ function goNextKpi() {
                 </button>
               </div>
             </div>
-            <PieChart v-if="centerChart.kind === 'pie'" :data="centerChart.data" :show-values="showValues" height="h-[480px]" />
+            <PieChart
+              v-if="centerChart.kind === 'pie'"
+              :data="centerChart.data"
+              :show-values="showValues"
+              height="h-[480px]"
+              :clickable="centerChart.id === 'turnover'"
+              @chart-click="onPieClick"
+            />
             <div v-else-if="centerChart.kind === 'table'" class="flex flex-col gap-4 py-2">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
@@ -280,12 +298,14 @@ function goNextKpi() {
               v-else
               :data="centerChart.data"
               :show-values="showValues"
-              :show-trend="!!selectedKpiId && selectedKpiId !== 'treinamento'"
+              :show-trend="showTrend"
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
+              :horizontal="isHorizontalChart"
               :height-px="480"
               :bars-clickable="
                 centerChart.id === 'treinamento' ||
+                centerChart.id === 'custo_diaria' ||
                 centerChart.id === 'tempo_contratacao' ||
                 centerChart.id === 'custo_contratacao' ||
                 centerChart.id === 'tempo_permanencia'
@@ -314,15 +334,15 @@ function goNextKpi() {
               @click="select(kpi.id)"
             >
               <span class="cockpit-kpi-name">{{ kpi.name }}</span>
-              <span class="cockpit-kpi-value">{{ overallValueText(kpi) }}</span>
+              <span class="cockpit-kpi-value">{{ indicatorValueText(kpi) }}</span>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Overall -->
+      <!-- Indicadores -->
       <aside class="h-fit rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Overall</h2>
+        <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
         <ul class="flex flex-col gap-1">
           <li
             v-for="kpi in kpis"
@@ -336,11 +356,19 @@ function goNextKpi() {
             @click="select(kpi.id)"
           >
             <span class="truncate">{{ kpi.name }}</span>
-            <span class="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100">{{ overallValueText(kpi) }}</span>
+            <span class="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100">{{ indicatorValueText(kpi) }}</span>
           </li>
         </ul>
       </aside>
     </div>
+
+    <DiariaColaboradorModal
+      v-if="diariaColabOpen"
+      :open="diariaColabOpen"
+      :colaborador="diariaColabName"
+      :entries="diariaColabRows"
+      @close="diariaColabOpen = false"
+    />
 
     <TrainingFilialModal
       v-if="treinamentoFilialOpen"
@@ -387,17 +415,7 @@ function goNextKpi() {
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-          <StatePills
-            v-if="centerChart.id === 'treinamento'"
-            :model-value="treinamentoStateFilter"
-            @update:model-value="setTreinamentoStateFilter"
-          />
-          <HiringStatusPills v-else-if="centerChart.id === 'tempo_contratacao'" v-model="hiringStatusFilter" />
-          <StatePills
-            v-else-if="centerChart.id === 'tempo_permanencia'"
-            :model-value="permanenciaStateFilter"
-            @update:model-value="setPermanenciaStateFilter"
-          />
+          <HiringStatusPills v-if="centerChart.id === 'tempo_contratacao'" v-model="hiringStatusFilter" />
           <span v-else class="min-w-[10rem] text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">
             {{ centerChart.title }}
           </span>
@@ -414,7 +432,14 @@ function goNextKpi() {
           </button>
         </div>
         <div class="min-h-0 flex-1">
-          <PieChart v-if="centerChart.kind === 'pie'" :data="centerChart.data" :show-values="showValues" height="h-full" />
+          <PieChart
+            v-if="centerChart.kind === 'pie'"
+            :data="centerChart.data"
+            :show-values="showValues"
+            height="h-full"
+            :clickable="centerChart.id === 'turnover'"
+            @chart-click="onPieClick"
+          />
           <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
@@ -451,12 +476,14 @@ function goNextKpi() {
             v-else
             :data="centerChart.data"
             :show-values="showValues"
-            :show-trend="!!selectedKpiId && selectedKpiId !== 'treinamento'"
+            :show-trend="showTrend"
             :value-format="centerChart.valueFormat"
             :variant="centerChart.variant || 'bar'"
+            :horizontal="isHorizontalChart"
             fluid
             :bars-clickable="
               centerChart.id === 'treinamento' ||
+              centerChart.id === 'custo_diaria' ||
               centerChart.id === 'tempo_contratacao' ||
                 centerChart.id === 'custo_contratacao' ||
               centerChart.id === 'tempo_permanencia'

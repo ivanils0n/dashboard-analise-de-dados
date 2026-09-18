@@ -117,7 +117,6 @@ const editingEntryId = ref(null);
 const SALARIO_OPTION = {
   id: "salario_colaborador",
   name: "Salário dos Colaboradores",
-  desc: "Preenchimento e edição da remuneração individual de cada colaborador",
   form: "salario",
   type: "currency",
   decimals: 2
@@ -274,10 +273,14 @@ function initModal() {
     return;
   }
 
-  /* Abre direto no histórico de um indicador (botão direito no KPI). */
+  /* Abre direto no histórico de um indicador (botão direito no KPI, clique
+     na pizza do Turnover). O histórico segue o Estado do formulário (ver
+     turnoverList), que aqui parte do filtro do dashboard — inclusive "Todos
+     Estados"; antes caía sempre em RO e escondia AM e PA. */
   if (props.viewIndicatorId) {
     indicatorId.value = props.viewIndicatorId;
     buildForm();
+    estado.value = filters.current;
     showTab("historico");
     return;
   }
@@ -2379,7 +2382,7 @@ onUnmounted(() => {
 <template>
   <Modal
     :title="indicator ? indicator.name : 'Lançar dados'"
-    :subtitle="indicator ? indicator.desc : ''"
+    :subtitle="indicator ? indicator.calc : ''"
     :open="open"
     max-width="max-w-4xl"
     @close="close"
@@ -2862,7 +2865,7 @@ onUnmounted(() => {
                   {{ [t.mesReferencia ? ymLabel(t.mesReferencia) : "", t.estado].filter(Boolean).join(" · ") }}
                 </span>
                 <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Admitidos: {{ t.admitidos || 0 }} · Demitidos: {{ t.demitidos || 0 }} · Ativos: {{ t.ativos || 0 }}
+                  Admitidos: {{ t.admitidos || 0 }} · Demitidos: {{ t.demitidos || 0 }}
                 </span>
               </div>
               <div class="flex flex-wrap items-center gap-2">

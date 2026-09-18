@@ -4,7 +4,7 @@ import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import Badge from "@/components/ui/Badge.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
-import { STATES, STATE_NAMES } from "@/lib/config";
+import { STATES, STATE_NAMES, getIndicatorById } from "@/lib/config";
 import { listVacancies, formatVacancyTempo, deleteVacancies } from "@/lib/employees";
 import { getBranchById } from "@/lib/store";
 import { hydrateState } from "@/lib/db";
@@ -22,6 +22,10 @@ const props = defineProps({
   allPeriods: { type: Boolean, default: false }
 });
 const emit = defineEmits(["close", "edit"]);
+
+/* KPI de origem: Custo de contratação abre o histórico completo (allPeriods);
+   Tempo médio de contratação, o do mês filtrado. */
+const kpi = computed(() => getIndicatorById(props.allPeriods ? "custo_contratacao" : "tempo_contratacao") || {});
 
 const { state: filters } = useFilters();
 const { confirm } = useDialog();
@@ -256,8 +260,8 @@ watch(rows, () => nextTick(updateTableWidths));
 
 <template>
   <Modal
-    title="Tempo médio de contratação — Vagas"
-    subtitle="Histórico de vagas abertas e fechadas"
+    :title="`${kpi.name} — Vagas`"
+    :subtitle="kpi.calc"
     :open="open"
     max-width="max-w-7xl"
     @close="close"

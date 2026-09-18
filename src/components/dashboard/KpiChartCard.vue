@@ -127,8 +127,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
       :show-trend="card.showTrend !== false"
       :value-format="card.valueFormat || ''"
       :height-px="stacked ? STACKED_HEIGHT_PX : undefined"
-      :bars-clickable="card.id === 'custo_contratacao'"
+      :bars-clickable="card.id === 'custo_contratacao' || card.id === 'custo_diaria'"
       :variant="card.variant || 'bar'"
+      :horizontal="!!card.horizontal"
       @bar-click="emit('bar-click', $event)"
     />
     <RetentionSummary v-else-if="card.kind === 'table'" :table-data="tableData" />

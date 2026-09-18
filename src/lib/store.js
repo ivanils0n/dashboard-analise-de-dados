@@ -110,13 +110,30 @@ export function removeEntry(indicatorId, entryId) {
   if (entry && ok()) remote.entriesRemoved([entryId], estado);
 }
 
+/* `patch.state` funciona como em addEntry: vira `meta.estado` (os formulários
+   montam o payload igual para criar e editar). Sem essa conversão a edição
+   descartava o estado do lançamento e ele sumia dos filtros por estado.
+   Sem `state` no patch, o meta segue como veio. */
 export function updateEntry(indicatorId, entryId, patch) {
   if (!data.entries[indicatorId]) return;
   const idx = data.entries[indicatorId].findIndex((e) => e.id === entryId);
   if (idx < 0) return;
-  data.entries[indicatorId][idx] = { ...data.entries[indicatorId][idx], ...patch };
+  const previous = data.entries[indicatorId][idx];
+  const { state, ...fields } = patch;
+  const updated = { ...previous, ...fields };
+  if ("state" in patch) {
+    updated.meta = _withState(fields.meta !== undefined ? fields.meta : previous.meta, state);
+  }
+  data.entries[indicatorId][idx] = updated;
   data.entries[indicatorId].sort((a, b) => compareDateAsc(a.date, b.date));
-  if (ok()) remote.entryUpdated(indicatorId, data.entries[indicatorId][idx]);
+  if (!ok()) return;
+  /* Mudar de estado muda de tabela no servidor: remove a linha da antiga (se
+     for a mesma tabela, o upsert abaixo substitui a exclusão na fila). O envio
+     usa `updated` — após o sort, `idx` já pode apontar para outro lançamento. */
+  const prevEstado = (previous.meta && previous.meta.estado) || null;
+  const nextEstado = (updated.meta && updated.meta.estado) || null;
+  if (prevEstado !== nextEstado) remote.entriesRemoved([entryId], prevEstado);
+  remote.entryUpdated(indicatorId, updated);
 }
 
 /* Exclusão em lote de lançamentos. `rows` é um array de

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import { createBarChart, updateBarChart, createSeriesLineChart, updateSeriesLineChart } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
@@ -17,6 +17,9 @@ const props = defineProps({
   barsClickable: { type: Boolean, default: false },
   /* "line": mesmos dados, desenhados como linha (pontos clicáveis). */
   variant: { type: String, default: "bar" },
+  /* Barras deitadas: uma categoria por linha, com a altura crescendo conforme
+     o número de itens (na tela cheia, a área rola). Só vale para barras. */
+  horizontal: { type: Boolean, default: false },
   title: { type: String, default: "" },
   subtitle: { type: String, default: "" }
 });
@@ -24,6 +27,17 @@ const props = defineProps({
 const emit = defineEmits(["bar-click", "bar-contextmenu"]);
 
 const expandOpen = ref(false);
+
+/* Altura de cada linha do gráfico horizontal. */
+const ROW_PX = 30;
+const isHorizontal = computed(() => props.horizontal && props.variant !== "line");
+const rowsHeightPx = computed(() => props.data.length * ROW_PX + 48);
+const rootStyle = computed(() => (props.fluid ? undefined : { height: props.heightPx + "px" }));
+/* Horizontal: a moldura mantém a altura do gráfico e rola na vertical quando
+   há mais linhas do que cabem — o gráfico por dentro ganha ROW_PX por linha. */
+const canvasBoxStyle = computed(() =>
+  isHorizontal.value ? { height: `max(100%, ${rowsHeightPx.value}px)` } : { height: "100%" }
+);
 
 /* Abre o modal em tela cheia. O botão fica no cabeçalho da seção,
    fora da área do gráfico (chamado via ref pelo componente pai). */
@@ -99,7 +113,10 @@ function refreshData() {
 
 function mountChart() {
   if (!canvas.value) return;
-  chart = props.variant === "line" ? createSeriesLineChart(canvas.value) : createBarChart(canvas.value);
+  chart =
+    props.variant === "line"
+      ? createSeriesLineChart(canvas.value)
+      : createBarChart(canvas.value, { horizontal: isHorizontal.value });
   applyOptions();
   /* Uma única atualização no mount (evita múltiplos resizes). */
   refreshData();
@@ -129,7 +146,7 @@ watch(isDark, () => {
 /* O mesmo componente é reaproveitado ao trocar de KPI (ex.: no Cockpit); sem
    recriar, o gráfico ficava no formato anterior (barras em vez de linha). */
 watch(
-  () => props.variant,
+  () => [props.variant, isHorizontal.value],
   () => {
     unmountChart();
     mountChart();
@@ -169,16 +186,18 @@ watch(
 <template>
   <div
     class="relative w-full"
-    :class="fluid ? 'h-full' : ''"
-    :style="fluid ? undefined : { height: heightPx + 'px' }"
+    :class="[fluid ? 'h-full' : '', isHorizontal ? 'overflow-y-auto overflow-x-hidden' : '']"
+    :style="rootStyle"
   >
-    <canvas
-      ref="canvas"
-      :class="barsClickable ? 'cursor-pointer' : ''"
-      aria-hidden="true"
-      @click="onCanvasClick"
-      @contextmenu="onCanvasContextmenu"
-    ></canvas>
+    <div class="relative w-full" :style="canvasBoxStyle">
+      <canvas
+        ref="canvas"
+        :class="barsClickable ? 'cursor-pointer' : ''"
+        aria-hidden="true"
+        @click="onCanvasClick"
+        @contextmenu="onCanvasContextmenu"
+      ></canvas>
+    </div>
   </div>
 
   <Modal
@@ -196,6 +215,7 @@ watch(
         :value-format="valueFormat"
         :bars-clickable="barsClickable"
         :variant="variant"
+        :horizontal="horizontal"
         fluid
         @bar-click="emit('bar-click', $event)"
         @bar-contextmenu="emit('bar-contextmenu', $event)"

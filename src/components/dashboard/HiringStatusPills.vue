@@ -1,7 +1,6 @@
 <script setup>
 /* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
-   contratação — independente do filtro de estado do mesmo gráfico (ver
-   StatePills/useChartStateFilter). */
+   contratação. */
 defineProps({
   modelValue: { type: String, default: "todas" }
 });

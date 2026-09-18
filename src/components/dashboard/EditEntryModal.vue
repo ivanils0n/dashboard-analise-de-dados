@@ -167,7 +167,7 @@ function save() {
   <Modal
     :open="open"
     :title="`Editar lançamento — ${indicator.name || ''}`"
-    subtitle="Altere a data/período, o valor e os campos do registro."
+    :subtitle="indicator.calc || ''"
     max-width="max-w-2xl"
     @close="emit('close')"
   >
