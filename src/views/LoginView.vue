@@ -11,6 +11,11 @@ const usuario = ref("");
 const password = ref("");
 const error = ref("");
 const busy = ref(false);
+const passwordInput = ref(null);
+
+function focusPassword() {
+  passwordInput.value?.focus();
+}
 
 async function handleSubmit() {
   error.value = "";
@@ -65,6 +70,7 @@ async function handleSubmit() {
             placeholder="Usuário"
             autocomplete="username"
             class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+            @keydown.enter.prevent="focusPassword"
           />
         </div>
 
@@ -72,6 +78,7 @@ async function handleSubmit() {
           <label for="loginPassword" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Senha</label>
           <input
             id="loginPassword"
+            ref="passwordInput"
             v-model="password"
             type="password"
             placeholder="••••••••"

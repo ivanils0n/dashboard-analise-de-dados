@@ -7,11 +7,13 @@ import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
+import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
 import StatePills from "@/components/dashboard/StatePills.vue";
+import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
@@ -72,6 +74,11 @@ function switchTab(tab) {
 }
 
 const launchOpen = ref(false);
+/* KPI selecionado no Cockpit antes de abrir o Lançamento para editar algo
+   vindo de lá (ex.: editar vaga a partir do gráfico de Tempo médio de
+   contratação) — restaurado em onSaved para não jogar o Cockpit de volta ao
+   Panorama atual depois de salvar. */
+const preEditSelectedKpiId = ref(null);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
@@ -98,15 +105,62 @@ function onTreinamentoBarClick({ label }) {
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
 
-function onHiringBarClick({ vacancyId }) {
-  if (!vacancyId) return;
-  vacancyDetailId.value = vacancyId;
+function onHiringBarClick({ index }) {
+  const row = hiringBarData.value[index];
+  if (!row || !row.vacancyId) return;
+  vacancyDetailId.value = row.vacancyId;
   vacancyDetailOpen.value = true;
+}
+
+/* Botão direito na barra: vai direto para a edição da vaga, sem passar pelo
+   modal de detalhe (mesmo destino do botão "Editar" de lá). */
+function onHiringBarContext({ index }) {
+  const row = hiringBarData.value[index];
+  if (!row || !row.vacancyId) return;
+  onVacancyEdit(row.vacancyId);
 }
 
 function onVacancyDetailEdit(vacancyId) {
   vacancyDetailOpen.value = false;
   onVacancyEdit(vacancyId);
+}
+
+/* Modal ao clicar em uma barra do gráfico de Tempo médio de permanência
+   (um colaborador desligado por barra) — mostra os dados do registro, com
+   opção de editar/excluir. */
+const permanenciaDetailOpen = ref(false);
+const permanenciaDetailId = ref(null);
+/* Quando preenchido, o modal de Tempo médio de permanência abre já no
+   formulário de edição desse registro (ver PermanenciaModal). */
+const permanenciaEditId = ref(null);
+
+function onPermanenciaBarClick({ index }) {
+  const row = permanenciaBarData.value[index];
+  if (!row || !row.permanenciaId) return;
+  permanenciaDetailId.value = row.permanenciaId;
+  permanenciaDetailOpen.value = true;
+}
+
+/* Botão direito na barra: vai direto para a edição do registro, sem passar
+   pelo modal de detalhe (mesmo destino do botão "Editar" de lá). */
+function onPermanenciaBarContext({ index }) {
+  const row = permanenciaBarData.value[index];
+  if (!row || !row.permanenciaId) return;
+  onPermanenciaEdit(row.permanenciaId);
+}
+
+function onPermanenciaDetailEdit(recordId) {
+  permanenciaDetailOpen.value = false;
+  onPermanenciaEdit(recordId);
+}
+
+function onPermanenciaEdit(recordId) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  permanenciaEditId.value = recordId;
+  permanenciaOpen.value = true;
 }
 
 /* Filtro de estado próprio do gráfico de Treinamento — independente do
@@ -116,6 +170,13 @@ const { chartStateFilter: treinamentoStateFilter, setChartStateFilter: setTreina
 /* Mesma ideia para o gráfico de Tempo médio de contratação — instância
    própria e independente da de Treinamento. */
 const { chartStateFilter: hiringStateFilter, setChartStateFilter: setHiringStateFilter } = useChartStateFilter();
+/* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
+   contratação — independente do filtro de estado do mesmo gráfico. */
+const hiringStatusFilter = ref("fechadas");
+/* Filtro de estado próprio do gráfico de Tempo médio de permanência —
+   independente do filtro de estado da aba. Começa em "RO". */
+const { chartStateFilter: permanenciaStateFilter, setChartStateFilter: setPermanenciaStateFilter } =
+  useChartStateFilter();
 const menuOpen = ref(false);
 const tableSearch = ref("");
 const kpiSearch = ref("");
@@ -130,6 +191,7 @@ const panoramaChartRef = ref(null);
 const custosBarChartRef = ref(null);
 const treinamentoBarChartRef = ref(null);
 const hiringBarChartRef = ref(null);
+const permanenciaBarChartRef = ref(null);
 const editingRow = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
@@ -259,7 +321,8 @@ const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial(trein
 /* Dados do gráfico de barras de Tempo médio de contratação (uma barra por
    vaga aberta no período) — mesmo gráfico que já existia na faixa "Evolução
    por indicador", agora com seção própria abaixo de Treinamento. */
-const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStateFilter.value));
+const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStateFilter.value, hiringStatusFilter.value));
+const permanenciaBarData = computed(() => dashboard.turnoverTenureBarByEmployee(permanenciaStateFilter.value));
 
 const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
 
@@ -278,9 +341,15 @@ function lineEntries(card) {
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
-  if (card.id === "tempo_permanencia") return dashboard.turnoverTenureBarByMonth();
-  if (card.id === "retencao") return dashboard.retentionBarByMonth();
+  if (card.id === "custo_contratacao") return dashboard.custoContratacaoBarByFuncao();
+  if (card.id === "custo_diaria") return dashboard.custoDiariaBarByColaborador();
   return [];
+}
+
+function chartTableData(card) {
+  if (card.kind !== "table") return null;
+  if (card.id === "retencao") return dashboard.retentionBreakdown();
+  return null;
 }
 
 function openLaunch() {
@@ -288,6 +357,7 @@ function openLaunch() {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
+  preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
   viewIndicatorTarget.value = null;
@@ -296,6 +366,7 @@ function openLaunch() {
 
 function closeLaunch() {
   launchOpen.value = false;
+  preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
   viewIndicatorTarget.value = null;
@@ -304,6 +375,7 @@ function closeLaunch() {
 /* Botão direito no KPI de Turnover/Turnover (Exp): abre o Lançamento já na
    aba Histórico do indicador, sem exigir perfil de edição (só leitura). */
 function openLaunchView(indicatorId) {
+  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
   editTarget.value = null;
   editVacancyTarget.value = null;
   viewIndicatorTarget.value = indicatorId;
@@ -316,6 +388,7 @@ function onVacancyEdit(vacancyId) {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
+  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
   vacanciesOpen.value = false;
   editTarget.value = null;
   editVacancyTarget.value = vacancyId;
@@ -329,6 +402,7 @@ function onEntriesEdit({ indicatorId, entry }) {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
+  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
   diariaEntriesOpen.value = false;
   treinamentoEntriesOpen.value = false;
   custosEntriesOpen.value = false;
@@ -340,7 +414,11 @@ function onEntriesEdit({ indicatorId, entry }) {
 }
 
 function onSaved() {
-  dashboard.selectKpi(null);
+  /* Salvando uma edição aberta a partir de um KPI/gráfico já selecionado
+     (ex.: Cockpit) mantém a mesma seleção; só volta ao Panorama atual quando
+     nada estava selecionado antes (ex.: "+ Lançamento" do zero). */
+  dashboard.selectKpi(preEditSelectedKpiId.value);
+  preEditSelectedKpiId.value = null;
 }
 
 function toggleShowValues() {
@@ -504,6 +582,7 @@ function onKpiContext(id) {
   } else if (id === "turnover") {
     openLaunchView(id);
   } else if (id === "tempo_permanencia") {
+    permanenciaEditId.value = null;
     permanenciaOpen.value = true;
   } else if (id === "tempo_contratacao") {
     vacancyAllPeriods.value = false;
@@ -648,6 +727,7 @@ onActivated(() => {
       :show-values="showValues"
       @toggle-show-values="toggleShowValues"
       @edit-vacancy="onVacancyEdit"
+      @edit-permanencia="onPermanenciaEdit"
     />
 
     <div v-else key="visao-geral">
@@ -706,6 +786,7 @@ onActivated(() => {
           :entries="lineEntries(card)"
           :pie-data="card.kind === 'pie' ? chartPieData(card.id) : []"
           :bar-data="chartBarData(card)"
+          :table-data="chartTableData(card)"
           :show-values="showValues"
           :data-indicator-card="card.id"
         />
@@ -713,8 +794,8 @@ onActivated(() => {
     </section>
 
     <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->
-    <div class="mt-8 grid gap-4 lg:grid-cols-2">
-      <!-- ===== PANORAMA ATUAL ===== -->
+    <div class="mt-8 grid gap-4">
+      <!-- ===== PANORAMA ATUAL (desativado) =====
       <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div class="mb-4 flex items-start justify-between gap-2">
           <div>
@@ -745,6 +826,7 @@ onActivated(() => {
           subtitle="Último valor por indicador"
         />
       </section>
+      ===== FIM PANORAMA ATUAL (desativado) ===== -->
 
       <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
       <section
@@ -852,8 +934,9 @@ onActivated(() => {
           <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tempo médio de contratação</h2>
           <span class="text-xs text-zinc-400 dark:text-zinc-400">Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)</span>
         </div>
-        <div class="flex justify-start sm:justify-center">
+        <div class="flex flex-col items-start gap-2 sm:items-center">
           <StatePills :model-value="hiringStateFilter" @update:model-value="setHiringStateFilter" />
+          <HiringStatusPills v-model="hiringStatusFilter" />
         </div>
         <div class="flex justify-start sm:justify-end">
           <button
@@ -884,6 +967,7 @@ onActivated(() => {
         title="Tempo médio de contratação"
         subtitle="Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)"
         @bar-click="onHiringBarClick"
+        @bar-contextmenu="onHiringBarContext"
       />
       <div v-else class="p-6">
         <EmptyState
@@ -892,6 +976,55 @@ onActivated(() => {
         />
       </div>
       <HiringGoalsLegend size="md" class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800" />
+    </section>
+
+    <!-- ===== TEMPO MÉDIO DE PERMANÊNCIA ===== -->
+    <section class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tempo médio de permanência</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">Dias entre admissão e desligamento, por colaborador</span>
+        </div>
+        <div class="flex justify-start sm:justify-center">
+          <StatePills :model-value="permanenciaStateFilter" @update:model-value="setPermanenciaStateFilter" />
+        </div>
+        <div class="flex justify-start sm:justify-end">
+          <button
+            v-if="permanenciaBarData.length"
+            type="button"
+            class="icon-btn-sm"
+            title="Tela cheia"
+            aria-label="Ver gráfico de Tempo médio de permanência em tela cheia"
+            @click="permanenciaBarChartRef?.openFullscreen()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <BarChart
+        v-if="permanenciaBarData.length"
+        ref="permanenciaBarChartRef"
+        :data="permanenciaBarData"
+        :show-values="showValues"
+        :show-trend="true"
+        :height-px="480"
+        bars-clickable
+        title="Tempo médio de permanência"
+        subtitle="Dias entre admissão e desligamento, por colaborador"
+        @bar-click="onPermanenciaBarClick"
+        @bar-contextmenu="onPermanenciaBarContext"
+      />
+      <div v-else class="p-6">
+        <EmptyState
+          title="Sem colaboradores desligados no período"
+          text="Importe uma planilha ou lance um registro (botão direito no KPI de Tempo médio de permanência) ou ajuste o filtro."
+        />
+      </div>
     </section>
 
     <!-- ===== LANÇAMENTOS ===== -->
@@ -1015,7 +1148,15 @@ onActivated(() => {
     <PermanenciaModal
       v-if="permanenciaOpen"
       :open="permanenciaOpen"
-      @close="permanenciaOpen = false"
+      :edit-record-id="permanenciaEditId"
+      @close="permanenciaOpen = false; permanenciaEditId = null"
+    />
+    <PermanenciaDetailModal
+      v-if="permanenciaDetailOpen"
+      :open="permanenciaDetailOpen"
+      :record-id="permanenciaDetailId"
+      @close="permanenciaDetailOpen = false"
+      @edit="onPermanenciaDetailEdit"
     />
     <TrainingFilialModal
       v-if="treinamentoFilialOpen"
@@ -1028,7 +1169,7 @@ onActivated(() => {
       v-if="diariaEntriesOpen"
       :open="diariaEntriesOpen"
       indicator-id="custo_diaria"
-      title="Custo da diária geral — Lançamentos"
+      title="Custo médio da diária geral — Lançamentos"
       subtitle="Registros de diárias por colaborador, departamento, filial, líder, regional, período e diária"
       :columns="diariaColumns"
       @close="diariaEntriesOpen = false"

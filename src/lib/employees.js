@@ -772,16 +772,22 @@ export function turnoverRateStats(state, range) {
 /* ---------- Cálculo da Retenção (%) ----------
    Retenção(%) = ((Headcount final - Novas contratações) / Headcount inicial) × 100
 
-   Headcount final   = quadro reconstruído no último dia do mês filtrado (`range`).
-   Headcount inicial = quadro reconstruído no último dia do mês ANTERIOR
-                        (`prevRange`), ou seja, "como estava" no primeiro dia
-                        do mês filtrado.
-   Novas contratações = quantidade de admitidos lançada no Turnover para o
-                         mês filtrado (mesma fonte do KPI de Turnover). */
+   Headcount final    = quadro do Headcount no último dia do mês filtrado
+                         (`range`).
+   Headcount inicial  = quadro do Headcount no primeiro dia do mês filtrado
+                         (reconstruído a partir do último dia do mês ANTERIOR,
+                         `prevRange`) + "Demitidos" lançados no Turnover para
+                         o mês filtrado — quem foi desligado dentro do
+                         próprio mês filtrado já não aparece como ativo no
+                         quadro reconstruído (nem no início, nem no fim), e
+                         sem essa soma o Headcount inicial ficaria menor do
+                         que realmente estava no primeiro dia do mês.
+   Novas contratações = total de "Admitidos" lançado no Turnover para o mês
+                         filtrado (mesma fonte do KPI de Turnover). */
 export function retentionRate(state, range, prevRange) {
   const headcountFinal = headcountCountInRange(state, range);
-  const headcountInicial = headcountCountInRange(state, prevRange);
-  const novasContratacoes = turnoverQuantitiesInRange(state, range).admitidos;
+  const { admitidos: novasContratacoes, demitidos: demitidosNoPeriodo } = turnoverQuantitiesInRange(state, range);
+  const headcountInicial = headcountCountInRange(state, prevRange) + demitidosNoPeriodo;
   const retencaoPct = headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
   return {
     headcountInicial,

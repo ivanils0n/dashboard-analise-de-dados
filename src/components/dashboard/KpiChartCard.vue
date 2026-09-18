@@ -14,6 +14,9 @@ const props = defineProps({
   entries: { type: Array, default: () => [] },
   pieData: { type: Array, default: () => [] },
   barData: { type: Array, default: () => [] },
+  /* Card "table" (ex.: Retenção): { headcountInicial, headcountFinal,
+     novasContratacoes, retencaoPct }. */
+  tableData: { type: Object, default: null },
   showValues: { type: Boolean, default: false }
 });
 
@@ -55,6 +58,16 @@ const monthlyValueFormat = computed(() => {
   return "";
 });
 
+/* Card "table" (Retenção): cada valor cai em "—" quando ainda não há dado
+   suficiente (ex.: sem headcount inicial cadastrado). */
+function tableNum(v) {
+  return v === null || v === undefined ? "—" : v;
+}
+const retencaoText = computed(() => {
+  const v = props.tableData && props.tableData.retencaoPct;
+  return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
+});
+
 onMounted(() => {
   flash.value = true;
   flashTimer = setTimeout(() => (flash.value = false), 1800);
@@ -86,6 +99,35 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
       :show-trend="card.showTrend !== false"
       :value-format="card.valueFormat || ''"
     />
+    <div v-else-if="card.kind === 'table'" class="flex flex-col gap-3 text-sm">
+      <dl class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <dt class="text-xs text-zinc-500 dark:text-zinc-400">Headcount final</dt>
+          <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ tableNum(tableData?.headcountFinal) }}</dd>
+        </div>
+        <div class="flex items-center justify-between">
+          <dt class="text-xs text-zinc-500 dark:text-zinc-400">Novas contratações</dt>
+          <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ tableNum(tableData?.novasContratacoes) }}</dd>
+        </div>
+        <div class="flex items-center justify-between">
+          <dt class="text-xs text-zinc-500 dark:text-zinc-400">Headcount inicial</dt>
+          <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ tableNum(tableData?.headcountInicial) }}</dd>
+        </div>
+      </dl>
+      <div
+        v-if="tableData?.missing?.length"
+        class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+      >
+        Sem dado suficiente para calcular: {{ tableData.missing.join(", ") }}.
+      </div>
+      <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+        <div class="font-semibold text-zinc-500 dark:text-zinc-400">Cálculo</div>
+        <div class="mt-1 tabular-nums">
+          ({{ tableNum(tableData?.headcountFinal) }} − {{ tableNum(tableData?.novasContratacoes) }}) / {{ tableNum(tableData?.headcountInicial) }}
+          = <strong class="text-zinc-900 dark:text-zinc-100">{{ retencaoText }}</strong>
+        </div>
+      </div>
+    </div>
     <BarChart
       v-else
       :data="monthlyBarData"

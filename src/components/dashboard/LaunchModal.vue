@@ -251,6 +251,8 @@ function initModal() {
   resetHeadcountForm();
   headcountSearch.value = "";
   headcountFilterFilialId.value = null;
+  headcountAdmissaoStart.value = "";
+  headcountAdmissaoEnd.value = "";
   headcountDemitidosResult.value = null;
   headcountDemitidosPending.value = [];
   selectedHeadcountIds.value = new Set();
@@ -928,8 +930,11 @@ async function removeTurnover(id) {
   toast("Registro excluído.");
 }
 
-/* ---------- Histórico (aba Histórico) ---------- */
-const turnoverList = computed(() => listTurnoverEntries(filters.current));
+/* ---------- Histórico (aba Histórico) ----------
+   Segue o filtro de Estado do próprio formulário de Turnover (`estado`,
+   selecionado na aba "Novo"), não o filtro global do dashboard — assim
+   trocar o Estado ali também atualiza o que aparece no Histórico. */
+const turnoverList = computed(() => listTurnoverEntries(estado.value));
 
 function turnoverFilial(t) {
   const b = t && t.filialId ? getBranchById(t.filialId) : null;
@@ -946,6 +951,19 @@ const filteredTurnover = computed(() => {
   }
   return list;
 });
+
+/* Totais de Admitidos/Demitidos somados sobre os registros exibidos no
+   Histórico (respeitando a busca) — mostrados como KPI acima da lista. */
+const turnoverTotals = computed(() =>
+  filteredTurnover.value.reduce(
+    (acc, t) => {
+      acc.admitidos += Number(t.admitidos) || 0;
+      acc.demitidos += Number(t.demitidos) || 0;
+      return acc;
+    },
+    { admitidos: 0, demitidos: 0 }
+  )
+);
 
 /* ---------- Seleção múltipla de turnover (aba Histórico) ---------- */
 const selectedTurnovers = computed(() => turnoverList.value.filter((t) => selectedTurnoverIds.value.has(t.id)));
@@ -1004,7 +1022,8 @@ async function onTurnoverImportFile(e) {
       toast("Nenhum registro encontrado na planilha. Use o template de turnover.");
       return;
     }
-    let ok = 0;
+    const toImport = [];
+    const duplicates = [];
     let skipped = 0;
     parsed.forEach((row) => {
       if (!row.mesReferencia) {
@@ -1015,20 +1034,48 @@ async function onTurnoverImportFile(e) {
       /* Cruza a Filial com o Estado definitivo da linha — evita achar a
          filial errada quando o nome abreviado se repete em outro estado. */
       const branch = row.filialText ? findBranchByShortName(row.filialText, est) : null;
-      addTurnoverEntry({
-        filialId: branch ? branch.id : null,
+      const filialId = branch ? branch.id : null;
+      const item = {
+        filialId,
         mesReferencia: row.mesReferencia,
         admitidos: row.admitidos,
         demitidos: row.demitidos,
         ativos: row.ativos,
         estado: est
-      });
-      ok++;
+      };
+      /* Duplicado: já existe um lançamento para a mesma filial + mês de
+         referência (mesmo critério usado pela edição manual). */
+      const dup = listTurnoverEntries(est).some(
+        (t) => (t.filialId || null) === filialId && t.mesReferencia === row.mesReferencia
+      );
+      if (dup) duplicates.push(item);
+      else toImport.push(item);
     });
+
+    if (duplicates.length) {
+      /* "Cancelar importação" e clicar fora do modal levam ao mesmo
+         resultado (ConfirmDialog resolve `false` nos dois casos): aborta a
+         importação inteira, sem lançar nem os registros novos. */
+      const importDuplicates = await confirm({
+        title: "Lançamentos já cadastrados",
+        message: `${duplicates.length} registro(s) já existem no turnover (mesma filial e mês de referência). Deseja importar mesmo assim?`,
+        confirmText: "Importar mesmo assim",
+        cancelText: "Cancelar importação"
+      });
+      if (!importDuplicates) {
+        toast("Importação cancelada.");
+        return;
+      }
+    }
+
+    const finalList = toImport.concat(duplicates);
+    finalList.forEach((item) => addTurnoverEntry(item));
+
     emit("saved");
-    toast(
-      `Importação concluída — ${ok} registro(s) lançado(s)${skipped ? ` · ${skipped} ignorado(s)` : ""}.`
-    );
+    const parts = [`${finalList.length} registro(s) lançado(s)`];
+    if (duplicates.length) parts.push(`${duplicates.length} duplicado(s) importado(s) mesmo assim`);
+    if (skipped) parts.push(`${skipped} ignorado(s)`);
+    toast("Importação concluída — " + parts.join(" · "));
     showTab("historico");
   } catch (err) {
     console.error(err);
@@ -1059,6 +1106,10 @@ const headcountDemitidosTotal = ref(0);
 const headcountDemitidosCounts = ref(null);
 const headcountSearch = ref("");
 const headcountFilterFilialId = ref(null);
+/* Filtro por Data de admissão (De/Até) na aba Histórico — independente do
+   mês travado pelo filtro do dashboard (headcountViewMonth). */
+const headcountAdmissaoStart = ref("");
+const headcountAdmissaoEnd = ref("");
 const selectedHeadcountIds = ref(new Set());
 
 /* Empresas (filiais) disponíveis para o headcount, conforme o estado selecionado. */
@@ -1180,6 +1231,12 @@ const filteredHeadcount = computed(() => {
   if (headcountFilterFilialId.value) {
     list = list.filter((h) => h.filialId === headcountFilterFilialId.value);
   }
+  if (headcountAdmissaoStart.value) {
+    list = list.filter((h) => h.dataAdmissao && String(h.dataAdmissao).slice(0, 10) >= headcountAdmissaoStart.value);
+  }
+  if (headcountAdmissaoEnd.value) {
+    list = list.filter((h) => h.dataAdmissao && String(h.dataAdmissao).slice(0, 10) <= headcountAdmissaoEnd.value);
+  }
   const q = normalizeText(headcountSearch.value).trim();
   if (!q) return list;
   return list.filter((h) =>
@@ -1277,28 +1334,28 @@ async function onHeadcountImportFile(e) {
       else toImport.push(item);
     });
 
-    let importDuplicates = false;
     if (duplicates.length) {
-      importDuplicates = await confirm({
+      /* "Cancelar importação" e clicar fora do modal levam ao mesmo
+         resultado (ConfirmDialog resolve `false` nos dois casos): aborta a
+         importação inteira, sem lançar nem os registros novos. */
+      const importDuplicates = await confirm({
         title: "Colaboradores já cadastrados",
         message: `${duplicates.length} registro(s) já existem no headcount (mesma empresa e código). Deseja importar mesmo assim?`,
         confirmText: "Importar mesmo assim",
-        cancelText: "Ignorar duplicados"
+        cancelText: "Cancelar importação"
       });
+      if (!importDuplicates) {
+        toast("Importação cancelada.");
+        return;
+      }
     }
 
-    const finalList = importDuplicates ? toImport.concat(duplicates) : toImport;
+    const finalList = toImport.concat(duplicates);
     finalList.forEach((item) => addHeadcountRecord(item));
 
     emit("saved");
     const parts = [`${finalList.length} colaborador(es) lançado(s)`];
-    if (duplicates.length) {
-      parts.push(
-        importDuplicates
-          ? `${duplicates.length} duplicado(s) importado(s) mesmo assim`
-          : `${duplicates.length} já existente(s) ignorado(s) (mesma empresa e código)`
-      );
-    }
+    if (duplicates.length) parts.push(`${duplicates.length} duplicado(s) importado(s) mesmo assim`);
     if (skipped) parts.push(`${skipped} ignorado(s)`);
     toast("Importação concluída — " + parts.join(" · "));
     showTab("historico");
@@ -1550,7 +1607,7 @@ function submitCusto() {
   if (existing) {
     updateEntry("custo_contratacao", existing.id, { value: Number(value), date: todayISO() });
     emit("saved");
-    toast(`Custo de contratação atualizado para ${emp.name}.`);
+    toast(`Custo médio de contratação atualizado para ${emp.name}.`);
     close();
     return;
   }
@@ -1563,7 +1620,7 @@ function submitCusto() {
     meta: { employeeId: emp.id, employeeName: String(emp.name).toUpperCase() }
   });
   emit("saved");
-  toast(`Custo de contratação lançado para ${emp.name}.`);
+  toast(`Custo médio de contratação lançado para ${emp.name}.`);
   close();
 }
 
@@ -2498,7 +2555,7 @@ onUnmounted(() => {
           </div>
           <p class="text-xs text-zinc-500 dark:text-zinc-400">
             Preencha a data de fechamento para calcular o tempo de contratação; se ficar vazia, a vaga permanece "em aberto".
-            O salário informado entra no KPI "Custo de contratação" tanto para vagas abertas quanto fechadas.
+            O salário informado entra no KPI "Custo médio de contratação" tanto para vagas abertas quanto fechadas.
           </p>
         </div>
 
@@ -2734,6 +2791,17 @@ onUnmounted(() => {
             Nenhum registro lançado. Adicione um lançamento na aba "Novo".
           </p>
 
+          <div v-if="turnoverList.length" class="flex flex-wrap gap-2">
+            <div class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-red-500/25 dark:bg-red-500/10">
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total admissões</span>
+              <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.admitidos }}</span>
+            </div>
+            <div class="flex w-fit flex-col gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total demissões</span>
+              <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.demitidos }}</span>
+            </div>
+          </div>
+
           <div v-if="turnoverList.length" class="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div class="flex flex-1 flex-col gap-1.5">
               <label for="turnoverSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
@@ -2918,6 +2986,14 @@ onUnmounted(() => {
                 <option v-for="b in headcountFilterBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
               </select>
             </div>
+            <div class="flex flex-col gap-1.5 sm:w-40">
+              <label for="headcountAdmissaoStart" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Admissão de</label>
+              <input id="headcountAdmissaoStart" v-model="headcountAdmissaoStart" type="date" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5 sm:w-40">
+              <label for="headcountAdmissaoEnd" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Admissão até</label>
+              <input id="headcountAdmissaoEnd" v-model="headcountAdmissaoEnd" type="date" class="input-field" />
+            </div>
             <button type="button" class="btn-ghost btn-sm" @click="handleExportHeadcount">Exportar</button>
           </div>
 
@@ -3020,7 +3096,7 @@ onUnmounted(() => {
             <input id="custoSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custoEmployeeName" placeholder="Nenhum selecionado" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label for="custoValue" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Custo de contratação (R$)</label>
+            <label for="custoValue" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Custo médio de contratação (R$)</label>
             <input id="custoValue" v-model="custo.value" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
           </div>
           <p v-if="custoExisting" class="text-xs text-amber-600 dark:text-amber-400">

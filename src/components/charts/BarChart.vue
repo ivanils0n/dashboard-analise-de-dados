@@ -19,7 +19,7 @@ const props = defineProps({
   subtitle: { type: String, default: "" }
 });
 
-const emit = defineEmits(["bar-click"]);
+const emit = defineEmits(["bar-click", "bar-contextmenu"]);
 
 const expandOpen = ref(false);
 
@@ -42,6 +42,23 @@ function onCanvasClick(evt) {
   const index = points[0].index;
   const realValues = chart.__realBarValues;
   emit("bar-click", {
+    index,
+    label: chart.data.labels[index],
+    value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
+  });
+}
+
+/* Botão direito numa barra: mesmo cálculo de índice/valor do clique normal,
+   mas emite "bar-contextmenu" (ex.: editar direto, sem passar pelo detalhe)
+   e bloqueia o menu nativo do navegador. */
+function onCanvasContextmenu(evt) {
+  if (!chart) return;
+  const points = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, true);
+  if (!points.length) return;
+  evt.preventDefault();
+  const index = points[0].index;
+  const realValues = chart.__realBarValues;
+  emit("bar-contextmenu", {
     index,
     label: chart.data.labels[index],
     value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
@@ -141,6 +158,7 @@ watch(
       :class="barsClickable ? 'cursor-pointer' : ''"
       aria-hidden="true"
       @click="onCanvasClick"
+      @contextmenu="onCanvasContextmenu"
     ></canvas>
   </div>
 
@@ -160,6 +178,7 @@ watch(
         :bars-clickable="barsClickable"
         fluid
         @bar-click="emit('bar-click', $event)"
+        @bar-contextmenu="emit('bar-contextmenu', $event)"
       />
     </div>
   </Modal>

@@ -10,7 +10,7 @@ import {
   deletePermanenciaRecord,
   deletePermanenciaRecords
 } from "@/lib/employees";
-import { getBranchById } from "@/lib/store";
+import { getBranchById, getPermanenciaById } from "@/lib/store";
 import {
   readWorkbookFile,
   parsePermanenciaSheet,
@@ -25,7 +25,11 @@ import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
-  open: { type: Boolean, default: false }
+  open: { type: Boolean, default: false },
+  /* Quando informado (ex.: clique direito na barra do gráfico, ou "Editar" no
+     modal de detalhe), abre já com o formulário de edição desse registro
+     preenchido. */
+  editRecordId: { type: String, default: null }
 });
 const emit = defineEmits(["close"]);
 
@@ -69,6 +73,18 @@ function editRecord(p) {
   form.estado = p.estado || DEFAULT_STATE;
   showForm.value = true;
 }
+
+/* Abre direto no formulário de edição do registro indicado (ex.: clique
+   direito numa barra do gráfico, ou "Editar" no modal de detalhe). */
+watch(
+  () => [props.open, props.editRecordId],
+  ([open, id]) => {
+    if (!open || !id) return;
+    const record = getPermanenciaById(id);
+    if (record) editRecord(record);
+  },
+  { immediate: true }
+);
 
 function submitForm() {
   const nome = form.colaborador.trim();

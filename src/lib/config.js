@@ -71,7 +71,7 @@ export const INDICATORS = [
   },
   {
     id: "custo_contratacao",
-    name: "Custo de contratação",
+    name: "Custo médio de contratação",
     desc: "Média dos salários das vagas (abertas e fechadas)",
     type: "currency",
     unit: "R$",
@@ -131,7 +131,7 @@ export const INDICATORS = [
   },
   {
     id: "custo_diaria",
-    name: "Custo da diária geral",
+    name: "Custo médio da diária geral",
     desc: "Valor pago em diárias (colaborador, departamento, filial, líder, regional, período e diária)",
     type: "currency",
     unit: "R$",

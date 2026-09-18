@@ -5,7 +5,9 @@ import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
+import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import StatePills from "@/components/dashboard/StatePills.vue";
+import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import { applyCockpitDefaultDateOnce } from "@/composables/useDateFilter";
 import { useChartStateFilter } from "@/composables/useChartStateFilter";
@@ -20,7 +22,7 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["toggle-show-values", "edit-vacancy"]);
+const emit = defineEmits(["toggle-show-values", "edit-vacancy", "edit-permanencia"]);
 
 /* Na primeira vez que o Cockpit é aberto na sessão, o período compartilhado
    parte do mês anterior em vez do mês corrente (ver applyCockpitDefaultDateOnce). */
@@ -34,11 +36,26 @@ const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
 const { chartStateFilter: treinamentoStateFilter, setChartStateFilter: setTreinamentoStateFilter } =
   useChartStateFilter();
 
-/* Painel central: Panorama atual quando nada está selecionado, ou o
-   gráfico do KPI clicado (linha mensal, barras por filial/estado ou pizza
-   de turnover — ver cockpitChartFor em useDashboardData.js). */
+/* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
+   contratação, quando ele é o gráfico central. */
+const hiringStatusFilter = ref("fechadas");
+
+/* Filtro de estado próprio do gráfico de Tempo médio de permanência —
+   independente do filtro de estado da aba. Começa em "RO". */
+const { chartStateFilter: permanenciaStateFilter, setChartStateFilter: setPermanenciaStateFilter } =
+  useChartStateFilter();
+
+/* Painel central: Custo de folha de salário (padrão) quando nada está
+   selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
+   (linha mensal, barras por filial/estado ou pizza de turnover — ver
+   cockpitChartFor em useDashboardData.js). */
 const centerChart = computed(() =>
-  props.dashboard.cockpitChartFor(selectedKpiId.value, treinamentoStateFilter.value)
+  props.dashboard.cockpitChartFor(
+    selectedKpiId.value,
+    treinamentoStateFilter.value,
+    hiringStatusFilter.value,
+    permanenciaStateFilter.value
+  )
 );
 
 /* Divide os KPIs em duas faixas (esquerda e abaixo) para que fiquem ao
@@ -48,6 +65,16 @@ const bottomKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 1));
 
 function select(id) {
   props.dashboard.selectKpi(selectedKpiId.value === id ? null : id);
+}
+
+/* Card "table" da Retenção: cada valor cai em "—" quando ainda não há dado
+   suficiente (ex.: sem headcount inicial cadastrado). */
+function retencaoNum(v) {
+  return v === null || v === undefined ? "—" : v;
+}
+function retencaoPctText(data) {
+  const v = data && data.retencaoPct;
+  return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
 }
 
 /* Turnover (pizza): sem número total isolado — mostra as duas taxas da
@@ -83,6 +110,29 @@ function onCenterBarClick({ index, label }) {
     if (!row || !row.vacancyId) return;
     vacancyDetailId.value = row.vacancyId;
     vacancyDetailOpen.value = true;
+    return;
+  }
+  if (centerChart.value.id === "tempo_permanencia") {
+    const row = centerChart.value.data[index];
+    if (!row || !row.permanenciaId) return;
+    permanenciaDetailId.value = row.permanenciaId;
+    permanenciaDetailOpen.value = true;
+  }
+}
+
+/* Botão direito na barra de Tempo médio de contratação ou de permanência:
+   edita direto, sem passar pelo modal de detalhe. */
+function onCenterBarContext({ index }) {
+  if (centerChart.value.id === "tempo_contratacao") {
+    const row = centerChart.value.data[index];
+    if (!row || !row.vacancyId) return;
+    emit("edit-vacancy", row.vacancyId);
+    return;
+  }
+  if (centerChart.value.id === "tempo_permanencia") {
+    const row = centerChart.value.data[index];
+    if (!row || !row.permanenciaId) return;
+    emit("edit-permanencia", row.permanenciaId);
   }
 }
 
@@ -97,8 +147,17 @@ function onVacancyDetailEdit(vacancyId) {
   emit("edit-vacancy", vacancyId);
 }
 
+/* Mesma ideia para o gráfico de Tempo médio de permanência. */
+const permanenciaDetailOpen = ref(false);
+const permanenciaDetailId = ref(null);
+
+function onPermanenciaDetailEdit(recordId) {
+  permanenciaDetailOpen.value = false;
+  emit("edit-permanencia", recordId);
+}
+
 /* Tela cheia do gráfico central, com navegação entre os KPIs sem precisar
-   fechar o modal. Índice 0 do ciclo é sempre o Panorama atual (id null). */
+   fechar o modal. Índice 0 do ciclo é sempre o gráfico padrão (id null). */
 const fullscreenOpen = ref(false);
 const navIds = computed(() => [null, ...kpis.value.map((k) => k.id)]);
 
@@ -157,6 +216,12 @@ function goNextKpi() {
               <div v-if="centerChart.id === 'treinamento'" class="flex justify-start sm:justify-center">
                 <StatePills :model-value="treinamentoStateFilter" @update:model-value="setTreinamentoStateFilter" />
               </div>
+              <div v-else-if="centerChart.id === 'tempo_contratacao'" class="flex justify-start sm:justify-center">
+                <HiringStatusPills v-model="hiringStatusFilter" />
+              </div>
+              <div v-else-if="centerChart.id === 'tempo_permanencia'" class="flex justify-start sm:justify-center">
+                <StatePills :model-value="permanenciaStateFilter" @update:model-value="setPermanenciaStateFilter" />
+              </div>
               <div v-else></div>
               <div class="flex justify-start gap-2 sm:justify-end">
                 <button
@@ -165,7 +230,7 @@ function goNextKpi() {
                   class="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                   @click="select(selectedKpiId)"
                 >
-                  Voltar ao panorama
+                  Voltar ao padrão
                 </button>
                 <button
                   type="button"
@@ -184,6 +249,35 @@ function goNextKpi() {
               </div>
             </div>
             <PieChart v-if="centerChart.kind === 'pie'" :data="centerChart.data" :show-values="showValues" height="h-[480px]" />
+            <div v-else-if="centerChart.kind === 'table'" class="flex flex-col gap-4 py-2">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
+                  <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountFinal) }}</p>
+                </div>
+                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Novas contratações</span>
+                  <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.novasContratacoes) }}</p>
+                </div>
+                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount inicial</span>
+                  <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountInicial) }}</p>
+                </div>
+              </div>
+              <div
+                v-if="centerChart.data?.missing?.length"
+                class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+              >
+                Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
+              </div>
+              <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-red-500/25 dark:bg-red-500/10">
+                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
+                <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+                  ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
+                  = <span class="text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</span>
+                </p>
+              </div>
+            </div>
             <BarChart
               v-else
               :data="centerChart.data"
@@ -191,8 +285,13 @@ function goNextKpi() {
               :show-trend="!!selectedKpiId"
               :value-format="centerChart.valueFormat"
               :height-px="480"
-              :bars-clickable="centerChart.id === 'treinamento' || centerChart.id === 'tempo_contratacao'"
+              :bars-clickable="
+                centerChart.id === 'treinamento' ||
+                centerChart.id === 'tempo_contratacao' ||
+                centerChart.id === 'tempo_permanencia'
+              "
               @bar-click="onCenterBarClick"
+              @bar-contextmenu="onCenterBarContext"
             />
             <HiringGoalsLegend
               v-if="centerChart.id === 'tempo_contratacao'"
@@ -259,6 +358,14 @@ function goNextKpi() {
       @edit="onVacancyDetailEdit"
     />
 
+    <PermanenciaDetailModal
+      v-if="permanenciaDetailOpen"
+      :open="permanenciaDetailOpen"
+      :record-id="permanenciaDetailId"
+      @close="permanenciaDetailOpen = false"
+      @edit="onPermanenciaDetailEdit"
+    />
+
     <Modal
       v-if="fullscreenOpen"
       fullscreen
@@ -284,6 +391,12 @@ function goNextKpi() {
             :model-value="treinamentoStateFilter"
             @update:model-value="setTreinamentoStateFilter"
           />
+          <HiringStatusPills v-else-if="centerChart.id === 'tempo_contratacao'" v-model="hiringStatusFilter" />
+          <StatePills
+            v-else-if="centerChart.id === 'tempo_permanencia'"
+            :model-value="permanenciaStateFilter"
+            @update:model-value="setPermanenciaStateFilter"
+          />
           <span v-else class="min-w-[10rem] text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">
             {{ centerChart.title }}
           </span>
@@ -301,6 +414,35 @@ function goNextKpi() {
         </div>
         <div class="min-h-0 flex-1">
           <PieChart v-if="centerChart.kind === 'pie'" :data="centerChart.data" :show-values="showValues" height="h-full" />
+          <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
+                <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountFinal) }}</p>
+              </div>
+              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Novas contratações</span>
+                <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.novasContratacoes) }}</p>
+              </div>
+              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount inicial</span>
+                <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountInicial) }}</p>
+              </div>
+            </div>
+            <div
+              v-if="centerChart.data?.missing?.length"
+              class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+            >
+              Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
+            </div>
+            <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-red-500/25 dark:bg-red-500/10">
+              <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
+              <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+                ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
+                = <span class="text-accent dark:text-red-400">{{ retencaoPctText(centerChart.data) }}</span>
+              </p>
+            </div>
+          </div>
           <BarChart
             v-else
             :data="centerChart.data"
@@ -308,8 +450,13 @@ function goNextKpi() {
             :show-trend="!!selectedKpiId"
             :value-format="centerChart.valueFormat"
             fluid
-            :bars-clickable="centerChart.id === 'treinamento' || centerChart.id === 'tempo_contratacao'"
+            :bars-clickable="
+              centerChart.id === 'treinamento' ||
+              centerChart.id === 'tempo_contratacao' ||
+              centerChart.id === 'tempo_permanencia'
+            "
             @bar-click="onCenterBarClick"
+            @bar-contextmenu="onCenterBarContext"
           />
         </div>
         <HiringGoalsLegend

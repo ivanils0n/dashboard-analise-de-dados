@@ -182,7 +182,7 @@ export function useDashboardData(filter, options = {}) {
     return STATES.map((s) => {
       const value = headcountCountInRange(s, range) || 0;
       return { label: s, value, tooltipValue: String(value) };
-    });
+    }).sort((a, b) => b.value - a.value);
   }
 
   /* Vagas abertas no período filtrado (data de abertura dentro do range) para
@@ -192,8 +192,10 @@ export function useDashboardData(filter, options = {}) {
      (opcional) troca o estado usado — vem do filtro de estado próprio do
      gráfico, independente do filtro de estado da aba (mesmo padrão do
      gráfico de Treinamento). */
-  function vacanciesBarByOpen(stateOverride) {
-    const vacs = listVacancies(stateOverride || currentState()).filter((v) => v.openAt);
+  function vacanciesBarByOpen(stateOverride, statusFilter) {
+    let vacs = listVacancies(stateOverride || currentState()).filter((v) => v.openAt);
+    if (statusFilter === "abertas") vacs = vacs.filter((v) => !v.closeAt);
+    else if (statusFilter === "fechadas") vacs = vacs.filter((v) => v.closeAt);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
     return inRange
       .map((v) => {
@@ -267,6 +269,56 @@ export function useDashboardData(filter, options = {}) {
       byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
     return [...byFilial.entries()]
+      .map(([label, value]) => ({
+        label,
+        value,
+        tooltipValue: formatCurrency(value)
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+
+  /* Agregação para o gráfico de barras do Custo médio de contratação: soma o
+     salário das vagas (um lançamento por vaga, ver syncVacancyCost em
+     employees.js) por função — o nome da vaga é o próprio nome da função
+     (ex.: "ANALISTA DE RH") —, mostrando o valor total gasto em cada função
+     no período filtrado. */
+  function custoContratacaoBarByFuncao() {
+    const ind = getIndicatorById("custo_contratacao");
+    if (!ind) return [];
+    const byFuncao = new Map();
+    filteredEntries(ind).forEach((e) => {
+      const meta = e.meta || {};
+      const funcao = meta.vacancyName || meta.funcao || "Sem função";
+      byFuncao.set(funcao, (byFuncao.get(funcao) || 0) + (Number(e.value) || 0));
+    });
+    return [...byFuncao.entries()]
+      .map(([label, value]) => ({
+        label,
+        value,
+        tooltipValue: formatCurrency(value)
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+
+  /* Agregação para o gráfico de barras do Custo médio da diária geral: soma
+     o valor pago por colaborador no período filtrado. Inclui os lançamentos
+     sem competência definida quando "Mostrar sem período" está ativo, igual
+     ao KPI (ver indicatorCurrentValue). */
+  function custoDiariaBarByColaborador() {
+    const ind = getIndicatorById("custo_diaria");
+    if (!ind) return [];
+    let list = filteredEntries(ind);
+    if (diariaShowSemPeriodo.value) {
+      const sem = diariaSemPeriodoEntries();
+      if (sem.length) list = list.concat(sem);
+    }
+    const byColaborador = new Map();
+    list.forEach((e) => {
+      const meta = e.meta || {};
+      const nome = meta.employeeName || "Sem colaborador";
+      byColaborador.set(nome, (byColaborador.get(nome) || 0) + (Number(e.value) || 0));
+    });
+    return [...byColaborador.entries()]
       .map(([label, value]) => ({
         label,
         value,
@@ -442,15 +494,16 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* ---------- Faixa de gráficos por indicador ----------
-     "Custos Totais", "Treinamento" e "Tempo médio de contratação" saem desta
-     faixa e ganham gráfico próprio abaixo do Panorama (o KPI/card continua
-     selecionável). */
+     "Custos Totais", "Treinamento", "Tempo médio de contratação" e "Tempo
+     médio de permanência" saem desta faixa e ganham gráfico próprio abaixo
+     do Panorama (o KPI/card continua selecionável). */
   const kpiChartCards = computed(() => {
     const visible = INDICATORS.filter(
       (ind) =>
         ind.id !== "custo_total" &&
         ind.id !== "treinamento" &&
-        ind.id !== "tempo_contratacao"
+        ind.id !== "tempo_contratacao" &&
+        ind.id !== "tempo_permanencia"
     );
     return visible.map((ind) => {
       if (ind.id === "turnover") {
@@ -462,24 +515,13 @@ export function useDashboardData(filter, options = {}) {
           unit: ""
         };
       }
-      if (ind.id === "tempo_permanencia") {
-        return {
-          id: "tempo_permanencia",
-          kind: "bar",
-          title: ind.name,
-          sub: "Por mês, no período filtrado",
-          unit: ind.unit,
-          valueFormat: ""
-        };
-      }
       if (ind.id === "retencao") {
         return {
           id: "retencao",
-          kind: "bar",
+          kind: "table",
           title: ind.name,
-          sub: "Por mês, no período filtrado",
-          unit: ind.unit,
-          valueFormat: ""
+          sub: "No período filtrado",
+          unit: ind.unit
         };
       }
       if (ind.id === "headcount") {
@@ -491,6 +533,26 @@ export function useDashboardData(filter, options = {}) {
           unit: "colaboradores",
           valueFormat: "",
           showTrend: false
+        };
+      }
+      if (ind.id === "custo_contratacao") {
+        return {
+          id: "custo_contratacao",
+          kind: "bar",
+          title: ind.name,
+          sub: "Valor total por função, no período filtrado",
+          unit: ind.unit,
+          valueFormat: "currency"
+        };
+      }
+      if (ind.id === "custo_diaria") {
+        return {
+          id: "custo_diaria",
+          kind: "bar",
+          title: ind.name,
+          sub: "Valor total por colaborador, no período filtrado",
+          unit: ind.unit,
+          valueFormat: "currency"
         };
       }
       return { id: ind.id, kind: "line", title: ind.name, sub: "Evolução no período", unit: ind.unit };
@@ -506,46 +568,50 @@ export function useDashboardData(filter, options = {}) {
     ];
   }
 
-  /* Série mensal do Tempo de permanência (média de dias entre admissão e
-     demissão) no período filtrado — agrupada pelo mês da Data de demissão
-     dos registros do modal de Tempo médio de permanência. */
-  function turnoverTenureBarByMonth() {
-    const list = listPermanenciaRecords(currentState())
+  /* Uma barra por colaborador desligado (registros do modal de Tempo médio
+     de permanência), no período filtrado pela Data de demissão — nome do
+     colaborador no rótulo e dias entre admissão e demissão como valor.
+     `stateOverride` (opcional) troca o estado usado — vem do filtro de
+     estado próprio do gráfico, independente do filtro de estado da aba
+     (mesmo padrão do gráfico de Treinamento). Cada barra carrega o id do
+     registro (permanenciaId), usado ao clicar para abrir o detalhe certo. */
+  function turnoverTenureBarByEmployee(stateOverride) {
+    const list = listPermanenciaRecords(stateOverride || currentState())
       .filter((p) => p.dataAdmissao && p.dataDemissao)
-      .map((p) => ({ date: String(p.dataDemissao).slice(0, 10), value: daysBetween(p.dataAdmissao, p.dataDemissao) || 0 }));
-    const monthly = aggregateByMonth(filterByRange(list), "avg");
-    return monthly.map((m) => ({
-      label: formatMonthLabel(m.date),
-      value: m.value,
-      tooltipValue: `${m.value.toFixed(1)} dias`
-    }));
+      .map((p) => ({
+        date: String(p.dataDemissao).slice(0, 10),
+        label: p.colaborador || "—",
+        value: daysBetween(p.dataAdmissao, p.dataDemissao) || 0,
+        permanenciaId: p.id
+      }));
+    return filterByRange(list)
+      .map((p) => ({
+        label: p.label,
+        value: p.value,
+        tooltipValue: `${p.value.toFixed(1)} dias`,
+        permanenciaId: p.permanenciaId
+      }))
+      .sort((a, b) => b.value - a.value);
   }
 
-  /* Série mensal da Retenção (%) no período filtrado — como é uma taxa
-     reconstruída a partir do quadro do Headcount (não um evento com data
-     própria, como Turnover), percorre mês a mês dentro do filtro chamando
-     retentionRate para cada um. Sem filtro de período, cai no mês atual. */
-  function retentionBarByMonth() {
-    const state = currentState();
-    const startYm = filter.start ? String(filter.start).slice(0, 7) : todayISO().slice(0, 7);
-    const endYm = filter.end ? String(filter.end).slice(0, 7) : startYm;
-    const rows = [];
-    let ym = startYm;
-    let guard = 0;
-    while (ym <= endYm && guard < 120) {
-      const range = { start: firstDayOfYm(ym), end: lastDayOfYm(ym) };
-      const prevYm = addMonthsYm(ym, -1);
-      const prevRange = { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
-      const stats = retentionRate(state, range, prevRange);
-      rows.push({
-        label: formatMonthLabel(ym),
-        value: stats.retencaoPct,
-        tooltipValue: stats.retencaoPct != null ? `${stats.retencaoPct.toFixed(1)}%` : "—"
-      });
-      ym = addMonthsYm(ym, 1);
-      guard++;
-    }
-    return rows;
+  /* Detalhamento da Retenção no período filtrado — mesmos números usados
+     pelo KPI (ver indicatorCurrentValue), só que aqui expostos individual-
+     mente (headcount inicial/final e novas contratações) para a tabela do
+     gráfico, em vez de só a taxa final. Headcount inicial/final vêm de
+     `headcountCountInRange` (quadro reconstruído pela Data de admissão, ver
+     activeInMonth em employees.js) no fim do mês anterior e no fim do mês
+     filtrado, respectivamente; novas contratações somam o "Admitidos"
+     lançado no Turnover dentro do mês filtrado. */
+  function retentionBreakdown() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const stats = retentionRate(currentState(), range, previousMonthRange());
+    /* Sem nenhum dos três números o cálculo não tem sentido (vira "—") — a
+       tabela avisa qual deles falta lançar em vez de só mostrar zero. */
+    const missing = [];
+    if (!stats.headcountInicial) missing.push("Headcount inicial");
+    if (!stats.headcountFinal) missing.push("Headcount final");
+    if (!stats.novasContratacoes) missing.push("Novas contratações");
+    return { ...stats, missing };
   }
 
   /* ---------- Panorama (barras) ---------- */
@@ -561,11 +627,12 @@ export function useDashboardData(filter, options = {}) {
     )
       .map((ind) => {
         const value = indicatorCurrentValue(ind);
-        /* O rótulo do KPI de Tempo médio de contratação já mostra o valor
-           arredondado (ver decimals no config); sem isto a barra do
-           Panorama desenhava o número cru (ex.: "16.333333333333332"). */
+        /* Os rótulos dos KPIs de Tempo médio de contratação e Tempo médio de
+           permanência já mostram o valor arredondado (ver decimals no
+           config); sem isto a barra do Panorama desenhava o número cru
+           (ex.: "16.333333333333332") em vez do mesmo valor do KPI. */
         const displayValue =
-          ind.id === "tempo_contratacao" && value !== null
+          (ind.id === "tempo_contratacao" || ind.id === "tempo_permanencia") && value !== null
             ? Number(value.toFixed(ind.decimals ?? 1))
             : value;
         return [
@@ -580,7 +647,12 @@ export function useDashboardData(filter, options = {}) {
           }
         ];
       })
-      .flat();
+      .flat()
+      .sort((a, b) => {
+        if (a.value === null) return 1;
+        if (b.value === null) return -1;
+        return b.value - a.value;
+      });
   });
 
   /* ---------- Tabela de lançamentos ---------- */
@@ -661,11 +733,13 @@ export function useDashboardData(filter, options = {}) {
   const NO_PERIODO_MONTH = "0001-01";
 
   /* Monta os dados do gráfico grande do Cockpit a partir do KPI selecionado
-     (ou o Panorama atual quando nenhum está selecionado). Mesma regra de
-     agregação usada nos cards de "Evolução por indicador" (ver
-     KpiChartCard.vue), centralizada aqui para reaproveitar no Cockpit. */
-  function cockpitChartFor(kpiId, treinamentoState) {
+     (ou o gráfico padrão — Custo de folha de salário — quando nenhum está
+     selecionado; Panorama atual foi desativado). Mesma regra de agregação
+     usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
+     centralizada aqui para reaproveitar no Cockpit. */
+  function cockpitChartFor(kpiId, treinamentoState, hiringStatus, permanenciaState) {
     if (!kpiId) {
+      /* Panorama atual (desativado):
       return {
         id: null,
         kind: "bar",
@@ -673,6 +747,15 @@ export function useDashboardData(filter, options = {}) {
         sub: "Último valor por indicador",
         data: panorama.value,
         valueFormat: ""
+      };
+      */
+      return {
+        id: null,
+        kind: "bar",
+        title: "Custo de folha de salário",
+        sub: "Soma dos custos por filial no período filtrado",
+        data: custosBarByFilial(),
+        valueFormat: "currency"
       };
     }
 
@@ -722,7 +805,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Tempo médio de contratação",
         sub: "Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)",
-        data: vacanciesBarByOpen(),
+        data: vacanciesBarByOpen(null, hiringStatus),
         valueFormat: ""
       };
     }
@@ -731,19 +814,39 @@ export function useDashboardData(filter, options = {}) {
         id: "tempo_permanencia",
         kind: "bar",
         title: "Tempo médio de permanência",
-        sub: "Média de dias (admissão até desligamento) por mês, no período filtrado",
-        data: turnoverTenureBarByMonth(),
+        sub: "Dias entre admissão e desligamento, por colaborador",
+        data: turnoverTenureBarByEmployee(permanenciaState),
         valueFormat: ""
       };
     }
     if (kpiId === "retencao") {
       return {
         id: "retencao",
-        kind: "bar",
+        kind: "table",
         title: "Retenção",
-        sub: "(Headcount final − Novas contratações) / Headcount inicial, por mês",
-        data: retentionBarByMonth(),
+        sub: "No período filtrado",
+        data: retentionBreakdown(),
         valueFormat: ""
+      };
+    }
+    if (kpiId === "custo_contratacao") {
+      return {
+        id: "custo_contratacao",
+        kind: "bar",
+        title: "Custo médio de contratação",
+        sub: "Valor total por função, no período filtrado",
+        data: custoContratacaoBarByFuncao(),
+        valueFormat: "currency"
+      };
+    }
+    if (kpiId === "custo_diaria") {
+      return {
+        id: "custo_diaria",
+        kind: "bar",
+        title: "Custo médio da diária geral",
+        sub: "Valor total por colaborador, no período filtrado",
+        data: custoDiariaBarByColaborador(),
+        valueFormat: "currency"
       };
     }
 
@@ -779,14 +882,16 @@ export function useDashboardData(filter, options = {}) {
     treinamentoFilialEntries,
     headcountBarByState,
     custosBarByFilial,
+    custoContratacaoBarByFuncao,
+    custoDiariaBarByColaborador,
     indicatorCurrentValue,
     kpis,
     selectedKpiId,
     selectKpi,
     kpiChartCards,
     chartPieData,
-    turnoverTenureBarByMonth,
-    retentionBarByMonth,
+    turnoverTenureBarByEmployee,
+    retentionBreakdown,
     vacanciesBarByOpen,
     cockpitChartFor,
     panorama,
