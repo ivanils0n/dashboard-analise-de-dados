@@ -32,7 +32,6 @@ import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, nor
 import { syncAll } from "@/lib/employees";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
 import { reloadData, hydrateState } from "@/lib/db";
-import { beginLoading, endLoading } from "@/composables/useLoading";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters } = useFilters();
@@ -124,9 +123,9 @@ function onHiringBarContext({ index }) {
 
 /* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
    vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
-function onKpiCardBarClick(card, { index }) {
+function onKpiCardBarClick({ card, barData }, { index }) {
   if (card.id !== "custo_contratacao") return;
-  const row = chartBarData(card)[index];
+  const row = barData[index];
   if (!row) return;
   vacancyDetailId.value = row.vacancyId;
   vacancyDetailFallback.value = { name: row.label, salario: row.value, date: row.date };
@@ -192,6 +191,16 @@ const { chartStateFilter: permanenciaStateFilter, setChartStateFilter: setPerman
   useChartStateFilter();
 const menuOpen = ref(false);
 const tableSearch = ref("");
+/* A tabela só refiltra 200 ms depois da última tecla: refiltrar e reordenar
+   todos os lançamentos a cada letra digitada travava a digitação. */
+const tableQuery = ref("");
+let tableSearchTimer = null;
+watch(tableSearch, (value) => {
+  clearTimeout(tableSearchTimer);
+  tableSearchTimer = setTimeout(() => {
+    tableQuery.value = value;
+  }, 200);
+});
 const kpiSearch = ref("");
 const SHOW_VALUES_KEY = "gg-show-values";
 const storedShowValues = localStore.getItem(SHOW_VALUES_KEY);
@@ -266,7 +275,23 @@ let flashTimer = null;
 
 const canEdit = canEditData();
 
-const tableRows = computed(() => dashboard.tableRows(tableSearch.value));
+const tableRows = computed(() => dashboard.tableRows(tableQuery.value));
+
+/* Só as primeiras linhas vão para o DOM; o restante entra conforme a rolagem
+   chega ao fim. Renderizar milhares de linhas (cada uma com checkbox, badge e
+   botões) de uma vez era o maior custo de render da tela. */
+const TABLE_PAGE_SIZE = 100;
+const tableLimit = ref(TABLE_PAGE_SIZE);
+const visibleTableRows = computed(() => tableRows.value.slice(0, tableLimit.value));
+watch([tableQuery, () => df.start, () => df.end, () => filters.current], () => {
+  tableLimit.value = TABLE_PAGE_SIZE;
+});
+
+function onTableScroll(event) {
+  if (tableLimit.value >= tableRows.value.length) return;
+  const el = event.target;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) tableLimit.value += TABLE_PAGE_SIZE;
+}
 
 /* Data exibida em "Lançamentos recentes": indicadores lançados por
    competência (mês/ano) mostram o mês; diárias sem período conhecido
@@ -374,6 +399,20 @@ function chartTableData(card) {
   return null;
 }
 
+/* Dados de cada gráfico por indicador, calculados uma única vez por mudança
+   nos dados/filtros. Antes eram chamados direto no template e geravam arrays
+   novos a cada re-render da tela (ex.: ao digitar na busca de indicadores),
+   o que fazia todos os gráficos serem redesenhados sem necessidade. */
+const kpiChartViews = computed(() =>
+  orderedKpiChartCards.value.map((card) => ({
+    card,
+    entries: lineEntries(card),
+    pieData: card.kind === "pie" ? chartPieData(card.id) : [],
+    barData: chartBarData(card),
+    tableData: chartTableData(card)
+  }))
+);
+
 function openLaunch() {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -462,6 +501,9 @@ async function handleReload() {
     await reloadData();
     syncAll();
     toast("Dados recarregados.");
+  } catch (err) {
+    console.error("[Dashboard] Falha ao recarregar os dados:", err);
+    toast("Não foi possível recarregar os dados.");
   } finally {
     importing.value = false;
   }
@@ -641,15 +683,15 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClick);
   clearTimeout(flashTimer);
+  clearTimeout(tableSearchTimer);
 });
 
-/* Mostra a tela de carregamento sempre que a aba é aberta (inclusive ao
-   voltar de outra aba, já que o KeepAlive não remonta o componente). */
+/* Ao abrir a aba (inclusive ao voltar de outra, já que o KeepAlive não
+   remonta o componente) garante que o estado do filtro esteja em memória.
+   hydrateState só mostra a tela de carregamento quando realmente há algo a
+   baixar — antes ela piscava a cada visita mesmo com tudo já carregado. */
 onActivated(() => {
-  beginLoading("Carregando dashboard...");
-  hydrateState(filters.current)
-    .catch(() => {})
-    .finally(endLoading);
+  hydrateState(filters.current).catch(() => {});
 });
 </script>
 
@@ -823,18 +865,18 @@ onActivated(() => {
     </div>
     <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-2">
       <KpiChartCard
-        v-for="card in orderedKpiChartCards"
-        :key="card.id"
+        v-for="view in kpiChartViews"
+        :key="view.card.id"
         stacked
-        :class="HALF_WIDTH_CARDS.includes(card.id) ? '' : 'lg:col-span-2'"
-        :card="card"
-        :entries="lineEntries(card)"
-        :pie-data="card.kind === 'pie' ? chartPieData(card.id) : []"
-        :bar-data="chartBarData(card)"
-        :table-data="chartTableData(card)"
+        :class="HALF_WIDTH_CARDS.includes(view.card.id) ? '' : 'lg:col-span-2'"
+        :card="view.card"
+        :entries="view.entries"
+        :pie-data="view.pieData"
+        :bar-data="view.barData"
+        :table-data="view.tableData"
         :show-values="showValues"
-        :data-indicator-card="card.id"
-        @bar-click="onKpiCardBarClick(card, $event)"
+        :data-indicator-card="view.card.id"
+        @bar-click="onKpiCardBarClick(view, $event)"
       />
     </div>
 
@@ -1092,7 +1134,8 @@ onActivated(() => {
         </div>
       </div>
 
-      <div v-if="tableRows.length" class="max-h-[400px] overflow-auto">
+      <template v-if="tableRows.length">
+      <div class="max-h-[400px] overflow-auto" @scroll.passive="onTableScroll">
         <table class="w-full min-w-max text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
@@ -1113,7 +1156,7 @@ onActivated(() => {
           </thead>
           <tbody>
             <tr
-              v-for="{ entry, ind } in tableRows"
+              v-for="{ entry, ind } in visibleTableRows"
               :key="entry.id"
               class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
               :class="selectedKeys.has(entry.id) ? 'bg-accent/5 dark:bg-red-500/5' : ''"
@@ -1156,6 +1199,13 @@ onActivated(() => {
           </tbody>
         </table>
       </div>
+      <p
+        v-if="tableRows.length > visibleTableRows.length"
+        class="border-t border-zinc-100 px-5 py-2 text-xs text-zinc-400 dark:border-zinc-800"
+      >
+        Exibindo {{ visibleTableRows.length }} de {{ tableRows.length }} lançamentos — role a tabela para carregar mais.
+      </p>
+      </template>
 
       <div v-else class="p-5">
         <EmptyState

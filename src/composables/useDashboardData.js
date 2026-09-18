@@ -4,7 +4,6 @@ import { getEntriesFor, getAllEntries, getBranches } from "@/lib/store";
 import {
   computedSnapshot,
   listVacancies,
-  listHeadcountRecords,
   listPermanenciaRecords,
   averageHiringDays,
   turnoverAvgTenureDays,
@@ -30,8 +29,7 @@ import {
 } from "@/lib/utils";
 import { aggregateEntries } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
-import { ensureLancamentosSince, fetchVagasInRange } from "@/lib/db";
-import { beginLoading, endLoading } from "@/composables/useLoading";
+import { ensureLancamentosSince } from "@/lib/db";
 
 /* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
    mas aparece em "Lançamentos recentes" com formatação de moeda. */
@@ -71,31 +69,37 @@ export function useDashboardData(filter, options = {}) {
     { immediate: true }
   );
 
-  /* Tempo médio de contratação: ao contrário dos demais indicadores
-     "computed", não reaproveita a lista de vagas já carregada em memória —
-     busca direto da API só as vagas abertas dentro do período filtrado
-     (fetchVagasInRange), para não depender do download completo de vagas do
-     estado. `hiringAvgToken` descarta respostas de buscas antigas que
-     cheguem fora de ordem (troca rápida de filtro/estado). */
-  const hiringAvg = ref(null);
-  let hiringAvgToken = 0;
-  watch(
-    () => [filter.start, filter.end, currentState()],
-    async ([start, end, s]) => {
-      const token = ++hiringAvgToken;
-      beginLoading();
-      try {
-        const rows = await fetchVagasInRange(s, start || null, end || null);
-        if (token === hiringAvgToken) hiringAvg.value = averageHiringDays(rows);
-      } catch (err) {
-        console.warn("[Dashboard] Falha ao buscar vagas do período:", err);
-        if (token === hiringAvgToken) hiringAvg.value = null;
-      } finally {
-        endLoading();
-      }
-    },
-    { immediate: true }
-  );
+  /* Tempo médio de contratação: média das vagas ABERTAS dentro do período
+     filtrado (data de abertura no intervalo) — a mesma regra do gráfico de
+     barras do indicador. A lista completa de vagas do estado já está em
+     memória (carregada em lib/db), então o cálculo é local e instantâneo:
+     antes cada troca de filtro fazia uma chamada extra à API e travava a
+     tela inteira com a sobreposição de carregamento. */
+  const hiringAvg = computed(() => {
+    const start = filter.start || null;
+    const end = filter.end || null;
+    const inRange = listVacancies(currentState()).filter((v) => {
+      if (!v.openAt) return false;
+      const day = String(v.openAt).slice(0, 10);
+      return !(start && day < start) && !(end && day > end);
+    });
+    return averageHiringDays(inRange);
+  });
+
+  /* Lançamentos de um indicador no estado escolhido (já ordenados por data),
+     calculados uma vez por mudança nos dados. Antes cada KPI recopiava e
+     reordenava a lista 3 vezes por recálculo (kpis, filteredEntries e
+     indicatorCurrentValue). Quem recebe a lista NÃO deve alterá-la. */
+  const stateEntriesCache = new Map();
+  function stateEntries(indicatorId, targetState) {
+    const key = `${indicatorId}|${targetState}`;
+    let cached = stateEntriesCache.get(key);
+    if (!cached) {
+      cached = computed(() => getEntriesFor(indicatorId, targetState));
+      stateEntriesCache.set(key, cached);
+    }
+    return cached.value;
+  }
 
   function filterByRange(list) {
     const start = filter.start;
@@ -132,7 +136,7 @@ export function useDashboardData(filter, options = {}) {
   function filteredEntries(ind, state) {
     const withPeriod = scopeEntries(
       ind,
-      getEntriesFor(ind.id, state || currentState()).filter((e) => !(e.meta && e.meta.semPeriodo))
+      stateEntries(ind.id, state || currentState()).filter((e) => !(e.meta && e.meta.semPeriodo))
     );
     return filterByRange(withPeriod);
   }
@@ -145,7 +149,7 @@ export function useDashboardData(filter, options = {}) {
   function diariaDailySeries(includeSemPeriodo = false) {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
-    const all = getEntriesFor(ind.id, currentState());
+    const all = stateEntries(ind.id, currentState());
     const comPeriodo = all.filter((e) => !(e.meta && e.meta.semPeriodo));
     let list = filterByRange(comPeriodo);
     if (includeSemPeriodo) {
@@ -161,7 +165,7 @@ export function useDashboardData(filter, options = {}) {
   function diariaSemPeriodoEntries() {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
-    return getEntriesFor(ind.id, currentState()).filter((e) => e.meta && e.meta.semPeriodo);
+    return stateEntries(ind.id, currentState()).filter((e) => e.meta && e.meta.semPeriodo);
   }
 
   function diariaSemPeriodoCount() {
@@ -338,8 +342,8 @@ export function useDashboardData(filter, options = {}) {
       /* Tempo médio de contratação é o único indicador "computed" cujo
          cálculo depende diretamente de datas (abertura da vaga) — por isso,
          ao contrário dos demais (headcount, turnover, retenção...), respeita
-         o filtro de período do dashboard. Vem de `hiringAvg` (busca
-         assíncrona direto da API, ver watch acima), não do snapshot local. */
+         o filtro de período do dashboard. Vem de `hiringAvg` (calculado
+         sobre as vagas em memória, ver acima), não do snapshot local. */
       if (ind.id === "tempo_contratacao") {
         return hiringAvg.value;
       }
@@ -389,7 +393,7 @@ export function useDashboardData(filter, options = {}) {
   const kpis = computed(() => {
     return INDICATORS.map((ind) => {
       const entries = filteredEntries(ind);
-      const allEntries = scopeEntries(ind, getEntriesFor(ind.id, currentState()));
+      const allEntries = scopeEntries(ind, stateEntries(ind.id, currentState()));
       let current = indicatorCurrentValue(ind);
       let prev = null;
       const prevMonthRangeForDelta = filter.start ? previousMonthRange() : null;
@@ -676,18 +680,28 @@ export function useDashboardData(filter, options = {}) {
       if (filter.end && e.date > filter.end) return false;
       return true;
     };
-    INDICATORS.forEach((ind) => {
-      (all[ind.id] || []).forEach((e) => {
+    /* A busca é aplicada ANTES da ordenação: ordenar só o que sobrou é bem
+       mais barato do que ordenar tudo e descartar depois. */
+    const nameMatches = new Map();
+    const matchesQuery = (e, ind) => {
+      if (!q) return true;
+      if (!nameMatches.has(ind.id)) nameMatches.set(ind.id, normalizeText(ind.name).includes(q));
+      if (nameMatches.get(ind.id)) return true;
+      const meta = e.meta;
+      if (!meta || typeof meta !== "object") return false;
+      return Object.values(meta).some((v) => typeof v === "string" && normalizeText(v).includes(q));
+    };
+    const collect = (list, ind) => {
+      (list || []).forEach((e) => {
         if (!inDateRange(e)) return;
         if (!matchesState(e)) return;
+        if (!matchesQuery(e, ind)) return;
         rows.push({ entry: e, ind });
       });
-    });
-    (all[SALARY_IND.id] || []).forEach((e) => {
-      if (!inDateRange(e)) return;
-      if (!matchesState(e)) return;
-      rows.push({ entry: e, ind: SALARY_IND });
-    });
+    };
+    INDICATORS.forEach((ind) => collect(all[ind.id], ind));
+    collect(all[SALARY_IND.id], SALARY_IND);
+
     // Ordenação cronológica decrescente: o lançamento mais recente no topo.
     // Desempate por id (criações mais novas primeiro) para o mesmo dia.
     rows.sort(
@@ -695,14 +709,7 @@ export function useDashboardData(filter, options = {}) {
         compareDateDesc(a.entry.date, b.entry.date) ||
         String(b.entry.id || "").localeCompare(String(a.entry.id || ""))
     );
-
-    if (!q) return rows;
-    return rows.filter((r) => {
-      if (normalizeText(r.ind.name).includes(q)) return true;
-      const meta = r.entry.meta;
-      if (!meta || typeof meta !== "object") return false;
-      return Object.values(meta).some((v) => typeof v === "string" && normalizeText(v).includes(q));
-    });
+    return rows;
   }
 
   function formatEntryValue(ind, entry) {

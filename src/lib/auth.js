@@ -3,7 +3,7 @@
    perfil admin/analista/visitante; perfil validado via /api/auth/me. */
 import { reactive } from "vue";
 import { safeSetItem, sessionStore, localStore } from "./utils";
-import { apiFetch } from "./api";
+import { apiFetch, setUnauthorizedHandler } from "./api";
 import { resetLocalState } from "./db";
 
 const AUTH_STORAGE_KEY = "gg-auth";
@@ -235,6 +235,9 @@ export function handleSessionExpired() {
   _expiredHandled = true;
   performFullCleanup();
 }
+
+// Token recusado pelo servidor (401): encerra a sessão local imediatamente.
+setUnauthorizedHandler(() => handleSessionExpired());
 
 // Expiração em tempo real (6h): intervalo rastreado e encerrado no logout.
 let _pollTimer = null;

@@ -6,6 +6,13 @@ import { formatValue, formatAxisValue, formatShortDate, formatCurrency } from ".
 
 Chart.register(...registerables);
 
+/* Animações mais curtas e redimensionamento com debounce: o padrão do
+   Chart.js (1 s de animação a cada atualização, resize a cada pixel) deixava a
+   troca de filtros e a rolagem da página pesadas — o dashboard tem mais de dez
+   gráficos que reagem ao mesmo filtro. */
+Chart.defaults.animation.duration = 300;
+Chart.defaults.resizeDelay = 120;
+
 export function isDarkTheme() {
   return document.documentElement.classList.contains("dark");
 }
@@ -64,6 +71,10 @@ function drawValueLabels(chart) {
   const { ctx } = chart;
   const p = chartPalette();
   const compact = local.compact !== undefined ? local.compact : opts.compact;
+  const isPie = chart.config.type === "doughnut" || chart.config.type === "pie";
+  /* Checa antes de `ctx.save()`: o retorno antecipado abaixo deixava o
+     contexto salvo sem restaurar. */
+  if (isPie && (!chart.getDatasetMeta(0) || !chart.data.datasets[0])) return;
   const rawFormatter = local.formatter !== undefined ? local.formatter : opts.formatter;
   const formatter = typeof rawFormatter === "function" ? rawFormatter : null;
   const label = (val) => (formatter ? formatter(val) : String(val));
@@ -71,10 +82,9 @@ function drawValueLabels(chart) {
   ctx.font = compact ? "700 9px Inter, sans-serif" : "700 12px Inter, sans-serif";
   ctx.textAlign = "center";
 
-  if (chart.config.type === "doughnut" || chart.config.type === "pie") {
+  if (isPie) {
     const meta = chart.getDatasetMeta(0);
     const ds = chart.data.datasets[0];
-    if (!meta || !ds) return;
     meta.data.forEach((el, i) => {
       const val = ds.data[i];
       if (val == null) return;

@@ -1,4 +1,4 @@
-import { query, withClient, withTransaction } from "../db/pool";
+import { query, queryPage, withClient, withTransaction } from "../db/pool";
 import { ENTITIES, tableName } from "../db/tables";
 import type { EntityDef, Estado } from "../db/tables";
 import { recordChange, recordChanges } from "./audit";
@@ -7,6 +7,10 @@ import { buildCreatePayload, buildUpdatePayload, buildUpsertPayload } from "../u
 import type { Bindings } from "../types";
 
 type Filters = Record<string, string>;
+
+// Limite do protocolo do Postgres é 65535 parâmetros por instrução; usa metade
+// para manter cada statement num tamanho razoável.
+const MAX_PARAMS_PER_STATEMENT = 30000;
 
 function buildWhere(entity: EntityDef, filters: Filters, search?: string) {
   const where: string[] = [];
@@ -50,23 +54,16 @@ export async function listRecords(
   const table = tableName(entityKey, estado);
   const { whereSql, params } = buildWhere(entity, options.filters, options.search);
 
-  // Uma única conexão para o count + a listagem.
-  return withClient(env, async (client) => {
-    const countResult = await client.query(
-      `select count(*) as total from public.${table}${whereSql}`,
-      params
-    );
-    const total = Number(countResult.rows[0]?.total) || 0;
-
-    const offset = (options.page - 1) * options.limit;
-    const listParams = [...params, options.limit, offset];
-    const { rows } = await client.query(
-      `select * from public.${table}${whereSql} order by ${entity.orderBy} limit $${listParams.length - 1} offset $${listParams.length}`,
-      listParams
-    );
-
-    return { data: rows, total };
-  });
+  const offset = (options.page - 1) * options.limit;
+  return withClient(env, (client) =>
+    queryPage(
+      client,
+      { columns: "*", from: `public.${table}`, whereSql, orderBy: entity.orderBy },
+      params,
+      options.limit,
+      offset
+    )
+  );
 }
 
 export async function listAllRecords(env: Bindings, entityKey: string, estado: Estado) {
@@ -148,11 +145,12 @@ export async function deleteRecord(
   const table = tableName(entityKey, estado);
 
   return withTransaction(env, async (client) => {
-    const existing = await client.query(`select * from public.${table} where id = $1 limit 1`, [id]);
-    const row = existing.rows[0];
+    // delete ... returning traz a linha removida (para o changelog) sem um
+    // select prévio: um round-trip a menos.
+    const { rows } = await client.query(`delete from public.${table} where id = $1 returning *`, [id]);
+    const row = rows[0];
     if (!row) return false;
 
-    await client.query(`delete from public.${table} where id = $1`, [id]);
     await recordChange(client, table, id, "delete", row);
     return true;
   });
@@ -176,15 +174,22 @@ export async function bulkWrite(
   return withTransaction(env, async (client) => {
     const changes: ChangeEntry[] = [];
 
-    // Linhas com o mesmo conjunto de colunas (assinatura) entram no mesmo
-    // INSERT em lote — não dá para misturar formatos diferentes na mesma
-    // instrução VALUES sem corromper campos que uma linha não enviou.
-    const groups = new Map<string, { keys: string[]; payloads: Record<string, unknown>[] }>();
+    // Um upsert por id: o mesmo id duas vezes no mesmo INSERT ... ON CONFLICT
+    // faz o Postgres abortar o lote inteiro ("cannot affect row a second
+    // time"). Vale o último enviado.
+    const byId = new Map<string, Record<string, unknown>>();
     for (const item of upserts) {
       if (!item || typeof item !== "object") continue;
       const payload = buildUpsertPayload(entity, item as Record<string, unknown>, estado);
       if (!payload.id) payload.id = crypto.randomUUID();
+      byId.set(String(payload.id), payload);
+    }
 
+    // Linhas com o mesmo conjunto de colunas (assinatura) entram no mesmo
+    // INSERT em lote — não dá para misturar formatos diferentes na mesma
+    // instrução VALUES sem corromper campos que uma linha não enviou.
+    const groups = new Map<string, { keys: string[]; payloads: Record<string, unknown>[] }>();
+    for (const payload of byId.values()) {
       const keys = Object.keys(payload);
       const signature = keys.slice().sort().join(",");
       let group = groups.get(signature);
@@ -205,22 +210,27 @@ export async function bulkWrite(
       }
       const conflict = updates.length ? `do update set ${updates.join(", ")}` : "do nothing";
 
-      const params: unknown[] = [];
-      const rowsSql = payloads.map((payload) => {
-        const placeholders = keys.map((key) => {
-          params.push(payload[key]);
-          return `$${params.length}`;
+      // O Postgres aceita no máximo 65535 parâmetros por instrução: uma
+      // importação grande precisa ser fatiada em vários INSERTs.
+      const rowsPerStatement = Math.max(1, Math.floor(MAX_PARAMS_PER_STATEMENT / keys.length));
+      for (let start = 0; start < payloads.length; start += rowsPerStatement) {
+        const params: unknown[] = [];
+        const rowsSql = payloads.slice(start, start + rowsPerStatement).map((payload) => {
+          const placeholders = keys.map((key) => {
+            params.push(payload[key]);
+            return `$${params.length}`;
+          });
+          if (entity.hasUpdatedAt) placeholders.push("now()");
+          return `(${placeholders.join(", ")})`;
         });
-        if (entity.hasUpdatedAt) placeholders.push("now()");
-        return `(${placeholders.join(", ")})`;
-      });
 
-      const sql = `insert into public.${table} (${columns.join(", ")}) values ${rowsSql.join(", ")} on conflict (id) ${conflict} returning *`;
-      const { rows } = await client.query(sql, params);
-      rows.forEach((row: Record<string, unknown>) => {
-        changes.push({ tabela: table, registroId: String(row.id), operacao: "upsert", dados: row });
-      });
-      upserted += rows.length;
+        const sql = `insert into public.${table} (${columns.join(", ")}) values ${rowsSql.join(", ")} on conflict (id) ${conflict} returning *`;
+        const { rows } = await client.query(sql, params);
+        rows.forEach((row: Record<string, unknown>) => {
+          changes.push({ tabela: table, registroId: String(row.id), operacao: "upsert", dados: row });
+        });
+        upserted += rows.length;
+      }
     }
 
     // Deduplica ids: o mesmo registro pode ter sido marcado para exclusão
@@ -236,16 +246,16 @@ export async function bulkWrite(
 
     let deleted = 0;
     if (deleteIds.length) {
-      const existing = await client.query(`select * from public.${table} where id = any($1::text[])`, [
-        deleteIds
-      ]);
-      if (existing.rows.length) {
-        await client.query(`delete from public.${table} where id = any($1::text[])`, [deleteIds]);
-        existing.rows.forEach((row: Record<string, unknown>) => {
-          changes.push({ tabela: table, registroId: String(row.id), operacao: "delete", dados: row });
-        });
-        deleted = existing.rows.length;
-      }
+      // delete ... returning devolve as linhas removidas (para o changelog)
+      // sem um select prévio.
+      const removed = await client.query(
+        `delete from public.${table} where id = any($1::text[]) returning *`,
+        [deleteIds]
+      );
+      removed.rows.forEach((row: Record<string, unknown>) => {
+        changes.push({ tabela: table, registroId: String(row.id), operacao: "delete", dados: row });
+      });
+      deleted = removed.rows.length;
     }
 
     await recordChanges(client, changes);

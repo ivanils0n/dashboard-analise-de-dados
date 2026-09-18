@@ -1,5 +1,5 @@
 import type { Client } from "pg";
-import { withClient } from "../db/pool";
+import { queryPage, withClient } from "../db/pool";
 import type { Bindings } from "../types";
 
 export type Operacao = "upsert" | "delete";
@@ -26,20 +26,24 @@ export type ChangeEntry = {
   dados: unknown;
 };
 
-// Grava várias entradas do changelog em um único round-trip (usado por
-// bulkWrite, que processa dezenas/centenas de registros por chamada).
+// Grava várias entradas do changelog em poucos round-trips (usado por
+// bulkWrite, que processa dezenas/centenas de registros por chamada). Fatiado
+// para respeitar o limite de 65535 parâmetros por instrução do Postgres.
+const CHANGES_PER_STATEMENT = 5000;
+
 export async function recordChanges(client: Client, changes: ChangeEntry[]) {
-  if (!changes.length) return;
-  const params: unknown[] = [];
-  const rows = changes.map((c) => {
-    params.push(c.tabela, c.registroId, c.operacao, c.dados);
-    const base = params.length - 4;
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
-  });
-  await client.query(
-    `insert into public.registro_alteracoes (tabela, registro_id, operacao, dados) values ${rows.join(", ")}`,
-    params
-  );
+  for (let start = 0; start < changes.length; start += CHANGES_PER_STATEMENT) {
+    const params: unknown[] = [];
+    const rows = changes.slice(start, start + CHANGES_PER_STATEMENT).map((c) => {
+      params.push(c.tabela, c.registroId, c.operacao, c.dados);
+      const base = params.length - 4;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+    });
+    await client.query(
+      `insert into public.registro_alteracoes (tabela, registro_id, operacao, dados) values ${rows.join(", ")}`,
+      params
+    );
+  }
 }
 
 type ListChangesOptions = {
@@ -79,22 +83,21 @@ export async function listChanges(env: Bindings, options: ListChangesOptions) {
 
   const whereSql = where.length ? ` where ${where.join(" and ")}` : "";
 
-  return withClient(env, async (client) => {
-    const countResult = await client.query(
-      `select count(*) as total from public.registro_alteracoes${whereSql}`,
-      params
-    );
-    const total = Number(countResult.rows[0]?.total) || 0;
-
-    const offset = (options.page - 1) * options.limit;
-    const listParams = [...params, options.limit, offset];
-    const { rows } = await client.query(
-      `select id, tabela, registro_id, operacao, dados, criado_em from public.registro_alteracoes${whereSql} order by id desc limit $${listParams.length - 1} offset $${listParams.length}`,
-      listParams
-    );
-
-    return { data: rows, total };
-  });
+  const offset = (options.page - 1) * options.limit;
+  return withClient(env, (client) =>
+    queryPage(
+      client,
+      {
+        columns: "id, tabela, registro_id, operacao, dados, criado_em",
+        from: "public.registro_alteracoes",
+        whereSql,
+        orderBy: "id desc"
+      },
+      params,
+      options.limit,
+      offset
+    )
+  );
 }
 
 export async function getChange(env: Bindings, id: number) {

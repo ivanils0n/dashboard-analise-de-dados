@@ -42,20 +42,56 @@ function readToken() {
   }
 }
 
-export async function apiFetch(path, { method = "GET", body, headers = {}, auth = true } = {}) {
+/* Sem resposta em 30 s a chamada é abortada. Sem isso, uma requisição
+   pendurada (rede caiu, Worker frio demais) nunca terminava e a tela de
+   carregamento ficava presa para sempre. */
+const REQUEST_TIMEOUT_MS = 30000;
+
+/* Registrado pelo auth.js (evita import circular): chamado quando a API
+   responde 401 a uma requisição autenticada — token vencido/revogado no
+   servidor — para encerrar a sessão em vez de deixar o app "logado" com todas
+   as chamadas falhando. */
+let onUnauthorized = null;
+
+export function setUnauthorizedHandler(handler) {
+  onUnauthorized = typeof handler === "function" ? handler : null;
+}
+
+export async function apiFetch(
+  path,
+  { method = "GET", body, headers = {}, auth = true, keepalive = false } = {}
+) {
   const finalHeaders = { ...headers };
-  if (body !== undefined) finalHeaders["Content-Type"] = "application/json";
+  const payload = body !== undefined ? JSON.stringify(body) : undefined;
+  if (payload !== undefined) finalHeaders["Content-Type"] = "application/json";
+  let sentToken = null;
   if (auth) {
-    const token = readToken();
-    if (token) finalHeaders["Authorization"] = `Bearer ${token}`;
+    sentToken = readToken();
+    if (sentToken) finalHeaders["Authorization"] = `Bearer ${sentToken}`;
   }
 
-  const res = await fetch(API_BASE + path, {
-    method,
-    headers: finalHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: "same-origin"
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(API_BASE + path, {
+      method,
+      headers: finalHeaders,
+      body: payload,
+      credentials: "same-origin",
+      signal: controller.signal,
+      keepalive
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      const err = new Error("O servidor demorou demais para responder.");
+      err.status = 0;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 
   let data = null;
   try {
@@ -65,6 +101,11 @@ export async function apiFetch(path, { method = "GET", body, headers = {}, auth 
   }
 
   if (!res.ok) {
+    /* Só encerra a sessão se o token recusado ainda é o da sessão atual — a
+       resposta atrasada de uma sessão anterior não pode derrubar um login novo. */
+    if (res.status === 401 && sentToken && readToken() === sentToken && onUnauthorized) {
+      onUnauthorized();
+    }
     const message =
       (data && data.error && data.error.message) ||
       (data && data.message) ||

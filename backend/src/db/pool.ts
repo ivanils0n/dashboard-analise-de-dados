@@ -37,6 +37,44 @@ export function query(env: Bindings, text: string, params?: unknown[]) {
   return withClient(env, (client) => client.query(text, params));
 }
 
+type PageSource = {
+  columns: string;
+  from: string;
+  whereSql: string;
+  orderBy: string;
+};
+
+// Página + total em uma única ida ao banco (count(*) over ()), em vez de um
+// count separado antes da listagem — cada round-trip via Hyperdrive custa
+// latência de rede. Só quando a página pedida passa do fim (sem linhas para
+// carregar o total) é que roda o count à parte.
+export async function queryPage(
+  client: Client,
+  source: PageSource,
+  params: unknown[],
+  limit: number,
+  offset: number
+): Promise<{ data: Record<string, unknown>[]; total: number }> {
+  const listParams = [...params, limit, offset];
+  const { rows } = await client.query(
+    `select ${source.columns}, count(*) over () as __total from ${source.from}${source.whereSql} order by ${source.orderBy} limit $${listParams.length - 1} offset $${listParams.length}`,
+    listParams
+  );
+
+  if (rows.length) {
+    const total = Number(rows[0].__total) || 0;
+    for (const row of rows) delete row.__total;
+    return { data: rows, total };
+  }
+  if (offset === 0) return { data: [], total: 0 };
+
+  const countResult = await client.query(
+    `select count(*) as total from ${source.from}${source.whereSql}`,
+    params
+  );
+  return { data: [], total: Number(countResult.rows[0]?.total) || 0 };
+}
+
 export async function withTransaction<T>(
   env: Bindings,
   fn: (client: Client) => Promise<T>

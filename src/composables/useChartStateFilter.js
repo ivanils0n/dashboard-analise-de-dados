@@ -13,7 +13,12 @@ export function useChartStateFilter() {
 
   async function setChartStateFilter(v) {
     chartStateFilter.value = v;
-    await hydrateState(v);
+    try {
+      await hydrateState(v);
+    } catch (err) {
+      /* Nunca deixa a troca do filtro virar erro não tratado na UI. */
+      console.warn("[useChartStateFilter] Falha ao carregar dados do estado:", err);
+    }
   }
 
   return { chartStateFilter, setChartStateFilter };

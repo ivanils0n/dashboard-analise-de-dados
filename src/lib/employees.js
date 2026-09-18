@@ -26,6 +26,7 @@ import {
   addEntry,
   updateEntry,
   removeEntry,
+  getEntriesFor,
   getLatestForMeta,
   upsertEntryForDate,
   removeEntryForDate
@@ -33,13 +34,15 @@ import {
 import { createId, nowLocalISO, todayISO, daysBetween, sameState } from "./utils";
 import { loadedStates } from "./db";
 
+/* Restringe uma lista ao estado escolhido ("todos"/vazio = sem filtro; nesse
+   caso devolve a própria lista, sem cópia). */
+function filterByState(list, state) {
+  if (!state || state === "todos") return list;
+  return list.filter((x) => sameState(x.estado, state));
+}
+
 export function listEmployees(state) {
-  const all = useData().employees;
-  if (state && state !== "todos") {
-    const target = String(state).trim().toUpperCase();
-    return all.filter((e) => String(e.estado || "").trim().toUpperCase() === target);
-  }
-  return all;
+  return filterByState(useData().employees, state);
 }
 
 /* Chave de comparação de nomes de pessoas: ignora caixa, acentos, espaços e
@@ -212,8 +215,8 @@ function metricsFrom(list) {
 /* Média dos dias entre abertura e fechamento de uma lista de vagas — só as
    já fechadas contam (vagas ainda abertas não têm um tempo de contratação
    definitivo ainda). Pura (sem depender do store), reaproveitada tanto pelo
-   snapshot diário local (avgHiringDays) quanto pelo card do dashboard, que
-   busca as vagas do período direto da API (ver fetchVagasInRange em lib/db). */
+   snapshot diário local (avgHiringDays) quanto pelo card do dashboard, que a
+   aplica às vagas do período filtrado (ver useDashboardData). */
 export function averageHiringDays(list) {
   const closed = (list || []).filter((v) => v.openAt && v.closeAt);
   if (!closed.length) return null;
@@ -223,16 +226,15 @@ export function averageHiringDays(list) {
 
 /* Tempo médio de contratação a partir das vagas já carregadas no store,
    sem filtro de período — usado só pelo snapshot diário (syncVacancyIndicator).
-   O card do dashboard não usa mais esta função: busca as vagas do período
-   filtrado direto da API (fetchVagasInRange), em vez de depender da lista
-   completa de vagas já carregada em memória. */
+   O card do dashboard filtra as vagas pelo período antes de usar
+   averageHiringDays (ver useDashboardData). */
 export function avgHiringDays(state) {
   return averageHiringDays(listVacancies(state));
 }
 
-/* Indicadores "computed" exibidos no dashboard — não inclui
-   "tempo_contratacao": o card busca as vagas do período direto da API (ver
-   useDashboardData.js), então não passa mais por este snapshot local.
+/* Indicadores "computed" exibidos no dashboard — "tempo_contratacao" do card
+   é calculado sobre as vagas do período (ver useDashboardData.js), não por
+   este snapshot local.
    Headcount, Retenção e Tempo de permanência não entram mais aqui: viraram
    lançamento manual mensal (form "mensal"). */
 export function computedSnapshot(indId, state) {
@@ -257,8 +259,11 @@ export function syncAll() {
   activeStates().forEach((state) => syncVacancyIndicator(state));
 
   /* Reconcilia o custo das vagas: garante um lançamento para toda vaga com
-     salário (inclusive as criadas antes desta regra). */
-  getVacancies().forEach((v) => syncVacancyCost(v));
+     salário (inclusive as criadas antes desta regra). O índice por vaga é
+     montado uma vez — antes cada vaga varria e reordenava a lista inteira de
+     lançamentos (O(vagas × lançamentos)). */
+  const costByVacancy = costEntriesByVacancy();
+  getVacancies().forEach((v) => syncVacancyCost(v, costByVacancy));
 }
 
 /* Estados cujos dados já estão em memória (otimização de carga). */
@@ -271,12 +276,8 @@ export function activeStates() {
 /* ---------- Vagas (Tempo médio de contratação) ---------- */
 
 export function listVacancies(state) {
-  let list = getVacancies();
-  if (state && state !== "todos") {
-    list = list.filter((v) => sameState(v.estado, state));
-  }
   /* Tolerante a vagas sem data de abertura (dados legados/importados). */
-  return list
+  return filterByState(getVacancies(), state)
     .slice()
     .sort((a, b) => String(b.openAt || "").localeCompare(String(a.openAt || "")));
 }
@@ -383,9 +384,29 @@ export function closeVacancies(ids, closeDate = null) {
    (um por vaga), esteja ela aberta ou fechada. A data do lançamento é a do
    fechamento quando houver; senão, a da abertura. Editar/limpar o salário
    atualiza ou remove o lançamento; excluir a vaga também remove. */
-function syncVacancyCost(vacancy) {
+function shallowEqual(a, b) {
+  const x = a || {};
+  const y = b || {};
+  const keys = Object.keys(x);
+  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
+}
+
+/* Último lançamento de custo de cada vaga (vacancyId → lançamento). Mesma
+   regra de getLatestForMeta (o mais recente na ordem por data), mas para todas
+   as vagas de uma vez. */
+function costEntriesByVacancy() {
+  const byVacancy = new Map();
+  getEntriesFor("custo_contratacao").forEach((e) => {
+    if (e.meta && e.meta.vacancyId) byVacancy.set(e.meta.vacancyId, e);
+  });
+  return byVacancy;
+}
+
+function syncVacancyCost(vacancy, costByVacancy) {
   if (!vacancy) return;
-  const existing = getLatestForMeta("custo_contratacao", "vacancyId", vacancy.id);
+  const existing = costByVacancy
+    ? costByVacancy.get(vacancy.id) || null
+    : getLatestForMeta("custo_contratacao", "vacancyId", vacancy.id);
   const salario = moneyOrNull(vacancy.salario);
   if (salario === null) {
     if (existing) removeEntry("custo_contratacao", existing.id);
@@ -395,6 +416,17 @@ function syncVacancyCost(vacancy) {
   const meta = { vacancyId: vacancy.id, vacancyName: vacancy.name, source: "vaga" };
   if (vacancy.estado) meta.estado = vacancy.estado;
   if (existing) {
+    /* Sem mudança, não toca no lançamento: cada updateEntry enfileira uma
+       gravação no servidor (e uma linha no changelog que todos os clientes
+       precisam baixar no próximo delta). O syncAll roda a cada troca de estado
+       e a cada boot — antes regravava o custo de TODAS as vagas toda vez. */
+    if (
+      Number(existing.value) === salario &&
+      existing.date === date &&
+      shallowEqual(existing.meta, meta)
+    ) {
+      return;
+    }
     updateEntry("custo_contratacao", existing.id, { value: salario, date, meta });
   } else {
     addEntry("custo_contratacao", { date, value: salario, state: vacancy.estado, meta });
@@ -440,11 +472,7 @@ function dateWithinRange(dateVal, range) {
    para vagas. */
 
 export function listTurnoverEntries(state) {
-  let list = getTurnovers();
-  if (state && state !== "todos") {
-    list = list.filter((t) => sameState(t.estado, state));
-  }
-  return list
+  return filterByState(getTurnovers(), state)
     .slice()
     .sort((a, b) => String(b.mesReferencia || "").localeCompare(String(a.mesReferencia || "")));
 }
@@ -469,7 +497,8 @@ function monthWithinRange(ym, range) {
    Headcount no cálculo do Turnover — ver turnoverRateStats). `range` null
    soma o total já lançado. */
 export function turnoverQuantitiesInRange(state, range) {
-  const list = listTurnoverEntries(state);
+  /* A soma não depende da ordem: usa a lista sem a cópia ordenada. */
+  const list = filterByState(getTurnovers(), state);
   const filtered = range ? list.filter((t) => monthWithinRange(t.mesReferencia, range)) : list;
   return filtered.reduce(
     (acc, t) => {
@@ -529,11 +558,7 @@ export function deleteTurnoverEntries(ids) {
    Turnover nem no Headcount. */
 
 export function listPermanenciaRecords(state) {
-  let list = getPermanencias();
-  if (state && state !== "todos") {
-    list = list.filter((p) => sameState(p.estado, state));
-  }
-  return list
+  return filterByState(getPermanencias(), state)
     .slice()
     .sort((a, b) => String(b.dataDemissao || "").localeCompare(String(a.dataDemissao || "")));
 }
@@ -542,7 +567,7 @@ export function listPermanenciaRecords(state) {
    permanência — só entram registros com as duas datas preenchidas. Filtrado
    no período pela data de demissão. */
 export function turnoverAvgTenureDays(state, range) {
-  let list = listPermanenciaRecords(state).filter((p) => p.dataAdmissao && p.dataDemissao);
+  let list = filterByState(getPermanencias(), state).filter((p) => p.dataAdmissao && p.dataDemissao);
   if (range) list = list.filter((p) => dateWithinRange(p.dataDemissao, range));
   if (!list.length) return null;
   const total = list.reduce((sum, p) => sum + (daysBetween(p.dataAdmissao, p.dataDemissao) || 0), 0);
@@ -608,10 +633,7 @@ function activeInMonth(h, ym) {
    Sem mês informado, devolve todos os registros (cadastro completo, sem
    reconstrução histórica) — usado pela busca por código na importação. */
 export function listHeadcountRecords(state, mesReferencia) {
-  let list = getHeadcounts();
-  if (state && state !== "todos") {
-    list = list.filter((h) => sameState(h.estado, state));
-  }
+  let list = filterByState(getHeadcounts(), state);
   if (mesReferencia) list = list.filter((h) => activeInMonth(h, mesReferencia));
   return list
     .slice()
@@ -625,8 +647,7 @@ export function headcountCount(state, mesReferencia) {
 /* Contagem no período (reconstrução "como estava" no mês do período) —
    `range` null cai no total de registros já lançados (sem reconstrução). */
 export function headcountCountInRange(state, range) {
-  let list = getHeadcounts();
-  if (state && state !== "todos") list = list.filter((h) => sameState(h.estado, state));
+  const list = filterByState(getHeadcounts(), state);
   if (!range) return list.length;
   const ym = String(range.end || range.start || "").slice(0, 7);
   if (!ym) return list.length;
@@ -642,9 +663,9 @@ export function headcountCountInRange(state, range) {
 export function findHeadcountByCodigo(state, codigo, filialId) {
   const key = String(codigo || "").trim().toLowerCase();
   if (!key) return null;
-  let list = getHeadcounts();
-  if (state && state !== "todos") list = list.filter((h) => sameState(h.estado, state));
-  list = list.filter((h) => String(h.codigo || "").trim().toLowerCase() === key);
+  const list = filterByState(getHeadcounts(), state).filter(
+    (h) => String(h.codigo || "").trim().toLowerCase() === key
+  );
   if (filialId !== undefined) {
     const fid = filialId || null;
     return list.find((h) => (h.filialId || null) === fid) || null;

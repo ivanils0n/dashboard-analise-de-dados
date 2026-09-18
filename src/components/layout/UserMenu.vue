@@ -110,11 +110,11 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
       @click="toggle"
     >
       <span
-        class="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-sm font-bold text-white"
+        class="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-base font-bold text-white"
       >
         {{ initial }}
       </span>
-      <span class="hidden text-sm font-medium text-zinc-200 sm:inline">
+      <span class="hidden text-[15px] font-medium text-zinc-200 sm:inline">
         {{ displayName.split(" ")[0] }}
       </span>
     </button>

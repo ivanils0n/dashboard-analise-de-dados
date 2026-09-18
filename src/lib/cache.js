@@ -39,13 +39,22 @@ export const DataCache = {
     }
   },
 
+  /* Devolve false quando o navegador recusou a gravação (cota cheia). Quem
+     grava em lote precisa checar: um cache parcial com a versão do delta
+     gravada faria o próximo boot "restaurar" dados incompletos. */
   setItem(tabela, id, data) {
-    safeSetItem(sessionStore, this.keyFor(tabela, id), JSON.stringify(data));
+    return safeSetItem(sessionStore, this.keyFor(tabela, id), JSON.stringify(data));
   },
 
   removeItem(tabela, id) {
     try {
       sessionStore.removeItem(this.keyFor(tabela, id));
+    } catch (e) {}
+  },
+
+  removeKey(key) {
+    try {
+      sessionStore.removeItem(key);
     } catch (e) {}
   },
 

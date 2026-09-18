@@ -16,11 +16,22 @@ delta.get("/version", async (c) => {
   return ok(c, { versao: Number(rows[0]?.versao) || 0 });
 });
 
+// Devolve só a última alteração de cada registro desde `versao`: o cliente
+// aplica "último vence", então editar o mesmo registro várias vezes não
+// precisa trafegar todas as versões intermediárias. A linha de maior id
+// sempre sobrevive (é a última do próprio registro), então `versaoAtual`
+// continua sendo o maior id do changelog.
 delta.get("/sync", async (c) => {
   const versao = Number(c.req.query("versao")) || 0;
   const { rows } = await query(
     c.env,
-    "select id, tabela, registro_id, operacao, dados from public.registro_alteracoes where id > $1 order by id",
+    `select id, tabela, registro_id, operacao, dados from (
+       select distinct on (tabela, registro_id) id, tabela, registro_id, operacao, dados
+       from public.registro_alteracoes
+       where id > $1
+       order by tabela, registro_id, id desc
+     ) latest
+     order by id`,
     [versao]
   );
   const versaoAtual = rows.length ? Number(rows[rows.length - 1].id) : versao;

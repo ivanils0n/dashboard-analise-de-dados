@@ -15,7 +15,7 @@ const isVisitor = computed(() => {
 <template>
   <div class="min-h-screen bg-ice text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
     <TopBar />
-    <div class="flex min-h-[calc(100vh-4rem)] items-start">
+    <div class="flex min-h-[calc(100vh-5rem)] items-start">
       <SideBar v-if="!isVisitor" />
       <main class="min-w-0 flex-1 px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <router-view v-slot="{ Component, route }">

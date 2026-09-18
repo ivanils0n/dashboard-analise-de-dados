@@ -8,7 +8,7 @@ const { state, setState } = useFilters();
 <template>
   <select
     :value="state.current"
-    class="rounded-lg border border-zinc-700 bg-[#0a0a0a] px-3 py-1.5 text-sm font-medium text-zinc-200 outline-none transition hover:bg-zinc-800 focus:border-accent"
+    class="rounded-lg border border-zinc-700 bg-[#0a0a0a] px-4 py-2.5 text-[15px] font-medium text-zinc-200 outline-none transition hover:bg-zinc-800 focus:border-accent"
     aria-label="Filtro por Estado"
     title="Filtro por Estado"
     @change="setState($event.target.value)"

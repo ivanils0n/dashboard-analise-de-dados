@@ -17,24 +17,24 @@ const showStateFilter = computed(() =>
 
 <template>
   <header
-    class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-zinc-800 bg-[#0a0a0a] px-4 sm:px-5"
+    class="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-zinc-800 bg-[#0a0a0a] px-4 sm:px-5"
   >
     <a href="#/dashboard" class="flex items-center" aria-label="Gente & Gestão — Dashboard">
-      <img src="/logo.png" alt="Gente & Gestão" class="h-10 w-auto max-w-[170px] object-contain" />
+      <img src="/logo.png" alt="Gente & Gestão" class="h-16 w-auto max-w-[260px] object-contain" />
     </a>
 
     <div class="flex items-center gap-2">
       <button
         type="button"
-        class="rounded-lg border border-zinc-700 px-3 py-1.5 text-zinc-200 transition hover:bg-zinc-800"
+        class="rounded-lg border border-zinc-700 px-3.5 py-2.5 text-zinc-200 transition hover:bg-zinc-800"
         aria-label="Alternar modo noturno"
         title="Alternar modo noturno"
         @click="toggle"
       >
-        <svg v-if="!isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg v-if="!isDark" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg v-else width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="4" />
           <line x1="12" y1="2" x2="12" y2="4" />
           <line x1="12" y1="20" x2="12" y2="22" />

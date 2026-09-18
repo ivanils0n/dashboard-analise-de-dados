@@ -26,7 +26,7 @@ audit.get("/", async (c) => {
 
 audit.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  if (!Number.isFinite(id)) return fail(c, 400, "ID inválido.", "invalid_field");
+  if (!Number.isInteger(id)) return fail(c, 400, "ID inválido.", "invalid_field");
 
   const change = await getChange(c.env, id);
   if (!change) return fail(c, 404, "Registro não encontrado.", "not_found");

@@ -318,20 +318,35 @@ export function replaceFromCache(cached) {
   Object.assign(data, d);
 }
 
+/* Junta itens novos a uma lista sem duplicar ids. Usa um Set dos ids já
+   presentes (O(n)) — a versão anterior fazia `some` para cada item, ou seja
+   O(n²), o que travava a tela na carga inicial de históricos grandes. Devolve
+   a lista resultante (nova), ou null quando nada foi acrescentado. */
+function mergeNewItems(current, incoming) {
+  if (!incoming || !incoming.length) return null;
+  const known = new Set(current.map((x) => x.id));
+  const fresh = [];
+  incoming.forEach((item) => {
+    if (known.has(item.id)) return;
+    known.add(item.id);
+    fresh.push({ ...item });
+  });
+  return fresh.length ? current.concat(fresh) : null;
+}
+
 export function mergeFromRemote(remoteData) {
   Object.entries(remoteData.entries || {}).forEach(([indicatorId, list]) => {
-    if (!data.entries[indicatorId]) data.entries[indicatorId] = [];
-    list.forEach((entry) => {
-      if (!data.entries[indicatorId].some((e) => e.id === entry.id)) {
-        data.entries[indicatorId].push({ ...entry });
-      }
-    });
-    data.entries[indicatorId].sort((a, b) => compareDateAsc(a.date, b.date));
+    const merged = mergeNewItems(data.entries[indicatorId] || [], list);
+    if (merged) {
+      merged.sort((a, b) => compareDateAsc(a.date, b.date));
+      data.entries[indicatorId] = merged;
+    } else if (!data.entries[indicatorId]) {
+      data.entries[indicatorId] = [];
+    }
   });
   ["employees", "vacancies", "turnovers", "permanencias", "headcounts", "branches", "departments"].forEach((key) => {
-    (remoteData[key] || []).forEach((item) => {
-      if (!data[key].some((x) => x.id === item.id)) data[key].push({ ...item });
-    });
+    const merged = mergeNewItems(data[key], remoteData[key]);
+    if (merged) data[key] = merged;
   });
 }
 
@@ -339,4 +354,22 @@ export function upsertInList(list, item) {
   const idx = list.findIndex((x) => x.id === item.id);
   if (idx >= 0) list[idx] = item;
   else list.push(item);
+}
+
+/* Versão em lote de upsertInList: indexa a lista uma vez (O(n + k)) em vez de
+   varrê-la a cada item (O(n × k)) — usada pelo delta sync, que pode trazer
+   centenas de alterações de uma vez. */
+export function upsertManyInList(list, items) {
+  if (!items.length) return;
+  const index = new Map();
+  list.forEach((x, i) => index.set(x.id, i));
+  items.forEach((item) => {
+    const i = index.get(item.id);
+    if (i !== undefined) {
+      list[i] = item;
+    } else {
+      index.set(item.id, list.length);
+      list.push(item);
+    }
+  });
 }

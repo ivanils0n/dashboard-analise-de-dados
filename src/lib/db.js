@@ -9,13 +9,15 @@ import {
   mergeFromRemote,
   replaceFromCache,
   resetData,
-  upsertInList,
+  upsertManyInList,
   useData
 } from "./store";
-import { sessionStore, compareDateAsc } from "./utils";
+import { compareDateAsc, sameState } from "./utils";
 import { beginLoading, endLoading } from "../composables/useLoading";
+import { useToast } from "../composables/useToast";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
+const MAX_FLUSH_RETRIES = 3; // tentativas extras após falha de rede/servidor
 
 /* Corrige timestamps "hora local" para o Postgres sem duplicar fuso.
    Valores que já vêm do banco com fuso (Z ou ±HH:MM) são preservados. */
@@ -157,6 +159,14 @@ function departmentToRow(department) {
 
 const _queue = {};
 let _flushTimer = null;
+let _flushRetries = 0;
+let _flushChain = Promise.resolve();
+
+/* Incrementa a cada logout/login (resetLocalState). Respostas de requisições
+   iniciadas por uma sessão anterior comparam a época e se descartam — sem
+   isso, um download em andamento no logout despejava dados do usuário
+   anterior na memória do próximo. */
+let _epoch = 0;
 
 function _enqueue(table, id, op) {
   if (!_queue[table]) _queue[table] = new Map();
@@ -164,49 +174,99 @@ function _enqueue(table, id, op) {
   _schedule();
 }
 
-function _schedule() {
+function _schedule(delay = FLUSH_DELAY_MS) {
   if (_flushTimer) return;
   _flushTimer = setTimeout(() => {
     _flushTimer = null;
     flush();
-  }, FLUSH_DELAY_MS);
+  }, delay);
 }
 
-export async function flush() {
+/* Falha de rede (sem status), timeout (0), 408/429 e 5xx merecem nova
+   tentativa; 4xx (validação, permissão, sessão) não melhora repetindo. */
+function _isRetriable(err) {
+  const status = err && err.status;
+  return !status || status >= 500 || status === 429 || status === 408;
+}
+
+/* Devolve à fila as operações de uma tabela que falharam, sem sobrescrever
+   uma operação mais nova para o mesmo registro. */
+function _requeue(table, ops) {
+  if (!_queue[table]) _queue[table] = new Map();
+  ops.forEach((op, id) => {
+    if (!_queue[table].has(id)) _queue[table].set(id, op);
+  });
+}
+
+/* Limite do corpo de uma requisição `keepalive` (usada ao fechar a aba) é
+   64 KB; acima disso o navegador rejeita a requisição. */
+const KEEPALIVE_MAX_BYTES = 60000;
+
+/* Envios são serializados: dois flushes simultâneos poderiam entregar
+   "editar X" e "excluir X" fora de ordem ao servidor. */
+export function flush({ keepalive = false } = {}) {
+  _flushChain = _flushChain.then(() => _flushNow(keepalive)).catch(() => {});
+  return _flushChain;
+}
+
+async function _flushNow(keepalive) {
+  const epoch = _epoch;
   const jobs = [];
 
   Object.keys(_queue).forEach((table) => {
     const map = _queue[table];
     if (!map || !map.size) return;
+    const ops = new Map(map);
+    map.clear();
+
     const upserts = [];
     const deletes = [];
-    map.forEach((op) => {
+    ops.forEach((op) => {
       if (op.type === "upsert") upserts.push(op.row);
       else deletes.push(op.id);
     });
-    map.clear();
-    if (upserts.length || deletes.length) {
-      jobs.push({
-        table,
-        promise: apiFetch(`/api/data/${table}`, { method: "POST", body: { upserts, deletes } })
-      });
-    }
+    const body = { upserts, deletes };
+    const useKeepalive = keepalive && JSON.stringify(body).length < KEEPALIVE_MAX_BYTES;
+    jobs.push({
+      table,
+      ops,
+      promise: apiFetch(`/api/data/${table}`, { method: "POST", body, keepalive: useKeepalive })
+    });
   });
 
   if (!jobs.length) return;
 
-  const results = await Promise.all(
-    jobs.map((job) =>
-      Promise.resolve(job.promise)
-        .then(() => ({ table: job.table, error: null }))
-        .catch((err) => ({ table: job.table, error: err }))
-    )
-  );
-  results.forEach(({ table, error }) => {
+  const errors = await Promise.all(jobs.map((job) => job.promise.then(() => null, (err) => err)));
+
+  let willRetry = false;
+  let dropped = 0;
+  errors.forEach((error, i) => {
     if (!error) return;
+    const { table, ops } = jobs[i];
     const status = error.status || error.code;
     console.error(`[API] ${table}`, status ? `(${status}) ` : "", error.message || error);
+
+    /* Só devolve à fila se a sessão é a mesma: escritas do usuário anterior
+       nunca podem ser reenviadas com o token do próximo. */
+    if (epoch === _epoch && _isRetriable(error) && _flushRetries < MAX_FLUSH_RETRIES) {
+      _requeue(table, ops);
+      willRetry = true;
+    } else if (epoch === _epoch) {
+      dropped += ops.size;
+    }
   });
+
+  if (willRetry) {
+    _flushRetries += 1;
+    _schedule(FLUSH_DELAY_MS * 2 ** _flushRetries);
+  } else {
+    _flushRetries = 0;
+  }
+  if (dropped) {
+    useToast().show(
+      `Não foi possível salvar ${dropped} alteração(ões) no servidor. Recarregue os dados e refaça, se necessário.`
+    );
+  }
 }
 
 export function registerRemote() {
@@ -268,16 +328,15 @@ export function registerRemote() {
   });
 }
 
+function entryFromRow(row) {
+  return { id: row.id, date: row.data, value: Number(row.valor), meta: row.meta || null };
+}
+
 function mapRemoteEntries(rows) {
   const mapped = {};
   rows.forEach((row) => {
     if (!mapped[row.indicador_id]) mapped[row.indicador_id] = [];
-    mapped[row.indicador_id].push({
-      id: row.id,
-      date: row.data,
-      value: Number(row.valor),
-      meta: row.meta || null
-    });
+    mapped[row.indicador_id].push(entryFromRow(row));
   });
   return mapped;
 }
@@ -389,6 +448,66 @@ function mapRemoteDepartment(row, impliedState) {
   };
 }
 
+/* Tabelas de dados por estado (nome-base → lista do store + mapeador de linha).
+   Fonte única para restaurar do cache, aplicar delta e hidratar — antes cada
+   um desses caminhos repetia a mesma cadeia de if/else. `lancamentos` é
+   tratado à parte (agrupa por indicador). */
+const TABLE_KINDS = {
+  colaboradores: { key: "employees", map: mapRemoteEmployee },
+  vagas: { key: "vacancies", map: mapRemoteVacancy },
+  turnover: { key: "turnovers", map: mapRemoteTurnover },
+  permanencia: { key: "permanencias", map: mapRemotePermanencia },
+  headcount: { key: "headcounts", map: mapRemoteHeadcount },
+  filiais: { key: "branches", map: mapRemoteBranch },
+  departamentos: { key: "departments", map: mapRemoteDepartment }
+};
+const KIND_KEYS = Object.values(TABLE_KINDS).map((kind) => kind.key);
+const DATA_TABLES = Object.keys(TABLE_KINDS);
+
+/* "colaboradores_ro" → { base: "colaboradores", estado: "RO" } */
+function splitTable(tabela) {
+  const i = tabela.lastIndexOf("_");
+  return i > 0
+    ? { base: tabela.slice(0, i), estado: tabela.slice(i + 1).toUpperCase() }
+    : { base: tabela, estado: "" };
+}
+
+function emptyPayload() {
+  return {
+    entries: {},
+    employees: [],
+    vacancies: [],
+    turnovers: [],
+    permanencias: [],
+    headcounts: [],
+    branches: [],
+    departments: []
+  };
+}
+
+function statesOf(state) {
+  return state === "todos" ? STATES.slice() : [state || DEFAULT_STATE];
+}
+
+/* Coloca uma linha do banco no payload do store. Devolve a data do
+   lançamento (usada para saber até onde o histórico está carregado) ou null. */
+function addRowToPayload(payload, tabela, row, estado) {
+  const { base } = splitTable(tabela);
+  if (base === "lancamentos") {
+    const indicator = row.indicador_id || "headcount";
+    if (!payload.entries[indicator]) payload.entries[indicator] = [];
+    payload.entries[indicator].push(entryFromRow(row));
+    return row.data || null;
+  }
+  const kind = TABLE_KINDS[base];
+  if (kind) payload[kind.key].push(kind.map(row, estado));
+  return null;
+}
+
+function sortEntries(entries) {
+  Object.keys(entries).forEach((k) => entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
+}
+
 const _loadedStates = {};
 
 export function loadedStates() {
@@ -405,7 +524,14 @@ export function loadedStates() {
    completo (fallback ou carga antiga); `undefined` = ainda não se sabe. */
 const LANCAMENTOS_WINDOW_MONTHS = 24;
 const LANCAMENTOS_PAGE_LIMIT = 500;
+/* Páginas de lançamentos buscadas em paralelo (limitado para não abrir dezenas
+   de conexões ao banco de uma vez). */
+const LANCAMENTOS_PAGE_CONCURRENCY = 4;
 const _coveredSince = {};
+
+/* Marcado quando o navegador recusa uma gravação do cache local (cota cheia):
+   o cache fica incompleto e não pode receber a versão do delta. */
+let _cacheDirty = false;
 
 function isoMonthsAgo(months) {
   const d = new Date();
@@ -422,56 +548,54 @@ function shiftDayISO(iso, deltaDays) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/* Executa `fn` sobre os itens com no máximo `limit` chamadas simultâneas,
+   preservando a ordem dos resultados. */
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/* Grava linhas no cache local; para na primeira recusa e marca o cache como
+   incompleto (ver _cacheDirty). */
+function persistRows(tabela, rows) {
+  for (let i = 0; i < rows.length; i++) {
+    if (!DataCache.setItem(tabela, rows[i].id, rows[i])) {
+      _cacheDirty = true;
+      return false;
+    }
+  }
+  return true;
+}
+
 /* Pagina a rota REST de lançamentos (limite 500/página) até completar o
-   intervalo pedido. `dataAte` opcional (sem teto = até hoje). */
+   intervalo pedido. `dataAte` opcional (sem teto = até hoje). A primeira
+   página revela o total de páginas; as demais são buscadas em paralelo. */
 async function fetchLancamentosRange(state, dataDe, dataAte) {
   const suffix = state.toLowerCase();
-  const rows = [];
-  let page = 1;
-  for (;;) {
+  const fetchPage = (page) => {
     const params = new URLSearchParams({ limit: String(LANCAMENTOS_PAGE_LIMIT), page: String(page) });
     if (dataDe) params.set("data_de", dataDe);
     if (dataAte) params.set("data_ate", dataAte);
-    const res = await apiFetch(`/api/lancamentos/${suffix}?${params.toString()}`);
-    const pageRows = (res && res.data) || [];
-    rows.push(...pageRows);
-    const totalPages = (res && res.pagination && res.pagination.totalPages) || 0;
-    if (!pageRows.length || page >= totalPages) break;
-    page += 1;
+    return apiFetch(`/api/lancamentos/${suffix}?${params.toString()}`);
+  };
+
+  const first = await fetchPage(1);
+  const rows = [...((first && first.data) || [])];
+  const totalPages = (first && first.pagination && first.pagination.totalPages) || 0;
+  if (totalPages > 1) {
+    const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+    const rest = await mapLimit(pages, LANCAMENTOS_PAGE_CONCURRENCY, fetchPage);
+    rest.forEach((res) => rows.push(...((res && res.data) || [])));
   }
   return rows;
-}
-
-/* Busca as vagas de um estado abertas dentro do período informado (paginado,
-   via /api/vagas/:estado?data_de=&data_ate=). Usada só pelo card de Tempo
-   médio de contratação — não grava no cache local nem no store global: as
-   demais telas (modal de Vagas, Headcount, aba "Vaga" do Lançamento, e a
-   sincronização de custo por vaga) continuam com a lista completa já
-   carregada por hydrateOneState, sem depender do filtro de data do
-   dashboard. `dataDe`/`dataAte` (opcionais, "YYYY-MM-DD") vêm do filtro de
-   período; sem eles, baixa todas as vagas do estado (paginado). */
-async function fetchVagasRangeOneState(state, dataDe, dataAte) {
-  const suffix = state.toLowerCase();
-  const rows = [];
-  let page = 1;
-  for (;;) {
-    const params = new URLSearchParams({ limit: "500", page: String(page) });
-    if (dataDe) params.set("data_de", dataDe);
-    if (dataAte) params.set("data_ate", `${dataAte}T23:59:59`);
-    const res = await apiFetch(`/api/vagas/${suffix}?${params.toString()}`);
-    const pageRows = (res && res.data) || [];
-    rows.push(...pageRows.map((r) => mapRemoteVacancy(r, state)));
-    const totalPages = (res && res.pagination && res.pagination.totalPages) || 0;
-    if (!pageRows.length || page >= totalPages) break;
-    page += 1;
-  }
-  return rows;
-}
-
-export async function fetchVagasInRange(state, dataDe, dataAte) {
-  const states = state === "todos" ? STATES.slice() : [state];
-  const lists = await Promise.all(states.map((s) => fetchVagasRangeOneState(s, dataDe, dataAte)));
-  return lists.flat();
 }
 
 /* Lançamentos da carga inicial de um estado: tenta a janela recente
@@ -502,8 +626,7 @@ async function fetchLancamentosInitial(state, suffix) {
    já está coberta. */
 export async function ensureLancamentosSince(next, neededStartISO) {
   if (!neededStartISO) return;
-  const states = next === "todos" ? STATES.slice() : [next];
-  const targets = states.filter((s) => {
+  const targets = statesOf(next).filter((s) => {
     if (!_loadedStates[s]) return false;
     const covered = _coveredSince[s];
     if (covered === null || covered === undefined) return false;
@@ -511,6 +634,7 @@ export async function ensureLancamentosSince(next, neededStartISO) {
   });
   if (!targets.length) return;
 
+  const epoch = _epoch;
   beginLoading("Carregando período anterior...");
   try {
     await Promise.all(
@@ -519,7 +643,8 @@ export async function ensureLancamentosSince(next, neededStartISO) {
         const dataAte = shiftDayISO(_coveredSince[s], -1);
         try {
           const rows = await fetchLancamentosRange(s, neededStartISO, dataAte);
-          rows.forEach((r) => DataCache.setItem(`lancamentos_${suffix}`, r.id, r));
+          if (epoch !== _epoch) return;
+          persistRows(`lancamentos_${suffix}`, rows);
           mergeFromRemote({ entries: mapRemoteEntries(rows) });
           _coveredSince[s] = neededStartISO;
         } catch (err) {
@@ -527,6 +652,10 @@ export async function ensureLancamentosSince(next, neededStartISO) {
         }
       })
     );
+    if (_cacheDirty) {
+      DataCache.resetAll();
+      _cacheDirty = false;
+    }
   } finally {
     endLoading();
   }
@@ -535,21 +664,35 @@ export async function ensureLancamentosSince(next, neededStartISO) {
 /* Baixa os dados dos estados informados, exibindo a tela de carregamento
    enquanto houver rede. */
 export async function hydrate(state) {
-  state = state || DEFAULT_STATE;
-  const states = state === "todos" ? STATES.slice() : [state];
+  const states = statesOf(state);
   if (states.every((s) => _loadedStates[s])) return true;
   beginLoading();
   try {
-    return await _hydrate(state);
+    return await _hydrateStates(states);
   } finally {
     endLoading();
   }
 }
 
-/* Baixa e grava em cache as 6 tabelas de um único estado. Cada estado é
-   isolado dos demais (ver _hydrate): a falha de um (ex.: timeout numa
+/* Uma única descida por estado por vez: vários componentes (modais, filtros,
+   a própria tela) pedem o mesmo estado ao mesmo tempo, e cada pedido repetia
+   o download completo. */
+const _stateInflight = new Map();
+
+function hydrateOneState(s) {
+  let promise = _stateInflight.get(s);
+  if (!promise) {
+    promise = loadStateFromApi(s).finally(() => _stateInflight.delete(s));
+    _stateInflight.set(s, promise);
+  }
+  return promise;
+}
+
+/* Baixa e grava em cache as 8 tabelas de um único estado. Cada estado é
+   isolado dos demais (ver _hydrateStates): a falha de um (ex.: timeout numa
    consulta grande) não impede os outros de serem carregados e marcados. */
-async function hydrateOneState(s) {
+async function loadStateFromApi(s) {
+  const epoch = _epoch;
   const suffix = s.toLowerCase();
   const fetchTable = async (name) => {
     try {
@@ -559,17 +702,15 @@ async function hydrateOneState(s) {
       return { error: err };
     }
   };
-  const [lan, vac, tur, per, hc, col, fil, dep] = await Promise.all([
+  const [lan, ...others] = await Promise.all([
     fetchLancamentosInitial(s, suffix),
-    fetchTable(`vagas_${suffix}`),
-    fetchTable(`turnover_${suffix}`),
-    fetchTable(`permanencia_${suffix}`),
-    fetchTable(`headcount_${suffix}`),
-    fetchTable(`colaboradores_${suffix}`),
-    fetchTable(`filiais_${suffix}`),
-    fetchTable(`departamentos_${suffix}`)
+    ...DATA_TABLES.map((base) => fetchTable(`${base}_${suffix}`))
   ]);
-  const errored = [lan, vac, tur, per, hc, col, fil, dep].filter((res) => res && res.error);
+
+  // Logout/login durante o download: descarta em vez de misturar sessões.
+  if (epoch !== _epoch) return false;
+
+  const errored = [lan, ...others].filter((res) => res && res.error);
   if (errored.length) {
     // Não marca o estado como carregado quando a consulta falha (ex.: sem
     // sessão autenticada ainda). Assim o estado é baixado novamente no
@@ -581,33 +722,18 @@ async function hydrateOneState(s) {
 
   const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
   const rowsLan = rowsOf(lan);
-  const rowsVac = rowsOf(vac);
-  const rowsTur = rowsOf(tur);
-  const rowsPer = rowsOf(per);
-  const rowsHc = rowsOf(hc);
-  const rowsCol = rowsOf(col);
-  const rowsFil = rowsOf(fil);
-  const rowsDep = rowsOf(dep);
+  const payload = emptyPayload();
+  payload.entries = mapRemoteEntries(rowsLan);
 
-  rowsLan.forEach((r) => DataCache.setItem(`lancamentos_${suffix}`, r.id, r));
-  rowsVac.forEach((r) => DataCache.setItem(`vagas_${suffix}`, r.id, r));
-  rowsTur.forEach((r) => DataCache.setItem(`turnover_${suffix}`, r.id, r));
-  rowsPer.forEach((r) => DataCache.setItem(`permanencia_${suffix}`, r.id, r));
-  rowsHc.forEach((r) => DataCache.setItem(`headcount_${suffix}`, r.id, r));
-  rowsCol.forEach((r) => DataCache.setItem(`colaboradores_${suffix}`, r.id, r));
-  rowsFil.forEach((r) => DataCache.setItem(`filiais_${suffix}`, r.id, r));
-  rowsDep.forEach((r) => DataCache.setItem(`departamentos_${suffix}`, r.id, r));
-
-  mergeFromRemote({
-    entries: mapRemoteEntries(rowsLan),
-    vacancies: rowsVac.map((r) => mapRemoteVacancy(r, s)),
-    turnovers: rowsTur.map((r) => mapRemoteTurnover(r, s)),
-    permanencias: rowsPer.map((r) => mapRemotePermanencia(r, s)),
-    headcounts: rowsHc.map((r) => mapRemoteHeadcount(r, s)),
-    employees: rowsCol.map((r) => mapRemoteEmployee(r, s)),
-    branches: rowsFil.map((r) => mapRemoteBranch(r, s)),
-    departments: rowsDep.map((r) => mapRemoteDepartment(r, s))
+  let persisted = persistRows(`lancamentos_${suffix}`, rowsLan);
+  DATA_TABLES.forEach((base, i) => {
+    const rows = rowsOf(others[i]);
+    if (persisted) persisted = persistRows(`${base}_${suffix}`, rows);
+    const kind = TABLE_KINDS[base];
+    payload[kind.key] = rows.map((row) => kind.map(row, s));
   });
+
+  mergeFromRemote(payload);
   _loadedStates[s] = true;
   return true;
 }
@@ -616,33 +742,67 @@ async function hydrateOneState(s) {
    com await, que somava a latência de cada estado em vez de correr junto —
    a causa principal da demora ao entrar com o filtro em "todos", que carrega
    RO+AM+PA de uma vez). */
-async function _hydrate(state) {
-  state = state || DEFAULT_STATE;
-  const states = state === "todos" ? STATES.slice() : [state];
+async function _hydrateStates(states) {
   const pending = states.filter((s) => !_loadedStates[s]);
   if (!pending.length) return true;
 
+  /* A versão do delta é lida ANTES do download: o que mudar durante o
+     download volta no próximo delta (reaplicar é idempotente). Lida depois,
+     uma alteração feita nesse intervalo ficava para sempre fora do cache. */
+  const versionBefore = await deltaVersao();
   const results = await Promise.all(pending.map((s) => hydrateOneState(s)));
-  const loadedAny = results.some(Boolean);
-
-  if (loadedAny) {
-    const v = await deltaVersao();
-    if (v) DataCache.setVersion(v);
-  }
   const loaded = pending.filter((_, i) => results[i]);
-  if (loaded.length) console.info(`[API] Dados carregados: ${loaded.join(", ")}.`);
+
+  if (loaded.length) {
+    if (_cacheDirty) {
+      // Cache incompleto (cota cheia): descarta tudo — o próximo boot baixa de novo.
+      DataCache.resetAll();
+      _cacheDirty = false;
+    } else if (versionBefore) {
+      /* Se outros estados já estavam em memória, a versão gravada por eles
+         (mais antiga) é mantida: avançá-la esconderia deles as alterações
+         intermediárias. */
+      const othersLoaded = STATES.some((s) => _loadedStates[s] && !pending.includes(s));
+      if (!othersLoaded || !DataCache.getVersion()) DataCache.setVersion(versionBefore);
+    }
+    console.info(`[API] Dados carregados: ${loaded.join(", ")}.`);
+  }
   return results.every(Boolean);
 }
 
-const STATE_TABLES = ["lancamentos_", "vagas_", "turnover_", "permanencia_", "headcount_", "colaboradores_", "filiais_", "departamentos_"];
+function keyTable(key) {
+  return key.slice("ggd:".length).split(":")[0] || "";
+}
 
+/* Chaves do cache local que pertencem a um estado (sufixo "ro"/"am"/"pa"). */
 function stateCachedKeys(suffix) {
-  const out = [];
-  DataCache.keys().forEach((key) => {
-    const tabela = key.slice("ggd:".length).split(":")[0] || "";
-    if (STATE_TABLES.some((p) => tabela.indexOf(p + suffix) === 0)) out.push(key);
+  return DataCache.keys().filter((key) => {
+    const { base, estado } = splitTable(keyTable(key));
+    return estado.toLowerCase() === suffix && (base === "lancamentos" || base in TABLE_KINDS);
   });
-  return out;
+}
+
+/* Remove do cache local tudo de um estado, para que ele seja baixado por
+   inteiro na próxima vez (nunca fica um cache "meio atualizado"). */
+function dropStateCache(estado) {
+  stateCachedKeys(estado.toLowerCase()).forEach((key) => DataCache.removeKey(key));
+}
+
+/* Tira da memória os dados de um estado — usado antes de rebaixá-lo por
+   inteiro, já que o merge por id manteria as linhas velhas/excluídas. */
+function dropStateFromMemory(estado) {
+  const data = useData();
+  KIND_KEYS.forEach((key) => {
+    data[key] = data[key].filter((item) => !sameState(item.estado, estado));
+  });
+  /* Lançamento sem estado no meta é gravado na tabela padrão (RO) — ver
+     stateTable/entryAdded. */
+  Object.keys(data.entries).forEach((indicator) => {
+    data.entries[indicator] = data.entries[indicator].filter((e) => {
+      const st = e.meta && e.meta.estado;
+      return !(st ? sameState(st, estado) : estado === DEFAULT_STATE);
+    });
+  });
 }
 
 /* Reconstrói em memória (merge, sem apagar o resto) o estado a partir das
@@ -650,40 +810,16 @@ function stateCachedKeys(suffix) {
    Também recalcula `_coveredSince[state]` a partir da data mais antiga
    presente no cache — necessário porque esse controle vive só em memória e
    se perde a cada F5, mas o cache local (sessionStorage) sobrevive. */
-function mergeStateFromCache(suffix, state) {
-  const payload = { entries: {}, employees: [], vacancies: [], turnovers: [], permanencias: [], headcounts: [], branches: [], departments: [] };
+function mergeStateFromCache(state) {
+  const payload = emptyPayload();
   let minLancamentoDate = null;
-  stateCachedKeys(suffix).forEach((key) => {
+  stateCachedKeys(state.toLowerCase()).forEach((key) => {
     const item = DataCache.readItem(key);
     if (!item || !item.id) return;
-    const tabela = key.slice("ggd:".length).split(":")[0] || "";
-    if (tabela.indexOf("lancamentos_") === 0) {
-      const ind = item.indicador_id || "headcount";
-      if (!payload.entries[ind]) payload.entries[ind] = [];
-      payload.entries[ind].push({
-        id: item.id,
-        date: item.data,
-        value: Number(item.valor),
-        meta: item.meta || null
-      });
-      if (item.data && (!minLancamentoDate || item.data < minLancamentoDate)) minLancamentoDate = item.data;
-    } else if (tabela.indexOf("colaboradores_") === 0) {
-      payload.employees.push(mapRemoteEmployee(item, state));
-    } else if (tabela.indexOf("vagas_") === 0) {
-      payload.vacancies.push(mapRemoteVacancy(item, state));
-    } else if (tabela.indexOf("permanencia_") === 0) {
-      payload.permanencias.push(mapRemotePermanencia(item, state));
-    } else if (tabela.indexOf("turnover_") === 0) {
-      payload.turnovers.push(mapRemoteTurnover(item, state));
-    } else if (tabela.indexOf("headcount_") === 0) {
-      payload.headcounts.push(mapRemoteHeadcount(item, state));
-    } else if (tabela.indexOf("filiais_") === 0) {
-      payload.branches.push(mapRemoteBranch(item, state));
-    } else if (tabela.indexOf("departamentos_") === 0) {
-      payload.departments.push(mapRemoteDepartment(item, state));
-    }
+    const date = addRowToPayload(payload, keyTable(key), item, state);
+    if (date && (!minLancamentoDate || date < minLancamentoDate)) minLancamentoDate = date;
   });
-  Object.keys(payload.entries).forEach((k) => payload.entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
+  sortEntries(payload.entries);
   mergeFromRemote(payload);
   /* Sem nenhum lançamento em cache ainda: assume a janela padrão como
      coberta (seguro — no pior caso dispara uma busca extra depois). */
@@ -694,63 +830,56 @@ function mergeStateFromCache(suffix, state) {
    1. se o estado já está em memória, nada é baixado;
    2. se há itens dele no cache local, reconstrói a memória e aplica apenas o
       delta desde a última versão;
-   3. senão, faz o download completo do estado (que é então guardado no cache). */
-export async function hydrateState(next) {
-  const states = next === "todos" ? STATES.slice() : [next];
-  if (states.every((s) => _loadedStates[s])) return true;
+   3. senão, faz o download completo do estado (que é então guardado no cache).
+   Pedidos simultâneos dos mesmos estados compartilham a mesma operação. */
+const _hydrating = new Map();
+
+export function hydrateState(next) {
+  const pending = statesOf(next).filter((s) => !_loadedStates[s]);
+  if (!pending.length) return Promise.resolve(true);
+
+  const key = pending.join(",");
+  const running = _hydrating.get(key);
+  if (running) return running;
+
   beginLoading();
-  try {
-    return await _hydrateState(next);
-  } finally {
+  const promise = _hydrateState(pending).finally(() => {
+    _hydrating.delete(key);
     endLoading();
-  }
+  });
+  _hydrating.set(key, promise);
+  return promise;
 }
 
-async function _hydrateState(next) {
+async function _hydrateState(pending) {
   // Limpa (uma vez) resíduos de PII de versões antigas gravados em localStorage.
   DataCache.removeLegacy();
-  const states = next === "todos" ? STATES.slice() : [next];
-  const pending = states.filter((s) => !_loadedStates[s]);
-  if (!pending.length) return true;
 
   const versao = DataCache.getVersion();
-  let usedCache = false;
-  if (versao > 0) {
-    const allCached = pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0);
-    if (allCached) {
-      pending.forEach((s) => {
-        mergeStateFromCache(s.toLowerCase(), s);
-        _loadedStates[s] = true;
-      });
-      usedCache = true;
-    }
-  }
+  if (versao > 0 && pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0)) {
+    pending.forEach((s) => {
+      mergeStateFromCache(s);
+      _loadedStates[s] = true;
+    });
 
-  if (usedCache) {
     const delta = await fetchDelta(versao);
     if (delta) {
-      if (delta.changes && delta.changes.length) {
-        // Snapshot dos estados realmente carregados (já inclui `pending`, que
-        // acabou de ser marcado acima): o applyDelta marca como carregado todo
-        // estado citado no delta, o que marcaria indevidamente estados que
-        // ainda não tiveram o conjunto completo de dados em memória.
-        const loadedBefore = Object.keys(_loadedStates);
-        applyDelta(delta.changes);
-        Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-        loadedBefore.forEach((s) => (_loadedStates[s] = true));
-        DataCache.setVersion(delta.versaoAtual);
-      }
+      if (delta.changes.length && applyDelta(delta.changes)) DataCache.setVersion(delta.versaoAtual);
       console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);
       return true;
     }
-    // Delta indisponível: recarrega por completo para não exibir dados velhos.
+
+    // Delta indisponível: recarrega por completo para não exibir dados velhos
+    // (e tira da memória o que veio do cache, senão o merge por id o preservaria).
     pending.forEach((s) => {
       delete _loadedStates[s];
       delete _coveredSince[s];
+      dropStateFromMemory(s);
+      dropStateCache(s);
     });
   }
 
-  return hydrate(pending.length === 1 ? pending[0] : "todos");
+  return _hydrateStates(pending);
 }
 
 async function deltaVersao() {
@@ -777,78 +906,101 @@ async function fetchDelta(versao) {
   }
 }
 
-function _removeFromMemory(tabela, id) {
-  const data = useData();
-  if (tabela.indexOf("lancamentos_") === 0) {
-    Object.keys(data.entries).forEach((ind) => {
-      data.entries[ind] = data.entries[ind].filter((e) => e.id !== id);
-    });
-  } else if (tabela.indexOf("colaboradores_") === 0) {
-    data.employees = data.employees.filter((e) => e.id !== id);
-  } else if (tabela.indexOf("vagas_") === 0) {
-    data.vacancies = data.vacancies.filter((v) => v.id !== id);
-  } else if (tabela.indexOf("permanencia_") === 0) {
-    data.permanencias = data.permanencias.filter((p) => p.id !== id);
-  } else if (tabela.indexOf("turnover_") === 0) {
-    data.turnovers = data.turnovers.filter((t) => t.id !== id);
-  } else if (tabela.indexOf("headcount_") === 0) {
-    data.headcounts = data.headcounts.filter((h) => h.id !== id);
-  } else if (tabela.indexOf("filiais_") === 0) {
-    data.branches = data.branches.filter((b) => b.id !== id);
-  } else if (tabela.indexOf("departamentos_") === 0) {
-    data.departments = data.departments.filter((d) => d.id !== id);
-  }
-}
-
-function _upsertInMemory(tabela, row, estado) {
-  const data = useData();
-  if (tabela.indexOf("lancamentos_") === 0) {
-    const ind = row.indicador_id || "headcount";
-    if (!data.entries[ind]) data.entries[ind] = [];
-    upsertInList(data.entries[ind], {
-      id: row.id,
-      date: row.data,
-      value: Number(row.valor),
-      meta: row.meta || null
-    });
-    data.entries[ind].sort((a, b) => compareDateAsc(a.date, b.date));
-  } else if (tabela.indexOf("colaboradores_") === 0) {
-    upsertInList(data.employees, mapRemoteEmployee(row, estado));
-  } else if (tabela.indexOf("vagas_") === 0) {
-    upsertInList(data.vacancies, mapRemoteVacancy(row, estado));
-  } else if (tabela.indexOf("permanencia_") === 0) {
-    upsertInList(data.permanencias, mapRemotePermanencia(row, estado));
-  } else if (tabela.indexOf("turnover_") === 0) {
-    upsertInList(data.turnovers, mapRemoteTurnover(row, estado));
-  } else if (tabela.indexOf("headcount_") === 0) {
-    upsertInList(data.headcounts, mapRemoteHeadcount(row, estado));
-  } else if (tabela.indexOf("filiais_") === 0) {
-    upsertInList(data.branches, mapRemoteBranch(row, estado));
-  } else if (tabela.indexOf("departamentos_") === 0) {
-    upsertInList(data.departments, mapRemoteDepartment(row, estado));
-  }
-}
-
+/* Aplica um delta de uma vez. Só o resultado líquido de cada registro conta
+   (o último vence), remoções e inserções são feitas em lote (uma passada por
+   lista) e cada indicador é reordenado uma única vez — a versão anterior
+   varria e reordenava as listas inteiras a cada alteração.
+   Alterações de estados que NÃO estão em memória são ignoradas e o cache
+   local desses estados é descartado: eles serão baixados por inteiro quando
+   forem pedidos. (Antes o delta marcava o estado como "carregado" só por
+   citá-lo, e ele ficava com apenas os poucos registros alterados.)
+   Devolve false se o cache local recusou alguma gravação — nesse caso o cache
+   já foi descartado e a versão NÃO deve ser gravada. */
 function applyDelta(changes) {
+  const net = new Map();
   (changes || []).forEach((c) => {
-    if (!c || !c.tabela) return;
-    const estado = c.tabela.slice(-2).toUpperCase();
+    if (c && c.tabela) net.set(`${c.tabela}:${c.registro_id}`, c);
+  });
+
+  const removals = new Map(); // tabela → Set(ids)
+  const upserts = new Map(); // tabela → [linhas]
+  const skippedStates = new Set();
+  let cacheOk = true;
+
+  net.forEach((c) => {
+    const { estado } = splitTable(c.tabela);
+    if (!_loadedStates[estado]) {
+      skippedStates.add(estado);
+      return;
+    }
     if (c.operacao === "delete") {
       DataCache.removeItem(c.tabela, c.registro_id);
-      _removeFromMemory(c.tabela, c.registro_id);
+      if (!removals.has(c.tabela)) removals.set(c.tabela, new Set());
+      removals.get(c.tabela).add(c.registro_id);
     } else if (c.operacao === "upsert" && c.dados) {
-      DataCache.setItem(c.tabela, c.registro_id, c.dados);
-      _upsertInMemory(c.tabela, c.dados, estado);
+      if (cacheOk && !DataCache.setItem(c.tabela, c.registro_id, c.dados)) cacheOk = false;
+      if (!upserts.has(c.tabela)) upserts.set(c.tabela, []);
+      upserts.get(c.tabela).push(c.dados);
     }
-    _loadedStates[estado] = true;
   });
+
+  skippedStates.forEach((estado) => {
+    if (estado) dropStateCache(estado);
+  });
+
+  const data = useData();
+
+  removals.forEach((ids, tabela) => {
+    const { base } = splitTable(tabela);
+    if (base === "lancamentos") {
+      Object.keys(data.entries).forEach((indicator) => {
+        const list = data.entries[indicator];
+        if (list.some((e) => ids.has(e.id))) {
+          data.entries[indicator] = list.filter((e) => !ids.has(e.id));
+        }
+      });
+    } else if (TABLE_KINDS[base]) {
+      const key = TABLE_KINDS[base].key;
+      data[key] = data[key].filter((item) => !ids.has(item.id));
+    }
+  });
+
+  const touchedIndicators = new Set();
+  upserts.forEach((rows, tabela) => {
+    const { base, estado } = splitTable(tabela);
+    if (base === "lancamentos") {
+      const byIndicator = new Map();
+      rows.forEach((row) => {
+        const indicator = row.indicador_id || "headcount";
+        if (!byIndicator.has(indicator)) byIndicator.set(indicator, []);
+        byIndicator.get(indicator).push(entryFromRow(row));
+      });
+      byIndicator.forEach((items, indicator) => {
+        if (!data.entries[indicator]) data.entries[indicator] = [];
+        upsertManyInList(data.entries[indicator], items);
+        touchedIndicators.add(indicator);
+      });
+    } else if (TABLE_KINDS[base]) {
+      const { key, map } = TABLE_KINDS[base];
+      upsertManyInList(
+        data[key],
+        rows.map((row) => map(row, estado))
+      );
+    }
+  });
+  touchedIndicators.forEach((indicator) => {
+    data.entries[indicator].sort((a, b) => compareDateAsc(a.date, b.date));
+  });
+
+  if (!cacheOk) DataCache.resetAll();
+  return cacheOk;
 }
 
 function loadLocalIntoMemory() {
   const keys = DataCache.keys();
   if (!keys.length) return false;
 
-  const data = { entries: {}, employees: [], vacancies: [], turnovers: [], permanencias: [], headcounts: [], branches: [], departments: [] };
+  const payload = emptyPayload();
   const tablesSeen = {};
   const minLancamentoByState = {};
 
@@ -860,42 +1012,17 @@ function loadLocalIntoMemory() {
     if (sep < 0) return;
     const tabela = rest.slice(0, sep);
     tablesSeen[tabela] = true;
-    const estado = tabela.slice(-2).toUpperCase();
-
-    if (tabela.indexOf("lancamentos_") === 0) {
-      const ind = item.indicador_id || "headcount";
-      if (!data.entries[ind]) data.entries[ind] = [];
-      data.entries[ind].push({
-        id: item.id,
-        date: item.data,
-        value: Number(item.valor),
-        meta: item.meta || null
-      });
-      if (item.data && (!minLancamentoByState[estado] || item.data < minLancamentoByState[estado])) {
-        minLancamentoByState[estado] = item.data;
-      }
-    } else if (tabela.indexOf("colaboradores_") === 0) {
-      data.employees.push(mapRemoteEmployee(item, estado));
-    } else if (tabela.indexOf("vagas_") === 0) {
-      data.vacancies.push(mapRemoteVacancy(item, estado));
-    } else if (tabela.indexOf("permanencia_") === 0) {
-      data.permanencias.push(mapRemotePermanencia(item, estado));
-    } else if (tabela.indexOf("turnover_") === 0) {
-      data.turnovers.push(mapRemoteTurnover(item, estado));
-    } else if (tabela.indexOf("headcount_") === 0) {
-      data.headcounts.push(mapRemoteHeadcount(item, estado));
-    } else if (tabela.indexOf("filiais_") === 0) {
-      data.branches.push(mapRemoteBranch(item, estado));
-    } else if (tabela.indexOf("departamentos_") === 0) {
-      data.departments.push(mapRemoteDepartment(item, estado));
+    const { estado } = splitTable(tabela);
+    const date = addRowToPayload(payload, tabela, item, estado);
+    if (date && (!minLancamentoByState[estado] || date < minLancamentoByState[estado])) {
+      minLancamentoByState[estado] = date;
     }
   });
 
-  Object.keys(data.entries).forEach((k) => data.entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
-  replaceFromCache(data);
+  sortEntries(payload.entries);
+  replaceFromCache(payload);
 
-  Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
+  clearLoadedTracking();
   STATES.forEach((s) => {
     const suffix = s.toLowerCase();
     if (tablesSeen["lancamentos_" + suffix] || tablesSeen["colaboradores_" + suffix]) {
@@ -908,33 +1035,41 @@ function loadLocalIntoMemory() {
   return true;
 }
 
+function clearLoadedTracking() {
+  Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
+}
+
 /* Boot com Delta Sync:
    1) reconstrói a memória a partir do sessionStorage (renderização rápida);
-   2) se não houver cache -> download completo + semeadura item a item;
+   2) se não houver cache utilizável -> download completo + semeadura item a item;
    3) se houver cache -> pede apenas os itens alterados/deletados desde a
       última versão e aplica via setItem/removeItem. */
 export async function hydrateWithDelta(state) {
   DataCache.removeLegacy();
 
   const hasLocal = loadLocalIntoMemory();
-  if (hasLocal) {
-    console.info("[API] Cache local restaurado do sessionStorage.");
-  }
+  const versao = DataCache.getVersion();
 
-  if (!hasLocal) {
-    console.info("[API] Primeiro acesso — baixando dados completos.");
-    Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-    Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
+  /* Sem cache — ou com itens mas sem versão (a versão não chegou a ser
+     gravada): não há ponto de partida confiável para o delta (pedir a partir
+     da versão 0 traria o changelog inteiro). Baixa tudo. */
+  if (!hasLocal || versao <= 0) {
+    console.info("[API] Sem cache utilizável — baixando dados completos.");
+    if (hasLocal) {
+      DataCache.resetAll();
+      resetData();
+    }
+    clearLoadedTracking();
     return await hydrate(state);
   }
+  console.info("[API] Cache local restaurado do sessionStorage.");
 
-  const versao = DataCache.getVersion();
   const delta = await fetchDelta(versao);
   if (!delta) {
     console.info("[API] Delta indisponível — baixando dados completos (fallback).");
     DataCache.resetAll();
-    Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-    Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
+    clearLoadedTracking();
     resetData();
     return await hydrate(state);
   }
@@ -945,8 +1080,7 @@ export async function hydrateWithDelta(state) {
   }
 
   console.info(`[API] Delta sync: ${delta.changes.length} alteração(ões) desde a versão ${versao}.`);
-  applyDelta(delta.changes);
-  DataCache.setVersion(delta.versaoAtual);
+  if (applyDelta(delta.changes)) DataCache.setVersion(delta.versaoAtual);
   return true;
 }
 
@@ -974,36 +1108,51 @@ export function discardPendingWrites() {
     clearTimeout(_flushTimer);
     _flushTimer = null;
   }
+  _flushRetries = 0;
   Object.keys(_queue).forEach((k) => _queue[k].clear());
 }
 
 /* Purga completa de dados sensíveis ao encerrar a sessão:
    fila de escrita + memória reativa + cache em sessionStorage. */
 export function resetLocalState() {
+  _epoch += 1;
   discardPendingWrites();
   resetData();
-  Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
+  clearLoadedTracking();
+  _cacheDirty = false;
   DataCache.resetAll();
 }
 
 /* "Recarregar Dados": limpa cache e memória, remove resíduos antigos do
-   localStorage e busca os dados atualizados direto do banco. A sessão
-   (gg-auth) vive em sessionStorage e é preservada (as chaves ggd:* são as
-   únicas apagadas). */
+   localStorage e busca os dados atualizados direto do banco. Recarrega os
+   MESMOS estados que estavam em memória (antes só o estado padrão era
+   baixado — com o filtro em "Todos Estados" a tela ficava só com RO). A
+   sessão (gg-auth) vive em sessionStorage e é preservada (as chaves ggd:* são
+   as únicas apagadas). */
 export async function reloadData() {
+  // Edições ainda na fila entram no servidor ANTES de baixar de novo.
+  await flush();
+
+  const previous = STATES.filter((s) => _loadedStates[s]);
   DataCache.removeLegacy();
   DataCache.resetAll();
+  _cacheDirty = false;
   resetData();
-  Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
-  await hydrate(DEFAULT_STATE);
+  clearLoadedTracking();
+
+  beginLoading();
+  try {
+    await _hydrateStates(previous.length ? previous : [DEFAULT_STATE]);
+  } finally {
+    endLoading();
+  }
 }
 
-/* Garante que escritas pendentes não se percam ao sair da página */
+/* Garante que escritas pendentes não se percam ao sair da página. `keepalive`
+   deixa o navegador concluir o envio mesmo com a aba sendo fechada. */
 if (typeof window !== "undefined") {
   window.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flush();
+    if (document.visibilityState === "hidden") flush({ keepalive: true });
   });
-  window.addEventListener("pagehide", () => flush());
+  window.addEventListener("pagehide", () => flush({ keepalive: true }));
 }

@@ -51,14 +51,14 @@ let visibleItems = isAdmin
 
 <template>
   <aside
-    class="sticky top-16 z-30 flex h-[calc(100vh-4rem)] w-[84px] shrink-0 flex-col items-center self-start border-r border-zinc-800 bg-[#0a0a0a] py-3"
+    class="sticky top-20 z-30 flex h-[calc(100vh-5rem)] w-[84px] shrink-0 flex-col items-center self-start border-r border-zinc-800 bg-[#0a0a0a] py-3"
   >
-    <nav class="flex flex-1 flex-col items-center gap-2" aria-label="Navegação principal">
+    <nav class="flex flex-1 flex-col items-center gap-3" aria-label="Navegação principal">
       <button
         v-for="item in visibleItems"
         :key="item.name"
         type="button"
-        class="group relative flex h-12 w-12 items-center justify-center overflow-visible rounded-xl transition"
+        class="group relative flex h-14 w-14 items-center justify-center overflow-visible rounded-xl transition"
         :class="route.name === item.name
           ? 'bg-accent/15 text-red-400'
           : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'"
@@ -67,8 +67,8 @@ let visibleItems = isAdmin
         @click="router.push({ name: item.name })"
       >
         <svg
-          width="22"
-          height="22"
+          width="26"
+          height="26"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

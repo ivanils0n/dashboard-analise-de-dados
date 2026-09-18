@@ -1,5 +1,5 @@
 <script setup>
-import { watch } from "vue";
+import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ToastHost from "@/components/ui/ToastHost.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
@@ -12,6 +12,27 @@ const route = useRoute();
 const router = useRouter();
 const { show: toast } = useToast();
 const loading = useLoading();
+
+/* A sobreposição de carregamento só aparece se a operação demorar: cargas
+   rápidas (dados já em cache, delta pequeno) não precisam piscar uma tela
+   cheia com blur — isso é o que dava a sensação de trava ao navegar. */
+const LOADING_DELAY_MS = 250;
+const showLoading = ref(false);
+let loadingTimer = null;
+watch(
+  () => loading.count > 0,
+  (active) => {
+    clearTimeout(loadingTimer);
+    if (!active) {
+      showLoading.value = false;
+      return;
+    }
+    loadingTimer = setTimeout(() => {
+      showLoading.value = true;
+    }, LOADING_DELAY_MS);
+  },
+  { immediate: true }
+);
 
 /* Sessão expirada/encerrada enquanto o usuário está em uma página interna:
    notifica e volta para o login. */
@@ -30,5 +51,5 @@ watch(
   <router-view />
   <ToastHost />
   <ConfirmDialog />
-  <LoadingOverlay :show="loading.count > 0" :label="loading.label" />
+  <LoadingOverlay :show="showLoading" :label="loading.label" />
 </template>

@@ -97,8 +97,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { param: "tipo_contratacao", column: "tipo_contratacao", kind: "eq" },
       { param: "filial_id", column: "filial_id", kind: "eq" },
       { param: "aberta", column: "fechada_em", kind: "isnull" },
-      // Usados pelo card de Tempo médio de contratação para baixar só as
-      // vagas do período filtrado, em vez da lista inteira do estado.
+      // Filtro por período de abertura (também disponível a quem consome a API).
       { param: "data_de", column: "aberta_em", kind: "gte" },
       { param: "data_ate", column: "aberta_em", kind: "lte" }
     ],
