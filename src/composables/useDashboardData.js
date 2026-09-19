@@ -27,7 +27,7 @@ import {
   firstDayOfYm,
   lastDayOfYm
 } from "@/lib/utils";
-import { aggregateEntries } from "@/lib/metrics";
+import { aggregateEntries, uniqueEmployeeCount } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
 import { ensureLancamentosSince } from "@/lib/db";
 
@@ -320,6 +320,20 @@ export function useDashboardData(filter, options = {}) {
      da barra — usadas no modal de detalhe. */
   function custoDiariaEntriesByColaborador(label) {
     return diariaBarEntries().filter((e) => diariaColaboradorName(e) === label);
+  }
+
+  /* Resumo do gráfico de barras da diária (Cockpit): total pago, colaboradores
+     distintos e média — sobre a mesma lista das barras (`diariaBarEntries`) e
+     com a mesma regra do KPI (total ÷ colaboradores, ver aggregateEntries), então
+     os três números sempre batem com o gráfico e com o card. */
+  function custoDiariaSummary() {
+    const ind = getIndicatorById("custo_diaria");
+    const list = diariaBarEntries();
+    return {
+      total: list.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
+      colaboradores: uniqueEmployeeCount(list),
+      media: ind ? aggregateList(ind, list) : null
+    };
   }
 
   function custoDiariaBarByColaborador() {
@@ -861,7 +875,8 @@ export function useDashboardData(filter, options = {}) {
         title: "Custo médio da diária geral",
         sub: "Valor total por colaborador, no período filtrado",
         data: custoDiariaBarByColaborador(),
-        valueFormat: "currency"
+        valueFormat: "currency",
+        summary: custoDiariaSummary()
       };
     }
 

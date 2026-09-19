@@ -58,7 +58,13 @@ export async function listRecords(
   return withClient(env, (client) =>
     queryPage(
       client,
-      { columns: "*", from: `public.${table}`, whereSql, orderBy: entity.orderBy },
+      /* `id` desempata: várias linhas gravadas no mesmo lote (importação de
+         planilha) compartilham data e criado_em (now() é fixo dentro da
+         transação). Sem um critério único, o Postgres pode ordenar os empates
+         de forma diferente a cada página do LIMIT/OFFSET — linhas somem ou
+         se repetem entre páginas e os totais (ex.: horas de Treinamento)
+         mudam de uma carga para outra. */
+      { columns: "*", from: `public.${table}`, whereSql, orderBy: `${entity.orderBy}, id` },
       params,
       options.limit,
       offset

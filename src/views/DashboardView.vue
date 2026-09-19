@@ -289,7 +289,9 @@ const treinamentoColumns = [
   { label: "Loja", meta: "filial" },
   { label: "Estado", meta: "estado" },
   { label: "Tema do treinamento", meta: "tema" },
-  { label: "Carga horária", meta: "cargaHoraria", hours: true },
+  /* `value` (não meta.cargaHoraria): é o que o KPI, os gráficos e os modais
+     somam — a cópia em meta podia divergir em lançamentos editados antes. */
+  { label: "Carga horária", value: true },
   { label: "Modalidade", meta: "modalidade" }
 ];
 
@@ -1134,6 +1136,7 @@ watch(activeTab, (tab) => {
         :show-trend="false"
         :height-px="520"
         horizontal
+        align-top
         bars-clickable
         title="Tempo médio de contratação"
         subtitle="Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)"

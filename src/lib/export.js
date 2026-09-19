@@ -372,12 +372,13 @@ export function downloadEquipeTemplate() {
 /* ---------- Planilha TREINAMENTO (importação no modal) ---------- */
 
 export const TREINAMENTO_TEMPLATE_HEADER = [
-  "Colaborador", "Tema do treinamento", "Carga horária (horas)", "Modalidade"
+  "Colaborador", "Tema do treinamento", "Carga horária (horas)", "Modalidade", "Cargo", "Filial", "Estado"
 ];
 
 /* Lê a planilha de treinamentos e devolve linhas normalizadas.
    Campos devolvidos por linha:
-     { name, tema, carga, modalidade, modalidadeLabel } */
+     { name, tema, carga, modalidade, modalidadeLabel, cargo, filialText, estado }
+   Cargo, Filial e Estado são colunas opcionais. */
 export function parseTreinamentoSheet(sheet) {
   /* Lê os valores já formatados: células de horário (ex.: "01:30") chegam como
      texto, não como fração de dia do Excel. */
@@ -387,6 +388,11 @@ export function parseTreinamentoSheet(sheet) {
   const iTema = headFind(headerRow, ["tema"]);
   const iCarga = headFind(headerRow, ["carga"]);
   const iModalidade = headFind(headerRow, ["modalidade"]);
+  /* Opcionais: sem cruzamento com a Equipe, o cargo, a filial e o estado só
+     entram no lançamento se vierem na própria planilha. */
+  const iCargo = headFind(headerRow, ["cargo", "funcao"]);
+  const iFilial = headFind(headerRow, ["filial", "loja", "empresa", "abreviado"]);
+  const iEstado = headFind(headerRow, ["estado"]);
   const found = iName >= 0;
   if (!found) return [];
 
@@ -408,7 +414,10 @@ export function parseTreinamentoSheet(sheet) {
       tema: String(cellAt(row, iTema)).trim(),
       carga,
       modalidade,
-      modalidadeLabel
+      modalidadeLabel,
+      cargo: String(cellAt(row, iCargo)).trim(),
+      filialText: String(cellAt(row, iFilial)).trim(),
+      estado: String(cellAt(row, iEstado)).trim().toUpperCase()
     });
   }
   return out;
@@ -419,11 +428,11 @@ export function downloadTreinamentoTemplate() {
   const sheet = XLSX.utils.aoa_to_sheet(
     safeRows([
       TREINAMENTO_TEMPLATE_HEADER,
-      ["Maria Silva", "Excel Avançado", 8, "Presencial"],
-      ["João Souza", "Atendimento ao Cliente", 4, "Online"]
+      ["Maria Silva", "Excel Avançado", 8, "Presencial", "Analista", "PVH1", "RO"],
+      ["João Souza", "Atendimento ao Cliente", 4, "Online", "Vendedor", "MAO2", "AM"]
     ])
   );
-  sheet["!cols"] = [{ wch: 26 }, { wch: 30 }, { wch: 20 }, { wch: 16 }];
+  sheet["!cols"] = [{ wch: 26 }, { wch: 30 }, { wch: 20 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Treinamento");
   XLSX.writeFile(workbook, `gente-gestao-template-treinamento_${todayISO()}.xlsx`);
 }

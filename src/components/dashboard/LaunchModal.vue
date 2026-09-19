@@ -17,6 +17,7 @@ import {
 import {
   addEntry,
   updateEntry,
+  removeEntries,
   getEntriesFor,
   getLatestForMeta,
   getEmployeeById,
@@ -184,6 +185,10 @@ const diaria = reactive({
 const treinamento = reactive({
   query: "",
   employeeId: null,
+  /* Lançamento importado da planilha (sem vínculo com a Equipe): guarda o
+     nome e o estado gravados, para que ele continue editável. */
+  employeeName: "",
+  estado: "",
   cargo: "",
   filial: "",
   filialShort: "",
@@ -312,6 +317,8 @@ function prefillEdit(indId, entry) {
 
   if (indId === "treinamento") {
     treinamento.employeeId = m.employeeId || null;
+    treinamento.employeeName = m.employeeName || "";
+    treinamento.estado = m.estado || "";
     treinamento.query = "";
     treinamento.cargo = m.cargo || "";
     treinamento.filial = m.filial || "";
@@ -365,6 +372,8 @@ function resetDiaria() {
 function resetTreinamento() {
   treinamento.query = "";
   treinamento.employeeId = null;
+  treinamento.employeeName = "";
+  treinamento.estado = "";
   treinamento.cargo = "";
   treinamento.filial = "";
   treinamento.filialShort = "";
@@ -1899,21 +1908,16 @@ function confirmDiImport() {
 
 /* ---------- Treinamento ---------- */
 
-const treinamentoResults = computed(() => {
-  const q = normalizeText(treinamento.query).trim();
-  const employees = getEmployees();
-  if (!q) return employees;
-  return employees.filter((e) => normalizeText(`${e.name} ${e.cargo || ""} ${e.sector} ${e.user}`).includes(q));
-});
-
 const treinamentoEmployeeName = computed(() => {
-  if (!treinamento.employeeId) return "";
+  if (!treinamento.employeeId) return treinamento.employeeName;
   const emp = getEmployeeById(treinamento.employeeId);
   return emp ? `${emp.name} · ${emp.cargo || emp.sector}` : "";
 });
 
 function pickTreinamentoEmployee(e) {
   treinamento.employeeId = e.id;
+  treinamento.employeeName = "";
+  treinamento.estado = "";
   fillTreinamentoContext(e);
   showTab("treinamento");
 }
@@ -1952,7 +1956,14 @@ function setTreinamentoCurrentMonth() {
 }
 
 function submitTreinamento() {
-  const emp = treinamento.employeeId ? getEmployeeById(treinamento.employeeId) : null;
+  const found = treinamento.employeeId ? getEmployeeById(treinamento.employeeId) : null;
+  /* Lançamento importado da planilha não tem vínculo com a Equipe: ao editar,
+     mantém o nome e o estado gravados. */
+  const emp = found
+    ? { id: found.id, name: found.name, estado: found.estado }
+    : editingEntryId.value && treinamento.employeeName
+      ? { id: null, name: treinamento.employeeName, estado: treinamento.estado || null }
+      : null;
   if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
   if (!treinamento.month) return toast("Informe o mês/ano do treinamento.");
   const carga = parseHoursBR(treinamento.cargaHoraria);
@@ -2002,62 +2013,164 @@ function submitTreinamento() {
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
-  fillTreinamentoContext(emp);
+  fillTreinamentoContext(found);
 }
 
-/* ---------- Importação de treinamentos por planilha ---------- */
+/* ---------- Lista única de colaboradores (aba Colaborador do Treinamento) ----------
+   Uma só lista: colaboradores da Equipe (com ou sem treinamento) e os
+   importados da planilha (treinamentos sem vínculo com a Equipe, agrupados por
+   nome). Clicar num colaborador lança/edita o treinamento dele; marcar e
+   excluir remove os treinamentos (e as horas) no estado do filtro atual, em
+   todos os meses — o cadastro da Equipe nunca é alterado. */
+const trPeople = computed(() => {
+  const byEmployee = new Map();
+  const byName = new Map();
+  const push = (map, key, entry) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(entry);
+  };
+  getEntriesFor("treinamento", filters.current).forEach((e) => {
+    const m = e.meta || {};
+    if (m.employeeId) push(byEmployee, m.employeeId, e);
+    else push(byName, m.employeeName || "Sem colaborador", e);
+  });
+
+  const build = (key, name, employee, list, cargo, search) => {
+    const entries = list.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return {
+      key,
+      name,
+      employee,
+      cargo: String(cargo || ""),
+      search,
+      entries,
+      count: entries.length,
+      horas: entries.reduce((sum, e) => sum + (Number(e.value) || 0), 0)
+    };
+  };
+
+  const people = [];
+  getEmployees().forEach((emp) => {
+    const list = byEmployee.get(emp.id) || [];
+    byEmployee.delete(emp.id);
+    people.push(
+      build(`emp:${emp.id}`, emp.name, emp, list, emp.cargo || emp.sector, `${emp.name} ${emp.cargo || ""} ${emp.sector || ""} ${emp.user || ""}`)
+    );
+  });
+  /* Treinamentos de um colaborador que já não existe na Equipe entram como
+     importados (só o nome gravado no lançamento). */
+  byEmployee.forEach((list, id) => {
+    const name = (list[0].meta && list[0].meta.employeeName) || "Sem colaborador";
+    people.push(build(`orphan:${id}`, name, null, list, list[0].meta && list[0].meta.cargo, name));
+  });
+  byName.forEach((list, name) => {
+    const cargo = (list.find((e) => e.meta && e.meta.cargo) || {}).meta;
+    people.push(build(`name:${name}`, name, null, list, cargo && cargo.cargo, `${name} ${(cargo && cargo.cargo) || ""}`));
+  });
+
+  /* Quem já tem treinamento primeiro; depois por nome. */
+  return people.sort(
+    (a, b) => Number(b.count > 0) - Number(a.count > 0) || a.name.localeCompare(b.name, "pt-BR")
+  );
+});
+
+const trPeopleVisible = computed(() => {
+  const q = normalizeText(treinamento.query).trim();
+  if (!q) return trPeople.value;
+  return trPeople.value.filter((x) => normalizeText(x.search).includes(q));
+});
+
+/* Só quem tem treinamento pode ser marcado para exclusão. */
+const trSelectable = computed(() => trPeopleVisible.value.filter((x) => x.count > 0));
+const trSelected = ref(new Set());
+const trAllSelected = computed(
+  () => trSelectable.value.length > 0 && trSelectable.value.every((x) => trSelected.value.has(x.key))
+);
+const trExpanded = ref(null);
+
+function toggleTrPerson(key) {
+  const next = new Set(trSelected.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  trSelected.value = next;
+}
+
+function toggleTrAll() {
+  trSelected.value = trAllSelected.value ? new Set() : new Set(trSelectable.value.map((x) => x.key));
+}
+
+/* Novo treinamento para um colaborador da Equipe (descarta uma edição em
+   andamento e limpa os campos do treinamento). */
+function newTreinamentoFor(emp) {
+  if (!emp) return;
+  editingEntryId.value = null;
+  treinamento.month = currentYm();
+  treinamento.tema = "";
+  treinamento.cargaHoraria = "";
+  treinamento.modalidade = "presencial";
+  pickTreinamentoEmployee(emp);
+}
+
+/* Clique no colaborador: sem treinamento → novo; com um só → edita; com vários
+   → expande a lista para escolher qual editar. Com uma edição em andamento, o
+   clique num colaborador sem treinamento só troca o colaborador do lançamento. */
+function onTrPersonClick(x) {
+  if (!x.count) {
+    if (editingEntryId.value) pickTreinamentoEmployee(x.employee);
+    else newTreinamentoFor(x.employee);
+    return;
+  }
+  if (x.count === 1) {
+    prefillEdit("treinamento", x.entries[0]);
+    return;
+  }
+  trExpanded.value = trExpanded.value === x.key ? null : x.key;
+}
+
+async function deleteTrSelected() {
+  const chosen = trPeople.value.filter((x) => trSelected.value.has(x.key));
+  const entries = chosen.flatMap((x) => x.entries);
+  if (!entries.length) return;
+  const horas = chosen.reduce((sum, x) => sum + x.horas, 0);
+  const ok = await confirm({
+    title: `Excluir os treinamentos de ${chosen.length} colaborador(es)?`,
+    message: `Serão removidos definitivamente ${entries.length} treinamento(s) (${formatHoursClock(horas)} h) desses colaboradores, em todos os meses. O cadastro da Equipe não é alterado e os totais serão recalculados.`,
+    confirmText: `Excluir ${chosen.length}`,
+    danger: true
+  });
+  if (!ok) return;
+  removeEntries(entries.map((entry) => ({ indicatorId: "treinamento", entry })));
+  trSelected.value = new Set();
+  trExpanded.value = null;
+  emit("saved");
+  toast(`${chosen.length} colaborador(es) e ${entries.length} treinamento(s) excluído(s).`);
+}
+
+/* ---------- Importação de treinamentos por planilha ----------
+   Os colaboradores são lançados exatamente como vêm na planilha — sem cruzar
+   com o cadastro da Equipe. Cargo, Filial e Estado são colunas opcionais; sem
+   Estado, vale o estado do filtro atual do dashboard. */
 const trImportInput = ref(null);
 const trReviewOpen = ref(false);
 const trRows = ref([]);
 const trImporting = ref(false);
 
-const trSelectedCount = computed(
-  () => trRows.value.filter((r) => r.chosen && r.candidates.some((c) => c.id === r.chosen)).length
-);
-const trAmbiguousCount = computed(
-  () => trRows.value.filter((r) => r.candidates.length > 1 && !r.missing).length
-);
-const trMissingCount = computed(() => trRows.value.filter((r) => r.missing).length);
-
-/* ---------- Filtro por causa (problemas no topo) ---------- */
-const TR_CAUSE_LABELS = {
-  sem_colaborador: "Colaborador não encontrado",
-  sem_carga: "Sem carga horária",
-  ambiguo: "Nome ambíguo (2 ou + colaboradores)",
-  ok: "OK"
-};
-const TR_CAUSE_ORDER = ["sem_colaborador", "sem_carga", "ambiguo", "ok"];
-
-const trFilter = ref("todos");
-
-function trCauseOf(r) {
-  if (r.missing) return "sem_colaborador";
-  if (r.carga === null || r.carga === undefined || isNaN(Number(r.carga))) return "sem_carga";
-  if (r.candidates.length > 1) return "ambiguo";
-  return "ok";
+function trHasCarga(r) {
+  return r.carga !== null && r.carga !== undefined && !isNaN(Number(r.carga));
 }
 
-function trProblemRank(r) {
-  const idx = TR_CAUSE_ORDER.indexOf(trCauseOf(r));
-  return idx < 0 ? 99 : idx;
-}
+const trValidCount = computed(() => trRows.value.filter(trHasCarga).length);
+const trInvalidCount = computed(() => trRows.value.length - trValidCount.value);
 
-const trFilterOptions = computed(() => {
-  const present = new Set(trRows.value.map(trCauseOf));
-  const options = [{ value: "todos", label: "Todas as causas" }];
-  TR_CAUSE_ORDER.forEach((k) => {
-    if (present.has(k)) options.push({ value: k, label: TR_CAUSE_LABELS[k] });
-  });
-  return options;
-});
-
-/* Problemas primeiro; dentro de cada causa, ordena por nome. */
-const visibleTrRows = computed(() => {
-  const rows = trRows.value.filter((r) => trFilter.value === "todos" || trCauseOf(r) === trFilter.value);
-  return rows
+/* Linhas sem carga horária (não serão lançadas) primeiro; depois por nome. */
+const visibleTrRows = computed(() =>
+  trRows.value
     .slice()
-    .sort((a, b) => trProblemRank(a) - trProblemRank(b) || String(a.name || "").localeCompare(String(b.name || "")));
-});
+    .sort(
+      (a, b) =>
+        Number(trHasCarga(a)) - Number(trHasCarga(b)) || String(a.name || "").localeCompare(String(b.name || ""))
+    )
+);
 
 /* Mês/competência dos treinamentos importados. */
 const trMonth = ref(currentYm());
@@ -2082,29 +2195,6 @@ function setTrYear(y) {
   trMonth.value = `${y}-${String(trMonthNum.value).padStart(2, "0")}`;
 }
 
-/* Monta o registro do candidato exibido na escolha (usuário · setor · filial · cargo · estado). */
-function trCandidateRecord(emp) {
-  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
-  return {
-    id: emp.id,
-    user: emp.user || "",
-    name: emp.name || "",
-    sector: emp.sector || "",
-    cargo: emp.cargo || "",
-    estado: emp.estado || "",
-    filial: filial ? String(`${filial.shortName} ${filial.name}`.trim()) : "",
-    shortName: filial ? filial.shortName || "" : ""
-  };
-}
-
-function trCandidateLabel(c) {
-  const parts = [c.user, c.sector];
-  if (c.filial) parts.push(c.filial);
-  if (c.cargo) parts.push(c.cargo);
-  if (c.estado) parts.push(c.estado);
-  return parts.filter(Boolean).join(" · ");
-}
-
 function trSheetToUse(wb) {
   if (wb.Sheets["Treinamento"]) return wb.Sheets["Treinamento"];
   const keys = Object.keys(wb.Sheets || {});
@@ -2124,16 +2214,23 @@ async function onTrImportFile(e) {
       toast("Nenhum treinamento encontrado na planilha. Use o template de treinamento.");
       return;
     }
+    const defaultEstado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+    const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
     trRows.value = parsed.map((row) => {
-      const matches = findEmployeesByName(row.name).map(trCandidateRecord);
+      const estadoRow = up(row.estado);
+      const estado = STATES.includes(estadoRow) ? estadoRow : defaultEstado;
+      /* A filial da planilha é resolvida pelo nome abreviado (no estado da
+         linha); se não existir no cadastro de Filiais, o texto digitado vale
+         como está. */
+      const branch = row.filialText ? findBranchByShortName(row.filialText, estado) : null;
+      const filial = branch ? up(`${branch.shortName} ${branch.name}`) : up(row.filialText);
       return {
         ...row,
-        candidates: matches,
-        missing: matches.length === 0,
-        chosen: matches.length === 1 ? matches[0].id : null
+        estado,
+        filial: filial || null,
+        shortName: branch && branch.shortName ? up(branch.shortName) : null
       };
     });
-    trFilter.value = "todos";
     trMonth.value = currentYm();
     trReviewOpen.value = true;
   } catch (err) {
@@ -2146,33 +2243,24 @@ async function onTrImportFile(e) {
 
 function confirmTrImport() {
   let ok = 0;
-  let skipped = 0;
   let invalid = 0;
   const dataTreinamento = trMonth.value ? `${trMonth.value}-01` : todayISO();
+  const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
   trRows.value.forEach((r) => {
-    if (r.carga === null || r.carga === undefined || isNaN(Number(r.carga))) {
+    if (!trHasCarga(r)) {
       invalid++;
       return;
     }
-    const emp = r.candidates.find((c) => c.id === r.chosen);
-    if (!emp) {
-      skipped++;
-      return;
-    }
-    const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
-    const filial = up(emp.filial) || null;
-    const shortName = up(emp.shortName) || null;
     addEntry("treinamento", {
       date: dataTreinamento,
       value: Number(r.carga),
-      state: emp.estado || null,
+      state: r.estado,
       meta: {
-        employeeId: emp.id,
-        employeeName: up(emp.name),
-        cargo: up(emp.cargo) || null,
-        filial,
-        shortName,
-        estado: emp.estado || null,
+        employeeName: up(r.name),
+        cargo: up(r.cargo) || null,
+        filial: r.filial,
+        shortName: r.shortName,
+        estado: r.estado,
         competencia: trMonth.value || null,
         tema: up(r.tema) || null,
         cargaHoraria: Number(r.carga),
@@ -2185,7 +2273,6 @@ function confirmTrImport() {
   trRows.value = [];
   emit("saved");
   const parts = [`${ok} treinamento(s) lançado(s) em ${trMonthLabel.value}`];
-  if (skipped) parts.push(`${skipped} não lançado(s)`);
   if (invalid) parts.push(`${invalid} sem carga horária`);
   toast("Importação concluída — " + parts.join(" · "));
 }
@@ -3254,25 +3341,103 @@ onUnmounted(() => {
             <label for="trSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
             <input id="trSearch" v-model="treinamento.query" type="search" class="input-field" placeholder="Nome, cargo, setor ou usuário..." />
           </div>
-          <div class="flex max-h-56 flex-col gap-1 overflow-y-auto">
-            <p v-if="!treinamentoResults.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
-              Nenhum colaborador encontrado.
-            </p>
-            <button
-              v-for="e in treinamentoResults"
-              :key="e.id"
-              type="button"
-              class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="treinamento.employeeId === e.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
-              @click="pickTreinamentoEmployee(e)"
+          <div class="flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex min-w-0 flex-col">
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Colaboradores</strong>
+                <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                  Clique em um colaborador para lançar ou editar o treinamento. Marque para excluir os treinamentos
+                  (e as horas) deles — o cadastro da Equipe não é alterado.
+                </span>
+              </div>
+              <label class="flex cursor-pointer items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 cursor-pointer accent-accent"
+                  :checked="trAllSelected"
+                  :disabled="!trSelectable.length"
+                  @change="toggleTrAll"
+                />
+                Selecionar todos
+              </label>
+            </div>
+
+            <div
+              v-if="trSelected.size"
+              class="flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/60"
             >
-              <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
-              <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ e.cargo || e.sector }}</span>
-            </button>
+              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
+                {{ trSelected.size }} selecionado(s)
+              </span>
+              <button
+                type="button"
+                class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+                @click="deleteTrSelected"
+              >
+                Excluir selecionados
+              </button>
+            </div>
+
+            <div class="flex max-h-72 flex-col gap-1 overflow-y-auto">
+              <p v-if="!trPeopleVisible.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
+                Nenhum colaborador encontrado.
+              </p>
+              <div v-for="x in trPeopleVisible" :key="x.key">
+                <div
+                  class="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  :class="
+                    trSelected.has(x.key) || (x.employee && treinamento.employeeId === x.employee.id)
+                      ? 'bg-accent/10 dark:bg-accent/10'
+                      : ''
+                  "
+                  role="button"
+                  tabindex="0"
+                  @click="onTrPersonClick(x)"
+                  @keydown.enter.self.prevent="onTrPersonClick(x)"
+                >
+                  <input
+                    v-if="x.count"
+                    type="checkbox"
+                    class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
+                    :checked="trSelected.has(x.key)"
+                    :aria-label="'Selecionar ' + x.name"
+                    @click.stop
+                    @change="toggleTrPerson(x.key)"
+                  />
+                  <span v-else class="h-4 w-4 shrink-0"></span>
+                  <strong class="min-w-0 flex-1 truncate text-sm text-zinc-900 dark:text-zinc-100">{{ x.name }}</strong>
+                  <span class="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ x.cargo }}<template v-if="x.count"> · {{ x.count }} treinamento(s) · {{ formatHoursClock(x.horas) }}</template>
+                  </span>
+                  <button
+                    v-if="x.employee && x.count"
+                    type="button"
+                    class="shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-200 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    @click.stop="newTreinamentoFor(x.employee)"
+                  >
+                    + Novo
+                  </button>
+                </div>
+                <div
+                  v-if="trExpanded === x.key"
+                  class="ml-9 mt-1 flex flex-col gap-0.5 border-l-2 border-zinc-200 pl-3 dark:border-zinc-700"
+                >
+                  <button
+                    v-for="e in x.entries"
+                    :key="e.id"
+                    type="button"
+                    class="flex items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    @click="prefillEdit('treinamento', e)"
+                  >
+                    <span class="min-w-0 truncate text-zinc-700 dark:text-zinc-200">
+                      {{ ymLabel(String(e.date).slice(0, 7)) }} · {{ (e.meta && e.meta.tema) || "Sem tema" }}
+                    </span>
+                    <span class="shrink-0 font-medium tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatHoursClock(e.value) }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            Ao selecionar, cargo e loja (filial) são preenchidos automaticamente do cadastro do colaborador.
-          </p>
         </div>
 
         <div v-show="activeTab === 'treinamento'" class="flex flex-col gap-4">
@@ -3281,8 +3446,8 @@ onUnmounted(() => {
               <div class="flex min-w-0 flex-col gap-0.5">
                 <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar treinamentos por planilha</strong>
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Colaborador · Tema do treinamento · Carga horária (horas) · Modalidade.
-                  Os nomes são cruzados com a equipe (ignorando maiúsculas/minúsculas, acentos e espaços).
+                  Colunas: Colaborador · Tema do treinamento · Carga horária (horas) · Modalidade
+                  (opcionais: Cargo · Filial · Estado). Os colaboradores são lançados como estão na planilha.
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -3593,8 +3758,7 @@ onUnmounted(() => {
             <div>
               <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar treinamentos importados</h3>
               <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ trRows.length }} linha(s) · {{ trAmbiguousCount }} com nomes ambíguos ·
-                {{ trMissingCount }} sem colaborador correspondente
+                {{ trRows.length }} linha(s) · {{ trInvalidCount }} sem carga horária
               </p>
             </div>
             <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="trReviewOpen = false">&times;</button>
@@ -3624,61 +3788,37 @@ onUnmounted(() => {
               </span>
             </div>
 
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                Quando houver dois ou mais colaboradores com o mesmo nome, escolha qual é qual abaixo — ou “Não lançar”.
-              </p>
-              <select v-model="trFilter" class="input-field w-auto" aria-label="Filtrar por causa">
-                <option v-for="opt in trFilterOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400">
+              Os colaboradores são lançados exatamente como estão na planilha. Linhas sem carga horária não são lançadas.
+            </p>
 
             <div
               v-for="(r, idx) in visibleTrRows"
               :key="idx"
               class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-              :class="r.candidates.length > 1 && !r.missing ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5' : ''"
             >
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div class="flex min-w-0 flex-col gap-0.5">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ r.name }}</strong>
-                    <Badge v-if="r.candidates.length === 1 && !r.missing" tone="accent">1 colaborador</Badge>
-                    <Badge v-else-if="r.candidates.length > 1 && !r.missing" tone="muted">{{ r.candidates.length }} colaboradores</Badge>
-                  </div>
+                  <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ r.name }}</strong>
                   <p class="text-xs text-zinc-500 dark:text-zinc-400">
                     {{ r.tema || "Sem tema" }} · {{ r.carga != null ? formatHoursClock(r.carga) : "sem carga horária" }} ·
                     {{ r.modalidadeLabel || "Presencial" }}
                   </p>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-500">
+                    {{ [r.cargo, r.filial, r.estado].filter(Boolean).join(" · ") }}
+                  </p>
                 </div>
-                <span v-if="r.missing" class="text-xs font-semibold text-red-600 dark:text-red-400">
-                  Colaborador não encontrado na equipe
-                </span>
-                <span v-else-if="r.carga === null || r.carga === undefined" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                <span v-if="!trHasCarga(r)" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
                   Sem carga horária — não será lançado
                 </span>
-              </div>
-
-              <div class="mt-2 flex flex-col gap-1">
-                <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Lançar para qual colaborador?</label>
-                <select
-                  v-model="r.chosen"
-                  class="input-field"
-                  :disabled="r.missing || r.candidates.length === 0"
-                >
-                  <option value="">— Não lançar —</option>
-                  <option v-for="c in r.candidates" :key="c.id" :value="c.id">
-                    {{ trCandidateLabel(c) }}
-                  </option>
-                </select>
               </div>
             </div>
           </div>
 
           <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
             <button type="button" class="btn-ghost" @click="trReviewOpen = false">Cancelar</button>
-            <button type="button" class="btn-primary" :disabled="!trSelectedCount" @click="confirmTrImport">
-              Lançar {{ trSelectedCount }} treinamento(s) em {{ trMonthLabel }}
+            <button type="button" class="btn-primary" :disabled="!trValidCount" @click="confirmTrImport">
+              Lançar {{ trValidCount }} treinamento(s) em {{ trMonthLabel }}
             </button>
           </div>
         </div>

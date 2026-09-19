@@ -20,6 +20,10 @@ const props = defineProps({
   /* Barras deitadas: uma categoria por linha, com a altura crescendo conforme
      o número de itens (na tela cheia, a área rola). Só vale para barras. */
   horizontal: { type: Boolean, default: false },
+  /* Horizontal: o gráfico ocupa só a altura das próprias linhas e começa no
+     topo da moldura. Sem isto o canvas estica até o fim da moldura e, com
+     poucas linhas, o Chart.js as espalha (uma única barra ficaria no meio). */
+  alignTop: { type: Boolean, default: false },
   title: { type: String, default: "" },
   subtitle: { type: String, default: "" }
 });
@@ -35,9 +39,11 @@ const rowsHeightPx = computed(() => props.data.length * ROW_PX + 48);
 const rootStyle = computed(() => (props.fluid ? undefined : { height: props.heightPx + "px" }));
 /* Horizontal: a moldura mantém a altura do gráfico e rola na vertical quando
    há mais linhas do que cabem — o gráfico por dentro ganha ROW_PX por linha. */
-const canvasBoxStyle = computed(() =>
-  isHorizontal.value ? { height: `max(100%, ${rowsHeightPx.value}px)` } : { height: "100%" }
-);
+const canvasBoxStyle = computed(() => {
+  if (!isHorizontal.value) return { height: "100%" };
+  if (props.alignTop) return { height: `${rowsHeightPx.value}px` };
+  return { height: `max(100%, ${rowsHeightPx.value}px)` };
+});
 
 /* Abre o modal em tela cheia. O botão fica no cabeçalho da seção,
    fora da área do gráfico (chamado via ref pelo componente pai). */
@@ -216,6 +222,7 @@ watch(
         :bars-clickable="barsClickable"
         :variant="variant"
         :horizontal="horizontal"
+        :align-top="alignTop"
         fluid
         @bar-click="emit('bar-click', $event)"
         @bar-contextmenu="emit('bar-contextmenu', $event)"

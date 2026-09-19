@@ -595,6 +595,17 @@ async function fetchLancamentosRange(state, dataDe, dataAte) {
     const rest = await mapLimit(pages, LANCAMENTOS_PAGE_CONCURRENCY, fetchPage);
     rest.forEach((res) => rows.push(...((res && res.data) || [])));
   }
+
+  /* Confere a integridade: com uma ordenação não determinística no servidor
+     (empates de data/criado_em de uma importação em lote), páginas diferentes
+     podem repetir ou pular linhas — e os totais dos KPIs (ex.: horas de
+     Treinamento) ficam errados sem nenhum aviso. Quantidade de ids distintos
+     diferente do total informado = carga incompleta; quem chama refaz pelo
+     download completo (não paginado). */
+  const expected = first && first.pagination && first.pagination.total;
+  if (Number.isFinite(expected) && new Set(rows.map((r) => r.id)).size !== expected) {
+    throw new Error(`Paginação de lançamentos incompleta (${state}): esperado ${expected} registro(s).`);
+  }
   return rows;
 }
 
@@ -648,7 +659,20 @@ export async function ensureLancamentosSince(next, neededStartISO) {
           mergeFromRemote({ entries: mapRemoteEntries(rows) });
           _coveredSince[s] = neededStartISO;
         } catch (err) {
-          console.error(`[API] Falha ao estender o período carregado de ${s}:`, err);
+          console.error(`[API] Falha ao estender o período carregado de ${s}, baixando tudo:`, err);
+          /* Mesmo caminho da carga inicial (ver fetchLancamentosInitial): sem a
+             paginação, cai para o download completo — que já traz todo o
+             histórico, então o estado deixa de precisar de novas extensões. */
+          try {
+            const full = await apiFetch(`/api/data/lancamentos_${suffix}`);
+            if (epoch !== _epoch) return;
+            const rows = (full && full.data) || [];
+            persistRows(`lancamentos_${suffix}`, rows);
+            mergeFromRemote({ entries: mapRemoteEntries(rows) });
+            _coveredSince[s] = null;
+          } catch (fallbackErr) {
+            console.error(`[API] Falha ao baixar os lançamentos de ${s}:`, fallbackErr);
+          }
         }
       })
     );

@@ -9,7 +9,8 @@ import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
-import { formatValue } from "@/lib/utils";
+import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
+import { formatValue, formatCurrency } from "@/lib/utils";
 
 /* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
    funções) — repassado inteiro para reaproveitar exatamente os mesmos dados
@@ -36,6 +37,18 @@ const hiringStatusFilter = ref("fechadas");
 const centerChart = computed(() =>
   props.dashboard.cockpitChartFor(selectedKpiId.value, hiringStatusFilter.value)
 );
+
+/* Custo médio da diária: Total, Colaboradores e Média do período filtrado,
+   exibidos acima das barras (ver custoDiariaSummary em useDashboardData.js). */
+const diariaSummaryItems = computed(() => {
+  const s = centerChart.value.id === "custo_diaria" ? centerChart.value.summary : null;
+  if (!s) return [];
+  return [
+    { label: "Total", value: formatCurrency(s.total), accent: true },
+    { label: "Colaboradores", value: String(s.colaboradores) },
+    { label: "Média", value: s.media === null ? "—" : formatCurrency(s.media) }
+  ];
+});
 
 /* Divide os KPIs em duas faixas (esquerda e abaixo) para que fiquem ao
    redor do gráfico central, com o painel Indicadores fixo à direita. */
@@ -220,7 +233,10 @@ function goNextKpi() {
 
           <!-- Gráfico central -->
           <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
+            <div
+              class="mb-4 grid grid-cols-1 items-center gap-2"
+              :class="diariaSummaryItems.length ? 'sm:grid-cols-[1fr_auto_1fr]' : 'sm:grid-cols-3'"
+            >
               <div>
                 <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
                 <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ centerChart.sub }}</span>
@@ -228,6 +244,7 @@ function goNextKpi() {
               <div v-if="centerChart.id === 'tempo_contratacao'" class="flex justify-start sm:justify-center">
                 <HiringStatusPills v-model="hiringStatusFilter" />
               </div>
+              <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
               <div v-else></div>
               <div class="flex justify-start gap-2 sm:justify-end">
                 <button
@@ -302,6 +319,7 @@ function goNextKpi() {
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
               :horizontal="isHorizontalChart"
+              :align-top="centerChart.id === 'tempo_contratacao'"
               :height-px="480"
               :bars-clickable="
                 centerChart.id === 'treinamento' ||
@@ -416,6 +434,7 @@ function goNextKpi() {
             </svg>
           </button>
           <HiringStatusPills v-if="centerChart.id === 'tempo_contratacao'" v-model="hiringStatusFilter" />
+          <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
           <span v-else class="min-w-[10rem] text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">
             {{ centerChart.title }}
           </span>
@@ -480,6 +499,7 @@ function goNextKpi() {
             :value-format="centerChart.valueFormat"
             :variant="centerChart.variant || 'bar'"
             :horizontal="isHorizontalChart"
+            :align-top="centerChart.id === 'tempo_contratacao'"
             fluid
             :bars-clickable="
               centerChart.id === 'treinamento' ||
