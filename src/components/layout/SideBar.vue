@@ -27,11 +27,14 @@ const items = [
     label: "Filiais",
     paths: ["M3 9l1.5-5h15L21 9M3 9h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9zM6 15v6h12v-6"]
   },
+  /* Aba "Departamentos" desativada (fica fora da sidebar) — comentada, não
+     removida, para o caso de precisar reativar no futuro.
   {
     name: "departamentos",
     label: "Departamentos",
     paths: ["M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"]
   },
+  */
   {
     name: "usuarios",
     label: "Usuários",
