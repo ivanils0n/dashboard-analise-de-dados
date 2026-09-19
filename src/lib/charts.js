@@ -45,8 +45,67 @@ function scaleTransform(v) {
   return Math.sign(n) * Math.sqrt(Math.abs(n));
 }
 
+/* ---------- Rótulos externos da pizza ----------
+   Nos gráficos de pizza/rosca grandes, os valores ficam FORA da fatia, ligados a
+   ela por uma linha, com fonte proporcional ao tamanho do gráfico. Gráficos
+   pequenos (cards compactos, altura < PIE_OUTSIDE_MIN_HEIGHT) mantêm o valor
+   dentro da fatia: não há espaço para reservar a margem dos rótulos. */
+const PIE_OUTSIDE_MIN_HEIGHT = 200;
+/* Altura estimada da legenda (embaixo) que divide a área do gráfico com a pizza. */
+const PIE_LEGEND_ESTIMATE = 44;
+
+function isPieChart(chart) {
+  return chart.config.type === "doughnut" || chart.config.type === "pie";
+}
+
+function pieValueLabelsOn(chart) {
+  const local = chart.__valueLabels || {};
+  const opts = (chart.options.plugins && chart.options.plugins.valueLabels) || {};
+  return local.display !== undefined ? local.display : !!opts.display;
+}
+
+function pieLabelsOutside(chart) {
+  return isPieChart(chart) && (chart.height || 0) >= PIE_OUTSIDE_MIN_HEIGHT;
+}
+
+/* Tamanho da fonte dos valores: cresce com o gráfico (14–22px). */
+function pieLabelFontSize(chart) {
+  const size = Math.min(chart.width || 0, chart.height || 0);
+  return Math.max(14, Math.min(22, Math.round(size / 16)));
+}
+
+/* Encolhe o raio da pizza para sobrar margem, dentro da própria área do
+   gráfico, para a linha e o número de cada fatia (e não colidir com a legenda).
+   O raio é uma opção do dataset: precisa ir para a config crua, não para o
+   proxy `chart.options`. */
+function reservePieLabelSpace(chart) {
+  if (!isPieChart(chart)) return;
+  const raw = chart.config.options;
+  if (!pieValueLabelsOn(chart) || !pieLabelsOutside(chart)) {
+    raw.radius = "100%";
+    return;
+  }
+  const fs = pieLabelFontSize(chart);
+  const w = chart.width || 0;
+  const h = Math.max(0, (chart.height || 0) - PIE_LEGEND_ESTIMATE);
+  const half = Math.min(w, h) / 2;
+  if (!half) return;
+  /* Vertical: linha + meia altura do texto. Horizontal: linha (~1,8 fs) +
+     texto (~5 caracteres, ex.: "12,5%", ~3,2 fs) + folga. */
+  const r = Math.min(h / 2 - fs * 1.8, w / 2 - fs * 5.4);
+  const pct = Math.max(0.3, Math.min(1, r / half));
+  raw.radius = `${Math.round(pct * 100)}%`;
+}
+
 const valueLabelsPlugin = {
   id: "valueLabels",
+  beforeUpdate(chart) {
+    try {
+      reservePieLabelSpace(chart);
+    } catch (err) {
+      /* Nunca deixar um erro de layout quebrar o app */
+    }
+  },
   afterDatasetsDraw(chart) {
     try {
       drawValueLabels(chart);
@@ -85,17 +144,56 @@ function drawValueLabels(chart) {
   if (isPie) {
     const meta = chart.getDatasetMeta(0);
     const ds = chart.data.datasets[0];
+    const outside = pieLabelsOutside(chart);
+    const fs = pieLabelFontSize(chart);
+    if (outside) ctx.font = `700 ${fs}px Inter, sans-serif`;
     meta.data.forEach((el, i) => {
       const val = ds.data[i];
       if (val == null) return;
       const prop = el.getProps(["x", "y", "startAngle", "endAngle", "innerRadius", "outerRadius"], true);
       const mid = (prop.startAngle + prop.endAngle) / 2;
-      const r = (prop.outerRadius + prop.innerRadius) / 2;
-      const x = prop.x + Math.cos(mid) * r;
-      const y = prop.y + Math.sin(mid) * r;
-      ctx.fillStyle = ds.backgroundColor[i] === PIE_SECONDARY ? "#1f2937" : "#ffffff";
+      const cos = Math.cos(mid);
+      const sin = Math.sin(mid);
+
+      if (!outside) {
+        /* Gráfico pequeno: valor dentro da fatia. */
+        const r = (prop.outerRadius + prop.innerRadius) / 2;
+        ctx.fillStyle = ds.backgroundColor[i] === PIE_SECONDARY ? "#1f2937" : "#ffffff";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label(val), prop.x + cos * r, prop.y + sin * r);
+        return;
+      }
+
+      /* Fatia sem tamanho (valor 0): não há para onde apontar a linha. */
+      if (prop.endAngle - prop.startAngle < 0.01) return;
+
+      /* Linha: sai da borda da fatia, dobra num "cotovelo" e segue na
+         horizontal até o número, que fica ao lado (esquerda ou direita). */
+      const right = cos >= 0;
+      const sx = prop.x + cos * (prop.outerRadius - 2);
+      const sy = prop.y + sin * (prop.outerRadius - 2);
+      const ex = prop.x + cos * (prop.outerRadius + fs * 0.9);
+      const ey = prop.y + sin * (prop.outerRadius + fs * 0.9);
+      const tx = ex + (right ? fs * 0.9 : -fs * 0.9);
+
+      ctx.save();
+      ctx.strokeStyle = p.tick;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.lineTo(tx, ey);
+      ctx.stroke();
+      ctx.fillStyle = p.tick;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = p.text;
+      ctx.textAlign = right ? "left" : "right";
       ctx.textBaseline = "middle";
-      ctx.fillText(label(val), x, y);
+      ctx.fillText(label(val), tx + (right ? 6 : -6), ey);
     });
   } else {
     ctx.fillStyle = p.text;

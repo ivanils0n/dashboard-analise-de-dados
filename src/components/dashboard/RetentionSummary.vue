@@ -21,31 +21,31 @@ const retencaoText = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col items-center gap-3 text-center" :class="large ? 'gap-6 text-lg' : 'text-sm'">
-    <dl class="flex flex-col" :class="large ? 'gap-5' : 'gap-2'">
+  <div class="flex flex-col items-center gap-4 text-center" :class="large ? 'gap-6 text-lg' : 'text-base'">
+    <dl class="flex flex-col" :class="large ? 'gap-5' : 'gap-4'">
       <div class="flex flex-col items-center">
-        <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-xs'">Headcount final</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : ''">{{ num(tableData?.headcountFinal) }}</dd>
+        <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Headcount final</dt>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-3xl'">{{ num(tableData?.headcountFinal) }}</dd>
       </div>
       <div class="flex flex-col items-center">
-        <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-xs'">Novas contratações</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : ''">{{ num(tableData?.novasContratacoes) }}</dd>
+        <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Novas contratações</dt>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-3xl'">{{ num(tableData?.novasContratacoes) }}</dd>
       </div>
       <div class="flex flex-col items-center">
-        <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-xs'">Headcount inicial</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : ''">{{ num(tableData?.headcountInicial) }}</dd>
+        <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Headcount inicial</dt>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-3xl'">{{ num(tableData?.headcountInicial) }}</dd>
       </div>
     </dl>
     <div
       v-if="tableData?.missing?.length"
       class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
-      :class="large ? 'text-base' : 'text-xs'"
+      :class="large ? 'text-base' : 'text-sm'"
     >
       Sem dado suficiente para calcular: {{ tableData.missing.join(", ") }}.
     </div>
     <div
-      class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-      :class="large ? 'text-xl' : 'text-xs'"
+      class="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+      :class="large ? 'text-xl' : 'text-lg'"
     >
       <div class="font-semibold text-zinc-500 dark:text-zinc-400">Cálculo</div>
       <div class="mt-1 tabular-nums">
@@ -53,8 +53,8 @@ const retencaoText = computed(() => {
       </div>
     </div>
     <div class="flex flex-col items-center">
-      <span class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-xs'">Retenção</span>
-      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-4xl'">{{ retencaoText }}</strong>
+      <span class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Retenção</span>
+      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-6xl'">{{ retencaoText }}</strong>
     </div>
   </div>
 </template>

@@ -11,10 +11,25 @@ const AVG_INDICATORS = new Set(["custo_diaria", "custo_contratacao"]);
 /* Quantidade de colaboradores distintos numa lista de lançamentos (chave:
    employeeId, ou o nome quando não há id). Mesma regra do contador
    "Colaboradores" do modal de registros. */
+/* Chave do colaborador para juntar nomes iguais: sem acento, caixa, espaços e
+   pontuação ("João  Silva" e "JOAO SILVA" são a mesma pessoa). */
+export function employeeNameKey(name) {
+  return String(name ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/* Lançamentos de diária não têm mais vínculo com a Equipe: quem tem o mesmo
+   nome é a mesma pessoa. O id só serve de chave para registros antigos sem
+   nome. */
 export function uniqueEmployeeCount(list) {
   const keys = new Set();
   (list || []).forEach((e) => {
-    const key = e && e.meta && (e.meta.employeeId || e.meta.employeeName);
+    const m = e && e.meta;
+    if (!m) return;
+    const key = employeeNameKey(m.employeeName) || m.employeeId;
     if (key) keys.add(key);
   });
   return keys.size;

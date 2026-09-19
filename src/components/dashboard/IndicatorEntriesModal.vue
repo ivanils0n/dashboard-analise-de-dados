@@ -2,7 +2,7 @@
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
-import { STATES, STATE_NAMES, DEFAULT_STATE, getIndicatorById } from "@/lib/config";
+import { STATES, STATE_NAMES, getIndicatorById } from "@/lib/config";
 import { getEntriesFor, removeEntry, removeEntries } from "@/lib/store";
 import { hydrateState } from "@/lib/db";
 import {
@@ -54,7 +54,10 @@ const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: pr
    global do dashboard (DateRangeFilter), sem opção de sobrepor dentro do
    modal. */
 const form = reactive({
-  estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE,
+  /* Segue o filtro de estado do dashboard, inclusive "Todos Estados": antes
+     "todos" abria em RO e o "Total no filtro" deixava AM e PA de fora — o
+     total não batia com o do dashboard. */
+  estado: filters.current,
   filial: "todos",
   search: ""
 });
@@ -72,7 +75,7 @@ watch(
 );
 
 function clearFilters() {
-  form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+  form.estado = filters.current;
   form.filial = "todos";
   form.search = "";
 }

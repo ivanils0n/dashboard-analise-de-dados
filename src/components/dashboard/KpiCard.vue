@@ -132,7 +132,7 @@ function onKeydown(e) {
     <!-- Padrão: mini gráfico de linha -->
     <div v-else>
       <MiniLineChart :entries="kpi.entries" :show-values="showValues" />
-      <p class="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ valueText }}</p>
+      <p class="mt-2 break-words text-center text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">{{ valueText }}</p>
       <div class="mt-1 flex items-center justify-between gap-2 text-xs">
         <span :class="deltaTone">{{ deltaLabel }}</span>
         <span class="text-zinc-400">{{ kpi.countText }}</span>

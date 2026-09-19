@@ -27,7 +27,7 @@ import {
   firstDayOfYm,
   lastDayOfYm
 } from "@/lib/utils";
-import { aggregateEntries, diariaDivisor } from "@/lib/metrics";
+import { aggregateEntries, diariaDivisor, employeeNameKey } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
 import { ensureLancamentosSince } from "@/lib/db";
 
@@ -379,7 +379,8 @@ export function useDashboardData(filter, options = {}) {
   /* Diárias de um colaborador (a barra clicada), as mesmas que compõem o valor
      da barra — usadas no modal de detalhe. */
   function custoDiariaEntriesByColaborador(label) {
-    return diariaBarEntries().filter((e) => diariaColaboradorName(e) === label);
+    const key = employeeNameKey(label);
+    return diariaBarEntries().filter((e) => employeeNameKey(diariaColaboradorName(e)) === key);
   }
 
   /* Resumo do gráfico de barras da diária (Cockpit): total pago, colaboradores
@@ -397,13 +398,17 @@ export function useDashboardData(filter, options = {}) {
   }
 
   function custoDiariaBarByColaborador() {
+    /* Nomes iguais (sem acento/caixa/espaços) viram um só colaborador; o
+       rótulo é a primeira grafia encontrada. */
     const byColaborador = new Map();
     diariaBarEntries().forEach((e) => {
       const nome = diariaColaboradorName(e);
-      byColaborador.set(nome, (byColaborador.get(nome) || 0) + (Number(e.value) || 0));
+      const key = employeeNameKey(nome);
+      if (!byColaborador.has(key)) byColaborador.set(key, { label: nome, value: 0 });
+      byColaborador.get(key).value += Number(e.value) || 0;
     });
-    return [...byColaborador.entries()]
-      .map(([label, value]) => ({
+    return [...byColaborador.values()]
+      .map(({ label, value }) => ({
         label,
         value,
         tooltipValue: formatCurrency(value)

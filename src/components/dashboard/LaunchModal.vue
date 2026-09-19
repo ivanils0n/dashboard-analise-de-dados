@@ -6,6 +6,7 @@ import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
+import { employeeNameKey } from "@/lib/metrics";
 import {
   MANUAL_INDICATORS,
   STATES,
@@ -38,7 +39,6 @@ import {
   closeVacancies,
   listVacancies,
   formatVacancyTempo,
-  findEmployeesByName,
   findBranchByShortName,
   listTurnoverEntries,
   addTurnoverEntry,
@@ -1845,31 +1845,51 @@ const diImporting = ref(false);
 
 const diValidRows = computed(() => diRows.value.filter((r) => !r.errors.length));
 const diErrorCount = computed(() => diRows.value.length - diValidRows.value.length);
-/* Cada linha válida vira exatamente uma diária (lançada no mês informado). */
-const diEntriesCount = computed(() => diValidRows.value.length);
-
-/* Monta o registro do candidato exibido na escolha (usuário · setor · filial · cargo · estado). */
-function diCandidateRecord(emp) {
-  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
-  return {
-    id: emp.id,
-    user: emp.user || "",
-    name: emp.name || "",
-    sector: emp.sector || "",
-    cargo: emp.cargo || "",
-    estado: emp.estado || "",
-    filial: filial ? String(`${filial.shortName} ${filial.name}`.trim()) : "",
-    shortName: filial ? filial.shortName || "" : ""
-  };
+/* Cada linha válida vira exatamente uma diária (lançada no mês informado).
+   Os colaboradores NÃO são cruzados com a Equipe: entram como estão na
+   planilha, só para visualização nas diárias (não contam no Headcount). Nomes
+   iguais (sem acento, caixa e espaços) são juntados num único colaborador. */
+/* Chave de uma diária: colaborador, mês, motivo e valor. Não inclui estado nem
+   filial (podem variar entre importações da mesma planilha). */
+function diKey(name, mes, motivo, valor) {
+  const flat = (v) => normalizeText(v).replace(/\s+/g, "");
+  return [employeeNameKey(name), mes || "", flat(motivo), Math.round(Number(valor) * 100)].join("|");
 }
 
-function diCandidateLabel(c) {
-  const parts = [c.user, c.sector];
-  if (c.filial) parts.push(c.filial);
-  if (c.cargo) parts.push(c.cargo);
-  if (c.estado) parts.push(c.estado);
-  return parts.filter(Boolean).join(" · ");
-}
+/* Diárias já lançadas, contadas por chave. A diária é por MÊS (sem dia), então
+   linhas iguais na mesma planilha podem ser legítimas (3 diárias de R$ 150 no
+   mês). Por isso a comparação é por QUANTIDADE: cada diária já existente
+   "consome" uma linha igual da planilha — importar a mesma planilha de novo não
+   duplica, mas linhas repetidas de propósito continuam valendo. */
+const diExistingCounts = computed(() => {
+  const counts = new Map();
+  getEntriesFor("custo_diaria").forEach((e) => {
+    const m = e.meta || {};
+    const mes = m.semPeriodo ? "" : String(e.date || "").slice(0, 7);
+    const key = diKey(m.employeeName, mes, m.motivo, e.value);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return counts;
+});
+
+const diDupRows = computed(() => {
+  const counts = new Map(diExistingCounts.value);
+  const dup = new Set();
+  diValidRows.value.forEach((r) => {
+    const key = diKey(r.colaboradorText, r.periodo.ok ? r.periodo.mes : "", r.motivoText, r.pagamento);
+    const left = counts.get(key) || 0;
+    if (left > 0) {
+      counts.set(key, left - 1);
+      dup.add(r);
+    }
+  });
+  return dup;
+});
+
+const diEntriesCount = computed(() => diValidRows.value.length - diDupRows.value.size);
+const diDistinctCount = computed(
+  () => new Set(diValidRows.value.map((r) => employeeNameKey(r.colaboradorText))).size
+);
 
 function diPeriodoLabel(r) {
   if (!r.periodo.ok) return "Sem período";
@@ -1895,27 +1915,39 @@ async function onDiImportFile(e) {
     await hydrateState("todos");
     const wb = await readWorkbookFile(file);
     const sheet = diSheetToUse(wb);
-    const parsed = sheet ? parseDiariaSheet(sheet) : [];
+    /* Periodo só com o nome do mês ("agosto") assume o ano do mês filtrado no dashboard. */
+    const defaultYear = Number(String(singleMonthOfRange(dateFilter.start, dateFilter.end) || currentYm()).slice(0, 4));
+    const parsed = sheet ? parseDiariaSheet(sheet, { defaultYear }) : [];
     if (!parsed.length) {
       toast("Nenhuma diária encontrada na planilha. Use o template de diária.");
       return;
     }
     diRows.value = parsed.map((row) => {
-      const candidates = row.colaboradorText ? findEmployeesByName(row.colaboradorText).map(diCandidateRecord) : [];
       /* Só invalida a linha (não importa) quando falta colaborador ou
          pagamento. Filial e período em branco/não reconhecidos são apenas
          avisos — a diária é lançada mesmo assim, sem esses dados. */
       const errors = [];
       const warnings = [];
       if (!row.filialText) warnings.push("Filial não informada.");
-      else if (!row.filial) warnings.push(`Filial "${row.filialText}" não encontrada no cadastro.`);
       if (!row.colaboradorText) errors.push("Colaborador não informado.");
       if (!row.periodo.ok) warnings.push(row.periodo.reason);
       if (row.pagamento === null) errors.push("Pagamento inválido ou não informado.");
+      /* Estado: coluna opcional da planilha; sem ela (ou inválido), o do
+         filtro atual do dashboard. */
+      const estadoRow = String(row.estadoText || "").toUpperCase().trim();
+      const estado = STATES.includes(estadoRow)
+        ? estadoRow
+        : filters.current !== "todos"
+          ? filters.current
+          : DEFAULT_STATE;
+      /* Sem Estado na planilha e com o filtro em "Todos", tudo cairia em RO sem
+         ninguém perceber — avisa, para a soma por estado não ficar errada. */
+      if (!STATES.includes(estadoRow) && filters.current === "todos") {
+        warnings.push(`Estado não informado — será lançada em ${DEFAULT_STATE}.`);
+      }
       return {
         ...row,
-        candidates,
-        chosen: candidates.length === 1 ? candidates[0].id : "",
+        estado,
         errors,
         warnings
       };
@@ -1938,31 +1970,38 @@ function confirmDiImport() {
   const errorCount = diErrorCount.value;
   let entriesOk = 0;
 
+  /* Nomes iguais viram um só colaborador: a primeira grafia vale para todas as
+     linhas — inclusive as de diárias já lançadas antes (mesma pessoa em
+     importações diferentes). */
+  const canonical = new Map();
+  getEntriesFor("custo_diaria").forEach((e) => {
+    const name = e.meta && e.meta.employeeName;
+    const key = employeeNameKey(name);
+    if (key && !canonical.has(key)) canonical.set(key, name);
+  });
+
+  let duplicated = 0;
   diValidRows.value.forEach((r) => {
-    const candidate = r.chosen ? r.candidates.find((c) => c.id === r.chosen) : null;
-    const emp = candidate ? getEmployeeById(candidate.id) : null;
-    const employeeName = up(emp ? emp.name : r.colaboradorText);
-    /* Filial pode não ter sido informada ou não ter sido encontrada — nesse
-       caso a região vem do colaborador vinculado ou do filtro de estado atual. */
-    const filial = r.filial;
-    const state = filial
-      ? filial.estado || null
-      : emp
-        ? emp.estado || null
-        : filters.current !== "todos"
-          ? filters.current
-          : DEFAULT_STATE;
-    const dep = emp && emp.departmentId ? getDepartmentById(emp.departmentId) : null;
+    if (diDupRows.value.has(r)) {
+      duplicated++;
+      return;
+    }
+    const key = employeeNameKey(r.colaboradorText);
+    if (!canonical.has(key)) canonical.set(key, String(r.colaboradorText).replace(/\s+/g, " ").trim().toUpperCase());
+    const employeeName = canonical.get(key);
+    /* Filial e estado entram como vêm na planilha (sem cruzar com o cadastro
+       de Filiais). */
+    const state = r.estado;
     const mes = r.periodo.ok ? r.periodo.mes : null;
 
     const meta = {
-      employeeId: emp ? emp.id : null,
+      employeeId: null,
       employeeName,
-      funcao: up(r.funcaoText) || (emp ? up(emp.cargo) : null),
-      departamento: emp ? (dep ? up(dep.name) : up(emp.sector)) : null,
-      filial: filial ? up(`${filial.shortName} ${filial.name}`.trim()) : up(r.filialText),
-      liderImediato: emp ? up(emp.liderImediato) : null,
-      gerenteRegional: emp ? up(emp.gerenteRegional) : null,
+      funcao: up(r.funcaoText),
+      departamento: null,
+      filial: up(r.filialText),
+      liderImediato: null,
+      gerenteRegional: null,
       regional: state,
       motivo: up(r.motivoText),
       competencia: mes,
@@ -1982,6 +2021,7 @@ function confirmDiImport() {
   diRows.value = [];
   emit("saved");
   const parts = [`${entriesOk} diária(s) lançada(s)`];
+  if (duplicated) parts.push(`${duplicated} já lançada(s) (não repetida(s))`);
   if (errorCount) parts.push(`${errorCount} linha(s) com erro não importada(s)`);
   toast("Importação concluída — " + parts.join(" · "));
 }
@@ -3376,9 +3416,9 @@ onUnmounted(() => {
               <div class="flex min-w-0 flex-col gap-0.5">
                 <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar diárias por planilha</strong>
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Filial · Colaborador · Função · Periodo · Motivo · Pagamento.
-                  Periodo aceita dd/mm/aaaa, mm/aaaa, m/aa ou mm/aa (lançamento por mês).
-                  A região é definida pela filial; o colaborador não precisa estar cadastrado.
+                  Colunas: Filial · Colaborador · Função · Periodo · Motivo · Pagamento (opcional: Estado).
+                  Periodo é o mês da diária: 08/2026, ago/26, agosto (sem ano vale o do mês filtrado) ou uma data.
+                  Filial e colaborador entram como estão na planilha; sem Estado, vale o do filtro atual.
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -3822,6 +3862,7 @@ onUnmounted(() => {
               <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar diárias importadas</h3>
               <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
                 {{ diRows.length }} linha(s) · {{ diEntriesCount }} lançamento(s) a criar ·
+                {{ diDistinctCount }} colaborador(es) · {{ diDupRows.size }} já lançada(s) ·
                 {{ diErrorCount }} linha(s) com erro
               </p>
             </div>
@@ -3830,31 +3871,32 @@ onUnmounted(() => {
 
           <div class="flex flex-1 flex-col gap-2 overflow-y-auto px-6 py-4">
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
-              Quando houver dois ou mais colaboradores com o mesmo nome, escolha qual é qual abaixo — colaboradores não
-              cadastrados são lançados mesmo assim, usando o nome da planilha.
+              Os colaboradores são lançados exatamente como estão na planilha, sem vínculo com a Equipe (só para
+              visualização nas diárias — não contam no Headcount). Nomes iguais são juntados num único colaborador.
             </p>
 
             <div
               v-for="(r, idx) in diRows"
               :key="idx"
               class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-              :class="r.errors.length ? 'border-red-400 bg-red-50/60 dark:border-red-500/40 dark:bg-red-500/5' : (r.warnings.length || r.candidates.length > 1) ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5' : ''"
+              :class="r.errors.length ? 'border-red-400 bg-red-50/60 dark:border-red-500/40 dark:bg-red-500/5' : r.warnings.length ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5' : ''"
             >
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <div class="flex flex-wrap items-center gap-2">
                     <strong class="text-sm text-zinc-900 dark:text-zinc-100">Linha {{ r.rowNumber }} — {{ r.colaboradorText || "Sem colaborador" }}</strong>
-                    <Badge v-if="r.candidates.length === 1" tone="accent">1 colaborador</Badge>
-                    <Badge v-else-if="r.candidates.length > 1" tone="muted">{{ r.candidates.length }} colaboradores</Badge>
-                    <Badge v-else-if="r.colaboradorText" tone="muted">sem cadastro</Badge>
                   </div>
                   <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ r.filialText || "Sem filial" }}<span v-if="r.funcaoText"> · {{ r.funcaoText }}</span> ·
+                    {{ r.filialText || "Sem filial" }} · {{ r.estado }}<span v-if="r.funcaoText"> · {{ r.funcaoText }}</span> ·
                     {{ diPeriodoLabel(r) }}<span v-if="r.motivoText"> · {{ r.motivoText }}</span> ·
                     {{ r.pagamento != null ? formatCurrency(r.pagamento) : "sem pagamento" }}
                   </p>
                 </div>
               </div>
+
+              <p v-if="diDupRows.has(r)" class="mt-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                Já lançada (mesmo colaborador, mês, motivo e valor) — não será lançada de novo.
+              </p>
 
               <ul v-if="r.errors.length" class="mt-2 list-disc pl-4 text-xs font-medium text-red-600 dark:text-red-400">
                 <li v-for="(msg, i) in r.errors" :key="'err' + i">{{ msg }}</li>
@@ -3864,15 +3906,6 @@ onUnmounted(() => {
                 <li v-for="(msg, i) in r.warnings" :key="'warn' + i">{{ msg }}</li>
               </ul>
 
-              <div v-if="!r.errors.length && r.colaboradorText" class="mt-2 flex flex-col gap-1">
-                <label class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Vincular a qual colaborador?</label>
-                <select v-model="r.chosen" class="input-field" :disabled="!r.candidates.length">
-                  <option value="">— Não vincular (lançar com o nome da planilha) —</option>
-                  <option v-for="c in r.candidates" :key="c.id" :value="c.id">
-                    {{ diCandidateLabel(c) }}
-                  </option>
-                </select>
-              </div>
             </div>
           </div>
 

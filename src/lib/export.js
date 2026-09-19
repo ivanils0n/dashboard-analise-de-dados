@@ -439,18 +439,34 @@ export function downloadTreinamentoTemplate() {
 
 /* ---------- Planilha DIÁRIA (Custo da diária geral) ---------- */
 
-export const DIARIA_TEMPLATE_HEADER = ["Filial", "Colaborador", "Função", "Periodo", "Motivo", "Pagamento"];
+export const DIARIA_TEMPLATE_HEADER = ["Filial", "Colaborador", "Função", "Periodo", "Motivo", "Pagamento", "Estado"];
+
+const MESES_NOME = [
+  "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+];
+
+/* Número do mês (1–12) a partir do nome por extenso ou abreviado, sem acento
+   ("ago", "agosto", "março", "mar"). Exige 3+ letras e que o texto seja o
+   início do nome do mês. */
+function mesPorNome(word) {
+  if (!word || word.length < 3) return null;
+  const idx = MESES_NOME.findIndex((nome) => nome.startsWith(word));
+  return idx >= 0 ? idx + 1 : null;
+}
 
 /* Interpreta a coluna "Periodo" da planilha de diárias. A diária é lançada
    por MÊS de competência (sem início/fim) — aceita:
-   - "dd/mm/aaaa" (uma data completa; o dia é ignorado, só mês/ano contam) ou
-     o valor de data nativo do Excel (célula formatada como data)
-   - "mm/aaaa" ou "m/aaaa" (mês/ano com 4 dígitos)
-   - "mm/aa" ou "m/aa" (mês/ano com 2 dígitos — assume 20aa)
+   - o MÊS: "08/2026", "8/2026", "08-2026", "2026-08", "08/26", "ago/26",
+     "agosto/2026", "agosto 2026"
+   - só o mês, sem ano ("agosto", "ago", "8"): vale o ano de `defaultYear`
+     (o ano do mês filtrado no dashboard) ou, sem ele, o ano atual
+   - uma data completa ("dd/mm/aaaa", "aaaa-mm-dd" ou data nativa do Excel): o
+     dia é ignorado, só mês/ano contam
    Reaproveita `normalizeDate` para o caso de data completa: células de data
    do Excel chegam como número de série, e formatá-las como texto (raw:false)
    depende do locale do arquivo — por isso o valor cru é lido à parte. */
-export function parseDiariaMes(raw) {
+export function parseDiariaMes(raw, defaultYear = null) {
   if (raw === undefined || raw === null || String(raw).trim() === "") {
     return { ok: false, reason: "Período em branco" };
   }
@@ -462,32 +478,68 @@ export function parseDiariaMes(raw) {
     return { ok: true, mes: `${ano}-${mes}` };
   }
 
-  const text = String(raw).trim();
+  /* Texto normalizado: minúsculas, sem acento, espaços colapsados. */
+  const text = String(raw)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+  const anoPadrao = Number(defaultYear) || new Date().getFullYear();
+  const invalidMonth = { ok: false, reason: "Mês inválido no período" };
+  const ok = (ano, mes) => ({ ok: true, mes: `${ano}-${pad(mes)}` });
 
-  let m = text.match(/^(\d{1,2})\/(\d{4})$/);
+  /* mm/aaaa · m-aaaa · mm.aaaa */
+  let m = text.match(/^(\d{1,2})[\/\-.](\d{4})$/);
   if (m) {
     const mes = Number(m[1]);
-    if (mes < 1 || mes > 12) return { ok: false, reason: "Mês inválido no período" };
-    return { ok: true, mes: `${m[2]}-${pad(mes)}` };
+    return mes >= 1 && mes <= 12 ? ok(m[2], mes) : invalidMonth;
   }
 
-  m = text.match(/^(\d{1,2})\/(\d{2})$/);
+  /* aaaa-mm · aaaa/mm */
+  m = text.match(/^(\d{4})[\/\-.](\d{1,2})$/);
+  if (m) {
+    const mes = Number(m[2]);
+    return mes >= 1 && mes <= 12 ? ok(m[1], mes) : invalidMonth;
+  }
+
+  /* mm/aa (assume 20aa) */
+  m = text.match(/^(\d{1,2})[\/\-.](\d{2})$/);
   if (m) {
     const mes = Number(m[1]);
-    if (mes < 1 || mes > 12) return { ok: false, reason: "Mês inválido no período" };
-    const ano = 2000 + Number(m[2]);
-    return { ok: true, mes: `${ano}-${pad(mes)}` };
+    return mes >= 1 && mes <= 12 ? ok(2000 + Number(m[2]), mes) : invalidMonth;
   }
 
-  return { ok: false, reason: "Formato de período não reconhecido (use dd/mm/aaaa, mm/aaaa, m/aa ou mm/aa)" };
+  /* só o número do mês */
+  m = text.match(/^(\d{1,2})$/);
+  if (m) {
+    const mes = Number(m[1]);
+    return mes >= 1 && mes <= 12 ? ok(anoPadrao, mes) : invalidMonth;
+  }
+
+  /* nome do mês, com ou sem ano: "ago", "agosto/26", "agosto de 2026", "ago. 2026" */
+  m = text.match(/^([a-z]+)\.?(?:\s*[\/\-.\s]\s*(?:de\s+)?(\d{4}|\d{2}))?$/);
+  if (m) {
+    const mes = mesPorNome(m[1]);
+    if (mes) {
+      const ano = m[2] ? (m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2])) : anoPadrao;
+      return ok(ano, mes);
+    }
+  }
+
+  return {
+    ok: false,
+    reason: "Formato de período não reconhecido (use o mês, ex.: 08/2026, ago/26 ou agosto)"
+  };
 }
 
 /* Lê a planilha de diárias e devolve linhas normalizadas (sem gravar nada).
-   Cada item: { rowNumber, filialText, filial, colaboradorText, funcaoText,
+   Cada item: { rowNumber, filialText, estadoText, colaboradorText, funcaoText,
    periodoText, periodo, motivoText, pagamentoRaw, pagamento }.
-   `filial` já vem resolvida (cadastro existente) — a região do lançamento é
-   sempre a do estado da filial, nunca uma coluna da planilha. */
-export function parseDiariaSheet(sheet) {
+   Filial e colaborador entram exatamente como vêm na planilha (sem cruzar com
+   os cadastros de Filiais e Equipe); Estado é uma coluna opcional.
+   `options.defaultYear`: ano assumido quando o Periodo traz só o nome do mês. */
+export function parseDiariaSheet(sheet, options = {}) {
   const rows = sheetRows(sheet, { raw: false });
   /* Período é lido também no formato cru (raw:true): células de data reais
      chegam como número de série do Excel, evitando o texto formatado no
@@ -500,6 +552,7 @@ export function parseDiariaSheet(sheet) {
   const iPeriodo = headFind(headerRow, ["periodo"]);
   const iMotivo = headFind(headerRow, ["motivo"]);
   const iPagamento = headFind(headerRow, ["pagamento", "valor"]);
+  const iEstado = headFind(headerRow, ["estado"]);
   if (iFilial < 0 || iPeriodo < 0 || iPagamento < 0) return [];
 
   const out = [];
@@ -524,11 +577,11 @@ export function parseDiariaSheet(sheet) {
     out.push({
       rowNumber: i + 1,
       filialText,
-      filial: filialText ? findBranchByShortName(filialText) : null,
+      estadoText: String(cellAt(row, iEstado)).trim().toUpperCase(),
       colaboradorText,
       funcaoText,
       periodoText,
-      periodo: parseDiariaMes(periodoRaw !== "" ? periodoRaw : periodoText),
+      periodo: parseDiariaMes(periodoRaw !== "" ? periodoRaw : periodoText, options.defaultYear),
       motivoText,
       pagamentoRaw,
       pagamento: moneyNum(pagamentoRaw)
@@ -542,11 +595,11 @@ export function downloadDiariaTemplate() {
   const sheet = XLSX.utils.aoa_to_sheet(
     safeRows([
       DIARIA_TEMPLATE_HEADER,
-      ["PVH1", "Maria Silva", "Analista de RH", "06/2026", "Visita à loja", 150],
-      ["MAO1", "João Souza", "Supervisor", "8/26", "Auditoria", 150]
+      ["PVH1", "Maria Silva", "Analista de RH", "06/2026", "Visita à loja", 150, "RO"],
+      ["MAO1", "João Souza", "Supervisor", "Agosto", "Auditoria", 150, "AM"]
     ])
   );
-  sheet["!cols"] = [{ wch: 14 }, { wch: 26 }, { wch: 22 }, { wch: 14 }, { wch: 26 }, { wch: 14 }];
+  sheet["!cols"] = [{ wch: 14 }, { wch: 26 }, { wch: 22 }, { wch: 14 }, { wch: 26 }, { wch: 14 }, { wch: 10 }];
   XLSX.utils.book_append_sheet(workbook, sheet, "Diária");
   XLSX.writeFile(workbook, `gente-gestao-template-diaria_${todayISO()}.xlsx`);
 }
