@@ -31,6 +31,7 @@ import { uniqueEmployeeCount } from "@/lib/metrics";
      { label, period: [a, b] }    período a–b em entry.meta
      { label, date }              data do lançamento
      { label, month }             competência mês/ano do lançamento (ex.: ago/26)
+     { label, monthYear }         competência com ano completo (ex.: ago/2026)
      { label, value }             valor do lançamento formatado pelo indicador
 */
 
@@ -117,10 +118,19 @@ function hoursLabel(value) {
   return formatHoursClock(Number(value));
 }
 
+/* Competência com ano completo ("ago/2026"); diária sem período (data-sentinela)
+   aparece como "Sem período". */
+function monthYearText(entry) {
+  if (entry.meta && entry.meta.semPeriodo) return "Sem período";
+  const ym = String(entry.date || "").slice(0, 7);
+  return ym ? ymLabel(ym).toLowerCase() : "—";
+}
+
 function cellText(entry, col) {
   if (col.value) return formatValue(entry);
   if (col.date) return formatDate(entry.date);
   if (col.month) return entry.meta && entry.meta.semPeriodo ? "Sem período" : ymShortLabel(entry.date);
+  if (col.monthYear) return monthYearText(entry);
   if (col.period) {
     const a = meta(entry, col.period[0]);
     const b = meta(entry, col.period[1]);
@@ -142,6 +152,7 @@ function cellText(entry, col) {
 function rawCell(entry, col) {
   if (col.date) return entry.date || "";
   if (col.month) return entry.date || "";
+  if (col.monthYear) return monthYearText(entry);
   if (col.value) return String(entry.value ?? "");
   if (col.period) {
     const a = meta(entry, col.period[0]);

@@ -283,14 +283,13 @@ const viewIndicatorTarget = ref(null);
 
 /* Colunas exibidas no modal de registros (clique direito no KPI). */
 const diariaColumns = [
-  { label: "Data", date: true },
+  { label: "Mês", monthYear: true },
   { label: "Colaborador", meta: "employeeName" },
   { label: "Departamento", meta: "departamento" },
   { label: "Filial", meta: "filial" },
   { label: "Líder imediato", meta: "liderImediato" },
   { label: "Gerente regional", meta: "gerenteRegional" },
   { label: "Regional", meta: "regional" },
-  { label: "Período", month: true },
   { label: "Diária", meta: "motivo" },
   { label: "Valor pago", value: true }
 ];
