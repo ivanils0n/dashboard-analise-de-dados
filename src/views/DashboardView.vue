@@ -10,6 +10,7 @@ import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
+import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
@@ -144,6 +145,17 @@ function onTreinamentoBarClick({ label }) {
   treinamentoFilialOpen.value = true;
 }
 
+/* Modal ao clicar em uma barra do gráfico de Headcount (uma por estado) —
+   lista os colaboradores do estado da barra no mês filtrado. */
+const headcountEstadoOpen = ref(false);
+const headcountEstadoSigla = ref("");
+
+function onHeadcountBarClick({ label }) {
+  if (!label) return;
+  headcountEstadoSigla.value = label;
+  headcountEstadoOpen.value = true;
+}
+
 /* Modal ao clicar em uma barra do gráfico de Custo médio da diária geral (um
    colaborador por barra) — mostra os dados e as diárias do colaborador. */
 const diariaColabOpen = ref(false);
@@ -183,6 +195,7 @@ function onHiringBarContext({ index }) {
    vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
 function onKpiCardBarClick({ card, barData }, { index, label }) {
   if (card.id === "custo_diaria") return onDiariaBarClick({ label });
+  if (card.id === "headcount") return onHeadcountBarClick({ label });
   if (card.id !== "custo_contratacao") return;
   const row = barData[index];
   if (!row) return;
@@ -1339,6 +1352,12 @@ watch(activeTab, (tab) => {
       :record-id="permanenciaDetailId"
       @close="permanenciaDetailOpen = false"
       @edit="onPermanenciaDetailEdit"
+    />
+    <HeadcountEstadoModal
+      v-if="headcountEstadoOpen"
+      :open="headcountEstadoOpen"
+      :estado="headcountEstadoSigla"
+      @close="headcountEstadoOpen = false"
     />
     <TrainingFilialModal
       v-if="treinamentoFilialOpen"

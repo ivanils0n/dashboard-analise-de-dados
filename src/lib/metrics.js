@@ -20,6 +20,17 @@ export function uniqueEmployeeCount(list) {
   return keys.size;
 }
 
+/* Divisor da média da diária: colaboradores distintos identificados + cada
+   lançamento SEM colaborador (contado como uma pessoa). Antes, se só alguns
+   lançamentos tinham colaborador, os demais sumiam do divisor e a média
+   ficava inflada. */
+export function diariaDivisor(list) {
+  const unnamed = (list || []).filter(
+    (e) => !(e && e.meta && (e.meta.employeeId || e.meta.employeeName))
+  ).length;
+  return uniqueEmployeeCount(list) + unnamed;
+}
+
 export function aggregationKind(ind) {
   if (!ind) return "last";
   if (SUM_INDICATORS.has(ind.id)) return "sum";
@@ -39,7 +50,7 @@ export function aggregateEntries(ind, list) {
        colaborador pode ter várias diárias no período; dividir pelo número de
        lançamentos subestimava a média). Sem colaborador identificado nos
        lançamentos, cai para a divisão por lançamento. */
-    if (ind.id === "custo_diaria") return sum / (uniqueEmployeeCount(list) || list.length);
+    if (ind.id === "custo_diaria") return sum / (diariaDivisor(list) || list.length);
     return sum / list.length;
   }
   /* Um lançamento com valor 0 é um dado válido (ex.: 0 dias de contratação)

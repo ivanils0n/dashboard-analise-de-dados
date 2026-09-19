@@ -4,6 +4,7 @@ import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
+import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
@@ -95,7 +96,18 @@ const diariaColabOpen = ref(false);
 const diariaColabName = ref("");
 const diariaColabRows = ref([]);
 
+/* Clique numa barra do gráfico de Headcount (uma por estado): abre o modal
+   com os colaboradores do estado da barra no mês filtrado. */
+const headcountEstadoOpen = ref(false);
+const headcountEstadoSigla = ref("");
+
 function onCenterBarClick({ index, label }) {
+  if (centerChart.value.id === "headcount") {
+    if (!label) return;
+    headcountEstadoSigla.value = label;
+    headcountEstadoOpen.value = true;
+    return;
+  }
   if (centerChart.value.id === "custo_diaria") {
     if (!label) return;
     diariaColabName.value = label;
@@ -322,6 +334,7 @@ function goNextKpi() {
               :align-top="centerChart.id === 'tempo_contratacao'"
               :height-px="480"
               :bars-clickable="
+                centerChart.id === 'headcount' ||
                 centerChart.id === 'treinamento' ||
                 centerChart.id === 'custo_diaria' ||
                 centerChart.id === 'tempo_contratacao' ||
@@ -386,6 +399,13 @@ function goNextKpi() {
       :colaborador="diariaColabName"
       :entries="diariaColabRows"
       @close="diariaColabOpen = false"
+    />
+
+    <HeadcountEstadoModal
+      v-if="headcountEstadoOpen"
+      :open="headcountEstadoOpen"
+      :estado="headcountEstadoSigla"
+      @close="headcountEstadoOpen = false"
     />
 
     <TrainingFilialModal
@@ -502,6 +522,7 @@ function goNextKpi() {
             :align-top="centerChart.id === 'tempo_contratacao'"
             fluid
             :bars-clickable="
+              centerChart.id === 'headcount' ||
               centerChart.id === 'treinamento' ||
               centerChart.id === 'custo_diaria' ||
               centerChart.id === 'tempo_contratacao' ||

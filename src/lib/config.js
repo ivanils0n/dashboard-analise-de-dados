@@ -76,8 +76,8 @@ export const INDICATORS = [
   {
     id: "custo_contratacao",
     name: "Custo médio de contratação",
-    desc: "Média dos salários das vagas (abertas e fechadas)",
-    calc: "Soma dos salários das vagas ÷ quantidade de vagas no período",
+    desc: "Média dos salários das vagas fechadas",
+    calc: "Soma dos salários das vagas fechadas ÷ quantidade de vagas fechadas no período",
     type: "currency",
     unit: "R$",
     decimals: 2,

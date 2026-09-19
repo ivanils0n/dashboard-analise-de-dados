@@ -218,10 +218,15 @@ function metricsFrom(list) {
    snapshot diário local (avgHiringDays) quanto pelo card do dashboard, que a
    aplica às vagas do período filtrado (ver useDashboardData). */
 export function averageHiringDays(list) {
-  const closed = (list || []).filter((v) => v.openAt && v.closeAt);
-  if (!closed.length) return null;
-  const total = closed.reduce((sum, v) => sum + (daysBetween(v.openAt, v.closeAt) || 0), 0);
-  return total / closed.length;
+  /* Só datas válidas e em ordem (fechamento depois da abertura): uma data
+     ilegível virava 0 dia e uma invertida virava dias negativos, e ambas
+     entravam na média puxando o resultado. */
+  const days = (list || [])
+    .filter((v) => v.openAt && v.closeAt)
+    .map((v) => daysBetween(v.openAt, v.closeAt))
+    .filter((d) => d !== null && Number.isFinite(d) && d >= 0);
+  if (!days.length) return null;
+  return days.reduce((sum, d) => sum + d, 0) / days.length;
 }
 
 /* Tempo médio de contratação a partir das vagas já carregadas no store,
@@ -569,9 +574,13 @@ export function listPermanenciaRecords(state) {
 export function turnoverAvgTenureDays(state, range) {
   let list = filterByState(getPermanencias(), state).filter((p) => p.dataAdmissao && p.dataDemissao);
   if (range) list = list.filter((p) => dateWithinRange(p.dataDemissao, range));
-  if (!list.length) return null;
-  const total = list.reduce((sum, p) => sum + (daysBetween(p.dataAdmissao, p.dataDemissao) || 0), 0);
-  return total / list.length;
+  /* Mesma regra do tempo de contratação: datas inválidas ou invertidas ficam
+     fora da média em vez de virar 0 ou dias negativos. */
+  const days = list
+    .map((p) => daysBetween(p.dataAdmissao, p.dataDemissao))
+    .filter((d) => d !== null && Number.isFinite(d) && d >= 0);
+  if (!days.length) return null;
+  return days.reduce((sum, d) => sum + d, 0) / days.length;
 }
 
 export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filialId = null, estado }) {
@@ -623,7 +632,14 @@ export function deletePermanenciaRecords(ids) {
    cria registro novo). */
 
 function activeInMonth(h, ym) {
-  const admissaoYm = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 7) : null;
+  /* Sem Data de admissão (registro antigo ou importado sem ela), vale o mês de
+     referência gravado: o colaborador conta a partir dele, e não em todos os
+     meses — inclusive nos anteriores à sua entrada. */
+  const admissaoYm = h.dataAdmissao
+    ? String(h.dataAdmissao).slice(0, 7)
+    : h.mesReferencia
+      ? String(h.mesReferencia).slice(0, 7)
+      : null;
   if (admissaoYm && admissaoYm > ym) return false; // ainda não tinha sido admitido
   if (h.status === "demitido" && h.demitidoMes && h.demitidoMes <= ym) return false; // já desligado
   return true;
@@ -797,18 +813,33 @@ export function turnoverRateStats(state, range) {
                          (`range`).
    Headcount inicial  = quadro do Headcount no primeiro dia do mês filtrado
                          (reconstruído a partir do último dia do mês ANTERIOR,
-                         `prevRange`) + "Demitidos" lançados no Turnover para
-                         o mês filtrado — quem foi desligado dentro do
-                         próprio mês filtrado já não aparece como ativo no
-                         quadro reconstruído (nem no início, nem no fim), e
-                         sem essa soma o Headcount inicial ficaria menor do
-                         que realmente estava no primeiro dia do mês.
+                         `prevRange`). Quem foi desligado DENTRO do mês
+                         filtrado (demitidoMes = mês filtrado) ainda está
+                         ativo nesse quadro — logo já está no inicial e NÃO
+                         pode ser somado de novo. Só entram na soma os
+                         "Demitidos" lançados no Turnover que o Headcount
+                         ainda não reflete (desligados sem status "demitido"
+                         no quadro), para quem lança o desligamento só no
+                         Turnover: antes toda a quantidade do Turnover era
+                         somada, e quem já estava marcado no Headcount era
+                         contado duas vezes (inicial inflado, retenção menor).
    Novas contratações = total de "Admitidos" lançado no Turnover para o mês
                          filtrado (mesma fonte do KPI de Turnover). */
 export function retentionRate(state, range, prevRange) {
   const headcountFinal = headcountCountInRange(state, range);
   const { admitidos: novasContratacoes, demitidos: demitidosNoPeriodo } = turnoverQuantitiesInRange(state, range);
-  const headcountInicial = headcountCountInRange(state, prevRange) + demitidosNoPeriodo;
+  /* Desligados do mês filtrado já marcados no Headcount e que estavam no
+     quadro do início do mês (já contados em headcountCountInRange(prevRange)). */
+  const prevYm = prevRange ? String(prevRange.end || prevRange.start || "").slice(0, 7) : "";
+  const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
+  const jaMarcados =
+    prevYm && ym
+      ? filterByState(getHeadcounts(), state).filter(
+          (h) => h.status === "demitido" && h.demitidoMes === ym && activeInMonth(h, prevYm)
+        ).length
+      : 0;
+  const demitidosAindaFora = Math.max(0, demitidosNoPeriodo - jaMarcados);
+  const headcountInicial = headcountCountInRange(state, prevRange) + demitidosAindaFora;
   const retencaoPct = headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
   return {
     headcountInicial,

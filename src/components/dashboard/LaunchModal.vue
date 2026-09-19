@@ -251,6 +251,7 @@ function initModal() {
   bulkCloseDate.value = todayISO();
   resetTurnoverForm();
   turnoverSearch.value = "";
+  turnoverKindFilter.value = null;
   selectedTurnoverIds.value = new Set();
   resetHeadcountForm();
   headcountSearch.value = "";
@@ -874,6 +875,9 @@ const turnover = reactive({
 const editingTurnoverId = ref(null);
 const turnoverImportInput = ref(null);
 const turnoverSearch = ref("");
+/* Filtro pelos cards do Histórico: "admissoes" mostra só as empresas com
+   admissões, "demissoes" só as com demissões (clicar de novo remove). */
+const turnoverKindFilter = ref(null);
 const selectedTurnoverIds = ref(new Set());
 
 function resetTurnoverForm() {
@@ -961,11 +965,19 @@ const filteredTurnover = computed(() => {
       normalizeText([turnoverFilial(t), t.mesReferencia || "", t.estado || ""].join(" ")).includes(q)
     );
   }
+  if (turnoverKindFilter.value === "admissoes") list = list.filter((t) => (Number(t.admitidos) || 0) > 0);
+  else if (turnoverKindFilter.value === "demissoes") list = list.filter((t) => (Number(t.demitidos) || 0) > 0);
   return list;
 });
 
+function toggleTurnoverKind(kind) {
+  turnoverKindFilter.value = turnoverKindFilter.value === kind ? null : kind;
+}
+
 /* Totais de Admitidos/Demitidos somados sobre os registros exibidos no
-   Histórico (respeitando a busca) — mostrados como KPI acima da lista. */
+   Histórico (respeitando a busca e o filtro dos cards) — mostrados como KPI
+   acima da lista: com "Total admissões" ativo, o total de demissões passa a
+   ser só o das empresas que têm admissões (e vice-versa). */
 const turnoverTotals = computed(() =>
   filteredTurnover.value.reduce(
     (acc, t) => {
@@ -1114,6 +1126,9 @@ const headcountImportInput = ref(null);
 const headcountDemitidosImportInput = ref(null);
 const headcountDemitidosResult = ref(null);
 const headcountDemitidosPending = ref([]);
+/* Linhas ignoradas na importação de novos colaboradores (sem Data de admissão
+   válida): { items, resolve } enquanto o modal pergunta se devem ser importadas. */
+const headcountIgnoredReview = ref(null);
 const headcountDemitidosTotal = ref(0);
 const headcountDemitidosCounts = ref(null);
 const headcountSearch = ref("");
@@ -1238,6 +1253,13 @@ function headcountBranchLabel(h) {
   return b ? `${b.shortName} — ${b.name}` : "";
 }
 
+/* Histórico: só o nome completo da empresa (sem a sigla). A busca continua
+   usando headcountBranchLabel, então ainda encontra pela sigla. */
+function headcountBranchName(h) {
+  const b = h && h.filialId ? getBranchById(h.filialId) : null;
+  return b ? b.name : "";
+}
+
 const filteredHeadcount = computed(() => {
   let list = headcountList.value;
   if (headcountFilterFilialId.value) {
@@ -1320,17 +1342,33 @@ async function onHeadcountImportFile(e) {
 
     const toImport = [];
     const duplicates = [];
-    let skipped = 0;
+    const ignored = [];
     parsed.forEach((row) => {
-      if (!row.colaboradorText || !row.dataAdmissao) {
-        skipped++;
-        return;
-      }
       const est = row.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
       /* Cruza a Empresa com o Estado definitivo da linha — evita achar a
          filial errada quando o nome abreviado se repete em outro estado. */
       const empresa = row.empresaText ? findBranchByShortName(row.empresaText, est) : null;
       const filialId = empresa ? empresa.id : null;
+      /* Sem Data de admissão válida a linha é separada: o modal abaixo mostra
+         o motivo e pergunta se ela deve ser importada mesmo assim. */
+      if (!row.dataAdmissao) {
+        ignored.push({
+          linha: row.linha,
+          colaborador: row.colaboradorText,
+          codigo: row.codigo,
+          motivo: headcountIgnoreReason(row),
+          item: {
+            codigo: row.codigo,
+            colaborador: row.colaboradorText,
+            funcao: row.funcaoText,
+            remuneracao: row.remuneracao,
+            dataAdmissao: null,
+            filialId,
+            estado: est
+          }
+        });
+        return;
+      }
       const dup = row.codigo && findHeadcountByCodigo(est, row.codigo, filialId);
       const item = {
         codigo: row.codigo,
@@ -1362,12 +1400,27 @@ async function onHeadcountImportFile(e) {
       }
     }
 
+    /* Linhas ignoradas (sem Data de admissão válida): mostra o motivo de cada
+       uma e pergunta se devem ser importadas. Sem data, o registro vai para o
+       mês do filtro atual do dashboard (o banco exige um mês de referência). */
+    let ignoredImported = 0;
+    if (ignored.length) {
+      const importIgnored = await askImportIgnoredHeadcount(ignored);
+      if (importIgnored) {
+        const fallbackYm = headcountIgnoredFallbackYm();
+        ignored.forEach(({ item }) => toImport.push({ ...item, mesReferencia: fallbackYm }));
+        ignoredImported = ignored.length;
+      }
+    }
+    const skipped = ignored.length - ignoredImported;
+
     const finalList = toImport.concat(duplicates);
     finalList.forEach((item) => addHeadcountRecord(item));
 
     emit("saved");
     const parts = [`${finalList.length} colaborador(es) lançado(s)`];
     if (duplicates.length) parts.push(`${duplicates.length} duplicado(s) importado(s) mesmo assim`);
+    if (ignoredImported) parts.push(`${ignoredImported} importado(s) sem data de admissão`);
     if (skipped) parts.push(`${skipped} ignorado(s)`);
     toast("Importação concluída — " + parts.join(" · "));
     showTab("historico");
@@ -1375,6 +1428,33 @@ async function onHeadcountImportFile(e) {
     console.error(err);
     toast("Não foi possível ler a planilha de headcount.");
   }
+}
+
+/* Motivo pelo qual uma linha do headcount é ignorada (Data de admissão). */
+function headcountIgnoreReason(row) {
+  const raw = String(row.dataAdmissaoTexto ?? "").trim();
+  return raw
+    ? `Data de admissão inválida ("${raw}") — use aaaa-mm-dd ou dd/mm/aaaa`
+    : "Data de admissão não preenchida";
+}
+
+/* Mês de referência das linhas importadas sem Data de admissão: o mês do
+   filtro do dashboard (ou o atual, se o filtro não for um mês fechado). */
+function headcountIgnoredFallbackYm() {
+  return singleMonthOfRange(dateFilter.start, dateFilter.end) || currentYm();
+}
+
+/* Abre o modal de linhas ignoradas e espera a resposta (true = importar). */
+function askImportIgnoredHeadcount(items) {
+  return new Promise((resolve) => {
+    headcountIgnoredReview.value = { items, resolve };
+  });
+}
+
+function answerIgnoredHeadcount(answer) {
+  const review = headcountIgnoredReview.value;
+  headcountIgnoredReview.value = null;
+  if (review) review.resolve(answer);
 }
 
 /* "Demitidos": não cria registro novo — localiza o colaborador pelo Código +
@@ -1424,7 +1504,7 @@ async function onHeadcountDemitidosImportFile(e) {
     const sheet = headcountDemitidosSheetToUse(wb);
     const parsed = sheet ? parseHeadcountDemitidosSheet(sheet) : [];
     if (!parsed.length) {
-      toast("Nenhum código encontrado na planilha. Use o template de demitidos.");
+      toast("Nenhum colaborador encontrado na planilha. Use o template de demitidos.");
       return;
     }
     const est = effectiveVagaEstado();
@@ -2159,8 +2239,30 @@ function trHasCarga(r) {
   return r.carga !== null && r.carga !== undefined && !isNaN(Number(r.carga));
 }
 
-const trValidCount = computed(() => trRows.value.filter(trHasCarga).length);
-const trInvalidCount = computed(() => trRows.value.length - trValidCount.value);
+/* Detecta linhas já lançadas: mesmo estado, colaborador, tema, carga horária e
+   mês de competência. Sem isso, importar a mesma planilha duas vezes dobrava as
+   horas de Treinamento (a soma do KPI conta cada lançamento). */
+function trKey(estado, name, tema, carga, ym) {
+  const flat = (v) => normalizeText(v).replace(/\s+/g, "");
+  return [String(estado || "").toUpperCase(), flat(name), flat(tema), Math.round(Number(carga) * 60), ym].join("|");
+}
+
+const trExistingKeys = computed(() => {
+  const keys = new Set();
+  getEntriesFor("treinamento").forEach((e) => {
+    const m = e.meta || {};
+    keys.add(trKey(m.estado, m.employeeName, m.tema, e.value, String(e.date || "").slice(0, 7)));
+  });
+  return keys;
+});
+
+function trIsDuplicate(r) {
+  return trHasCarga(r) && trExistingKeys.value.has(trKey(r.estado, r.name, r.tema, r.carga, trMonth.value));
+}
+
+const trDupCount = computed(() => trRows.value.filter(trIsDuplicate).length);
+const trValidCount = computed(() => trRows.value.filter((r) => trHasCarga(r) && !trIsDuplicate(r)).length);
+const trInvalidCount = computed(() => trRows.value.filter((r) => !trHasCarga(r)).length);
 
 /* Linhas sem carga horária (não serão lançadas) primeiro; depois por nome. */
 const visibleTrRows = computed(() =>
@@ -2244,11 +2346,16 @@ async function onTrImportFile(e) {
 function confirmTrImport() {
   let ok = 0;
   let invalid = 0;
+  let duplicated = 0;
   const dataTreinamento = trMonth.value ? `${trMonth.value}-01` : todayISO();
   const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
   trRows.value.forEach((r) => {
     if (!trHasCarga(r)) {
       invalid++;
+      return;
+    }
+    if (trIsDuplicate(r)) {
+      duplicated++;
       return;
     }
     addEntry("treinamento", {
@@ -2273,6 +2380,7 @@ function confirmTrImport() {
   trRows.value = [];
   emit("saved");
   const parts = [`${ok} treinamento(s) lançado(s) em ${trMonthLabel.value}`];
+  if (duplicated) parts.push(`${duplicated} já lançado(s) neste mês (não repetido(s))`);
   if (invalid) parts.push(`${invalid} sem carga horária`);
   toast("Importação concluída — " + parts.join(" · "));
 }
@@ -2395,10 +2503,21 @@ function submitCustosTotal() {
     return;
   }
 
-  addEntry("custo_total", payload);
-
-  emit("saved");
-  toast(`Custos de ${custosTotMonthLabel.value} lançados para ${b.name}: ${formatCurrency(custos)}.`);
+  /* Um lançamento por filial/mês: lançar de novo no mesmo mês substitui o
+     valor anterior em vez de duplicar a linha (a soma dos custos contaria a
+     filial duas vezes). */
+  const existingCusto = getEntriesFor("custo_total").find(
+    (e) => e.date === dataCompetencia && e.meta && e.meta.filialId === b.id
+  );
+  if (existingCusto) {
+    updateEntry("custo_total", existingCusto.id, payload);
+    emit("saved");
+    toast(`Custos de ${custosTotMonthLabel.value} de ${b.name} já existiam e foram atualizados para ${formatCurrency(custos)}.`);
+  } else {
+    addEntry("custo_total", payload);
+    emit("saved");
+    toast(`Custos de ${custosTotMonthLabel.value} lançados para ${b.name}: ${formatCurrency(custos)}.`);
+  }
 
   /* Mantém a filial selecionada para o próximo lançamento, limpando apenas
      os dados específicos do custo. */
@@ -2881,15 +3000,36 @@ onUnmounted(() => {
             Nenhum registro lançado. Adicione um lançamento na aba "Novo".
           </p>
 
-          <div v-if="turnoverList.length" class="flex flex-wrap gap-2">
-            <div class="flex w-fit flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 dark:border-accent/25 dark:bg-accent/10">
+          <div v-if="turnoverList.length" class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="flex w-fit cursor-pointer flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 text-left transition hover:bg-accent/10 dark:border-accent/25 dark:bg-accent/10"
+              :class="turnoverKindFilter === 'admissoes' ? 'ring-2 ring-accent' : ''"
+              :aria-pressed="turnoverKindFilter === 'admissoes'"
+              title="Filtrar só as empresas com admissões"
+              @click="toggleTurnoverKind('admissoes')"
+            >
               <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total admissões</span>
               <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.admitidos }}</span>
-            </div>
-            <div class="flex w-fit flex-col gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+            </button>
+            <button
+              type="button"
+              class="flex w-fit cursor-pointer flex-col gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-left transition hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+              :class="turnoverKindFilter === 'demissoes' ? 'ring-2 ring-accent' : ''"
+              :aria-pressed="turnoverKindFilter === 'demissoes'"
+              title="Filtrar só as empresas com demissões"
+              @click="toggleTurnoverKind('demissoes')"
+            >
               <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total demissões</span>
               <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.demitidos }}</span>
-            </div>
+            </button>
+            <p v-if="turnoverKindFilter" class="text-xs text-zinc-500 dark:text-zinc-400">
+              Mostrando só as empresas com
+              {{ turnoverKindFilter === "admissoes" ? "admissões" : "demissões" }} —
+              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="turnoverKindFilter = null">
+                remover filtro
+              </button>
+            </p>
           </div>
 
           <div v-if="turnoverList.length" class="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -3030,7 +3170,8 @@ onUnmounted(() => {
                 <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar novos colaboradores</strong>
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">
                   Colunas: Código · Colaborador · Empresa · Função · Remuneração · Data de admissão · Estado.
-                  Quem já existir (mesma Empresa e Código) é avisado antes de importar.
+                  Obrigatórias: Colaborador e Data de admissão — as demais (inclusive o Código) são opcionais.
+                  Quem já existir (mesma Empresa e Código) é avisado antes de importar; sem Código, não há essa verificação.
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -3073,7 +3214,7 @@ onUnmounted(() => {
               <label for="headcountFilterEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
               <select id="headcountFilterEmpresa" v-model="headcountFilterFilialId" class="input-field">
                 <option :value="null">Todas as empresas</option>
-                <option v-for="b in headcountFilterBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
+                <option v-for="b in headcountFilterBranches" :key="b.id" :value="b.id">{{ b.name }}</option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5 sm:w-40">
@@ -3132,8 +3273,8 @@ onUnmounted(() => {
                   <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ h.colaborador }}</strong>
                   <Badge v-if="h.status === 'demitido'" tone="dark">Demitido em {{ ymLabel(h.demitidoMes) }}</Badge>
                 </div>
-                <span v-if="h.codigo || h.funcao || h.estado || headcountBranchLabel(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
-                  {{ [h.codigo, headcountBranchLabel(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}
+                <span v-if="h.codigo || h.funcao || h.estado || headcountBranchName(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  {{ [h.codigo, headcountBranchName(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}
                 </span>
                 <span v-if="h.remuneracao != null" class="text-xs text-zinc-500 dark:text-zinc-400">
                   Remuneração: {{ formatCurrency(h.remuneracao) }}
@@ -3758,7 +3899,7 @@ onUnmounted(() => {
             <div>
               <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar treinamentos importados</h3>
               <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ trRows.length }} linha(s) · {{ trInvalidCount }} sem carga horária
+                {{ trRows.length }} linha(s) · {{ trInvalidCount }} sem carga horária · {{ trDupCount }} já lançada(s)
               </p>
             </div>
             <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="trReviewOpen = false">&times;</button>
@@ -3789,7 +3930,8 @@ onUnmounted(() => {
             </div>
 
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
-              Os colaboradores são lançados exatamente como estão na planilha. Linhas sem carga horária não são lançadas.
+              Os colaboradores são lançados exatamente como estão na planilha. Linhas sem carga horária, ou já lançadas no
+              mesmo mês (mesmo colaborador, tema e carga horária), não são lançadas — para não duplicar as horas.
             </p>
 
             <div
@@ -3810,6 +3952,9 @@ onUnmounted(() => {
                 </div>
                 <span v-if="!trHasCarga(r)" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
                   Sem carga horária — não será lançado
+                </span>
+                <span v-else-if="trIsDuplicate(r)" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  Já lançado neste mês — não será lançado de novo
                 </span>
               </div>
             </div>
@@ -3877,6 +4022,63 @@ onUnmounted(() => {
     <div class="mt-5 flex justify-end gap-2">
       <button type="button" class="btn-ghost" @click="skipHeadcountDemitidosPending">Pular todos</button>
       <button type="button" class="btn-primary" @click="confirmHeadcountDemitidosPending">Confirmar</button>
+    </div>
+  </Modal>
+
+  <!-- Linhas ignoradas na importação de novos colaboradores do Headcount: mostra
+       o motivo e pergunta se devem ser importadas mesmo assim. -->
+  <Modal
+    v-if="headcountIgnoredReview"
+    title="Linhas ignoradas na importação"
+    subtitle="Estas linhas da planilha não foram importadas. Veja o motivo e escolha o que fazer."
+    max-width="max-w-3xl"
+    @close="answerIgnoredHeadcount(false)"
+  >
+    <div class="flex flex-col gap-3">
+      <p class="text-sm text-zinc-700 dark:text-zinc-200">
+        <strong>{{ headcountIgnoredReview.items.length }}</strong> linha(s) estão sem uma Data de admissão válida.
+        Deseja importá-las mesmo assim?
+      </p>
+
+      <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div class="max-h-[20rem] overflow-auto">
+          <table class="w-full min-w-max text-left text-sm">
+            <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
+              <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Linha</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Código</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="it in headcountIgnoredReview.items"
+                :key="it.linha"
+                class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+              >
+                <td class="whitespace-nowrap px-4 py-2.5 tabular-nums text-zinc-500 dark:text-zinc-400">{{ it.linha }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ it.colaborador }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ it.codigo || "—" }}</td>
+                <td class="px-4 py-2.5 text-amber-700 dark:text-amber-400">{{ it.motivo }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
+        Se importar, os colaboradores entram <strong>sem Data de admissão</strong>, no mês de referência
+        {{ ymLabel(headcountIgnoredFallbackYm()) }} (mês do filtro atual), e passam a contar no Headcount
+        <strong>a partir desse mês</strong>. Depois você pode editar cada registro no Histórico para informar a data
+        real de admissão.
+      </p>
+    </div>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" class="btn-ghost" @click="answerIgnoredHeadcount(false)">Não importar</button>
+      <button type="button" class="btn-primary" @click="answerIgnoredHeadcount(true)">
+        Importar {{ headcountIgnoredReview.items.length }} mesmo assim
+      </button>
     </div>
   </Modal>
 

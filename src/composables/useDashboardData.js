@@ -27,7 +27,7 @@ import {
   firstDayOfYm,
   lastDayOfYm
 } from "@/lib/utils";
-import { aggregateEntries, uniqueEmployeeCount } from "@/lib/metrics";
+import { aggregateEntries, diariaDivisor } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
 import { ensureLancamentosSince } from "@/lib/db";
 
@@ -75,16 +75,50 @@ export function useDashboardData(filter, options = {}) {
      memória (carregada em lib/db), então o cálculo é local e instantâneo:
      antes cada troca de filtro fazia uma chamada extra à API e travava a
      tela inteira com a sobreposição de carregamento. */
-  const hiringAvg = computed(() => {
-    const start = filter.start || null;
-    const end = filter.end || null;
+  function hiringAvgFor(range) {
+    const start = (range && range.start) || null;
+    const end = (range && range.end) || null;
     const inRange = listVacancies(currentState()).filter((v) => {
       if (!v.openAt) return false;
       const day = String(v.openAt).slice(0, 10);
       return !(start && day < start) && !(end && day > end);
     });
     return averageHiringDays(inRange);
-  });
+  }
+
+  /* Mês civil anterior a um período { start, end } que seja um mês fechado
+     (null nos demais casos). */
+  function monthBefore(range) {
+    const ym = range && range.start ? singleMonthOfRange(range.start, range.end) : null;
+    if (!ym) return null;
+    const prevYm = addMonthsYm(ym, -1);
+    return { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
+  }
+
+  /* Valor dos indicadores "computed" para QUALQUER período — regra única usada
+     tanto para o valor atual quanto para o mês anterior da seta ▲/▼. Antes a
+     seta desses indicadores comparava com lançamentos-snapshot antigos (bases
+     e períodos diferentes do valor atual), então podia apontar o sentido
+     errado. */
+  function computedValue(ind, range) {
+    const st = currentState();
+    switch (ind.id) {
+      case "tempo_contratacao":
+        return hiringAvgFor(range);
+      case "headcount":
+        return headcountCountInRange(st, range);
+      /* Turnover é uma taxa (%), não a contagem bruta de desligamentos — ver
+         turnoverRateStats em lib/employees.js. */
+      case "turnover":
+        return turnoverRateStats(st, range).turnoverPct;
+      case "tempo_permanencia":
+        return turnoverAvgTenureDays(st, range);
+      case "retencao":
+        return retentionRate(st, range, monthBefore(range)).retencaoPct;
+      default:
+        return computedSnapshot(ind.id, st);
+    }
+  }
 
   /* Lançamentos de um indicador no estado escolhido (já ordenados por data),
      calculados uma vez por mudança nos dados. Antes cada KPI recopiava e
@@ -116,11 +150,34 @@ export function useDashboardData(filter, options = {}) {
      automático de syncVacancyCost, meta.source "vaga") — lançamentos manuais
      feitos pela aba "Custo" do Lançamento (por colaborador) continuam sendo
      gravados e aparecem na tabela de Lançamentos, mas não entram mais na
-     média do KPI. */
+     média do KPI. Só contam as vagas FECHADAS (a data do lançamento passa a ser
+     a do fechamento): vaga aberta ainda não tem custo de contratação definido,
+     tanto no KPI quanto no gráfico.
+
+     O cálculo parte das próprias VAGAS (fonte real), não dos lançamentos de
+     custo que syncVacancyCost grava: esses podem ficar duplicados, com valor/
+     data desatualizados ou órfãos, e distorciam a média. Cada vaga fechada com
+     salário informado (> 0) vira um "lançamento" — valor = salário atual e data
+     = dia do fechamento — e a média é a soma dos salários ÷ quantidade de vagas. */
+  function costVacancyEntries() {
+    return listVacancies(currentState())
+      .filter((v) => v.closeAt && Number(v.salario) > 0)
+      .map((v) => ({
+        id: v.id,
+        date: String(v.closeAt).slice(0, 10),
+        value: Number(v.salario),
+        meta: {
+          vacancyId: v.id,
+          vacancyName: v.name,
+          source: "vaga",
+          ...(v.estado ? { estado: v.estado } : {})
+        }
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   function scopeEntries(ind, list) {
-    if (ind.id === "custo_contratacao") {
-      return list.filter((e) => e.meta && e.meta.source === "vaga");
-    }
+    if (ind.id === "custo_contratacao") return costVacancyEntries();
     return list;
   }
 
@@ -196,8 +253,11 @@ export function useDashboardData(filter, options = {}) {
     else if (statusFilter === "fechadas") vacs = vacs.filter((v) => v.closeAt);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
     return inRange
-      .map((v) => {
-        const days = daysBetween(v.openAt, v.closeAt || todayISO()) || 0;
+      .map((v) => ({ v, days: daysBetween(v.openAt, v.closeAt || todayISO()) }))
+      /* Mesma regra da média (averageHiringDays): data ilegível ou invertida
+         não vira barra de 0/negativo. */
+      .filter(({ days }) => days !== null && Number.isFinite(days) && days >= 0)
+      .map(({ v, days }) => {
         return {
           label: v.name || "Vaga",
           value: Number(days.toFixed(1)),
@@ -331,7 +391,7 @@ export function useDashboardData(filter, options = {}) {
     const list = diariaBarEntries();
     return {
       total: list.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
-      colaboradores: uniqueEmployeeCount(list),
+      colaboradores: diariaDivisor(list),
       media: ind ? aggregateList(ind, list) : null
     };
   }
@@ -358,31 +418,13 @@ export function useDashboardData(filter, options = {}) {
      ativo (e só então), recalculando a média sobre a lista combinada. */
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
-      /* Tempo médio de contratação é o único indicador "computed" cujo
-         cálculo depende diretamente de datas (abertura da vaga) — por isso,
-         ao contrário dos demais (headcount, turnover, retenção...), respeita
-         o filtro de período do dashboard. Vem de `hiringAvg` (calculado
-         sobre as vagas em memória, ver acima), não do snapshot local. */
-      if (ind.id === "tempo_contratacao") {
-        return hiringAvg.value;
-      }
-      /* Headcount e Turnover (normal/Exp) seguem o filtro de período (mês)
-         ativo. Headcount reconstrói "como estava" no mês filtrado usando a
-         Data de admissão de cada colaborador como base (ver activeInMonth em
-         lib/employees.js) — sempre a partir do quadro completo, não de um
-         "mês de lançamento" próprio. Retenção e Tempo de permanência não são
-         mais "computed" (viraram lançamento manual mensal). */
+      /* Todos os "computed" seguem o filtro de período (mês) ativo — ver
+         computedValue. Headcount reconstrói "como estava" no mês filtrado
+         usando a Data de admissão de cada colaborador (activeInMonth em
+         lib/employees.js); Tempo médio de contratação usa as vagas abertas no
+         período. */
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
-      if (ind.id === "headcount") return headcountCountInRange(currentState(), range);
-      /* Turnover é uma taxa (%), não a contagem bruta de desligamentos — ver
-         turnoverRateStats em lib/employees.js. Admissões usam como base o mês
-         anterior (previousMonthRange): conta colaboradores cuja Data de
-         admissão caiu naquele mês; Headcount é o do mês filtrado (sem
-         média). */
-      if (ind.id === "turnover") return turnoverRateStats(currentState(), range).turnoverPct;
-      if (ind.id === "tempo_permanencia") return turnoverAvgTenureDays(currentState(), range);
-      if (ind.id === "retencao") return retentionRate(currentState(), range, previousMonthRange()).retencaoPct;
-      return computedSnapshot(ind.id, currentState());
+      return computedValue(ind, range);
     }
     let list = filteredEntries(ind);
     if (ind.id === "custo_diaria" && diariaShowSemPeriodo.value) {
@@ -401,10 +443,7 @@ export function useDashboardData(filter, options = {}) {
      não cai no 1º de fevereiro, cai em janeiro; um filtro de fevereiro (28)
      só pega os últimos 28 dias de janeiro, perdendo os 3 primeiros. */
   function previousMonthRange() {
-    const ym = filter.start ? singleMonthOfRange(filter.start, filter.end) : null;
-    if (!ym) return null;
-    const prevYm = addMonthsYm(ym, -1);
-    return { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
+    return monthBefore(filter.start ? { start: filter.start, end: filter.end } : null);
   }
 
   /* ---------- KPIs ---------- */
@@ -416,7 +455,10 @@ export function useDashboardData(filter, options = {}) {
       let current = indicatorCurrentValue(ind);
       let prev = null;
       const prevMonthRangeForDelta = filter.start ? previousMonthRange() : null;
-      if (prevMonthRangeForDelta && allEntries.length) {
+      if (ind.computed) {
+        /* Mesmo cálculo do valor atual, aplicado ao mês anterior. */
+        prev = prevMonthRangeForDelta ? computedValue(ind, prevMonthRangeForDelta) : null;
+      } else if (prevMonthRangeForDelta && allEntries.length) {
         /* Mês civil anterior, imediatamente antes do mês filtrado — não
            "tudo desde sempre" (comparar set/2026 contra anos de histórico
            acumulado quase sempre dava seta de queda, mesmo num mês normal).
@@ -564,7 +606,7 @@ export function useDashboardData(filter, options = {}) {
           id: "custo_contratacao",
           kind: "bar",
           title: ind.name,
-          sub: "Salário por vaga, no período filtrado",
+          sub: "Salário por vaga fechada, no período filtrado",
           unit: ind.unit,
           valueFormat: "currency",
           variant: "line"
@@ -606,9 +648,12 @@ export function useDashboardData(filter, options = {}) {
       .map((p) => ({
         date: String(p.dataDemissao).slice(0, 10),
         label: p.colaborador || "—",
-        value: daysBetween(p.dataAdmissao, p.dataDemissao) || 0,
+        value: daysBetween(p.dataAdmissao, p.dataDemissao),
         permanenciaId: p.id
-      }));
+      }))
+      /* Mesma regra da média (turnoverAvgTenureDays): datas inválidas ou
+         invertidas ficam de fora. */
+      .filter((p) => p.value !== null && Number.isFinite(p.value) && p.value >= 0);
     return filterByRange(list)
       .map((p) => ({
         label: p.label,
@@ -862,7 +907,7 @@ export function useDashboardData(filter, options = {}) {
         id: "custo_contratacao",
         kind: "bar",
         title: "Custo médio de contratação",
-        sub: "Salário por vaga, no período filtrado",
+        sub: "Salário por vaga fechada, no período filtrado",
         data: custoContratacaoBarByFuncao(),
         valueFormat: "currency",
         variant: "line"

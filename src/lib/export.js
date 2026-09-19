@@ -832,6 +832,10 @@ export function parseHeadcountSheet(sheet) {
     const estadoRaw = String(cellAt(row, iEstado)).trim().toUpperCase();
 
     out.push({
+      /* Linha na planilha (cabeçalho = 1) e texto original da data — usados
+         para explicar por que uma linha foi ignorada. */
+      linha: i + 1,
+      dataAdmissaoTexto: String(cellAt(row, iAdmissao)).trim(),
       codigo: String(cellAt(row, iCodigo)).trim(),
       colaboradorText,
       /* A filial só é resolvida depois, já com o estado definitivo da linha
