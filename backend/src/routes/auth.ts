@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
+import { loginRateLimit } from "../middleware/rateLimit";
 import { changeName, changePassword, getProfile, login } from "../services/auth";
 import { ok, readJsonBody } from "../utils/http";
 import type { AppEnv } from "../types";
 
 const auth = new Hono<AppEnv>();
 
-auth.post("/login", async (c) => {
+auth.post("/login", loginRateLimit(), async (c) => {
   const body = await readJsonBody(c);
   const result = await login(c.env, body.usuario, body.senha);
   return ok(c, result);

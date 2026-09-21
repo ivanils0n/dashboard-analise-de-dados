@@ -4,6 +4,7 @@ export type Bindings = {
   HYPERDRIVE: Hyperdrive;
   JWT_SECRET: string;
   CORS_ORIGIN?: string;
+  LOGIN_LIMITER?: RateLimit;
 };
 
 export type TokenPayload = {

@@ -11,6 +11,7 @@ import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModa
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
+import CockpitKpiButton from "@/components/dashboard/CockpitKpiButton.vue";
 import { formatValue, formatCurrency } from "@/lib/utils";
 
 /* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
@@ -227,24 +228,19 @@ function goNextKpi() {
     <div class="grid gap-4 xl:grid-cols-[1fr_280px]">
       <div>
         <div class="grid gap-4 lg:grid-cols-[200px_1fr]">
-          <!-- KPIs à esquerda do gráfico: centralizados na vertical em
-               relação à altura do gráfico central (mesma linha do grid). -->
-          <div class="flex gap-2 overflow-x-auto pb-1 lg:h-full lg:flex-col lg:justify-center lg:overflow-visible lg:pb-0">
-            <button
+          <!-- KPIs à esquerda do gráfico (mesmo estilo dos cards da Visão geral). -->
+          <div class="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+            <CockpitKpiButton
               v-for="kpi in leftKpis"
               :key="kpi.id"
-              type="button"
-              class="cockpit-kpi-btn"
-              :class="selectedKpiId === kpi.id ? 'is-active' : ''"
-              @click="select(kpi.id)"
-            >
-              <span class="cockpit-kpi-name">{{ kpi.name }}</span>
-              <span class="cockpit-kpi-value">{{ indicatorValueText(kpi) }}</span>
-            </button>
+              :kpi="kpi"
+              :selected="selectedKpiId === kpi.id"
+              @select="select"
+            />
           </div>
 
           <!-- Gráfico central -->
-          <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <section class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <div
               class="mb-4 grid grid-cols-1 items-center gap-2"
               :class="diariaSummaryItems.length ? 'sm:grid-cols-[1fr_auto_1fr]' : 'sm:grid-cols-3'"
@@ -283,15 +279,20 @@ function goNextKpi() {
                 </button>
               </div>
             </div>
+            <!-- Em telas largas a área do gráfico ocupa o restante da altura da
+                 seção, que acompanha a altura da coluna vertical de KPIs
+                 (grid estica os dois); abaixo de lg usa altura fixa. -->
+            <div class="relative h-[480px] lg:h-auto lg:min-h-[420px] lg:flex-1">
+            <div class="h-full lg:absolute lg:inset-0">
             <PieChart
               v-if="centerChart.kind === 'pie'"
               :data="centerChart.data"
               :show-values="showValues"
-              height="h-[480px]"
+              height="h-full"
               :clickable="centerChart.id === 'turnover'"
               @chart-click="onPieClick"
             />
-            <div v-else-if="centerChart.kind === 'table'" class="flex flex-col gap-4 py-2">
+            <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4 overflow-y-auto py-2">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
                   <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
@@ -332,7 +333,7 @@ function goNextKpi() {
               :variant="centerChart.variant || 'bar'"
               :horizontal="isHorizontalChart"
               :align-top="centerChart.id === 'tempo_contratacao'"
-              :height-px="480"
+              fluid
               :bars-clickable="
                 centerChart.id === 'headcount' ||
                 centerChart.id === 'treinamento' ||
@@ -344,6 +345,8 @@ function goNextKpi() {
               @bar-click="onCenterBarClick"
               @bar-contextmenu="onCenterBarContext"
             />
+            </div>
+            </div>
             <HiringGoalsLegend
               v-if="centerChart.id === 'tempo_contratacao'"
               size="md"
@@ -356,17 +359,13 @@ function goNextKpi() {
                faixa de KPIs em relação a ele, não à largura total. -->
           <div class="hidden lg:block"></div>
           <div class="mt-4 flex flex-wrap justify-center gap-2">
-            <button
+            <CockpitKpiButton
               v-for="kpi in bottomKpis"
               :key="kpi.id"
-              type="button"
-              class="cockpit-kpi-btn"
-              :class="selectedKpiId === kpi.id ? 'is-active' : ''"
-              @click="select(kpi.id)"
-            >
-              <span class="cockpit-kpi-name">{{ kpi.name }}</span>
-              <span class="cockpit-kpi-value">{{ indicatorValueText(kpi) }}</span>
-            </button>
+              :kpi="kpi"
+              :selected="selectedKpiId === kpi.id"
+              @select="select"
+            />
           </div>
         </div>
       </div>
@@ -544,86 +543,6 @@ function goNextKpi() {
 </template>
 
 <style scoped>
-.cockpit-kpi-btn {
-  position: relative;
-  display: flex;
-  min-width: 150px;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 0.3rem;
-  overflow: hidden;
-  border-radius: 0.9rem;
-  border: 1px solid rgb(228 228 231);
-  background-color: #fff;
-  padding: 0.75rem 0.9rem 0.7rem;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
-}
-.cockpit-kpi-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--color-accent, #B7791F);
-  opacity: 0;
-  transition: opacity 0.18s ease;
-}
-.cockpit-kpi-btn:hover {
-  border-color: rgb(212 212 216);
-  box-shadow: 0 4px 10px rgba(24, 24, 27, 0.08);
-  transform: translateY(-1px);
-}
-.cockpit-kpi-btn.is-active {
-  border-color: rgba(220, 38, 38, 0.35);
-  background-image: linear-gradient(135deg, rgba(220, 38, 38, 0.07), rgba(220, 38, 38, 0));
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.12);
-}
-.cockpit-kpi-btn.is-active::before {
-  opacity: 1;
-}
-.cockpit-kpi-name {
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: rgb(113 113 122);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.cockpit-kpi-value {
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: rgb(24 24 27);
-  font-variant-numeric: tabular-nums;
-}
-.cockpit-kpi-btn.is-active .cockpit-kpi-value {
-  color: var(--color-accent, #B7791F);
-}
-:global(.dark) .cockpit-kpi-btn {
-  border-color: rgb(63 63 70);
-  background-color: rgb(24 24 27);
-  box-shadow: none;
-}
-:global(.dark) .cockpit-kpi-btn:hover {
-  border-color: rgb(82 82 91);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-:global(.dark) .cockpit-kpi-btn.is-active {
-  border-color: rgba(248, 113, 113, 0.35);
-  background-image: linear-gradient(135deg, rgba(248, 113, 113, 0.12), rgba(248, 113, 113, 0));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-:global(.dark) .cockpit-kpi-name {
-  color: rgb(161 161 170);
-}
-:global(.dark) .cockpit-kpi-value {
-  color: rgb(244 244 245);
-}
-:global(.dark) .cockpit-kpi-btn.is-active .cockpit-kpi-value {
-  color: #F2C766;
-}
 .icon-btn-sm {
   display: flex;
   height: 1.9rem;

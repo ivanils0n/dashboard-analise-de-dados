@@ -7,6 +7,13 @@
   "vars": {
     "CORS_ORIGIN": "https://gente-gestao-modenaesilva.pages.dev,http://localhost:5173"
   },
+  "ratelimits": [
+    {
+      "name": "LOGIN_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 6, "period": 60 }
+    }
+  ],
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

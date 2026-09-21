@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import MiniLineChart from "@/components/charts/MiniLineChart.vue";
-import PieChart from "@/components/charts/PieChart.vue";
+import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue, formatRawValue } from "@/lib/utils";
 
 const props = defineProps({
@@ -37,11 +37,17 @@ const deltaTone = computed(() => {
 });
 
 const indicator = computed(() => ({ type: props.kpi.type, decimals: props.kpi.decimals ?? 1 }));
-const valueText = computed(() =>
-  props.kpi.current !== null && props.kpi.current !== undefined
-    ? formatValue(indicator.value, props.kpi.current)
-    : "—"
+const hasValue = computed(() => props.kpi.current !== null && props.kpi.current !== undefined);
+
+/* Moeda: o "R$" sai do número e é exibido em cima dele (ver template). */
+const currencyPrefix = computed(() =>
+  props.kpi.type === "currency" && hasValue.value ? "R$" : ""
 );
+const valueText = computed(() => {
+  if (!hasValue.value) return "—";
+  const text = formatValue(indicator.value, props.kpi.current);
+  return currencyPrefix.value ? text.replace(/^R\$\s*/, "") : text;
+});
 
 /* Dica de interação (clique direito) para KPIs com modal de detalhe. */
 const contextHint = computed(() => {
@@ -80,7 +86,7 @@ function onKeydown(e) {
 
 <template>
   <article
-    class="flex w-[270px] shrink-0 cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
+    class="flex w-[220px] shrink-0 cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"
@@ -91,13 +97,27 @@ function onKeydown(e) {
     @contextmenu.prevent="emit('context', kpi.id)"
     @keydown="onKeydown"
   >
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex flex-col items-center gap-1.5 text-center">
+      <span
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition"
+        :class="selected
+          ? 'bg-accent/10 text-accent-hover dark:text-accent-light'
+          : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'"
+      >
+        <KpiIcon :id="kpi.id" />
+      </span>
       <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ kpi.name }}</span>
     </div>
 
-    <!-- Turnover: pizza (sem número total isolado — as % ficam no gráfico) -->
-    <div v-if="kpi.kind === 'pie'" class="mt-1">
-      <PieChart :data="kpi.pieData" :show-values="showValues" height="h-28" />
+    <!-- Turnover: só as duas taxas (Entrada e Saída), uma abaixo da outra
+         (sem número total isolado; a pizza fica no gráfico da página). -->
+    <div v-if="kpi.kind === 'pie'" class="flex flex-1 flex-col items-center justify-center gap-3 px-1 py-4">
+      <div v-for="item in kpi.pieData" :key="item.label" class="flex flex-col items-center">
+        <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ item.label }}</span>
+        <p class="text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
+          {{ formatValue({ type: "percent", decimals: 1 }, item.value) }}
+        </p>
+      </div>
     </div>
 
     <!-- Indicadores lançados por mês (um único ponto no filtro atual): apenas
@@ -124,6 +144,7 @@ function onKeydown(e) {
         class="max-w-full break-words text-center font-bold leading-tight text-zinc-900 dark:text-zinc-100"
         :class="kpi.id === 'custo_total' ? 'text-2xl' : 'text-3xl'"
       >
+        <span v-if="currencyPrefix" class="block text-sm font-semibold text-zinc-400">{{ currencyPrefix }}</span>
         {{ valueText }}
       </p>
       <span class="mt-1 text-xs text-zinc-400">{{ kpi.countText }}</span>
@@ -132,7 +153,10 @@ function onKeydown(e) {
     <!-- Padrão: mini gráfico de linha -->
     <div v-else>
       <MiniLineChart :entries="kpi.entries" :show-values="showValues" />
-      <p class="mt-2 break-words text-center text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">{{ valueText }}</p>
+      <p class="mt-2 break-words text-center text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
+        <span v-if="currencyPrefix" class="block text-sm font-semibold text-zinc-400">{{ currencyPrefix }}</span>
+        {{ valueText }}
+      </p>
       <div class="mt-1 flex items-center justify-between gap-2 text-xs">
         <span :class="deltaTone">{{ deltaLabel }}</span>
         <span class="text-zinc-400">{{ kpi.countText }}</span>
