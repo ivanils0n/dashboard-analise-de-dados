@@ -124,7 +124,7 @@ const custosEntriesOpen = ref(false);
 const mensalEntriesOpen = ref(false);
 const mensalEntriesIndicatorId = ref(null);
 const vacanciesOpen = ref(false);
-const vacancyAllPeriods = ref(false);
+const vacancyIndicatorId = ref("tempo_contratacao");
 const permanenciaOpen = ref(false);
 
 /* Modal ao clicar em uma barra do gráfico de Treinamento (por filial). */
@@ -745,12 +745,12 @@ function onKpiContext(id) {
     permanenciaEditId.value = null;
     permanenciaOpen.value = true;
   } else if (id === "tempo_contratacao") {
-    vacancyAllPeriods.value = false;
+    vacancyIndicatorId.value = "tempo_contratacao";
     vacanciesOpen.value = true;
   } else if (id === "custo_contratacao") {
-    /* O custo de contratação vem do salário das vagas: abre o histórico
-       completo (abertas e fechadas, sem restringir ao mês atual). */
-    vacancyAllPeriods.value = true;
+    /* O custo de contratação vem do salário das vagas fechadas no mês
+       filtrado (mesma regra do KPI e do gráfico). */
+    vacancyIndicatorId.value = "custo_contratacao";
     vacanciesOpen.value = true;
   }
 }
@@ -1372,7 +1372,7 @@ watch(activeTab, (tab) => {
     <VacanciesModal
       v-if="vacanciesOpen"
       :open="vacanciesOpen"
-      :all-periods="vacancyAllPeriods"
+      :indicator-id="vacancyIndicatorId"
       @close="vacanciesOpen = false"
       @edit="onVacancyEdit"
     />

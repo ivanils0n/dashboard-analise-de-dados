@@ -5,7 +5,7 @@ import { formatValue } from "@/lib/utils";
 
 /* KPI selecionável do Painel — mesma linguagem visual dos cards da Visão geral
    (ícone centralizado, nome embaixo, valor em destaque, "R$" acima do valor em
-   moeda, Turnover com Entrada/Saída empilhadas), só que compacto: sem gráfico
+   moeda, Turnover com a taxa total), só que compacto: sem gráfico
    de linha, pois o gráfico do KPI aparece grande no centro do Painel. */
 const props = defineProps({
   kpi: { type: Object, required: true },
@@ -18,12 +18,9 @@ const PERCENT = { type: "percent", decimals: 1 };
 
 const hasValue = computed(() => props.kpi.current !== null && props.kpi.current !== undefined);
 
-/* Turnover (pizza): não tem um total isolado — mostra as duas taxas. */
-const pieRows = computed(() =>
-  props.kpi.kind === "pie"
-    ? (props.kpi.pieData || []).map((d) => ({ label: d.label, text: formatValue(PERCENT, d.value) }))
-    : []
-);
+/* Turnover (pizza): mostra a taxa total. */
+const isPie = computed(() => props.kpi.kind === "pie");
+const pieText = computed(() => formatValue(PERCENT, props.kpi.totalPct));
 
 const currencyPrefix = computed(() =>
   props.kpi.kind !== "pie" && props.kpi.type === "currency" && hasValue.value ? "R$" : ""
@@ -57,11 +54,11 @@ const valueText = computed(() => {
     </span>
     <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ kpi.name }}</span>
 
-    <span v-if="pieRows.length" class="flex flex-col items-center gap-1">
-      <span v-for="row in pieRows" :key="row.label" class="flex flex-col items-center">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{{ row.label }}</span>
-        <span class="text-lg font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100">{{ row.text }}</span>
-      </span>
+    <span
+      v-if="isPie"
+      class="max-w-full break-words text-xl font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100"
+    >
+      {{ pieText }}
     </span>
     <span
       v-else

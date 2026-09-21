@@ -1,14 +1,17 @@
 <script setup>
 import { computed } from "vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
+import TurnoverCostCard from "@/components/dashboard/TurnoverCostCard.vue";
 import { formatValue } from "@/lib/utils";
 
 /* KPIs de Admissões e Demissões ao lado do gráfico de Turnover no Painel, com
    as quantidades do período e estado filtrados (mesmo estilo dos cards de KPI).
    `summary`: { admissoes, demissoes, entradaPct, saidaPct } — ver
-   cockpitChartFor em useDashboardData.js. */
+   cockpitChartFor em useDashboardData.js.
+   `showCost`: empilha o card de Custo de admissões acima de Admissões (Painel). */
 const props = defineProps({
-  summary: { type: Object, required: true }
+  summary: { type: Object, required: true },
+  showCost: { type: Boolean, default: false }
 });
 
 /* Clique num card: abre o detalhe (Admissões ou Demissões) — id "admissoes" | "demissoes". */
@@ -34,6 +37,7 @@ const cards = computed(() => [
 
 <template>
   <div class="flex gap-3 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:flex-none">
+    <TurnoverCostCard v-if="showCost" :summary="summary" />
     <button
       v-for="card in cards"
       :key="card.id"

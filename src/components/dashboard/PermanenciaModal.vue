@@ -18,8 +18,9 @@ import {
   exportPermanencia
 } from "@/lib/export";
 import { hydrateState } from "@/lib/db";
-import { formatDate, daysBetween, normalizeText } from "@/lib/utils";
+import { formatDate, daysBetween, normalizeText, singleMonthOfRange, ymLabel } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
+import { dateFilter } from "@/composables/useDateFilter";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
@@ -123,7 +124,21 @@ async function removeRecord(id) {
 /* ---------- Filtros / lista ---------- */
 const search = ref("");
 
-const list = computed(() => listPermanenciaRecords(filters.current));
+/* Segue o mês selecionado no filtro global do dashboard, pela Data de
+   demissão (mesma regra da média e do gráfico de permanência). */
+const selectedMonthLabel = computed(() => {
+  const ym = singleMonthOfRange(dateFilter.start, dateFilter.end);
+  return ym ? ymLabel(ym) : "";
+});
+
+const list = computed(() =>
+  listPermanenciaRecords(filters.current).filter((p) => {
+    const d = p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : "";
+    if (dateFilter.start && (!d || d < dateFilter.start)) return false;
+    if (dateFilter.end && (!d || d > dateFilter.end)) return false;
+    return true;
+  })
+);
 
 const filteredList = computed(() => {
   const q = normalizeText(search.value).trim();
@@ -137,7 +152,7 @@ function recordDays(p) {
 }
 
 const avgDays = computed(() => {
-  const withDays = filteredList.value.map(recordDays).filter((d) => d !== null && !isNaN(d));
+  const withDays = filteredList.value.map(recordDays).filter((d) => d !== null && Number.isFinite(d) && d >= 0);
   if (!withDays.length) return null;
   return withDays.reduce((a, b) => a + b, 0) / withDays.length;
 });
@@ -254,6 +269,14 @@ function handleExport() {
         </p>
       </div>
 
+      <div class="flex items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <span class="font-semibold uppercase tracking-wide text-zinc-400">Período</span>
+        <span>
+          Demissões no mês selecionado no filtro do dashboard{{ selectedMonthLabel ? ":" : "." }}
+          <strong v-if="selectedMonthLabel" class="text-zinc-800 dark:text-zinc-100 capitalize">{{ selectedMonthLabel }}</strong>
+        </span>
+      </div>
+
       <div v-if="canEdit" class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 flex-col gap-0.5">
@@ -363,7 +386,7 @@ function handleExport() {
       <div v-else>
         <EmptyState
           title="Nenhum registro encontrado"
-          text="Importe uma planilha ou lance um registro para calcular o tempo médio de permanência."
+          text="Não há demissões neste mês. Troque o mês no filtro do dashboard, importe uma planilha ou lance um registro."
         />
       </div>
     </div>

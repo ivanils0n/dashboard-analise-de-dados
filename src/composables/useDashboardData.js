@@ -653,11 +653,10 @@ export function useDashboardData(filter, options = {}) {
           ? "1 lançamento"
           : `${totalCount} lançamentos`;
 
-      /* Card especial do Turnover: sem número total isolado — a pizza mostra
-         a taxa de Entrada (admissões/headcount médio) e a de Saída
-         (desligamentos/headcount médio), cada fatia já em %, fundindo os
-         antigos KPIs "Turnover de Entrada" e "Turnover de Saída" num único
-         gráfico em vez de dois cards separados. */
+      /* Card especial do Turnover: exibe a taxa total (`totalPct`, mesma do
+         KPI); a pizza (`pieData`) segue com a taxa de Entrada
+         (admissões/headcount médio) e a de Saída (desligamentos/headcount
+         médio), cada fatia já em %. */
       if (ind.id === "turnover") {
         const range = filter.start ? { start: filter.start, end: filter.end } : null;
         const stats = turnoverRateStats(currentState(), range);
@@ -666,6 +665,7 @@ export function useDashboardData(filter, options = {}) {
           kind: "pie",
           name: "Turnover",
           countText,
+          totalPct: stats.turnoverPct,
           pieData: [
             { label: "Entrada", value: stats.turnoverEntradaPct },
             { label: "Saída", value: stats.turnoverSaidaPct }
@@ -1010,7 +1010,13 @@ export function useDashboardData(filter, options = {}) {
           ativos: stats.headcountAtual,
           totalPct: stats.turnoverPct,
           entradaPct: stats.turnoverEntradaPct,
-          saidaPct: stats.turnoverSaidaPct
+          saidaPct: stats.turnoverSaidaPct,
+          /* Custo de admissões: soma dos salários das vagas fechadas no mês e
+             estado filtrados (mesma base do Custo de contratação). */
+          custoAdmissaoMensal: filterByRange(costVacancyEntries()).reduce(
+            (sum, e) => sum + (Number(e.value) || 0),
+            0
+          )
         },
         valueFormat: ""
       };

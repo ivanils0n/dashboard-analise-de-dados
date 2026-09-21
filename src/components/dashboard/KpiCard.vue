@@ -109,15 +109,11 @@ function onKeydown(e) {
       <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ kpi.name }}</span>
     </div>
 
-    <!-- Turnover: só as duas taxas (Entrada e Saída), uma abaixo da outra
-         (sem número total isolado; a pizza fica no gráfico da página). -->
-    <div v-if="kpi.kind === 'pie'" class="flex flex-1 flex-col items-center justify-center gap-3 px-1 py-4">
-      <div v-for="item in kpi.pieData" :key="item.label" class="flex flex-col items-center">
-        <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ item.label }}</span>
-        <p class="text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
-          {{ formatValue({ type: "percent", decimals: 1 }, item.value) }}
-        </p>
-      </div>
+    <!-- Turnover: a taxa total (a pizza Entrada/Saída fica no gráfico da página). -->
+    <div v-if="kpi.kind === 'pie'" class="flex flex-1 flex-col items-center justify-center px-1 py-6">
+      <p class="text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
+        {{ formatValue({ type: "percent", decimals: 1 }, kpi.totalPct) }}
+      </p>
     </div>
 
     <!-- Indicadores lançados por mês (um único ponto no filtro atual): apenas

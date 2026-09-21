@@ -119,15 +119,9 @@ function retencaoPctText(data) {
   return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
 }
 
-/* Turnover (pizza): sem número total isolado — mostra as duas taxas da
-   pizza (Entrada/Saída) já formatadas em %, em vez do total combinado. */
+/* Turnover (pizza): mostra a taxa total em %. */
 function indicatorValueText(kpi) {
-  if (kpi.kind === "pie") {
-    const pct = { type: "percent", decimals: 1 };
-    return (kpi.pieData || [])
-      .map((d) => `${d.label} ${formatValue(pct, d.value)}`)
-      .join(" · ");
-  }
+  if (kpi.kind === "pie") return formatValue({ type: "percent", decimals: 1 }, kpi.totalPct);
   if (kpi.current === null || kpi.current === undefined) return "—";
   return formatValue({ type: kpi.type, decimals: kpi.decimals ?? 1 }, kpi.current);
 }
@@ -347,10 +341,8 @@ function goNextKpi() {
             <div class="relative h-[480px] lg:h-auto lg:min-h-[420px] lg:flex-1">
             <div class="h-full lg:absolute lg:inset-0">
             <div v-if="centerChart.kind === 'pie'" class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4 md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
-<!-- coluna vazia à esquerda: espelha os cards da direita e mantém a pizza centralizada -->
-<div v-if="centerChart.summary" class="hidden md:block"></div>
               <PieChart
-                class="min-h-0 min-w-0 md:col-start-2"
+                class="min-h-0 min-w-0 md:col-start-2 md:row-start-1"
                 :data="centerChart.data"
                 :show-values="showValues"
                 height="h-full"
@@ -360,7 +352,7 @@ function goNextKpi() {
                 :clickable="centerChart.id === 'turnover'"
                 @chart-click="onPieClick"
               />
-              <TurnoverSummaryCards v-if="centerChart.summary" :summary="centerChart.summary" @select="openTurnoverDetail" />
+              <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :summary="centerChart.summary" @select="openTurnoverDetail" />
             </div>
             <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4 overflow-y-auto py-2">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -567,10 +559,8 @@ function goNextKpi() {
         </div>
         <div class="min-h-0 flex-1">
           <div v-if="centerChart.kind === 'pie'" class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4 md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
-<!-- coluna vazia à esquerda: espelha os cards da direita e mantém a pizza centralizada -->
-<div v-if="centerChart.summary" class="hidden md:block"></div>
             <PieChart
-              class="min-h-0 min-w-0 md:col-start-2"
+              class="min-h-0 min-w-0 md:col-start-2 md:row-start-1"
               :data="centerChart.data"
               :show-values="showValues"
               height="h-full"
@@ -580,7 +570,7 @@ function goNextKpi() {
               :clickable="centerChart.id === 'turnover'"
               @chart-click="onPieClick"
             />
-            <TurnoverSummaryCards v-if="centerChart.summary" :summary="centerChart.summary" @select="openTurnoverDetail" />
+            <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :summary="centerChart.summary" @select="openTurnoverDetail" />
           </div>
           <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">

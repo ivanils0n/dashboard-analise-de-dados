@@ -88,8 +88,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 │   └── views/                    # Login, Dashboard, Equipe, Filiais,
 │                                 # Departamentos, Usuários
 ├── public/logo.png               # Logo (servido na raiz)
-├── sql/schema.sql                # Tabelas do CockroachDB (sem RLS/policies)
-└── .github/workflows/deploy.yml  # Deploy estático (opcional)
+└── sql/schema.sql                # Tabelas do CockroachDB (sem RLS/policies)
 ```
 
 ## Backend: Cloudflare Worker (Hono) + CockroachDB
@@ -172,8 +171,6 @@ VITE_API_URL=https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev npm run build
 
 - **Cloudflare Pages**: aponte o projeto para o repositório, build `npm run build`,
   output `dist`, e defina a variável `VITE_API_URL`.
-- **GitHub Pages**: cadastre o segredo `VITE_API_URL` (URL pública do Worker) em
-  **Settings → Secrets and variables → Actions**; o workflow injeta no build.
 
 ## Como adicionar um novo indicador
 

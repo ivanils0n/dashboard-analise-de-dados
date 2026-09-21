@@ -16,16 +16,17 @@ import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* Quando true, não filtra por período (mostra todas as vagas) — usado por
-     Custo de contratação. Quando false, segue sempre o mês selecionado no
-     filtro global do dashboard, sem opção de sobrepor aqui. */
-  allPeriods: { type: Boolean, default: false }
+  /* KPI de origem. Nos dois casos segue sempre o mês selecionado no filtro
+     global do dashboard, sem opção de sobrepor aqui, com a mesma regra do
+     KPI/gráfico:
+       tempo_contratacao  vagas abertas no mês (data de abertura)
+       custo_contratacao  vagas fechadas com salário no mês (data de fechamento) */
+  indicatorId: { type: String, default: "tempo_contratacao" }
 });
 const emit = defineEmits(["close", "edit"]);
 
-/* KPI de origem: Custo de contratação abre o histórico completo (allPeriods);
-   Tempo médio de contratação, o do mês filtrado. */
-const kpi = computed(() => getIndicatorById(props.allPeriods ? "custo_contratacao" : "tempo_contratacao") || {});
+const isCost = computed(() => props.indicatorId === "custo_contratacao");
+const kpi = computed(() => getIndicatorById(props.indicatorId) || {});
 
 const { state: filters } = useFilters();
 const { confirm } = useDialog();
@@ -42,8 +43,8 @@ const form = reactive({
   status: "todas"
 });
 
-const periodFrom = computed(() => (props.allPeriods ? "" : dateFilter.start));
-const periodTo = computed(() => (props.allPeriods ? "" : dateFilter.end));
+const periodFrom = computed(() => dateFilter.start);
+const periodTo = computed(() => dateFilter.end);
 
 watch(
   () => form.estado,
@@ -78,8 +79,11 @@ function tipoLabel(t) {
   return t ? String(t).toUpperCase() : "—";
 }
 
-function openAtDate(v) {
-  return v && v.openAt ? String(v.openAt).slice(0, 10) : "";
+/* Data usada no filtro de mês: fechamento no Custo de contratação (o custo
+   é reconhecido quando a vaga fecha), abertura no Tempo de contratação. */
+function periodDate(v) {
+  const raw = isCost.value ? v && v.closeAt : v && v.openAt;
+  return raw ? String(raw).slice(0, 10) : "";
 }
 
 /* Lista base (estado + período + busca), ANTES dos filtros de filial e de
@@ -87,8 +91,11 @@ function openAtDate(v) {
 const scopedList = computed(() => {
   let list = listVacancies(form.estado);
 
-  if (periodFrom.value) list = list.filter((v) => openAtDate(v) >= periodFrom.value);
-  if (periodTo.value) list = list.filter((v) => openAtDate(v) <= periodTo.value);
+  /* Custo: só vagas fechadas com salário, como o KPI e o gráfico. */
+  if (isCost.value) list = list.filter((v) => v.closeAt && Number(v.salario) > 0);
+
+  if (periodFrom.value) list = list.filter((v) => periodDate(v) >= periodFrom.value);
+  if (periodTo.value) list = list.filter((v) => periodDate(v) <= periodTo.value);
 
   const q = normalizeText(form.search).trim();
   if (q) {
@@ -115,6 +122,10 @@ const baseList = computed(() => {
   }
   return list;
 });
+
+/* Soma dos salários das vagas exibidas (Custo de contratação): mês e estado
+   filtrados, mais filial e busca se aplicados. */
+const totalSalarios = computed(() => baseList.value.reduce((sum, v) => sum + (Number(v.salario) || 0), 0));
 
 const openCount = computed(() => baseList.value.filter((v) => !v.closeAt).length);
 const closedCount = computed(() => baseList.value.filter((v) => v.closeAt).length);
@@ -269,7 +280,7 @@ watch(rows, () => nextTick(updateTableWidths));
     <div class="flex flex-col gap-3">
       <!-- Resumo -->
       <div class="grid gap-3 sm:grid-cols-2">
-        <div class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div v-if="!isCost" class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas abertas</span>
           <p class="text-2xl font-bold text-accent-hover dark:text-accent-light">{{ openCount }}</p>
         </div>
@@ -277,9 +288,13 @@ watch(rows, () => nextTick(updateTableWidths));
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas fechadas</span>
           <p class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ closedCount }}</p>
         </div>
+        <div v-if="isCost" class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-accent/25 dark:bg-accent/10">
+          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Total de salários</span>
+          <p class="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatCurrency(totalSalarios) }}</p>
+        </div>
       </div>
 
-      <HiringGoalsLegend v-if="!allPeriods" size="md" class="-mt-1" />
+      <HiringGoalsLegend v-if="!isCost" size="md" class="-mt-1" />
 
       <!-- Filtros -->
       <div class="rounded-xl border border-zinc-200 px-3 py-3 dark:border-zinc-800">
@@ -303,7 +318,7 @@ watch(rows, () => nextTick(updateTableWidths));
               <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
               <input v-model="form.search" type="search" class="input-field" placeholder="Vaga, tipo, filial..." />
             </div>
-            <div class="flex flex-col gap-1.5 sm:w-44">
+            <div v-if="!isCost" class="flex flex-col gap-1.5 sm:w-44">
               <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Status</label>
               <select v-model="form.status" class="input-field">
                 <option value="todas">Todas</option>
@@ -314,10 +329,10 @@ watch(rows, () => nextTick(updateTableWidths));
             <button type="button" class="btn-ghost" @click="clearFilters">Limpar</button>
           </div>
 
-          <div v-if="!allPeriods" class="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <div class="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <span class="font-semibold uppercase tracking-wide text-zinc-400">Período</span>
             <span>
-              Mês selecionado no filtro do dashboard{{ selectedMonthLabel ? ":" : "." }}
+              {{ isCost ? "Vagas fechadas no mês selecionado no filtro do dashboard" : "Mês selecionado no filtro do dashboard" }}{{ selectedMonthLabel ? ":" : "." }}
               <strong v-if="selectedMonthLabel" class="text-zinc-800 dark:text-zinc-100 capitalize">{{ selectedMonthLabel }}</strong>
             </span>
           </div>
