@@ -4,6 +4,7 @@ import { sidebarHidden } from "@/composables/useSidebar";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
+import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
@@ -148,6 +149,15 @@ function onTreinamentoBarClick({ label }) {
 
 /* Modal ao clicar em uma barra do gráfico de Headcount (uma por estado) —
    lista os colaboradores do estado da barra no mês filtrado. */
+/* Detalhe de Admissões/Demissões do Turnover (cards ao lado da pizza). */
+const turnoverDetailOpen = ref(false);
+const turnoverDetailKind = ref("admissoes");
+
+function openTurnoverDetail(kind) {
+  turnoverDetailKind.value = kind;
+  turnoverDetailOpen.value = true;
+}
+
 const headcountEstadoOpen = ref(false);
 const headcountEstadoSigla = ref("");
 
@@ -472,6 +482,8 @@ const kpiChartViews = computed(() =>
     card,
     entries: lineEntries(card),
     pieData: card.kind === "pie" ? chartPieData(card.id) : [],
+    /* Turnover: quantidades de admissões/demissões e taxa total (centro da pizza). */
+    turnoverSummary: card.id === "turnover" ? dashboard.cockpitChartFor("turnover").summary : null,
     barData: chartBarData(card),
     tableData: chartTableData(card)
   }))
@@ -1000,10 +1012,12 @@ watch(activeTab, (tab) => {
           :card="view.card"
           :entries="view.entries"
           :pie-data="view.pieData"
+          :turnover-summary="view.turnoverSummary"
           :bar-data="view.barData"
           :table-data="view.tableData"
           :show-values="showValues"
           :data-indicator-card="view.card.id"
+          @turnover-detail="openTurnoverDetail"
           @bar-click="onKpiCardBarClick(view, $event)"
         />
       </template>
@@ -1382,6 +1396,12 @@ watch(activeTab, (tab) => {
       :record-id="permanenciaDetailId"
       @close="permanenciaDetailOpen = false"
       @edit="onPermanenciaDetailEdit"
+    />
+    <TurnoverDetailModal
+      v-if="turnoverDetailOpen"
+      :open="turnoverDetailOpen"
+      :kind="turnoverDetailKind"
+      @close="turnoverDetailOpen = false"
     />
     <HeadcountEstadoModal
       v-if="headcountEstadoOpen"

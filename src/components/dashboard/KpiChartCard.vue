@@ -5,6 +5,7 @@ import PieChart from "@/components/charts/PieChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import Modal from "@/components/ui/Modal.vue";
 import RetentionSummary from "@/components/dashboard/RetentionSummary.vue";
+import TurnoverSummaryCards from "@/components/dashboard/TurnoverSummaryCards.vue";
 import { getIndicatorById } from "@/lib/config";
 import { aggregateByMonth, formatMonthLabel, formatValue } from "@/lib/utils";
 
@@ -22,10 +23,26 @@ const props = defineProps({
   showValues: { type: Boolean, default: false },
   /* Largura total (cards empilhados um abaixo do outro) em vez do card fixo
      de 280px da faixa horizontal. */
-  stacked: { type: Boolean, default: false }
+  stacked: { type: Boolean, default: false },
+  /* Só no card de Turnover: quantidades do período ({ admissoes, demissoes,
+     totalPct, entradaPct, saidaPct }) — mostradas ao lado da pizza, com a taxa
+     total no centro. */
+  turnoverSummary: { type: Object, default: null }
 });
 
-const emit = defineEmits(["bar-click"]);
+const emit = defineEmits(["bar-click", "turnover-detail"]);
+
+/* Taxa total de Turnover no centro da pizza. */
+const centerValue = computed(() =>
+  props.turnoverSummary ? formatValue({ type: "percent", decimals: 1 }, props.turnoverSummary.totalPct) : ""
+);
+
+/* Clique num card de Admissões/Demissões: a tela hospeda o modal de detalhe.
+   Da tela cheia, fecha o modal do gráfico antes. */
+function onTurnoverDetail(kind) {
+  fullscreenOpen.value = false;
+  emit("turnover-detail", kind);
+}
 
 /* Altura do gráfico nos cards empilhados (padrão do BarChart: 288px). */
 const STACKED_HEIGHT_PX = 340;
@@ -116,7 +133,17 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
       </div>
     </div>
 
-    <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" :height="stacked ? 'h-[340px]' : 'h-52'" />
+    <div v-if="card.kind === 'pie'" class="flex flex-col gap-4 md:flex-row md:items-center">
+      <PieChart
+        class="min-w-0 md:flex-1"
+        :data="pieData"
+        :show-values="showValues"
+        :height="stacked ? 'h-[340px]' : 'h-52'"
+        :center-value="centerValue"
+        :center-caption="centerValue ? 'Turnover' : ''"
+      />
+      <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
+    </div>
     <BarChart
       v-else-if="card.kind === 'bar'"
       ref="chartRef"
@@ -147,7 +174,17 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
 
     <Modal v-if="fullscreenOpen" fullscreen :title="card.title" :subtitle="card.sub" @close="fullscreenOpen = false">
       <div class="h-[calc(100vh-190px)] min-h-[320px] w-full">
-        <PieChart v-if="card.kind === 'pie'" :data="pieData" :show-values="showValues" height="h-full" />
+        <div v-if="card.kind === 'pie'" class="flex h-full flex-col gap-4 md:flex-row md:items-center">
+          <PieChart
+            class="min-h-0 min-w-0 md:flex-1"
+            :data="pieData"
+            :show-values="showValues"
+            height="h-full"
+            :center-value="centerValue"
+            :center-caption="centerValue ? 'Turnover' : ''"
+          />
+          <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
+        </div>
         <div v-else class="flex h-full items-center justify-center">
           <RetentionSummary :table-data="tableData" large />
         </div>
