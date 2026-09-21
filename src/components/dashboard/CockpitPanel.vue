@@ -13,6 +13,8 @@ import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
 import CockpitKpiButton from "@/components/dashboard/CockpitKpiButton.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
+import TurnoverSummaryCards from "@/components/dashboard/TurnoverSummaryCards.vue";
+import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatCurrency } from "@/lib/utils";
 
@@ -65,6 +67,12 @@ const bottomKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 1));
    de novo volta para "todos". */
 const { setState } = useFilters();
 const mapStates = computed(() => props.dashboard.kpiValueByEstado(selectedKpiId.value));
+
+/* Taxa total de Turnover no centro da pizza (Painel e tela cheia). */
+const turnoverCenterValue = computed(() => {
+  const s = centerChart.value.id === "turnover" ? centerChart.value.summary : null;
+  return s ? formatValue({ type: "percent", decimals: 1 }, s.totalPct) : "";
+});
 
 function select(id) {
   props.dashboard.selectKpi(selectedKpiId.value === id ? null : id);
@@ -233,6 +241,18 @@ function onPieClick() {
   emit("open-turnover");
 }
 
+/* Clique num card de Admissões/Demissões ao lado da pizza: abre o detalhe dos
+   lançamentos que compõem o número. Da tela cheia, fecha o modal do gráfico
+   antes para não ficar por baixo. */
+const turnoverDetailOpen = ref(false);
+const turnoverDetailKind = ref("admissoes");
+
+function openTurnoverDetail(kind) {
+  turnoverDetailKind.value = kind;
+  fullscreenOpen.value = false;
+  turnoverDetailOpen.value = true;
+}
+
 /* Tela cheia do gráfico central, com navegação entre os KPIs sem precisar
    fechar o modal. Índice 0 do ciclo é sempre o gráfico padrão (id null). */
 const fullscreenOpen = ref(false);
@@ -313,14 +333,21 @@ function goNextKpi() {
                  (grid estica os dois); abaixo de lg usa altura fixa. -->
             <div class="relative h-[480px] lg:h-auto lg:min-h-[420px] lg:flex-1">
             <div class="h-full lg:absolute lg:inset-0">
-            <PieChart
-              v-if="centerChart.kind === 'pie'"
-              :data="centerChart.data"
-              :show-values="showValues"
-              height="h-full"
-              :clickable="centerChart.id === 'turnover'"
-              @chart-click="onPieClick"
-            />
+            <div v-if="centerChart.kind === 'pie'" class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4 md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
+<!-- coluna vazia à esquerda: espelha os cards da direita e mantém a pizza centralizada -->
+<div v-if="centerChart.summary" class="hidden md:block"></div>
+              <PieChart
+                class="min-h-0 min-w-0 md:col-start-2"
+                :data="centerChart.data"
+                :show-values="showValues"
+                height="h-full"
+                :center-value="turnoverCenterValue"
+                :center-caption="turnoverCenterValue ? 'Turnover' : ''"
+                :clickable="centerChart.id === 'turnover'"
+                @chart-click="onPieClick"
+              />
+              <TurnoverSummaryCards v-if="centerChart.summary" :summary="centerChart.summary" @select="openTurnoverDetail" />
+            </div>
             <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4 overflow-y-auto py-2">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
@@ -428,7 +455,7 @@ function goNextKpi() {
 
       <UfMapCard
         title="Mapa por estado"
-        :subtitle="centerChart.title"
+        :subtitle="centerChart.id === 'custo_diaria' ? `${centerChart.title} — valor total` : centerChart.title"
         :states="mapStates"
         @select="setState"
       />
@@ -441,6 +468,13 @@ function goNextKpi() {
       :colaborador="diariaColabName"
       :entries="diariaColabRows"
       @close="diariaColabOpen = false"
+    />
+
+    <TurnoverDetailModal
+      v-if="turnoverDetailOpen"
+      :open="turnoverDetailOpen"
+      :kind="turnoverDetailKind"
+      @close="turnoverDetailOpen = false"
     />
 
     <HeadcountEstadoModal
@@ -513,14 +547,21 @@ function goNextKpi() {
           </button>
         </div>
         <div class="min-h-0 flex-1">
-          <PieChart
-            v-if="centerChart.kind === 'pie'"
-            :data="centerChart.data"
-            :show-values="showValues"
-            height="h-full"
-            :clickable="centerChart.id === 'turnover'"
-            @chart-click="onPieClick"
-          />
+          <div v-if="centerChart.kind === 'pie'" class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4 md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
+<!-- coluna vazia à esquerda: espelha os cards da direita e mantém a pizza centralizada -->
+<div v-if="centerChart.summary" class="hidden md:block"></div>
+            <PieChart
+              class="min-h-0 min-w-0 md:col-start-2"
+              :data="centerChart.data"
+              :show-values="showValues"
+              height="h-full"
+              :center-value="turnoverCenterValue"
+              :center-caption="turnoverCenterValue ? 'Turnover' : ''"
+              :clickable="centerChart.id === 'turnover'"
+              @chart-click="onPieClick"
+            />
+            <TurnoverSummaryCards v-if="centerChart.summary" :summary="centerChart.summary" @select="openTurnoverDetail" />
+          </div>
           <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">

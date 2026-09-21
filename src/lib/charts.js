@@ -795,3 +795,46 @@ export function updateBarChart(chart, panorama, options = {}) {
 
   chart.update();
 }
+
+/* Texto no centro da rosca (ex.: taxa total de Turnover): valor em destaque e
+   legenda pequena abaixo, no centro real da rosca (não do canvas, que também
+   comporta a legenda). Ativado por chart.__centerText = { value, caption }. */
+const centerTextPlugin = {
+  id: "centerText",
+  afterDraw(chart) {
+    try {
+      const info = chart.__centerText;
+      if (!info || !info.value) return;
+      const arc = chart.getDatasetMeta(0).data[0];
+      if (!arc) return;
+      const inner = arc.innerRadius || 0;
+      if (inner < 20) return;
+      const p = chartPalette();
+      const { ctx } = chart;
+      const valueSize = Math.max(14, Math.min(40, Math.round(inner * 0.42)));
+      const captionSize = Math.max(10, Math.min(14, Math.round(inner * 0.17)));
+      const gap = info.caption ? captionSize * 0.7 : 0;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = p.text;
+      ctx.font = `700 ${valueSize}px ${Chart.defaults.font.family}`;
+      ctx.fillText(info.value, arc.x, arc.y - gap);
+      if (info.caption) {
+        ctx.fillStyle = p.tick;
+        ctx.font = `600 ${captionSize}px ${Chart.defaults.font.family}`;
+        ctx.fillText(info.caption, arc.x, arc.y + valueSize * 0.55 + gap * 0.4);
+      }
+      ctx.restore();
+    } catch (err) {
+      /* Nunca deixar um erro de desenho quebrar o app */
+    }
+  }
+};
+Chart.register(centerTextPlugin);
+
+export function setCenterText(chart, info) {
+  if (!chart) return;
+  chart.__centerText = info || null;
+  chart.draw();
+}

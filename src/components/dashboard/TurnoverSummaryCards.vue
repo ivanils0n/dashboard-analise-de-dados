@@ -1,0 +1,55 @@
+<script setup>
+import { computed } from "vue";
+import KpiIcon from "@/components/dashboard/KpiIcon.vue";
+import { formatValue } from "@/lib/utils";
+
+/* KPIs de Admissões e Demissões ao lado do gráfico de Turnover no Painel, com
+   as quantidades do período e estado filtrados (mesmo estilo dos cards de KPI).
+   `summary`: { admissoes, demissoes, entradaPct, saidaPct } — ver
+   cockpitChartFor em useDashboardData.js. */
+const props = defineProps({
+  summary: { type: Object, required: true }
+});
+
+/* Clique num card: abre o detalhe (Admissões ou Demissões) — id "admissoes" | "demissoes". */
+const emit = defineEmits(["select"]);
+
+const PERCENT = { type: "percent", decimals: 1 };
+
+const cards = computed(() => [
+  {
+    id: "admissoes",
+    label: "Admissões",
+    value: props.summary.admissoes,
+    rate: `Entrada ${formatValue(PERCENT, props.summary.entradaPct)}`
+  },
+  {
+    id: "demissoes",
+    label: "Demissões",
+    value: props.summary.demissoes,
+    rate: `Saída ${formatValue(PERCENT, props.summary.saidaPct)}`
+  }
+]);
+</script>
+
+<template>
+  <div class="flex gap-3 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:flex-none">
+    <button
+      v-for="card in cards"
+      :key="card.id"
+      type="button"
+      class="flex flex-1 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-center shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+      :title="`Ver detalhes de ${card.label}`"
+      @click="emit('select', card.id)"
+    >
+      <span
+        class="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+      >
+        <KpiIcon :id="card.id" />
+      </span>
+      <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ card.label }}</span>
+      <span class="text-2xl font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100">{{ card.value }}</span>
+      <span class="text-xs text-zinc-400">{{ card.rate }}</span>
+    </button>
+  </div>
+</template>

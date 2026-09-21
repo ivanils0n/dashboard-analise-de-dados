@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
-import { createPieChart, updatePieChart, setShowValues, formatPiePercent } from "@/lib/charts";
+import { createPieChart, updatePieChart, setShowValues, setCenterText, formatPiePercent } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
 const props = defineProps({
@@ -9,7 +9,10 @@ const props = defineProps({
   height: { type: String, default: "h-40" },
   /* Quando true, um clique na área do gráfico (fatias e centro; a legenda
      continua só alternando as fatias) emite "chart-click". */
-  clickable: { type: Boolean, default: false }
+  clickable: { type: Boolean, default: false },
+  /* Texto no centro da rosca (ex.: taxa total de Turnover) e sua legenda. */
+  centerValue: { type: String, default: "" },
+  centerCaption: { type: String, default: "" }
 });
 
 const emit = defineEmits(["chart-click"]);
@@ -37,6 +40,11 @@ function mountChart() {
   chart = createPieChart(canvas.value);
   updatePieChart(chart, props.data);
   setShowValues(chart, props.showValues, { formatter: formatPiePercent });
+  applyCenterText();
+}
+
+function applyCenterText() {
+  setCenterText(chart, props.centerValue ? { value: props.centerValue, caption: props.centerCaption } : null);
 }
 
 function unmountChart() {
@@ -67,6 +75,8 @@ watch(
   },
   { deep: true }
 );
+
+watch(() => [props.centerValue, props.centerCaption], applyCenterText);
 
 watch(
   () => props.showValues,

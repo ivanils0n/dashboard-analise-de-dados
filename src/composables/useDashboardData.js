@@ -489,6 +489,19 @@ export function useDashboardData(filter, options = {}) {
     return ufs.map((uf) => {
       stateOverride = uf;
       try {
+        /* Custo médio da diária geral: o mapa mostra o valor TOTAL pago no
+           estado (soma das diárias do período), não a média do card. */
+        if (ind.id === "custo_diaria") {
+          const list = diariaBarEntries();
+          const total = list.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+          const colaboradores = diariaDivisor(list);
+          return {
+            uf,
+            text: formatValue({ type: "currency", decimals: 2 }, total),
+            sub: `${colaboradores} ${colaboradores === 1 ? "colaborador" : "colaboradores"}`,
+            filled: total > 0
+          };
+        }
         const value = indicatorCurrentValue(ind);
         const hasValue = value !== null && value !== undefined && !Number.isNaN(Number(value));
         let sub = "";
@@ -896,12 +909,24 @@ export function useDashboardData(filter, options = {}) {
     }
 
     if (kpiId === "turnover") {
+      /* `summary`: quantidades de admissões e demissões (e ativos) do período e
+         estado filtrados, exibidas ao lado da pizza no Painel. */
+      const range = filter.start ? { start: filter.start, end: filter.end } : null;
+      const stats = turnoverRateStats(currentState(), range);
       return {
         id: "turnover",
         kind: "pie",
         title: "Turnover",
         sub: "Entrada vs Saída",
         data: chartPieData(),
+        summary: {
+          admissoes: stats.admissoes,
+          demissoes: stats.desligamentos,
+          ativos: stats.headcountAtual,
+          totalPct: stats.turnoverPct,
+          entradaPct: stats.turnoverEntradaPct,
+          saidaPct: stats.turnoverSaidaPct
+        },
         valueFormat: ""
       };
     }

@@ -848,3 +848,10 @@ export function retentionRate(state, range, prevRange) {
     retencaoPct
   };
 }
+
+/* Lançamentos de Turnover (uma linha por filial e mês) dentro do período
+   filtrado — as mesmas linhas somadas por turnoverQuantitiesInRange, para o
+   detalhamento de Admissões/Demissões. Mais recentes primeiro. */
+export function turnoverEntriesInRange(state, range) {
+  return listTurnoverEntries(state).filter((t) => monthWithinRange(t.mesReferencia, range));
+}
