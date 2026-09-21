@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch, nextTick } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
@@ -12,6 +12,8 @@ import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
 import CockpitKpiButton from "@/components/dashboard/CockpitKpiButton.vue";
+import UfMapCard from "@/components/dashboard/UfMapCard.vue";
+import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatCurrency } from "@/lib/utils";
 
 /* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
@@ -57,9 +59,36 @@ const diariaSummaryItems = computed(() => {
 const leftKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 0));
 const bottomKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 1));
 
+/* Mapa abaixo dos Indicadores: mostra o KPI selecionado (ou o padrão, Custo de
+   folha de salário) em cada estado — RO, AM e PA com o filtro em "todos", só o
+   estado escolhido nos demais casos. Clicar num estado filtra por ele; clicar
+   de novo volta para "todos". */
+const { setState } = useFilters();
+const mapStates = computed(() => props.dashboard.kpiValueByEstado(selectedKpiId.value));
+
 function select(id) {
   props.dashboard.selectKpi(selectedKpiId.value === id ? null : id);
 }
+
+/* Ao selecionar um KPI (por qualquer caminho: botões, lista ou navegação da
+   tela cheia), a lista Indicadores rola até ele e o destaca. Rola só a própria
+   lista (não a página). */
+const indicatorListRef = ref(null);
+const indicatorItems = new Map();
+
+function setIndicatorItem(id, el) {
+  if (el) indicatorItems.set(id, el);
+  else indicatorItems.delete(id);
+}
+
+watch(selectedKpiId, async (id) => {
+  await nextTick();
+  const list = indicatorListRef.value;
+  if (!list) return;
+  const item = id ? indicatorItems.get(id) : null;
+  const top = item ? item.offsetTop - (list.clientHeight - item.offsetHeight) / 2 : 0;
+  list.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+});
 
 /* Card "table" da Retenção: cada valor cai em "—" quando ainda não há dado
    suficiente (ex.: sem headcount inicial cadastrado). */
@@ -370,17 +399,23 @@ function goNextKpi() {
         </div>
       </div>
 
-      <!-- Indicadores -->
-      <aside class="h-fit rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
-        <ul class="flex flex-col gap-1">
+      <!-- Indicadores + mapa do KPI selecionado (coluna da direita) -->
+      <div class="flex h-fit flex-col gap-4">
+      <aside class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+        <!-- Lista compacta com rolagem própria, para o mapa ficar mais acima. -->
+        <ul
+          ref="indicatorListRef"
+          class="relative flex max-h-48 flex-col gap-1 overflow-y-auto pr-1 [scrollbar-width:thin]"
+        >
           <li
             v-for="kpi in kpis"
             :key="kpi.id"
+            :ref="(el) => setIndicatorItem(kpi.id, el)"
             class="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition"
             :class="
               selectedKpiId === kpi.id
-                ? 'bg-accent/10 font-semibold text-accent-hover dark:text-accent-light'
+                ? 'bg-accent/15 font-semibold text-accent-hover ring-1 ring-accent/50 dark:text-accent-light'
                 : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
             "
             @click="select(kpi.id)"
@@ -390,6 +425,14 @@ function goNextKpi() {
           </li>
         </ul>
       </aside>
+
+      <UfMapCard
+        title="Mapa por estado"
+        :subtitle="centerChart.title"
+        :states="mapStates"
+        @select="setState"
+      />
+      </div>
     </div>
 
     <DiariaColaboradorModal

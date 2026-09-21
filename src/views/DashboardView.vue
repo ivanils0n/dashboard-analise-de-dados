@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, next
 import { sidebarHidden } from "@/composables/useSidebar";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
+import UfMapCard from "@/components/dashboard/UfMapCard.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
@@ -29,7 +30,7 @@ import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 import { getIndicatorById } from "@/lib/config";
 import { removeEntry, removeEntries } from "@/lib/store";
-import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText } from "@/lib/utils";
+import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
 import { syncAll } from "@/lib/employees";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
@@ -37,7 +38,7 @@ import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
 import { reloadData, hydrateState } from "@/lib/db";
 
 const { dateFilter: df } = useDateFilter();
-const { state: filters } = useFilters();
+const { state: filters, setState } = useFilters();
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 
@@ -473,6 +474,17 @@ const kpiChartViews = computed(() =>
     pieData: card.kind === "pie" ? chartPieData(card.id) : [],
     barData: chartBarData(card),
     tableData: chartTableData(card)
+  }))
+);
+
+/* Mapa ao lado do gráfico de Custo médio de contratação: RO, AM e PA com o
+   filtro em "todos"; só o estado escolhido nos demais casos. */
+const custoContratacaoMapa = computed(() =>
+  dashboard.custoContratacaoPorEstado().map((s) => ({
+    uf: s.uf,
+    text: s.avg === null ? "—" : formatCurrency(s.avg),
+    sub: `${s.count} ${s.count === 1 ? "vaga" : "vagas"}`,
+    filled: s.count > 0
   }))
 );
 
@@ -962,20 +974,39 @@ watch(activeTab, (tab) => {
       </button>
     </div>
     <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-2">
-      <KpiChartCard
-        v-for="view in kpiChartViews"
-        :key="view.card.id"
-        stacked
-        :class="HALF_WIDTH_CARDS.includes(view.card.id) ? '' : 'lg:col-span-2'"
-        :card="view.card"
-        :entries="view.entries"
-        :pie-data="view.pieData"
-        :bar-data="view.barData"
-        :table-data="view.tableData"
-        :show-values="showValues"
-        :data-indicator-card="view.card.id"
-        @bar-click="onKpiCardBarClick(view, $event)"
-      />
+      <template v-for="view in kpiChartViews" :key="view.card.id">
+        <!-- Custo médio de contratação: gráfico + mapa dos estados ao lado. -->
+        <div
+          v-if="view.card.id === 'custo_contratacao'"
+          class="grid gap-8 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_340px]"
+        >
+          <KpiChartCard
+            stacked
+            :card="view.card"
+            :entries="view.entries"
+            :pie-data="view.pieData"
+            :bar-data="view.barData"
+            :table-data="view.tableData"
+            :show-values="showValues"
+            :data-indicator-card="view.card.id"
+            @bar-click="onKpiCardBarClick(view, $event)"
+          />
+          <UfMapCard :states="custoContratacaoMapa" subtitle="Custo médio de contratação" @select="setState" />
+        </div>
+        <KpiChartCard
+          v-else
+          stacked
+          :class="HALF_WIDTH_CARDS.includes(view.card.id) ? '' : 'lg:col-span-2'"
+          :card="view.card"
+          :entries="view.entries"
+          :pie-data="view.pieData"
+          :bar-data="view.barData"
+          :table-data="view.tableData"
+          :show-values="showValues"
+          :data-indicator-card="view.card.id"
+          @bar-click="onKpiCardBarClick(view, $event)"
+        />
+      </template>
     </div>
 
     <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->

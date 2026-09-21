@@ -50,11 +50,17 @@ export function useDashboardData(filter, options = {}) {
   const { state } = useFilters();
   const diariaShowSemPeriodo = options.diariaShowSemPeriodo || ref(false);
 
+  /* Estado forçado temporariamente por kpiValueByEstado, para reaproveitar
+     exatamente as regras de cada KPI calculando um estado por vez. Só vale
+     durante a chamada (síncrona), nunca fica ligado. */
+  let stateOverride = null;
+
   function currentState() {
     /* Lê `revision` além de `current`: garante recomputação a cada troca de
        estado mesmo que o valor se repita (ex.: RO -> todos -> RO). */
     void state.revision;
-    return state.current;
+    const current = state.current;
+    return stateOverride || current;
   }
 
   /* A carga inicial de lançamentos traz só uma janela recente (ver
@@ -159,8 +165,8 @@ export function useDashboardData(filter, options = {}) {
      data desatualizados ou órfãos, e distorciam a média. Cada vaga fechada com
      salário informado (> 0) vira um "lançamento" — valor = salário atual e data
      = dia do fechamento — e a média é a soma dos salários ÷ quantidade de vagas. */
-  function costVacancyEntries() {
-    return listVacancies(currentState())
+  function costVacancyEntries(st = currentState()) {
+    return listVacancies(st)
       .filter((v) => v.closeAt && Number(v.salario) > 0)
       .map((v) => ({
         id: v.id,
@@ -357,6 +363,24 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
+  /* Custo médio de contratação por estado, para o mapa da Visão geral: com o
+     filtro em "todos" traz RO, AM e PA; com um estado escolhido, só ele. Mesma
+     regra do gráfico (vagas fechadas com salário, dentro do período filtrado). */
+  function custoContratacaoPorEstado() {
+    const target = currentState();
+    const ufs = !target || target === "todos" ? STATES : [target];
+    return ufs.map((uf) => {
+      const list = filterByRange(costVacancyEntries(uf));
+      const total = list.reduce((sum, e) => sum + e.value, 0);
+      return {
+        uf,
+        count: list.length,
+        total,
+        avg: list.length ? total / list.length : null
+      };
+    });
+  }
+
   /* Agregação para o gráfico de barras do Custo médio da diária geral: soma
      o valor pago por colaborador no período filtrado. Inclui os lançamentos
      sem competência definida quando "Mostrar sem período" está ativo, igual
@@ -449,6 +473,40 @@ export function useDashboardData(filter, options = {}) {
      só pega os últimos 28 dias de janeiro, perdendo os 3 primeiros. */
   function previousMonthRange() {
     return monthBefore(filter.start ? { start: filter.start, end: filter.end } : null);
+  }
+
+  /* Valor de um KPI em cada estado (para o mapa do Painel): com o filtro em
+     "todos" traz RO, AM e PA; com um estado escolhido, só ele. Usa as mesmas
+     regras do card do KPI (indicatorCurrentValue), trocando o estado por vez.
+     Sem KPI selecionado, o Painel mostra Custo de folha de salário. */
+  function kpiValueByEstado(kpiId) {
+    const ind = getIndicatorById(kpiId || "custo_total");
+    if (!ind) return [];
+    const target = currentState();
+    const ufs = !target || target === "todos" ? STATES : [target];
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const fmt = { type: ind.type, decimals: ind.decimals ?? 1 };
+    return ufs.map((uf) => {
+      stateOverride = uf;
+      try {
+        const value = indicatorCurrentValue(ind);
+        const hasValue = value !== null && value !== undefined && !Number.isNaN(Number(value));
+        let sub = "";
+        let filled = hasValue && Number(value) !== 0;
+        if (ind.id === "turnover") {
+          const stats = turnoverRateStats(uf, range);
+          const pct = { type: "percent", decimals: 1 };
+          sub = `Entrada ${formatValue(pct, stats.turnoverEntradaPct)} · Saída ${formatValue(pct, stats.turnoverSaidaPct)}`;
+        } else if (!ind.computed) {
+          const n = filteredEntries(ind).length;
+          sub = `${n} ${n === 1 ? "lançamento" : "lançamentos"}`;
+          filled = n > 0 && hasValue;
+        }
+        return { uf, text: hasValue ? formatValue(fmt, value) : "—", sub, filled };
+      } finally {
+        stateOverride = null;
+      }
+    });
   }
 
   /* ---------- KPIs ---------- */
@@ -963,6 +1021,8 @@ export function useDashboardData(filter, options = {}) {
     headcountBarByState,
     custosBarByFilial,
     custoContratacaoBarByFuncao,
+    custoContratacaoPorEstado,
+    kpiValueByEstado,
     custoDiariaBarByColaborador,
     custoDiariaEntriesByColaborador,
     indicatorCurrentValue,
