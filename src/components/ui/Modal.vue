@@ -20,16 +20,17 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 
 <template>
   <Teleport to="body">
+    <Transition name="mac-modal" appear :duration="{ enter: 320, leave: 170 }">
     <div
       class="fixed inset-0 z-[60] flex bg-black/50"
       :class="fullscreen ? 'p-0' : 'items-start justify-center overflow-y-auto p-4 py-10'"
       @click.self="emit('close')"
     >
       <div
-        class="w-full min-w-0 rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        class="mac-panel w-full min-w-0 rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
         :class="fullscreen
           ? 'flex h-screen max-w-none flex-col rounded-none border-0'
-          : 'slide-up flex max-h-[90vh] flex-col ' + maxWidth"
+          : 'flex max-h-[90vh] flex-col ' + maxWidth"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
@@ -54,5 +55,6 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>

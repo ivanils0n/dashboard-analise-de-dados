@@ -3816,12 +3816,13 @@ onUnmounted(() => {
 
     <!-- ===== Submodal: Salário do colaborador ===== -->
     <Teleport to="body">
+      <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
       <div
         v-if="sub.kind === 'salario' && sub.employee"
         class="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 py-10"
         @click.self="closeSub"
       >
-        <form class="slide-up w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900" novalidate @submit.prevent="saveSalary">
+        <form class="mac-panel w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900" novalidate @submit.prevent="saveSalary">
           <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
             <div>
               <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Remuneração do colaborador</h3>
@@ -3848,15 +3849,17 @@ onUnmounted(() => {
           </div>
         </form>
       </div>
+      </Transition>
     </Teleport>
 
     <!-- ===== Revisão de importação de diárias ===== -->
     <Teleport to="body">
+      <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
       <div
         v-if="diReviewOpen"
         class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 p-4 py-10"
       >
-        <div class="slide-up flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+        <div class="mac-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
           <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
             <div>
               <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar diárias importadas</h3>
@@ -3917,17 +3920,19 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+      </Transition>
     </Teleport>
 
     <LoadingOverlay :show="diImporting" label="Importando diárias..." />
 
     <!-- ===== Revisão de importação de treinamentos ===== -->
     <Teleport to="body">
+      <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
       <div
         v-if="trReviewOpen"
         class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 p-4 py-10"
       >
-        <div class="slide-up flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+        <div class="mac-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
           <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
             <div>
               <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar treinamentos importados</h3>
@@ -4001,6 +4006,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+      </Transition>
     </Teleport>
 
     <LoadingOverlay :show="trImporting" label="Importando treinamentos..." />

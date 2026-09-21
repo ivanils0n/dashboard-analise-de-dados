@@ -136,6 +136,7 @@ function onKeydown(e) {
         'absenteismo',
         'tempo_permanencia',
         'retencao',
+        'ticket_medio',
         'turnover_experiencia'
       ].includes(kpi.id)"
       class="flex flex-1 flex-col items-center justify-center px-1 py-6"

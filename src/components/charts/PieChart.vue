@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
-import { createPieChart, updatePieChart, setShowValues, setCenterText, formatPiePercent } from "@/lib/charts";
+import { createPieChart, updatePieChart, setShowValues, setCenterText, setPieFormat, pieFormatter } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
 const props = defineProps({
@@ -12,7 +12,9 @@ const props = defineProps({
   clickable: { type: Boolean, default: false },
   /* Texto no centro da rosca (ex.: taxa total de Turnover) e sua legenda. */
   centerValue: { type: String, default: "" },
-  centerCaption: { type: String, default: "" }
+  centerCaption: { type: String, default: "" },
+  /* Formato dos valores (tooltip e rótulos): "percent" (Turnover) ou "currency". */
+  valueFormat: { type: String, default: "percent" }
 });
 
 const emit = defineEmits(["chart-click"]);
@@ -38,8 +40,9 @@ function onCanvasMove(evt) {
 function mountChart() {
   if (!canvas.value) return;
   chart = createPieChart(canvas.value);
+  setPieFormat(chart, props.valueFormat);
   updatePieChart(chart, props.data);
-  setShowValues(chart, props.showValues, { formatter: formatPiePercent });
+  setShowValues(chart, props.showValues, { formatter: pieFormatter(props.valueFormat) });
   applyCenterText();
 }
 
@@ -78,10 +81,21 @@ watch(
 
 watch(() => [props.centerValue, props.centerCaption], applyCenterText);
 
+/* A mesma pizza é reaproveitada entre KPIs (ex.: Turnover ↔ Custo médio por
+   colaborador): ao trocar o formato, atualiza tooltip e rótulos. */
+watch(
+  () => props.valueFormat,
+  (format) => {
+    if (!chart) return;
+    setPieFormat(chart, format);
+    setShowValues(chart, props.showValues, { formatter: pieFormatter(format) });
+  }
+);
+
 watch(
   () => props.showValues,
   (show) => {
-    if (chart) setShowValues(chart, show, { formatter: formatPiePercent });
+    if (chart) setShowValues(chart, show, { formatter: pieFormatter(props.valueFormat) });
   }
 );
 </script>

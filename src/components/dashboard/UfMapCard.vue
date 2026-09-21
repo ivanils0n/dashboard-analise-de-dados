@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { UF_MAP } from "@/lib/ufShapes";
 import { STATE_NAMES } from "@/lib/config";
 
@@ -29,15 +29,53 @@ function stateLabel(name) {
   return single.value ? "Voltar para todos os estados" : `Filtrar por ${name}`;
 }
 
-const viewBox = computed(() =>
+const targetViewBox = computed(() =>
   single.value ? UF_MAP.states[props.states[0].uf]?.viewBox || UF_MAP.viewBox : UF_MAP.viewBox
 );
 
-/* Sigla com tamanho proporcional à largura do viewBox exibido. */
-const fontSize = computed(() => {
-  const width = Number(viewBox.value.split(/\s+/)[2]) || 1000;
-  return Math.round(width * (single.value ? 0.09 : 0.045));
+/* Ao escolher um estado (ou voltar para todos) o mapa faz um zoom animado, em
+   vez de trocar o enquadramento de uma vez. `view` guarda o quadro exibido
+   [x, y, largura, altura, fator da sigla] e é interpolado até o alvo. */
+const ZOOM_MS = 480;
+const parseBox = (box) => box.split(/\s+/).map(Number);
+const targetFrame = () => [...parseBox(targetViewBox.value), single.value ? 0.09 : 0.045];
+const view = ref(targetFrame());
+let raf = 0;
+
+function easeOutQuart(t) {
+  return 1 - Math.pow(1 - t, 4);
+}
+
+function stopZoom() {
+  if (raf) cancelAnimationFrame(raf);
+  raf = 0;
+}
+
+watch(targetViewBox, () => {
+  stopZoom();
+  const from = [...view.value];
+  const to = targetFrame();
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || from.some((n) => !Number.isFinite(n)) || to.some((n) => !Number.isFinite(n))) {
+    view.value = to;
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ZOOM_MS);
+    const k = easeOutQuart(t);
+    view.value = from.map((v, i) => v + (to[i] - v) * k);
+    raf = t < 1 ? requestAnimationFrame(step) : 0;
+  };
+  raf = requestAnimationFrame(step);
 });
+
+onBeforeUnmount(stopZoom);
+
+const viewBox = computed(() => view.value.slice(0, 4).map((n) => +n.toFixed(2)).join(" "));
+
+/* Sigla com tamanho proporcional à largura do viewBox exibido. */
+const fontSize = computed(() => Math.round((view.value[2] || 1000) * view.value[4]));
 
 const shapes = computed(() =>
   props.states
@@ -50,7 +88,7 @@ const shapes = computed(() =>
   <div
     class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
   >
-    <div class="mb-3">
+    <div class="mb-3 text-center">
       <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ title }}</h3>
       <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ subtitle }}</span>
     </div>
@@ -63,7 +101,8 @@ const shapes = computed(() =>
         role="img"
         :aria-label="`Mapa: ${shapes.map((s) => s.name).join(', ')}`"
       >
-        <g v-for="s in shapes" :key="s.uf">
+        <TransitionGroup name="uf-map" tag="g">
+        <g v-for="s in shapes" :key="s.uf" class="uf-shape">
           <path
             :d="s.shape.d"
             fill-rule="evenodd"
@@ -95,6 +134,7 @@ const shapes = computed(() =>
             {{ s.uf }}
           </text>
         </g>
+        </TransitionGroup>
       </svg>
     </div>
 
@@ -115,3 +155,31 @@ const shapes = computed(() =>
     </ul>
   </div>
 </template>
+
+<style scoped>
+/* Estados que entram/saem ao filtrar: fade + pequeno "pop" a partir do centro
+   do próprio estado (mesma linguagem dos modais). */
+.uf-shape {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.uf-map-enter-active {
+  transition: opacity 0.4s ease-out 0.08s, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.08s;
+}
+.uf-map-leave-active {
+  transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+  pointer-events: none;
+}
+.uf-map-enter-from,
+.uf-map-leave-to {
+  opacity: 0;
+  transform: scale(0.92);
+}
+@media (prefers-reduced-motion: reduce) {
+  .uf-map-enter-active,
+  .uf-map-leave-active {
+    transition-duration: 0.01ms;
+    transition-delay: 0s;
+  }
+}
+</style>

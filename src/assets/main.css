@@ -73,6 +73,51 @@ body {
   animation: gg-slide-up 0.22s ease-out both;
 }
 
+/* Janelas modais no estilo macOS: abre com um leve "pop" (escala + fade com
+   pequeno overshoot) e fecha encolhendo rápido. Usar <Transition name="mac-modal"
+   appear :duration="{ enter: 320, leave: 170 }"> no overlay; o painel recebe a
+   classe .mac-panel. As animações usam fill-mode "backwards" no enter para não
+   deixar um transform residual (que quebraria elementos fixed/dropdowns dentro). */
+@keyframes gg-mac-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes gg-mac-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes gg-mac-window-in {
+  0% { opacity: 0; transform: scale(0.92); }
+  45% { opacity: 1; }
+  70% { transform: scale(1.012); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes gg-mac-window-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.94); }
+}
+.mac-modal-enter-active {
+  animation: gg-mac-overlay-in 0.24s ease-out backwards;
+}
+.mac-modal-leave-active {
+  animation: gg-mac-overlay-out 0.17s ease-in forwards;
+  pointer-events: none;
+}
+.mac-modal-enter-active .mac-panel {
+  animation: gg-mac-window-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.mac-modal-leave-active .mac-panel {
+  animation: gg-mac-window-out 0.17s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mac-modal-enter-active,
+  .mac-modal-leave-active,
+  .mac-modal-enter-active .mac-panel,
+  .mac-modal-leave-active .mac-panel {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* Pulso discreto usado para destacar um card na faixa de gráficos */
 @keyframes gg-flash {
   0% { box-shadow: 0 0 0 0 rgb(232 175 62 / 0.45); }

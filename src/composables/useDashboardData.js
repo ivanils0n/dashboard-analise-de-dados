@@ -29,6 +29,7 @@ import {
 } from "@/lib/utils";
 import { aggregateEntries, diariaDivisor, employeeNameKey } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
+import { faturamento } from "@/composables/useFaturamento";
 import { ensureLancamentosSince } from "@/lib/db";
 
 /* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
@@ -101,6 +102,34 @@ export function useDashboardData(filter, options = {}) {
     return { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
   }
 
+  /* Custo médio por colaborador = custo de folha de salário ÷ Headcount, no estado e período
+     (mês) filtrados. O custo é a soma dos lançamentos de "Custo de folha de
+     salário" (custo_total) do período; o Headcount é o quadro reconstruído no
+     mês (headcountCountInRange). Sem custo lançado ou sem colaboradores o
+     ticket não existe (null → "—"), em vez de virar 0. `uf` permite calcular
+     um estado específico (gráfico/mapa por estado). */
+  function ticketMedioParts(uf, range) {
+    const start = (range && range.start) || null;
+    const end = (range && range.end) || null;
+    const folha = getEntriesFor("custo_total", uf).filter(
+      (e) =>
+        !(e.meta && e.meta.semPeriodo) &&
+        !(start && e.date < start) &&
+        !(end && e.date > end)
+    );
+    return {
+      folhaCount: folha.length,
+      folha: folha.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
+      headcount: headcountCountInRange(uf, range)
+    };
+  }
+
+  function ticketMedioFor(uf, range) {
+    const { folhaCount, folha, headcount } = ticketMedioParts(uf, range);
+    if (!folhaCount || !headcount) return null;
+    return folha / headcount;
+  }
+
   /* Valor dos indicadores "computed" para QUALQUER período — regra única usada
      tanto para o valor atual quanto para o mês anterior da seta ▲/▼. Antes a
      seta desses indicadores comparava com lançamentos-snapshot antigos (bases
@@ -121,6 +150,8 @@ export function useDashboardData(filter, options = {}) {
         return turnoverAvgTenureDays(st, range);
       case "retencao":
         return retentionRate(st, range, monthBefore(range)).retencaoPct;
+      case "ticket_medio":
+        return ticketMedioFor(st, range);
       default:
         return computedSnapshot(ind.id, st);
     }
@@ -247,6 +278,47 @@ export function useDashboardData(filter, options = {}) {
       const value = headcountCountInRange(s, range) || 0;
       return { label: s, value, tooltipValue: String(value) };
     }).sort((a, b) => b.value - a.value);
+  }
+
+  /* Custo médio por colaborador por estado (uma fatia por estado) para a pizza
+     do KPI — mesma regra do card (ticketMedioFor), no período filtrado.
+     Estados sem custo de folha ou sem colaboradores ficam de fora. */
+  function ticketMedioBarByState() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return STATES.map((s) => ({ label: s, value: ticketMedioFor(s, range) }))
+      .filter((r) => r.value !== null)
+      .map((r) => ({ ...r, tooltipValue: formatCurrency(r.value) }))
+      .sort((a, b) => b.value - a.value);
+  }
+
+  /* Centro da pizza do Custo médio por colaborador: a média geral dos três
+     estados (folha total ÷ headcount total), independente do filtro de estado —
+     a pizza sempre compara os estados. */
+  function ticketMedioPieCenter() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const value = ticketMedioFor("todos", range);
+    return value === null ? null : { value: formatCurrency(value), caption: "Média geral" };
+  }
+
+  /* % do faturamento = Custo médio por colaborador ÷ Faturamento médio por
+     colaborador × 100, no estado e período filtrados. O faturamento (especulativo,
+     informado no cabeçalho do gráfico) é dividido pelo mesmo Headcount do custo
+     médio para virar "faturamento médio por colaborador". null quando não há
+     faturamento informado — o KPI só aparece se houver. Se faltar dado no
+     mês/estado filtrados (folha ou colaboradores), os valores que dependem dele
+     vêm null e `motivo` diz o que falta (em vez de o KPI sumir sem explicação). */
+  function ticketMedioFaturamento() {
+    const total = faturamento.value;
+    if (!total) return null;
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const { folhaCount, folha, headcount } = ticketMedioParts(currentState(), range);
+    const custo = folhaCount && headcount ? folha / headcount : null;
+    const faturamentoMedio = headcount ? total / headcount : null;
+    const pct = custo !== null && faturamentoMedio ? (custo / faturamentoMedio) * 100 : null;
+    let motivo = "";
+    if (!headcount) motivo = "Sem colaboradores (Headcount) neste mês/estado.";
+    else if (!folhaCount) motivo = "Sem custo de folha de salário lançado neste mês/estado.";
+    return { custo, faturamento: total, faturamentoMedio, headcount, pct, motivo };
   }
 
   /* Vagas abertas no período filtrado (data de abertura dentro do range) para
@@ -677,6 +749,16 @@ export function useDashboardData(filter, options = {}) {
           showTrend: false
         };
       }
+      if (ind.id === "ticket_medio") {
+        return {
+          id: "ticket_medio",
+          kind: "pie",
+          title: ind.name,
+          sub: "Custo de folha ÷ Headcount, por estado no período filtrado",
+          unit: ind.unit,
+          valueFormat: "currency"
+        };
+      }
       if (ind.id === "custo_contratacao") {
         return {
           id: "custo_contratacao",
@@ -769,7 +851,8 @@ export function useDashboardData(filter, options = {}) {
         ind.id !== "custo_contratacao" &&
         ind.id !== "custo_total" &&
         ind.id !== "retencao" &&
-        ind.id !== "treinamento"
+        ind.id !== "treinamento" &&
+        ind.id !== "ticket_medio"
     )
       .map((ind) => {
         const value = indicatorCurrentValue(ind);
@@ -904,7 +987,9 @@ export function useDashboardData(filter, options = {}) {
         title: "Custo de folha de salário",
         sub: "Soma dos custos por filial no período filtrado",
         data: custosBarByFilial(),
-        valueFormat: "currency"
+        valueFormat: "currency",
+        faturamento: ticketMedioFaturamento(),
+        faturamentoEnabled: true
       };
     }
 
@@ -940,6 +1025,17 @@ export function useDashboardData(filter, options = {}) {
         valueFormat: ""
       };
     }
+    if (kpiId === "ticket_medio") {
+      return {
+        id: "ticket_medio",
+        kind: "pie",
+        title: "Custo médio por colaborador",
+        sub: "Custo de folha ÷ Headcount, por estado no período filtrado",
+        data: ticketMedioBarByState(),
+        center: ticketMedioPieCenter(),
+        valueFormat: "currency"
+      };
+    }
     if (kpiId === "custo_total") {
       return {
         id: "custo_total",
@@ -947,7 +1043,9 @@ export function useDashboardData(filter, options = {}) {
         title: "Custo de folha de salário",
         sub: "Soma dos custos por filial no período filtrado",
         data: custosBarByFilial(),
-        valueFormat: "currency"
+        valueFormat: "currency",
+        faturamento: ticketMedioFaturamento(),
+        faturamentoEnabled: true
       };
     }
     if (kpiId === "treinamento") {
@@ -1044,6 +1142,9 @@ export function useDashboardData(filter, options = {}) {
     treinamentoBarByFilial,
     treinamentoFilialEntries,
     headcountBarByState,
+    ticketMedioBarByState,
+    ticketMedioPieCenter,
+    ticketMedioFaturamento,
     custosBarByFilial,
     custoContratacaoBarByFuncao,
     custoContratacaoPorEstado,

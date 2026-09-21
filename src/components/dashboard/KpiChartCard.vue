@@ -27,15 +27,20 @@ const props = defineProps({
   /* Só no card de Turnover: quantidades do período ({ admissoes, demissoes,
      totalPct, entradaPct, saidaPct }) — mostradas ao lado da pizza, com a taxa
      total no centro. */
-  turnoverSummary: { type: Object, default: null }
+  turnoverSummary: { type: Object, default: null },
+  /* Centro da rosca em pizzas que não são o Turnover: { value, caption }. */
+  pieCenter: { type: Object, default: null }
 });
 
 const emit = defineEmits(["bar-click", "turnover-detail"]);
 
 /* Taxa total de Turnover no centro da pizza. */
-const centerValue = computed(() =>
-  props.turnoverSummary ? formatValue({ type: "percent", decimals: 1 }, props.turnoverSummary.totalPct) : ""
-);
+const centerInfo = computed(() => {
+  if (props.turnoverSummary) {
+    return { value: formatValue({ type: "percent", decimals: 1 }, props.turnoverSummary.totalPct), caption: "Turnover" };
+  }
+  return props.pieCenter || { value: "", caption: "" };
+});
 
 /* Clique num card de Admissões/Demissões: a tela hospeda o modal de detalhe.
    Da tela cheia, fecha o modal do gráfico antes. */
@@ -139,8 +144,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
         :data="pieData"
         :show-values="showValues"
         :height="stacked ? 'h-[340px]' : 'h-52'"
-        :center-value="centerValue"
-        :center-caption="centerValue ? 'Turnover' : ''"
+        :center-value="centerInfo.value"
+        :center-caption="centerInfo.caption"
+        :value-format="card.valueFormat || 'percent'"
       />
       <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
     </div>
@@ -180,8 +186,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
             :data="pieData"
             :show-values="showValues"
             height="h-full"
-            :center-value="centerValue"
-            :center-caption="centerValue ? 'Turnover' : ''"
+            :center-value="centerInfo.value"
+            :center-caption="centerInfo.caption"
+            :value-format="card.valueFormat || 'percent'"
           />
           <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
         </div>

@@ -33,7 +33,12 @@ const ICONS = {
   treinamento:
     '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
   custo_total:
-    '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>'
+    '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+  faturamento_pct:
+    '<line x1="19" x2="5" y1="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  /* Custo médio por colaborador: pessoa com uma moeda ($) no canto. */
+  ticket_medio:
+    '<circle cx="8.5" cy="7" r="3.5"/><path d="M2 20v-1a5 5 0 0 1 5-5h2"/><circle cx="16.5" cy="16.5" r="5.5"/><path stroke-width="1.6" d="M18.5 14.25h-3a1.25 1.25 0 0 0 0 2.5h2a1.25 1.25 0 0 1 0 2.5h-3"/><path stroke-width="1.6" d="M16.5 12.75v1.5M16.5 19.25v1.5"/>'
 };
 
 const FALLBACK = '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>';

@@ -1,12 +1,7 @@
 <script setup>
 import { ref } from "vue";
-import { useRouter } from "vue-router";
 import { login } from "@/lib/auth";
-import { DEFAULT_FILTER_STATE } from "@/lib/config";
-import { hydrateState } from "@/lib/db";
-import { syncAll } from "@/lib/employees";
 
-const router = useRouter();
 const usuario = ref("");
 const password = ref("");
 const error = ref("");
@@ -25,8 +20,8 @@ async function handleSubmit() {
   }
   busy.value = true;
   const { error: err } = await login(usuario.value.trim(), password.value);
-  busy.value = false;
   if (err) {
+    busy.value = false;
     const friendly =
       err.message === "Invalid login credentials"
         ? "Usuário ou senha inválidos."
@@ -34,15 +29,13 @@ async function handleSubmit() {
     error.value = friendly;
     return;
   }
-  /* Só depois de autenticar é seguro baixar os dados: carrega o estado padrão
-     (e demais quando o usuário trocar o filtro) priorizando cache + delta. */
-  try {
-    await hydrateState(DEFAULT_FILTER_STATE);
-    syncAll();
-  } catch (e) {
-    console.warn("[Login] Falha ao carregar dados:", e);
-  }
-  router.replace("/dashboard");
+  /* Usuário confirmado: recarrega a página ANTES de baixar os dados. O login já
+     gravou a sessão (sessionStorage, que sobrevive ao reload); na nova carga o
+     bootstrap (main.js) baixa os dados com cache + delta. Assim o Network do
+     navegador é zerado e a requisição de login (com a senha) não fica listada
+     junto das demais. `busy` fica ligado até a página recarregar. */
+  history.replaceState(null, "", window.location.pathname + window.location.search + "#/dashboard");
+  window.location.reload();
 }
 </script>
 

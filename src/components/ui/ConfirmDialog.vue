@@ -14,13 +14,14 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 
 <template>
   <Teleport to="body">
+    <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
     <div
       v-if="state.visible"
       class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
       @click.self="close(false)"
     >
       <div
-        class="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
+        class="mac-panel w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
         role="alertdialog"
         aria-modal="true"
         :aria-label="state.title"
@@ -60,5 +61,6 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>

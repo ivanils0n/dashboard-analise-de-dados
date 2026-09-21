@@ -1,9 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from "vue";
 import { sidebarHidden } from "@/composables/useSidebar";
+import { activeTab, tabDirection } from "@/composables/useDashboardTab";
+import DashboardTabs from "@/components/layout/DashboardTabs.vue";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
+import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vue";
+import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
@@ -64,18 +68,6 @@ const {
   formatEntryValue,
   formatDate
 } = dashboard;
-
-const activeTab = ref("cockpit");
-const TAB_ORDER = ["visao-geral", "cockpit"];
-/* Direção da animação de arrasto: 1 = arrasta para a esquerda (indo para a
-   aba à direita), -1 = arrasta para a direita (voltando para a aba à
-   esquerda). Usada para escolher a transição (slide-left/slide-right). */
-const tabDirection = ref(1);
-function switchTab(tab) {
-  if (tab === activeTab.value) return;
-  tabDirection.value = TAB_ORDER.indexOf(tab) > TAB_ORDER.indexOf(activeTab.value) ? 1 : -1;
-  activeTab.value = tab;
-}
 
 /* ---------- Mês incompleto ----------
    O menu marca/desmarca o mês filtrado (no estado do filtro) como "com
@@ -481,13 +473,25 @@ const kpiChartViews = computed(() =>
   orderedKpiChartCards.value.map((card) => ({
     card,
     entries: lineEntries(card),
-    pieData: card.kind === "pie" ? chartPieData(card.id) : [],
+    pieData: card.id === "ticket_medio" ? dashboard.ticketMedioBarByState() : card.kind === "pie" ? chartPieData(card.id) : [],
+    pieCenter: card.id === "ticket_medio" ? dashboard.ticketMedioPieCenter() : null,
     /* Turnover: quantidades de admissões/demissões e taxa total (centro da pizza). */
     turnoverSummary: card.id === "turnover" ? dashboard.cockpitChartFor("turnover").summary : null,
     barData: chartBarData(card),
     tableData: chartTableData(card)
   }))
 );
+
+/* Custo médio por colaborador não entra na grade "por indicador": fica ao lado
+   do gráfico de Custo de folha de salário (mesma linha, mais abaixo). */
+const gridChartViews = computed(() => kpiChartViews.value.filter((v) => v.card.id !== "ticket_medio"));
+const ticketChartView = computed(() => kpiChartViews.value.find((v) => v.card.id === "ticket_medio") || null);
+const ticketChartRef = ref(null);
+
+/* % do faturamento (Custo médio por colaborador ÷ faturamento médio × 100):
+   KPI ao lado do gráfico de Custo de folha de salário, com o botão do
+   faturamento (especulativo) no cabeçalho dele. null sem faturamento. */
+const custosFaturamento = computed(() => dashboard.ticketMedioFaturamento());
 
 /* Mapa ao lado do gráfico de Custo médio de contratação: RO, AM e PA com o
    filtro em "todos"; só o estado escolhido nos demais casos. */
@@ -703,6 +707,10 @@ function onSelectKpi(id) {
       custosChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (id === "ticket_medio") {
+      ticketChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (id === "treinamento") {
       treinamentoChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -795,7 +803,7 @@ watch(activeTab, (tab) => {
 <template>
   <div>
     <!-- ===== HERO ===== -->
-    <div class="mb-6 grid grid-cols-1 items-center gap-4 sm:grid-cols-3">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Gente &amp; Gestão</h1>
         <button
@@ -810,36 +818,10 @@ watch(activeTab, (tab) => {
         </button>
       </div>
 
-      <div class="flex items-center justify-center">
-        <div class="inline-flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Modo de visualização">
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === 'visao-geral'"
-            class="rounded-full px-4 py-1.5 text-sm font-semibold transition"
-            :class="activeTab === 'visao-geral'
-              ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
-            @click="switchTab('visao-geral')"
-          >
-            Visão Geral
-          </button>
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === 'cockpit'"
-            class="rounded-full px-4 py-1.5 text-sm font-semibold transition"
-            :class="activeTab === 'cockpit'
-              ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
-            @click="switchTab('cockpit')"
-          >
-            Painel
-          </button>
-        </div>
-      </div>
+      <!-- Abas: em telas médias+ ficam na TopBar. -->
+      <DashboardTabs class="md:hidden" />
 
-      <div class="flex items-center justify-start gap-2 sm:justify-end">
+      <div class="flex items-center justify-start gap-2 sm:ml-auto sm:justify-end">
         <span
           v-if="monthIncomplete"
           class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
@@ -986,7 +968,7 @@ watch(activeTab, (tab) => {
       </button>
     </div>
     <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-2">
-      <template v-for="view in kpiChartViews" :key="view.card.id">
+      <template v-for="view in gridChartViews" :key="view.card.id">
         <!-- Custo médio de contratação: gráfico + mapa dos estados ao lado. -->
         <div
           v-if="view.card.id === 'custo_contratacao'"
@@ -1012,6 +994,7 @@ watch(activeTab, (tab) => {
           :card="view.card"
           :entries="view.entries"
           :pie-data="view.pieData"
+          :pie-center="view.pieCenter"
           :turnover-summary="view.turnoverSummary"
           :bar-data="view.barData"
           :table-data="view.tableData"
@@ -1024,7 +1007,7 @@ watch(activeTab, (tab) => {
     </div>
 
     <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->
-    <div class="mt-8 grid gap-4">
+    <div class="mt-8 grid gap-4 lg:grid-cols-2">
       <!-- ===== PANORAMA ATUAL (desativado) =====
       <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div class="mb-4 flex items-start justify-between gap-2">
@@ -1064,10 +1047,13 @@ watch(activeTab, (tab) => {
         class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
         <div class="mb-4 flex items-start justify-between gap-2">
-          <div>
-            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de folha de salário — Evolução dos Indicadores</h2>
+          <div class="min-w-0">
+            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de folha de salário</h2>
             <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
           </div>
+          <div class="flex shrink-0 items-center gap-2">
+          <FaturamentoShareChip v-if="custosFaturamento" :data="custosFaturamento" />
+          <FaturamentoButton compact />
           <button
             v-if="custosBarData.length"
             type="button"
@@ -1083,6 +1069,7 @@ watch(activeTab, (tab) => {
               <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
             </svg>
           </button>
+          </div>
         </div>
         <BarChart
           v-if="custosBarData.length"
@@ -1101,6 +1088,19 @@ watch(activeTab, (tab) => {
           />
         </div>
       </section>
+
+      <!-- ===== CUSTO MÉDIO POR COLABORADOR (ao lado do Custo de folha de salário) ===== -->
+      <div v-if="ticketChartView" ref="ticketChartRef" class="min-w-0">
+        <KpiChartCard
+          stacked
+          class="h-full"
+          :card="ticketChartView.card"
+          :pie-data="ticketChartView.pieData"
+          :pie-center="ticketChartView.pieCenter"
+          :show-values="showValues"
+          :data-indicator-card="ticketChartView.card.id"
+        />
+      </div>
     </div>
 
     <!-- ===== TREINAMENTO — CARGA HORÁRIA POR FILIAL ===== -->

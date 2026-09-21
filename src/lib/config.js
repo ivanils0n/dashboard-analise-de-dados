@@ -174,6 +174,21 @@ export const INDICATORS = [
     computed: false,
     manual: true,
     form: "custo_total"
+  },
+  {
+    id: "ticket_medio",
+    name: "Custo médio por colaborador",
+    desc: "Custo médio de folha de salário por colaborador: custo de folha de salário do mês ÷ Headcount do mês, no estado filtrado",
+    calc: "Custo de folha de salário ÷ total de Headcount (mês e estado filtrados)",
+    type: "currency",
+    unit: "R$",
+    decimals: 2,
+    higherIsBetter: false,
+    /* Calculado a partir de dois outros KPIs (custo_total e headcount), sem
+       lançamento próprio: `manual: false` tira o indicador do seletor do
+       LaunchModal (ver ticketMedioFor em composables/useDashboardData.js). */
+    computed: true,
+    manual: false
   }
 ];
 

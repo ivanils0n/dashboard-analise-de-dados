@@ -5,6 +5,7 @@ import { reactive } from "vue";
 import { safeSetItem, sessionStore, localStore } from "./utils";
 import { apiFetch, setUnauthorizedHandler } from "./api";
 import { resetLocalState } from "./db";
+import { clearFaturamento } from "@/composables/useFaturamento";
 
 const AUTH_STORAGE_KEY = "gg-auth";
 const AUTH_DURATION_MS = 6 * 60 * 60 * 1000; // 6 horas
@@ -222,6 +223,7 @@ function performFullCleanup() {
   clearSession();
   clearLegacyKeys();
   authState.profile = null;
+  clearFaturamento();
   resetLocalState();
 }
 

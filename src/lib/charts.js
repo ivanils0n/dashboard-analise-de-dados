@@ -33,6 +33,10 @@ export const ACCENT_HOVER = "#B7791F";
 export const ABSENTEEISM_COLORS = ["#E8AF3E", "#b45309", "#94a3b8"];
 /* Cor neutra da segunda fatia da pizza — legível em temas claro e escuro. */
 export const PIE_SECONDARY = "#94a3b8";
+/* Cores das fatias da pizza: as duas primeiras são as do Turnover (Entrada/
+   Saída); as demais só entram em pizzas com mais de duas fatias (ex.: uma
+   fatia por estado). */
+const PIE_COLORS = [ACCENT, PIE_SECONDARY, "#b45309", "#64748b", "#f2c766"];
 
 /* Transformação de escala (raiz quadrada) aplicada às barras: comprime a
    altura de valores muito grandes em relação aos pequenos, evitando que
@@ -406,9 +410,10 @@ export function createPieChart(canvas) {
           padding: 12,
           cornerRadius: 8,
           callbacks: {
-            /* Único uso atual (Turnover): cada fatia já é uma taxa (%), não
-               uma contagem — formata com 1 casa decimal e o sufixo "%". */
-            label: (context) => ` ${context.label}: ${formatPiePercent(context.raw)}`
+            /* Turnover: cada fatia já é uma taxa (%), não uma contagem —
+               formata com 1 casa decimal e o sufixo "%". Outras pizzas trocam
+               o formato via setPieFormat (ex.: moeda). */
+            label: (context) => ` ${context.label}: ${(context.chart.__pieFormatter || formatPiePercent)(context.raw)}`
           }
         }
       }
@@ -422,11 +427,29 @@ export function formatPiePercent(value) {
   return num.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 }
 
+export function formatPieCurrency(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? formatCurrency(num) : "—";
+}
+
+/* Formato dos valores da pizza (tooltip e rótulos): "percent" (padrão) ou
+   "currency". Os rótulos usam o formatter passado em setShowValues. */
+export function pieFormatter(format) {
+  return format === "currency" ? formatPieCurrency : formatPiePercent;
+}
+
+export function setPieFormat(chart, format) {
+  if (!chart) return;
+  chart.__pieFormatter = pieFormatter(format);
+}
+
 /* data: [{ label, value }] */
 export function updatePieChart(chart, data) {
   if (!chart || !data) return;
   chart.data.labels = data.map((d) => d.label);
-  chart.data.datasets[0].data = data.map((d) => d.value);
+  const ds = chart.data.datasets[0];
+  ds.data = data.map((d) => d.value);
+  ds.backgroundColor = data.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
   chart.update();
 }
 
@@ -811,7 +834,7 @@ const centerTextPlugin = {
       if (inner < 20) return;
       const p = chartPalette();
       const { ctx } = chart;
-      const valueSize = Math.max(14, Math.min(40, Math.round(inner * 0.42)));
+      let valueSize = Math.max(14, Math.min(40, Math.round(inner * 0.42)));
       const captionSize = Math.max(10, Math.min(14, Math.round(inner * 0.17)));
       const gap = info.caption ? captionSize * 0.7 : 0;
       ctx.save();
@@ -819,6 +842,13 @@ const centerTextPlugin = {
       ctx.textBaseline = "middle";
       ctx.fillStyle = p.text;
       ctx.font = `700 ${valueSize}px ${Chart.defaults.font.family}`;
+      /* Textos longos (ex.: valores em moeda) encolhem para caber no furo. */
+      const maxWidth = inner * 1.6;
+      const width = ctx.measureText(info.value).width;
+      if (width > maxWidth) {
+        valueSize = Math.max(10, Math.floor((valueSize * maxWidth) / width));
+        ctx.font = `700 ${valueSize}px ${Chart.defaults.font.family}`;
+      }
       ctx.fillText(info.value, arc.x, arc.y - gap);
       if (info.caption) {
         ctx.fillStyle = p.tick;

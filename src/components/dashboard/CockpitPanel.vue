@@ -14,6 +14,8 @@ import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
 import CockpitKpiButton from "@/components/dashboard/CockpitKpiButton.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
 import TurnoverSummaryCards from "@/components/dashboard/TurnoverSummaryCards.vue";
+import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vue";
+import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatCurrency } from "@/lib/utils";
@@ -58,8 +60,14 @@ const diariaSummaryItems = computed(() => {
 
 /* Divide os KPIs em duas faixas (esquerda e abaixo) para que fiquem ao
    redor do gráfico central, com o painel Indicadores fixo à direita. */
-const leftKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 0));
-const bottomKpis = computed(() => kpis.value.filter((_, i) => i % 2 === 1));
+const BOTTOM_ONLY_KPIS = ["ticket_medio"];
+const splitKpis = computed(() => kpis.value.filter((k) => !BOTTOM_ONLY_KPIS.includes(k.id)));
+const leftKpis = computed(() => splitKpis.value.filter((_, i) => i % 2 === 0));
+/* Custo médio por colaborador fica sempre por último, na faixa abaixo do gráfico. */
+const bottomKpis = computed(() => [
+  ...splitKpis.value.filter((_, i) => i % 2 === 1),
+  ...kpis.value.filter((k) => BOTTOM_ONLY_KPIS.includes(k.id))
+]);
 
 /* Mapa abaixo dos Indicadores: mostra o KPI selecionado (ou o padrão, Custo de
    folha de salário) em cada estado — RO, AM e PA com o filtro em "todos", só o
@@ -69,9 +77,12 @@ const { setState } = useFilters();
 const mapStates = computed(() => props.dashboard.kpiValueByEstado(selectedKpiId.value));
 
 /* Taxa total de Turnover no centro da pizza (Painel e tela cheia). */
-const turnoverCenterValue = computed(() => {
-  const s = centerChart.value.id === "turnover" ? centerChart.value.summary : null;
-  return s ? formatValue({ type: "percent", decimals: 1 }, s.totalPct) : "";
+const pieCenter = computed(() => {
+  const chart = centerChart.value;
+  if (chart.id === "turnover" && chart.summary) {
+    return { value: formatValue({ type: "percent", decimals: 1 }, chart.summary.totalPct), caption: "Turnover" };
+  }
+  return chart.center || { value: "", caption: "" };
 });
 
 function select(id) {
@@ -224,7 +235,7 @@ function onPermanenciaDetailEdit(recordId) {
 /* Linha de tendência (MM2): fica de fora dos gráficos de barras deitadas
    (Treinamento, Tempo médio de contratação, Tempo médio de permanência e
    Custo médio da diária). */
-const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria"];
+const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio"];
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
 /* Gráficos de barras deitadas (uma linha por filial/vaga/colaborador, com
@@ -292,7 +303,7 @@ function goNextKpi() {
           <section class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <div
               class="mb-4 grid grid-cols-1 items-center gap-2"
-              :class="diariaSummaryItems.length ? 'sm:grid-cols-[1fr_auto_1fr]' : 'sm:grid-cols-3'"
+              :class="diariaSummaryItems.length ? 'sm:grid-cols-[1fr_auto_1fr]' : centerChart.faturamentoEnabled ? 'sm:grid-cols-[1fr_auto_auto]' : 'sm:grid-cols-3'"
             >
               <div>
                 <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
@@ -303,7 +314,9 @@ function goNextKpi() {
               </div>
               <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
               <div v-else></div>
-              <div class="flex justify-start gap-2 sm:justify-end">
+              <div class="flex flex-wrap items-center justify-start gap-2 sm:justify-end" :class="centerChart.faturamentoEnabled ? 'sm:flex-nowrap' : ''">
+                <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
+                <FaturamentoButton v-if="centerChart.faturamentoEnabled" />
                 <button
                   v-if="selectedKpiId"
                   type="button"
@@ -341,8 +354,9 @@ function goNextKpi() {
                 :data="centerChart.data"
                 :show-values="showValues"
                 height="h-full"
-                :center-value="turnoverCenterValue"
-                :center-caption="turnoverCenterValue ? 'Turnover' : ''"
+                :center-value="pieCenter.value"
+                :center-caption="pieCenter.caption"
+                :value-format="centerChart.valueFormat || 'percent'"
                 :clickable="centerChart.id === 'turnover'"
                 @chart-click="onPieClick"
               />
@@ -426,14 +440,24 @@ function goNextKpi() {
         </div>
       </div>
 
-      <!-- Indicadores + mapa do KPI selecionado (coluna da direita) -->
-      <div class="flex h-fit flex-col gap-4">
-      <aside class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
-        <!-- Lista compacta com rolagem própria, para o mapa ficar mais acima. -->
+      <!-- Mapa do KPI selecionado + indicadores (coluna da direita) -->
+      <div class="flex flex-col gap-4">
+      <UfMapCard
+        title="Mapa por estado"
+        :subtitle="centerChart.id === 'custo_diaria' ? `${centerChart.title} — valor total` : centerChart.title"
+        :states="mapStates"
+        @select="setState"
+      />
+
+      <!-- Em telas largas o card Indicadores desce até o fim da faixa de KPIs
+           inferior (a coluna estica junto com a coluna da esquerda); a lista
+           ocupa o espaço restante e rola dentro dele, sem aumentar a linha. -->
+      <aside class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-[12rem] xl:flex-1">
+        <h2 class="mb-2 text-center text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+        <div class="xl:relative xl:min-h-0 xl:flex-1">
         <ul
           ref="indicatorListRef"
-          class="relative flex max-h-48 flex-col gap-1 overflow-y-auto pr-1 [scrollbar-width:thin]"
+          class="relative flex max-h-48 flex-col gap-1 overflow-y-auto pr-1 [scrollbar-width:thin] xl:absolute xl:inset-0 xl:max-h-none"
         >
           <li
             v-for="kpi in kpis"
@@ -451,14 +475,8 @@ function goNextKpi() {
             <span class="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100">{{ indicatorValueText(kpi) }}</span>
           </li>
         </ul>
+        </div>
       </aside>
-
-      <UfMapCard
-        title="Mapa por estado"
-        :subtitle="centerChart.id === 'custo_diaria' ? `${centerChart.title} — valor total` : centerChart.title"
-        :states="mapStates"
-        @select="setState"
-      />
       </div>
     </div>
 
@@ -534,6 +552,7 @@ function goNextKpi() {
           <span v-else class="min-w-[10rem] text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">
             {{ centerChart.title }}
           </span>
+          <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
           <button
             type="button"
             class="fs-nav-btn"
@@ -555,8 +574,9 @@ function goNextKpi() {
               :data="centerChart.data"
               :show-values="showValues"
               height="h-full"
-              :center-value="turnoverCenterValue"
-              :center-caption="turnoverCenterValue ? 'Turnover' : ''"
+              :center-value="pieCenter.value"
+              :center-caption="pieCenter.caption"
+              :value-format="centerChart.valueFormat || 'percent'"
               :clickable="centerChart.id === 'turnover'"
               @chart-click="onPieClick"
             />

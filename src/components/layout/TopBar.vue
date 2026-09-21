@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import StateFilter from "./StateFilter.vue";
 import UserMenu from "./UserMenu.vue";
+import DashboardTabs from "./DashboardTabs.vue";
 import { useTheme } from "@/composables/useTheme";
 
 const route = useRoute();
@@ -13,17 +14,23 @@ const { isDark, toggle } = useTheme();
 const showStateFilter = computed(() =>
   ["dashboard", "equipe", "filiais", "departamentos"].includes(route.name)
 );
+const showDashboardTabs = computed(() => route.name === "dashboard");
 </script>
 
 <template>
   <header
-    class="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-zinc-800 bg-[#0a0a0a] px-4 sm:px-5"
+    class="sticky top-0 z-30 grid h-20 grid-cols-[1fr_auto] items-center border-b border-zinc-800 bg-[#0a0a0a] px-4 sm:px-5 md:grid-cols-[1fr_auto_1fr]"
   >
     <a href="#/dashboard" class="flex items-center" aria-label="Gente & Gestão — Dashboard">
       <img src="/logo.png" alt="Gente & Gestão" class="h-16 w-auto max-w-[260px] object-contain" />
     </a>
 
-    <div class="flex items-center gap-2">
+    <!-- Abas centralizadas (em telas pequenas ficam no corpo da página). -->
+    <div class="hidden justify-center md:flex">
+      <DashboardTabs v-if="showDashboardTabs" variant="topbar" />
+    </div>
+
+    <div class="flex items-center justify-end gap-2">
       <button
         type="button"
         class="rounded-lg border border-zinc-700 px-3.5 py-2.5 text-zinc-200 transition hover:bg-zinc-800"
