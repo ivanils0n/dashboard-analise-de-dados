@@ -78,10 +78,6 @@ const periodo = computed(() => (dateFilter.start ? ymLabel(String(dateFilter.end
         </div>
         <div class="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 text-right">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Ativos</p>
-            <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ totalAtivos }}</p>
-          </div>
-          <div>
             <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ rateLabel }}</p>
             <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
               {{ totalTaxa === null ? "—" : formatValue(PERCENT, totalTaxa) }}
