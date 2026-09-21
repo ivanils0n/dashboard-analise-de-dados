@@ -119,9 +119,9 @@ function toggleMonthIncomplete() {
 }
 
 const launchOpen = ref(false);
-/* KPI selecionado no Cockpit antes de abrir o Lançamento para editar algo
+/* KPI selecionado no Painel antes de abrir o Lançamento para editar algo
    vindo de lá (ex.: editar vaga a partir do gráfico de Tempo médio de
-   contratação) — restaurado em onSaved para não jogar o Cockpit de volta ao
+   contratação) — restaurado em onSaved para não jogar o Painel de volta ao
    Panorama atual depois de salvar. */
 const preEditSelectedKpiId = ref(null);
 const diariaEntriesOpen = ref(false);
@@ -539,7 +539,7 @@ function onEntriesEdit({ indicatorId, entry }) {
 
 function onSaved() {
   /* Salvando uma edição aberta a partir de um KPI/gráfico já selecionado
-     (ex.: Cockpit) mantém a mesma seleção; só volta ao Panorama atual quando
+     (ex.: Painel) mantém a mesma seleção; só volta ao Panorama atual quando
      nada estava selecionado antes (ex.: "+ Lançamento" do zero). */
   dashboard.selectKpi(preEditSelectedKpiId.value);
   preEditSelectedKpiId.value = null;
@@ -762,7 +762,7 @@ onDeactivated(() => {
   sidebarHidden.value = false;
 });
 
-/* No Cockpit a sidebar fica oculta para dar mais espaço aos gráficos. */
+/* No Painel a sidebar fica oculta para dar mais espaço aos gráficos. */
 watch(activeTab, (tab) => {
   sidebarHidden.value = tab === "cockpit";
 });
@@ -810,7 +810,7 @@ watch(activeTab, (tab) => {
               : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
             @click="switchTab('cockpit')"
           >
-            Cockpit
+            Painel
           </button>
         </div>
       </div>
@@ -1449,7 +1449,7 @@ watch(activeTab, (tab) => {
 </template>
 
 <style scoped>
-/* Animação de "arrasto" lateral ao trocar entre Visão Geral e Cockpit. */
+/* Animação de "arrasto" lateral ao trocar entre Visão Geral e Painel. */
 .slide-left-enter-active,
 .slide-left-leave-active,
 .slide-right-enter-active,

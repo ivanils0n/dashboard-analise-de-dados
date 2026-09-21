@@ -149,7 +149,7 @@ watch(isDark, () => {
   mountChart();
 });
 
-/* O mesmo componente é reaproveitado ao trocar de KPI (ex.: no Cockpit); sem
+/* O mesmo componente é reaproveitado ao trocar de KPI (ex.: no Painel); sem
    recriar, o gráfico ficava no formato anterior (barras em vez de linha). */
 watch(
   () => [props.variant, isHorizontal.value],

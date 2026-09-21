@@ -1,6 +1,6 @@
 <script setup>
 /* Faixa de números-resumo de um gráfico (ex.: Total, Colaboradores e Média da
-   diária no Cockpit). `items`: [{ label, value, accent? }] — `accent` destaca
+   diária no Painel). `items`: [{ label, value, accent? }] — `accent` destaca
    o card (mesma cor dos totais dos modais de registros). `compact`: versão
    enxuta para a barra superior do gráfico. */
 defineProps({

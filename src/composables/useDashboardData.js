@@ -244,7 +244,7 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Vagas abertas no período filtrado (data de abertura dentro do range) para
-     o gráfico de barras do Cockpit e da Visão geral (Tempo médio de
+     o gráfico de barras do Painel e da Visão geral (Tempo médio de
      contratação): uma barra por vaga, com os dias decorridos até o
      fechamento — ou até hoje, se ainda estiver aberta. */
   function vacanciesBarByOpen(statusFilter) {
@@ -383,7 +383,7 @@ export function useDashboardData(filter, options = {}) {
     return diariaBarEntries().filter((e) => employeeNameKey(diariaColaboradorName(e)) === key);
   }
 
-  /* Resumo do gráfico de barras da diária (Cockpit): total pago, colaboradores
+  /* Resumo do gráfico de barras da diária (Painel): total pago, colaboradores
      distintos e média — sobre a mesma lista das barras (`diariaBarEntries`) e
      com a mesma regra do KPI (total ÷ colaboradores, ver aggregateEntries), então
      os três números sempre batem com o gráfico e com o card. */
@@ -806,15 +806,15 @@ export function useDashboardData(filter, options = {}) {
     return formatValue(ind, entry.value);
   }
 
-  /* ---------- Cockpit: gráfico central por KPI selecionado ---------- */
+  /* ---------- Painel: gráfico central por KPI selecionado ---------- */
   const COCKPIT_AVG_TYPES = ["percent", "days", "months"];
   const NO_PERIODO_MONTH = "0001-01";
 
-  /* Monta os dados do gráfico grande do Cockpit a partir do KPI selecionado
+  /* Monta os dados do gráfico grande do Painel a partir do KPI selecionado
      (ou o gráfico padrão — Custo de folha de salário — quando nenhum está
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
-     centralizada aqui para reaproveitar no Cockpit. */
+     centralizada aqui para reaproveitar no Painel. */
   function cockpitChartFor(kpiId, hiringStatus) {
     if (!kpiId) {
       /* Panorama atual (desativado):

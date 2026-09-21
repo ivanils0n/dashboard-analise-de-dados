@@ -1,6 +1,6 @@
 <script setup>
 /* Meta de dias por tipo de vaga (Tempo médio de contratação) — mesma
-   legenda reaproveitada no KpiCard, no gráfico central do Cockpit e na sua
+   legenda reaproveitada no KpiCard, no gráfico central do Painel e na sua
    versão em tela cheia. */
 defineProps({
   size: { type: String, default: "sm" } // "sm" (card) | "md" (gráfico central)

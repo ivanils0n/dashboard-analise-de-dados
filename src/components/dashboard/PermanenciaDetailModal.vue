@@ -9,7 +9,7 @@ import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 
 /* Detalhe de um colaborador desligado clicado na barra do gráfico de Tempo
-   médio de permanência (Visão geral e Cockpit) — mostra os dados do registro
+   médio de permanência (Visão geral e Painel) — mostra os dados do registro
    e, quando o perfil permite, botões para editá-lo (abre o mesmo formulário
    usado pelo modal de Tempo médio de permanência) ou excluí-lo. */
 const props = defineProps({

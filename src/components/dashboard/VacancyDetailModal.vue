@@ -10,7 +10,7 @@ import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 
 /* Detalhe de uma vaga clicada na barra do gráfico de Tempo médio de
-   contratação (Visão geral e Cockpit) — mostra os dados da vaga e, quando o
+   contratação (Visão geral e Painel) — mostra os dados da vaga e, quando o
    perfil permite, botões para editá-la (abre o mesmo formulário de
    lançamento usado pelo modal de Vagas, aba "Vaga") ou excluí-la. */
 const props = defineProps({

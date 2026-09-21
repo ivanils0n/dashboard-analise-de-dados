@@ -15,7 +15,7 @@ import { formatValue, formatCurrency } from "@/lib/utils";
 
 /* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
    funções) — repassado inteiro para reaproveitar exatamente os mesmos dados
-   da aba "Visão geral" sem duplicar cálculo. O Cockpit segue o filtro de
+   da aba "Visão geral" sem duplicar cálculo. O Painel segue o filtro de
    período/estado global (definido na Visão geral), sem filtro próprio. */
 const props = defineProps({
   dashboard: { type: Object, required: true },
