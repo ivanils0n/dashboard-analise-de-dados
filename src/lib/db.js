@@ -577,65 +577,6 @@ export async function hydrate(state) {
   }
 }
 
-/* Uma única descida por estado por vez: vários componentes (modais, filtros,
-   a própria tela) pedem o mesmo estado ao mesmo tempo, e cada pedido repetia
-   o download completo. */
-const _stateInflight = new Map();
-
-function hydrateOneState(s) {
-  let promise = _stateInflight.get(s);
-  if (!promise) {
-    promise = loadStateFromApi(s).finally(() => _stateInflight.delete(s));
-    _stateInflight.set(s, promise);
-  }
-  return promise;
-}
-
-/* Baixa e grava em cache todas as tabelas de um único estado. Cada estado é
-   isolado dos demais (ver _hydrateStates): a falha de um (ex.: timeout numa
-   consulta grande) não impede os outros de serem carregados e marcados. */
-async function loadStateFromApi(s) {
-  const epoch = _epoch;
-  const suffix = s.toLowerCase();
-  const fetchTable = async (name) => {
-    try {
-      return await apiFetch(`/api/data/${name}`);
-    } catch (err) {
-      console.error(`[API] Erro ao consultar ${name}:`, err);
-      return { error: err };
-    }
-  };
-  const results = await Promise.all(DATA_TABLES.map((base) => fetchTable(`${base}_${suffix}`)));
-
-  // Logout/login durante o download: descarta em vez de misturar sessões.
-  if (epoch !== _epoch) return false;
-
-  const errored = results.filter((res) => res && res.error);
-  if (errored.length) {
-    // Não marca o estado como carregado quando a consulta falha (ex.: sem
-    // sessão autenticada ainda). Assim o estado é baixado novamente no
-    // próximo acesso — evita telas vazias por estado "marcado" sem dados.
-    errored.forEach((res) => console.error("[API]", res.error.message));
-    return false;
-  }
-
-  const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
-  const payload = emptyPayload();
-
-  let persisted = true;
-  DATA_TABLES.forEach((base, i) => {
-    const rows = rowsOf(results[i]);
-    if (persisted) persisted = persistRows(`${base}_${suffix}`, rows);
-    const kind = TABLE_KINDS[base];
-    payload[kind.key] = rows.map((row) => kind.map(row, s));
-  });
-  if (!persisted) _cacheDirty = true;
-
-  mergeFromRemote(payload);
-  _loadedStates[s] = true;
-  return true;
-}
-
 /* Separa linhas de uma aba consolidada (RO+AM+PA numa só) pelo estado de
    cada uma. Linha sem estado_sigla reconhecível cai no estado padrão em vez
    de ser perdida (não deveria acontecer, mas é mais seguro que sumir dado). */
@@ -648,96 +589,126 @@ function bucketByEstado(rows) {
   return buckets;
 }
 
-/* Baixa e grava em cache todas as tabelas dos 3 estados numa única leva de
-   chamadas (uma por tabela, sem sufixo de estado) em vez de 3 levas (uma por
-   estado) — usado só na carga inicial "do zero" de todos os estados juntos
-   (ver _hydrateStates). Reduz N×3 para N chamadas ao Worker/Apps Script, que
-   tem limite de execuções simultâneas (ver comentário em sheets.ts). */
-async function loadAllStatesFromApi() {
-  const epoch = _epoch;
-  const fetchTable = async (name) => {
-    try {
-      return await apiFetch(`/api/data/${name}`);
-    } catch (err) {
-      console.error(`[API] Erro ao consultar ${name}:`, err);
-      return { error: err };
-    }
-  };
-  const results = await Promise.all(DATA_TABLES.map((base) => fetchTable(base)));
+/* Tabelas já carregadas nesta sessão (os 3 estados de uma vez — ver
+   bucketByEstado): fonte única do que falta baixar, tanto na carga normal
+   quanto num retry após erro parcial. Zerado em clearLoadedTracking (logout,
+   "Recarregar Dados"). */
+const _tablesLoaded = new Set();
 
-  if (epoch !== _epoch) return false;
+/* Tentativas extras só para as tabelas que falharem — as que já vieram
+   certas não são rebaixadas junto. */
+const MAX_TABLE_RETRIES = 2;
 
-  const errored = results.filter((res) => res && res.error);
-  if (errored.length) {
-    errored.forEach((res) => console.error("[API]", res.error.message));
-    return false;
+async function fetchOneTable(base) {
+  try {
+    const res = await apiFetch(`/api/data/${base}`);
+    return { base, data: (res && res.data) || [] };
+  } catch (err) {
+    console.error(`[API] Erro ao consultar ${base}:`, err);
+    return { base, error: err };
   }
+}
 
-  const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
+/* Busca as tabelas informadas — sempre sem sufixo de estado (cada tabela
+   volta com os 3 estados juntos numa única chamada, ver bucketByEstado) — e
+   grava em cache/memória as que vierem certas. Devolve as que falharam, sem
+   descartar o que já deu certo nesta rodada. */
+async function fetchTablesOnce(bases) {
+  const epoch = _epoch;
+  const results = await Promise.all(bases.map(fetchOneTable));
+  if (epoch !== _epoch) return { failed: bases }; // logout/login no meio do download
+
   const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };
-
+  const failed = [];
   let persisted = true;
-  DATA_TABLES.forEach((base, i) => {
-    const buckets = bucketByEstado(rowsOf(results[i]));
+
+  results.forEach(({ base, data, error }) => {
+    if (error) {
+      failed.push(base);
+      return;
+    }
     const kind = TABLE_KINDS[base];
+    const buckets = bucketByEstado(data);
     STATES.forEach((s) => {
       if (persisted) persisted = persistRows(`${base}_${s.toLowerCase()}`, buckets[s]);
       payloads[s][kind.key] = buckets[s].map((row) => kind.map(row, s));
     });
   });
-
   if (!persisted) _cacheDirty = true;
 
-  STATES.forEach((s) => {
-    mergeFromRemote(payloads[s]);
-    _loadedStates[s] = true;
+  STATES.forEach((s) => mergeFromRemote(payloads[s]));
+  bases.forEach((base) => {
+    if (!failed.includes(base)) _tablesLoaded.add(base);
   });
-  return true;
+
+  return { failed };
 }
 
-/* Como hydrateOneState, mas para os 3 estados de uma vez: registra a mesma
-   promise em _stateInflight para cada estado, para que um hydrateOneState('RO')
-   concorrente espere essa carga em vez de disparar outro download. */
-function hydrateAllStates() {
-  const promise = loadAllStatesFromApi().finally(() => {
-    STATES.forEach((s) => {
-      if (_stateInflight.get(s) === promise) _stateInflight.delete(s);
-    });
+/* Baixa todas as tabelas que ainda faltam, uma chamada por tabela (sem
+   sufixo de estado — nunca "diarias_ro"/"diarias_am"/"diarias_pa" em
+   chamadas separadas, só "diarias" trazendo os 3 estados de uma vez).
+   Chamar por estado multiplicava as requisições simultâneas ao Worker/Apps
+   Script (que tem limite de execuções concorrentes — ver sheets.ts) e
+   causava falhas intermitentes com status "canceled" em 1 ou 2 tabelas por
+   vez, mesmo com a maioria carregando normalmente. Quando alguma tabela
+   falha, tenta de novo só ela (até MAX_TABLE_RETRIES vezes) — nada que já
+   carregou certo é rebaixado. Uma única promise compartilhada: chamadas
+   concorrentes (vários componentes pedindo dados ao mesmo tempo) esperam a
+   mesma operação em vez de disparar downloads paralelos redundantes. */
+let _hydrateAllPromise = null;
+
+function hydrateAllTables() {
+  if (_hydrateAllPromise) return _hydrateAllPromise;
+
+  _hydrateAllPromise = (async () => {
+    let pending = DATA_TABLES.filter((base) => !_tablesLoaded.has(base));
+    let attempt = 0;
+    while (pending.length && attempt <= MAX_TABLE_RETRIES) {
+      if (attempt > 0) {
+        // Pequena espera antes de tentar de novo: dá um respiro ao Worker/Apps
+        // Script quando o erro foi por limite de execuções concorrentes, em
+        // vez de bater na mesma trava imediatamente.
+        console.warn(`[API] Tentando de novo (${attempt}/${MAX_TABLE_RETRIES}): ${pending.join(", ")}.`);
+        await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+      }
+      const { failed } = await fetchTablesOnce(pending);
+      pending = failed;
+      attempt++;
+    }
+    if (pending.length) {
+      console.error(`[API] Não foi possível carregar após ${MAX_TABLE_RETRIES + 1} tentativa(s): ${pending.join(", ")}.`);
+    }
+    return pending.length === 0;
+  })().finally(() => {
+    _hydrateAllPromise = null;
   });
-  STATES.forEach((s) => _stateInflight.set(s, promise));
-  return promise;
+
+  return _hydrateAllPromise;
 }
 
-/* Carrega os estados pendentes em paralelo (antes era um for-of sequencial
-   com await, que somava a latência de cada estado em vez de correr junto —
-   a causa principal da demora ao entrar com o filtro em "todos", que carrega
-   RO+AM+PA de uma vez). Quando os 3 estados estão pendentes ao mesmo tempo
-   (carga inicial "do zero" em "todos"), usa hydrateAllStates (1 chamada por
-   tabela) em vez de 3 hydrateOneState em paralelo (3 chamadas por tabela). */
+/* Todo hydrate cai aqui: sempre baixa (ou reaproveita, se já em memória)
+   TODAS as tabelas de uma vez — como os dados vêm em abas consolidadas por
+   estado_sigla, não há ganho em pedir só o estado atual, e evita as
+   chamadas por estado (ver hydrateAllTables). Ao terminar, marca carregados
+   os estados pedidos que de fato têm tabelas completas em memória. */
 async function _hydrateStates(states) {
   const pending = states.filter((s) => !_loadedStates[s]);
   if (!pending.length) return true;
 
-  const isFreshAllStates = STATES.every((s) => pending.includes(s));
-  let results;
-  if (isFreshAllStates) {
-    const ok = await hydrateAllStates();
-    results = pending.map(() => ok);
-  } else {
-    results = await Promise.all(pending.map((s) => hydrateOneState(s)));
-  }
+  const ok = await hydrateAllTables();
 
-  const loaded = pending.filter((_, i) => results[i]);
-
-  if (loaded.length) {
+  if (ok) {
     if (_cacheDirty) {
       // Cache incompleto (cota cheia): descarta tudo — o próximo boot baixa de novo.
       DataCache.resetAll();
       _cacheDirty = false;
     }
-    console.info(`[API] Dados carregados: ${loaded.join(", ")}.`);
+    STATES.forEach((s) => {
+      _loadedStates[s] = true;
+    });
+    console.info(`[API] Dados carregados: ${STATES.join(", ")}.`);
   }
-  return results.every(Boolean);
+  return ok;
 }
 
 function keyTable(key) {
@@ -802,6 +773,12 @@ async function _hydrateState(pending) {
       mergeStateFromCache(s);
       _loadedStates[s] = true;
     });
+    /* Cache cobrindo os 3 estados: evita que o próximo hydrate (outro
+       componente pedindo um estado que não estava no cache) rebaixe tudo de
+       novo via rede — ver hydrateAllTables. */
+    if (STATES.every((s) => _loadedStates[s])) {
+      DATA_TABLES.forEach((base) => _tablesLoaded.add(base));
+    }
     console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);
     return true;
   }
@@ -838,11 +815,19 @@ function loadLocalIntoMemory() {
       _loadedStates[s] = true;
     }
   });
+  // Mesma ideia por tabela: evita rebaixar via rede o que já veio do cache
+  // (ver hydrateAllTables).
+  DATA_TABLES.forEach((base) => {
+    if (STATES.some((s) => tablesSeen[`${base}_${s.toLowerCase()}`])) {
+      _tablesLoaded.add(base);
+    }
+  });
   return true;
 }
 
 function clearLoadedTracking() {
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
+  _tablesLoaded.clear();
 }
 
 /* Boot:

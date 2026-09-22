@@ -617,6 +617,7 @@ function goNextKpi() {
               :value-format="centerChart.valueFormat || 'percent'"
               :clickable="centerChart.id === 'turnover'"
               @chart-click="onPieClick"
+              @chart-contextmenu="onPieClick"
             />
             <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :summary="centerChart.summary" @select="openTurnoverDetail" />
           </div>
