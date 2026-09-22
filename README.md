@@ -189,3 +189,4 @@ Tudo é centralizado em `src/lib/config.js`. Adicione um novo objeto ao array `I
 - [SheetJS](https://sheetjs.com/)
 - [Hono](https://hono.dev/)
 - [Google Apps Script](https://developers.google.com/apps-script)
+# dashboard-analise-de-dados
