@@ -1,11 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gente-gestao-api-sheets",
+  "name": "api-gente-gestao",
   "main": "src/index.ts",
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "CORS_ORIGIN": "http://localhost:5173"
+    "CORS_ORIGIN": "http://localhost:5173,https://gente-gestao-modenaearaujo.pages.dev"
   },
   "ratelimits": [
     {
