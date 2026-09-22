@@ -1,5 +1,28 @@
 /* Utilitários de formatação e de storage web seguro. */
 
+/* Roda `worker` sobre `items` com no máximo `limit` execuções em voo ao
+   mesmo tempo — um "pool" de workers que consome a fila compartilhada: assim
+   que uma chamada termina, o worker livre puxa o próximo item, sem esperar
+   os outros. Usado para não estourar cotas de execuções simultâneas de APIs
+   externas (ex.: Google Apps Script) quando há mais itens que o limite —
+   com `items.length <= limit` o comportamento é o mesmo de `Promise.all`.
+   Devolve os resultados na mesma ordem de `items`. */
+export async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await worker(items[current], current);
+    }
+  }
+
+  const poolSize = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: poolSize }, runWorker));
+  return results;
+}
+
 export function formatValue(indicator, value) {
   if (value === null || value === undefined || value === "" || isNaN(Number(value))) {
     return "—";

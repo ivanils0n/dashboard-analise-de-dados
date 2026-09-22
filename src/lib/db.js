@@ -8,8 +8,18 @@ import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./store";
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
+import { mapWithConcurrency } from "./utils";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
+
+/* Teto de requisições simultâneas para a API (Worker → Apps Script), que
+   aceita no máximo 30 execuções ao mesmo tempo por usuário — folga
+   deliberada abaixo disso pra sobrar espaço pra escritas concorrentes e
+   outras abas/usuários batendo na mesma planilha. Acima do limite, a próxima
+   requisição só sai quando alguma anterior termina (ver mapWithConcurrency
+   em utils.js), em vez de todas de uma vez — é isso que evita o status
+   "canceled" quando o total de chamadas cresce. */
+const MAX_CONCURRENT_REQUESTS = 28;
 const MAX_FLUSH_RETRIES = 3; // tentativas extras após falha de rede/servidor
 
 /* Corrige timestamps "hora local" para a planilha sem duplicar fuso.
@@ -239,16 +249,17 @@ async function _flushNow(keepalive) {
     });
     const body = { upserts, deletes };
     const useKeepalive = keepalive && JSON.stringify(body).length < KEEPALIVE_MAX_BYTES;
-    jobs.push({
-      table,
-      ops,
-      promise: apiFetch(`/api/data/${table}`, { method: "POST", body, keepalive: useKeepalive })
-    });
+    jobs.push({ table, ops, body, useKeepalive });
   });
 
   if (!jobs.length) return;
 
-  const errors = await Promise.all(jobs.map((job) => job.promise.then(() => null, (err) => err)));
+  const errors = await mapWithConcurrency(jobs, MAX_CONCURRENT_REQUESTS, (job) =>
+    apiFetch(`/api/data/${job.table}`, { method: "POST", body: job.body, keepalive: job.useKeepalive }).then(
+      () => null,
+      (err) => err
+    )
+  );
 
   let willRetry = false;
   let dropped = 0;
@@ -615,7 +626,7 @@ async function fetchOneTable(base) {
    descartar o que já deu certo nesta rodada. */
 async function fetchTablesOnce(bases) {
   const epoch = _epoch;
-  const results = await Promise.all(bases.map(fetchOneTable));
+  const results = await mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable);
   if (epoch !== _epoch) return { failed: bases }; // logout/login no meio do download
 
   const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };

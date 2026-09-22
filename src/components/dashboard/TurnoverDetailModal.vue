@@ -23,7 +23,6 @@ const emit = defineEmits(["close"]);
 const { state } = useFilters();
 
 const isAdmissao = computed(() => props.kind === "admissoes");
-const label = computed(() => (isAdmissao.value ? "Admissões" : "Demissões"));
 const rateLabel = computed(() => (isAdmissao.value ? "Entrada" : "Saída"));
 const PERCENT = { type: "percent", decimals: 1 };
 
@@ -77,7 +76,7 @@ const periodo = computed(() => (dateFilter.start ? ymLabel(String(dateFilter.end
 
 <template>
   <Modal
-    :title="`Turnover — ${label}`"
+    title="Turnover — Geral"
     :subtitle="`${escopo} · ${periodo}`"
     :open="open"
     max-width="max-w-4xl"
