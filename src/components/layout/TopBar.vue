@@ -1,20 +1,40 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import StateFilter from "./StateFilter.vue";
 import UserMenu from "./UserMenu.vue";
 import DashboardTabs from "./DashboardTabs.vue";
 import { useTheme } from "@/composables/useTheme";
+import { reloadData } from "@/lib/db";
+import { syncAll } from "@/lib/employees";
+import { useToast } from "@/composables/useToast";
 
 const route = useRoute();
 const { isDark, toggle } = useTheme();
+const { show: toast } = useToast();
 
 /* Reativo: o TopBar persiste entre rotas (layout aninhado), então os
    controles visíveis dependem da rota ATUAL, não da inicial. */
-const showStateFilter = computed(() =>
-  ["dashboard", "equipe", "filiais", "departamentos"].includes(route.name)
-);
+const showStateFilter = computed(() => ["dashboard", "filiais"].includes(route.name));
 const showDashboardTabs = computed(() => route.name === "dashboard");
+
+/* "Recarregar Dados": antes vivia no menu do Dashboard, agora fica sempre à
+   mão no topo (funciona em qualquer tela, não só no Dashboard). */
+const reloading = ref(false);
+async function handleReload() {
+  if (reloading.value) return;
+  reloading.value = true;
+  try {
+    await reloadData();
+    syncAll();
+    toast("Dados recarregados.");
+  } catch (err) {
+    console.error("[TopBar] Falha ao recarregar os dados:", err);
+    toast("Não foi possível recarregar os dados.");
+  } finally {
+    reloading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -31,6 +51,31 @@ const showDashboardTabs = computed(() => route.name === "dashboard");
     </div>
 
     <div class="flex items-center justify-end gap-2">
+      <button
+        type="button"
+        class="rounded-lg border border-zinc-700 px-3.5 py-2.5 text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label="Recarregar dados"
+        title="Recarregar dados"
+        :disabled="reloading"
+        @click="handleReload"
+      >
+        <svg
+          width="19"
+          height="19"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          :class="reloading ? 'animate-spin' : ''"
+        >
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
+      </button>
+
       <button
         type="button"
         class="rounded-lg border border-zinc-700 px-3.5 py-2.5 text-zinc-200 transition hover:bg-zinc-800"

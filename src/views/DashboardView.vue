@@ -36,11 +36,10 @@ import { canEditData } from "@/lib/auth";
 import { getIndicatorById } from "@/lib/config";
 import { removeEntry, removeEntries } from "@/lib/store";
 import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
-import { syncAll } from "@/lib/employees";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
 import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
-import { reloadData, hydrateState } from "@/lib/db";
+import { hydrateState } from "@/lib/db";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
@@ -255,17 +254,6 @@ function onPermanenciaEdit(recordId) {
    TopBar). */
 const hiringStatusFilter = ref("fechadas");
 const menuOpen = ref(false);
-const tableSearch = ref("");
-/* A tabela só refiltra 200 ms depois da última tecla: refiltrar e reordenar
-   todos os lançamentos a cada letra digitada travava a digitação. */
-const tableQuery = ref("");
-let tableSearchTimer = null;
-watch(tableSearch, (value) => {
-  clearTimeout(tableSearchTimer);
-  tableSearchTimer = setTimeout(() => {
-    tableQuery.value = value;
-  }, 200);
-});
 const kpiSearch = ref("");
 const SHOW_VALUES_KEY = "gg-show-values";
 const storedShowValues = localStore.getItem(SHOW_VALUES_KEY);
@@ -341,36 +329,6 @@ let flashTimer = null;
 
 const canEdit = canEditData();
 
-const tableRows = computed(() => dashboard.tableRows(tableQuery.value));
-
-/* Só as primeiras linhas vão para o DOM; o restante entra conforme a rolagem
-   chega ao fim. Renderizar milhares de linhas (cada uma com checkbox, badge e
-   botões) de uma vez era o maior custo de render da tela. */
-const TABLE_PAGE_SIZE = 100;
-const tableLimit = ref(TABLE_PAGE_SIZE);
-const visibleTableRows = computed(() => tableRows.value.slice(0, tableLimit.value));
-watch([tableQuery, () => df.start, () => df.end, () => filters.current], () => {
-  tableLimit.value = TABLE_PAGE_SIZE;
-});
-
-function onTableScroll(event) {
-  if (tableLimit.value >= tableRows.value.length) return;
-  const el = event.target;
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) tableLimit.value += TABLE_PAGE_SIZE;
-}
-
-/* Data exibida em "Lançamentos recentes": indicadores lançados por
-   competência (mês/ano) mostram o mês; diárias sem período conhecido
-   (importadas sem a coluna Periodo) mostram "Sem período" em vez da
-   data-sentinela interna. */
-function tableDateLabel(ind, entry) {
-  if (entry.meta && entry.meta.semPeriodo) return "Sem período";
-  if (ind.form === "custo_total" || ind.form === "treinamento" || ind.form === "diaria") {
-    return ymShortLabel(entry.date);
-  }
-  return formatDate(entry.date);
-}
-
 /* Busca na área de indicadores: filtra os cards pelo nome/descrição
    (ignorando maiúsculas/minúsculas e acentos). */
 const visibleKpis = computed(() => {
@@ -378,52 +336,6 @@ const visibleKpis = computed(() => {
   if (!q) return kpis.value;
   return kpis.value.filter((k) => normalizeText(`${k.name} ${k.desc || ""}`).includes(q));
 });
-
-/* ---------- Seleção múltipla / exclusão em lote (Lançamentos Recentes) ---------- */
-const selectedKeys = ref(new Set());
-
-const selectedRows = computed(() =>
-  tableRows.value.filter((r) => selectedKeys.value.has(r.entry.id))
-);
-
-const allVisibleSelected = computed(
-  () => tableRows.value.length > 0 && tableRows.value.every((r) => selectedKeys.value.has(r.entry.id))
-);
-
-function toggleRow(id) {
-  const next = new Set(selectedKeys.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  selectedKeys.value = next;
-}
-
-function toggleSelectAll() {
-  if (allVisibleSelected.value) {
-    selectedKeys.value = new Set();
-  } else {
-    selectedKeys.value = new Set(tableRows.value.map((r) => r.entry.id));
-  }
-}
-
-async function handleBulkDelete() {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  const rows = selectedRows.value;
-  const n = rows.length;
-  if (!n) return;
-  const ok = await confirm({
-    title: `Excluir ${n} lançamento(s)?`,
-    message: "Os lançamentos selecionados serão removidos definitivamente e os totais serão recalculados.",
-    confirmText: `Excluir ${n}`,
-    danger: true
-  });
-  if (!ok) return;
-  removeEntries(rows.map((r) => ({ indicatorId: r.ind.id, entry: r.entry })));
-  selectedKeys.value = new Set();
-  toast(`${n} lançamento(s) excluído(s).`);
-}
 
 /* Dados do gráfico de barras dos Custos Totais em largura total. */
 const custosBarData = computed(() => dashboard.custosBarByFilial());
@@ -584,21 +496,6 @@ function onMenuClick(action) {
   else if (action === "template") downloadTemplate();
   else if (action === "import") fileInput.value?.click();
   else if (action === "incomplete") toggleMonthIncomplete();
-  else if (action === "reload") handleReload();
-}
-
-async function handleReload() {
-  importing.value = true;
-  try {
-    await reloadData();
-    syncAll();
-    toast("Dados recarregados.");
-  } catch (err) {
-    console.error("[Dashboard] Falha ao recarregar os dados:", err);
-    toast("Não foi possível recarregar os dados.");
-  } finally {
-    importing.value = false;
-  }
 }
 
 const fileInput = ref(null);
@@ -619,12 +516,8 @@ function onImportFile(e) {
         const parts = [`${summary.imported} lançamento(s) importado(s)`];
         if (summary.duplicates) parts.push(`${summary.duplicates} duplicado(s) ignorado(s)`);
         if (summary.invalid) parts.push(`${summary.invalid} inválido(s)`);
-        if (summary.importedEmployees) parts.push(`${summary.importedEmployees} colaborador(es) importado(s)`);
-        if (summary.duplicateEmployees) parts.push(`${summary.duplicateEmployees} colaborador(es) duplicado(s)`);
         if (summary.importedBranches) parts.push(`${summary.importedBranches} filial(ais) importada(s)`);
         if (summary.duplicateBranches) parts.push(`${summary.duplicateBranches} filial(ais) duplicada(s)`);
-        if (summary.importedDepartments) parts.push(`${summary.importedDepartments} departamento(s) importado(s)`);
-        if (summary.duplicateDepartments) parts.push(`${summary.duplicateDepartments} departamento(s) duplicado(s)`);
         toast("Importação concluída — " + parts.join(" · "));
       },
       filters.current
@@ -633,71 +526,12 @@ function onImportFile(e) {
   e.target.value = "";
 }
 
-async function removeEntryRowConfirmed(indicatorId, entryId) {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  const ok = await confirm({
-    title: "Excluir lançamento?",
-    message: "O registro será removido definitivamente e os totais do gráfico serão recalculados.",
-    confirmText: "Excluir",
-    danger: true
-  });
-  if (!ok) return;
-  removeEntry(indicatorId, entryId);
-  syncAll();
-  toast("Lançamento excluído.");
-}
-
 function openEditEntry(row) {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
   editingRow.value = row;
-}
-
-/* "Limpar tudo" remove SOMENTE os lançamentos do período atualmente
-   filtrado (ex.: o mês Ago/2026), respeitando o estado selecionado.
-   Lançamentos de outros períodos nunca são afetados. */
-async function handleClearAll() {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  if (!df.start && !df.end) {
-    toast("Selecione um período (ex.: um mês) antes de usar “Limpar tudo”.");
-    return;
-  }
-  const monthScope = singleMonthOfRange(df.start, df.end);
-  const scopeLabel = monthScope
-    ? ymLabel(monthScope)
-    : `entre ${formatDate(df.start)} e ${formatDate(df.end)}`;
-  const stateScope =
-    filters.current === "todos"
-      ? "todos os estados"
-      : `o estado ${filters.current}`;
-
-  const targets = dashboard.tableRows("");
-
-  if (!targets.length) {
-    toast(`Nenhum lançamento encontrado em ${scopeLabel} (${stateScope}).`);
-    return;
-  }
-
-  const ok = await confirm({
-    title: `Apagar lançamentos de ${scopeLabel}?`,
-    message: `Serão removidos ${targets.length} lançamento(s) de ${scopeLabel} (${stateScope}). Lançamentos de outros períodos não serão afetados. Essa ação não pode ser desfeita.`,
-    confirmText: `Apagar ${scopeLabel}`,
-    danger: true
-  });
-  if (!ok) return;
-
-  removeEntries(targets.map((r) => ({ indicatorId: r.ind.id, entry: r.entry })));
-  selectedKeys.value = new Set();
-  syncAll();
-  toast(`${targets.length} lançamento(s) de ${scopeLabel} removido(s).`);
 }
 
 function onSelectKpi(id) {
@@ -839,7 +673,7 @@ watch(activeTab, (tab) => {
         </button>
         <DateRangeFilter :range="df" title="Período" @apply="showIncompleteNotice" />
 
-        <div class="relative" @click.stop>
+        <div v-if="canEdit" class="relative" @click.stop>
         <button
           type="button"
           class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
@@ -860,7 +694,6 @@ watch(activeTab, (tab) => {
           v-if="menuOpen"
           class="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
         >
-        <template v-if="canEdit">
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('xlsx')">Baixar em XLSX</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('csv')">Baixar em CSV</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('template')">Baixar template</button>
@@ -876,9 +709,6 @@ watch(activeTab, (tab) => {
           >
             {{ monthIncomplete ? "Desmarcar mês incompleto" : "Marcar mês como incompleto" }}{{ filteredMonth ? ` (${filteredMonthLabel})` : "" }}
           </button>
-          <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
-        </template>
-        <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('reload')">Recarregar Dados</button>
         </div>
         <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden @change="onImportFile" />
         </div>
@@ -1253,106 +1083,6 @@ watch(activeTab, (tab) => {
         <EmptyState
           title="Sem colaboradores desligados no período"
           text="Importe uma planilha ou lance um registro (botão direito no KPI de Tempo médio de permanência) ou ajuste o filtro."
-        />
-      </div>
-    </section>
-
-    <!-- ===== LANÇAMENTOS ===== -->
-    <section class="mt-8 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 p-5 dark:border-zinc-800">
-        <div>
-          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Lançamentos recentes</h2>
-          <p class="text-xs text-zinc-400 dark:text-zinc-400">Todos os registros cadastrados e calculados</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <template v-if="canEdit && selectedRows.length">
-            <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
-              {{ selectedRows.length }} selecionado(s)
-            </span>
-            <button type="button" class="btn-danger-solid-sm" @click="handleBulkDelete">Excluir selecionados</button>
-          </template>
-          <input v-model="tableSearch" type="search" class="input-sm" placeholder="Buscar lançamento..." aria-label="Buscar lançamento" />
-          <button v-if="canEdit" type="button" class="btn-ghost-sm" @click="handleClearAll">Limpar tudo</button>
-        </div>
-      </div>
-
-      <template v-if="tableRows.length">
-      <div class="max-h-[400px] overflow-auto" @scroll.passive="onTableScroll">
-        <table class="w-full min-w-max text-left text-sm">
-          <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
-            <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
-              <th v-if="canEdit" class="w-10 px-4 py-3 font-semibold">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-accent"
-                  :checked="allVisibleSelected"
-                  aria-label="Selecionar todos os lançamentos visíveis"
-                  @change="toggleSelectAll"
-                />
-              </th>
-              <th class="px-5 py-3 font-semibold">Data</th>
-              <th class="px-5 py-3 font-semibold">Indicador</th>
-              <th class="px-5 py-3 font-semibold">Valor</th>
-              <th v-if="canEdit" class="px-5 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="{ entry, ind } in visibleTableRows"
-              :key="entry.id"
-              class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-              :class="selectedKeys.has(entry.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
-            >
-              <td v-if="canEdit" class="px-4 py-3">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-accent"
-                  :checked="selectedKeys.has(entry.id)"
-                  :aria-label="`Selecionar lançamento de ${ind.name}`"
-                  @change="toggleRow(entry.id)"
-                />
-              </td>
-              <td class="px-5 py-3 text-zinc-700 dark:text-zinc-300">
-                {{ tableDateLabel(ind, entry) }}
-              </td>
-              <td class="px-5 py-3"><Badge>{{ ind.name }}</Badge></td>
-              <td class="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{{ formatEntryValue(ind, entry) }}</td>
-              <td v-if="canEdit" class="px-5 py-3 text-right">
-                <div class="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    class="btn-ghost-sm"
-                    aria-label="Editar lançamento"
-                    @click="openEditEntry({ entry, ind })"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    class="icon-btn-sm"
-                    aria-label="Excluir lançamento"
-                    @click="removeEntryRowConfirmed(ind.id, entry.id)"
-                  >
-                    &times;
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p
-        v-if="tableRows.length > visibleTableRows.length"
-        class="border-t border-zinc-100 px-5 py-2 text-xs text-zinc-400 dark:border-zinc-800"
-      >
-        Exibindo {{ visibleTableRows.length }} de {{ tableRows.length }} lançamentos — role a tabela para carregar mais.
-      </p>
-      </template>
-
-      <div v-else class="p-5">
-        <EmptyState
-          :title="tableSearch ? 'Nenhum resultado encontrado' : 'Nenhum lançamento ainda'"
-          :text="tableSearch ? '' : 'Use o botão “Lançar dados” para alimentar seus indicadores ou cadastre colaboradores na aba Equipe.'"
         />
       </div>
     </section>

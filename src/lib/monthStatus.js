@@ -2,13 +2,14 @@
    ainda não tem todas as informações lançadas.
 
    É gravada como um lançamento especial (indicador "mes_incompleto", data =
-   1º dia do mês, um por estado) — mesmo padrão do "salario_colaborador".
-   Assim reaproveita as tabelas lancamentos_*, o delta sync e a fila de escrita
-   já existentes (sem tabela nova) e a marca fica compartilhada entre usuários.
-   Não pertence a INDICATORS, então não aparece em KPIs, gráficos, tabela de
-   lançamentos nem na exportação. */
+   1º dia do mês, um por estado), na aba dedicada "meses_incompletos" (ver
+   backend-sheets/src/db/tables.ts) — a existência da linha já é o marcador,
+   sem nenhum outro dado. Reaproveita getEntriesFor/addEntry/removeEntries e a
+   fila de escrita do store/db já existentes, e a marca fica compartilhada
+   entre usuários. Não pertence a INDICATORS, então não aparece em KPIs,
+   gráficos, tabela de lançamentos nem na exportação. */
 import { STATES } from "./config";
-import { useData, addEntry, removeEntries } from "./store";
+import { getEntriesFor, addEntry, removeEntries } from "./store";
 import { firstDayOfYm, sameState } from "./utils";
 
 export const INCOMPLETE_MONTH_IND = "mes_incompleto";
@@ -22,7 +23,7 @@ function targetStates(state) {
 function marksOf(ym, states) {
   const day = firstDayOfYm(ym);
   const marks = new Map();
-  (useData().entries[INCOMPLETE_MONTH_IND] || []).forEach((entry) => {
+  getEntriesFor(INCOMPLETE_MONTH_IND).forEach((entry) => {
     if (entry.date !== day) return;
     const estado = states.find((s) => sameState(entry.meta && entry.meta.estado, s));
     if (estado) marks.set(estado, [...(marks.get(estado) || []), entry]);

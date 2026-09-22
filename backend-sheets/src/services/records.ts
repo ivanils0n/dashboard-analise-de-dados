@@ -1,7 +1,7 @@
 import { appendRows, deleteRows, readTable, updateRows } from "../db/sheets";
 import type { SheetRow } from "../db/sheets";
-import { ENTITIES, tableName } from "../db/tables";
-import type { ColumnDef, EntityDef, Estado } from "../db/tables";
+import { ENTITIES, ESTADO_TODOS, tableName } from "../db/tables";
+import type { ColumnDef, Estado, EstadoFiltro, EntityDef } from "../db/tables";
 import { buildCreatePayload, buildUpdatePayload, buildUpsertPayload } from "../utils/validation";
 import type { Bindings } from "../types";
 
@@ -9,6 +9,21 @@ type Filters = Record<string, string>;
 
 function findColumn(entity: EntityDef, name: string): ColumnDef | undefined {
   return entity.columns.find((column) => column.name === name);
+}
+
+// Coluna que guarda o estado dentro da aba compartilhada (ex.: "estado_sigla").
+function stateColumn(entity: EntityDef): string | null {
+  return entity.columns.find((column) => column.stateRef)?.name ?? null;
+}
+
+// Desde a consolidação das abas por estado numa aba só por entidade, isolar
+// RO/AM/PA deixou de ser "ler a aba certa" e passou a ser filtrar em memória
+// pela coluna estado_sigla. ESTADO_TODOS (leitura agregada) não filtra nada.
+function matchesEstado(entity: EntityDef, row: SheetRow, estado: EstadoFiltro): boolean {
+  if (estado === ESTADO_TODOS) return true;
+  const column = stateColumn(entity);
+  if (!column) return true; // entidade sem coluna de estado (não deveria ocorrer)
+  return row[column] === estado;
 }
 
 function matchesFilters(entity: EntityDef, row: SheetRow, filters: Filters): boolean {
@@ -89,15 +104,18 @@ function sortRows(rows: SheetRow[], orderBy: string): SheetRow[] {
 export async function listRecords(
   env: Bindings,
   entityKey: string,
-  estado: Estado,
+  estado: EstadoFiltro,
   options: { page: number; limit: number; filters: Filters; search?: string }
 ) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
+  const table = tableName(entityKey);
   const { rows } = await readTable(env, table, entity.columns);
 
   const filtered = rows.filter(
-    (row) => matchesFilters(entity, row, options.filters) && matchesSearch(entity, row, options.search)
+    (row) =>
+      matchesEstado(entity, row, estado) &&
+      matchesFilters(entity, row, options.filters) &&
+      matchesSearch(entity, row, options.search)
   );
   const sorted = sortRows(filtered, entity.orderBy);
 
@@ -106,18 +124,22 @@ export async function listRecords(
   return { data, total: filtered.length };
 }
 
-export async function listAllRecords(env: Bindings, entityKey: string, estado: Estado) {
+export async function listAllRecords(env: Bindings, entityKey: string, estado: EstadoFiltro) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
+  const table = tableName(entityKey);
   const { rows } = await readTable(env, table, entity.columns);
-  return rows;
+  return rows.filter((row) => matchesEstado(entity, row, estado));
 }
 
 export async function getRecord(env: Bindings, entityKey: string, estado: Estado, id: string) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
+  const table = tableName(entityKey);
   const { rowById } = await readTable(env, table, entity.columns);
-  return rowById.get(id) ?? null;
+  const row = rowById.get(id) ?? null;
+  // Isolamento entre estados: agora que a aba é compartilhada, um id de outro
+  // estado não pode "vazar" pela rota /:estado/:id.
+  if (row && !matchesEstado(entity, row, estado)) return null;
+  return row;
 }
 
 export async function createRecord(
@@ -127,7 +149,7 @@ export async function createRecord(
   body: Record<string, unknown>
 ) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
+  const table = tableName(entityKey);
   const payload = buildCreatePayload(entity, body, estado);
   if (!payload.id) payload.id = crypto.randomUUID();
   if (entity.hasUpdatedAt) payload.criado_em = new Date().toISOString();
@@ -145,14 +167,16 @@ export async function updateRecord(
   full: boolean
 ) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
+  const table = tableName(entityKey);
   const payload = buildUpdatePayload(entity, body, estado, full);
 
   const { rowNumberById, rowById } = await readTable(env, table, entity.columns);
   const rowNumber = rowNumberById.get(id);
-  if (!rowNumber) return null;
+  const current = rowById.get(id);
+  // Isolamento entre estados (ver getRecord): não deixa editar um id de outro estado.
+  if (!rowNumber || !current || !matchesEstado(entity, current, estado)) return null;
 
-  const merged: SheetRow = { ...rowById.get(id), ...payload, id };
+  const merged: SheetRow = { ...current, ...payload, id };
   if (entity.hasUpdatedAt) merged.atualizado_em = new Date().toISOString();
 
   await updateRows(env, table, entity.columns, [{ rowNumber, row: merged }]);
@@ -166,10 +190,11 @@ export async function deleteRecord(
   id: string
 ) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
-  const { rowNumberById } = await readTable(env, table, entity.columns);
+  const table = tableName(entityKey);
+  const { rowNumberById, rowById } = await readTable(env, table, entity.columns);
   const rowNumber = rowNumberById.get(id);
-  if (!rowNumber) return false;
+  const current = rowById.get(id);
+  if (!rowNumber || !current || !matchesEstado(entity, current, estado)) return false;
 
   await deleteRows(env, table, [rowNumber]);
   return true;
@@ -184,7 +209,7 @@ export async function bulkWrite(
   deletes: unknown[]
 ) {
   const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey, estado);
+  const table = tableName(entityKey);
   const { rowNumberById, rowById } = await readTable(env, table, entity.columns);
 
   // Um upsert por id: o último enviado vence quando o mesmo id aparece mais de uma vez.
@@ -202,8 +227,11 @@ export async function bulkWrite(
 
   byId.forEach((payload, id) => {
     const rowNumber = rowNumberById.get(id);
-    if (rowNumber) {
-      const merged: SheetRow = { ...rowById.get(id), ...payload, id };
+    const current = rowById.get(id);
+    // Isolamento entre estados (ver getRecord): um id que já existe em outro
+    // estado não é sobrescrito — é tratado como criação de um registro novo.
+    if (rowNumber && current && matchesEstado(entity, current, estado)) {
+      const merged: SheetRow = { ...current, ...payload, id };
       if (now) merged.atualizado_em = now;
       toUpdate.push({ rowNumber, row: merged });
     } else {
@@ -224,7 +252,13 @@ export async function bulkWrite(
         .filter(Boolean)
     )
   ];
-  const rowsToDelete = deleteIds.map((id) => rowNumberById.get(id)).filter((n): n is number => Boolean(n));
+  const rowsToDelete = deleteIds
+    .filter((id) => {
+      const current = rowById.get(id);
+      return current && matchesEstado(entity, current, estado);
+    })
+    .map((id) => rowNumberById.get(id))
+    .filter((n): n is number => Boolean(n));
   await deleteRows(env, table, rowsToDelete);
 
   return { upserts: toAppend.length + toUpdate.length, deletes: rowsToDelete.length };

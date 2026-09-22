@@ -3,12 +3,11 @@ import { computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { getIndicatorById } from "@/lib/config";
-import { getEmployeeById } from "@/lib/store";
 import { formatCurrency, ymShortLabel, compareDateDesc } from "@/lib/utils";
 
 /* Detalhe de um colaborador no gráfico de Custo médio da diária geral (clique
-   na barra): dados cadastrais vindos dos próprios lançamentos (com o cadastro
-   de Equipe como reserva) e as diárias pagas no período filtrado. */
+   na barra): dados cadastrais vindos dos próprios lançamentos e as diárias
+   pagas no período filtrado. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   colaborador: { type: String, default: "" },
@@ -25,12 +24,6 @@ const sorted = computed(() =>
 
 const total = computed(() => props.entries.reduce((sum, e) => sum + (Number(e.value) || 0), 0));
 
-/* Cadastro do colaborador (quando o lançamento guarda o id). */
-const employee = computed(() => {
-  const withId = sorted.value.find((e) => e.meta && e.meta.employeeId);
-  return withId ? getEmployeeById(withId.meta.employeeId) : null;
-});
-
 /* Primeiro valor preenchido do campo, do lançamento mais recente para o mais
    antigo. */
 function latest(key) {
@@ -41,17 +34,14 @@ function latest(key) {
   return "";
 }
 
-const info = computed(() => {
-  const emp = employee.value;
-  return [
-    { label: "Função", value: latest("funcao") || (emp && emp.cargo) || "" },
-    { label: "Departamento", value: latest("departamento") || (emp && emp.sector) || "" },
-    { label: "Filial", value: latest("filial") },
-    { label: "Líder imediato", value: latest("liderImediato") || (emp && emp.liderImediato) || "" },
-    { label: "Gerente regional", value: latest("gerenteRegional") || (emp && emp.gerenteRegional) || "" },
-    { label: "Regional", value: latest("regional") || latest("estado") || (emp && emp.estado) || "" }
-  ];
-});
+const info = computed(() => [
+  { label: "Função", value: latest("funcao") },
+  { label: "Departamento", value: latest("departamento") },
+  { label: "Filial", value: latest("filial") },
+  { label: "Líder imediato", value: latest("liderImediato") },
+  { label: "Gerente regional", value: latest("gerenteRegional") },
+  { label: "Regional", value: latest("regional") || latest("estado") }
+]);
 
 function competencia(entry) {
   return entry.meta && entry.meta.semPeriodo ? "Sem período" : ymShortLabel(entry.date);

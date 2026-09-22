@@ -82,9 +82,12 @@ export const INDICATORS = [
     unit: "R$",
     decimals: 2,
     higherIsBetter: false,
+    /* Calculado ao vivo a partir de "vagas" (ver costVacancyEntries em
+       useDashboardData.js) — não existe mais lançamento manual por
+       colaborador nem gravação automática por vaga. `manual: false` tira o
+       indicador do seletor do LaunchModal. */
     computed: false,
-    manual: true,
-    form: "custo"
+    manual: false
   },
   {
     id: "tempo_permanencia",

@@ -1,12 +1,11 @@
-/* Domínio da Equipe: recalcula e grava snapshots diários dos indicadores
-   computados (headcount, turnover, permanência, retenção) e administra vagas. */
+/* Vagas, Turnover, Permanência e Headcount: cálculos e CRUD desses 4
+   indicadores. "tempo_contratacao" e "custo_contratacao" são derivados ao
+   vivo das vagas (sem gravar snapshot); Headcount, Retenção e Tempo de
+   permanência são lançamento manual mensal/por planilha. */
 
 import { STATES } from "./config";
 import {
   useData,
-  getEmployeeById,
-  deleteEmployee,
-  upsertEmployee,
   getVacancies,
   upsertVacancy,
   deleteVacancy,
@@ -22,16 +21,9 @@ import {
   getHeadcounts,
   upsertHeadcount,
   deleteHeadcount,
-  getHeadcountById,
-  addEntry,
-  updateEntry,
-  removeEntry,
-  getEntriesFor,
-  getLatestForMeta,
-  upsertEntryForDate,
-  removeEntryForDate
+  getHeadcountById
 } from "./store";
-import { createId, nowLocalISO, todayISO, daysBetween, sameState } from "./utils";
+import { createId, nowLocalISO, daysBetween, sameState } from "./utils";
 import { loadedStates } from "./db";
 
 /* Restringe uma lista ao estado escolhido ("todos"/vazio = sem filtro; nesse
@@ -41,29 +33,17 @@ function filterByState(list, state) {
   return list.filter((x) => sameState(x.estado, state));
 }
 
-export function listEmployees(state) {
-  return filterByState(useData().employees, state);
-}
-
 /* Chave de comparação de nomes de pessoas: ignora caixa, acentos, espaços e
    pontuação — "Porto Velho", "PORTO VELHO", "portovelho" e "Porto-Velho"
-   tornam-se a mesma chave. */
+   tornam-se a mesma chave. Usada pela busca do Headcount por nome
+   (findHeadcountMatches) — o cadastro de Colaboradores que também usava isso
+   foi removido do sistema. */
 export function normalizePersonName(name) {
   return String(name ?? "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]/g, "");
-}
-
-/* Procura colaboradores cujo nome, normalizado, seja igual ao informado.
-   `excludeId` evita o próprio registro (útil na edição/cadastro). */
-export function findEmployeesByName(name, excludeId = null) {
-  const key = normalizePersonName(name);
-  if (!key) return [];
-  return useData().employees.filter(
-    (e) => normalizePersonName(e.name) === key && e.id !== excludeId
-  );
 }
 
 /* Chave de comparação de nomes abreviados de filial: ignora caixa, acentos,
@@ -95,119 +75,6 @@ export function moneyOrNull(value) {
   if (value === undefined || value === null || value === "") return null;
   const num = Number(value);
   return isNaN(num) ? null : num;
-}
-
-/* Soma salário + encargos/benefícios/premiações/comissão do colaborador:
-   custo mensal total de pessoal (0 quando nada foi informado). */
-export function employeeMonthlyCost(employee) {
-  if (!employee) return 0;
-  const fields = [
-    employee.salario,
-    employee.valeTransporte,
-    employee.valeAlimentacao,
-    employee.inss,
-    employee.fgts,
-    employee.irrf,
-    employee.premioArt62,
-    employee.premioLoja,
-    employee.comissao
-  ];
-  return fields.reduce((sum, v) => sum + (moneyOrNull(v) || 0), 0);
-}
-
-export function saveEmployee(employeeData) {
-  const existing = employeeData.id ? getEmployeeById(employeeData.id) : null;
-  const now = nowLocalISO();
-
-  if (existing) {
-    const updated = { ...existing, ...employeeData, updatedAt: now };
-    /* Só mexe em `firedAt` quando o status é informado: edições parciais
-       (ex.: salário) não podem apagar a data de desligamento. */
-    if (employeeData.status !== undefined) {
-      updated.firedAt =
-        employeeData.status === "desligado"
-          ? employeeData.firedAt || existing.firedAt || now
-          : null;
-    }
-    upsertEmployee(updated);
-    return updated;
-  }
-
-  const created = {
-    id: createId(),
-    name: employeeData.name,
-    sector: employeeData.sector,
-    user: employeeData.user,
-    cargo: employeeData.cargo != null ? String(employeeData.cargo) : null,
-    estado: employeeData.estado || null,
-    salario: employeeData.salario != null ? Number(employeeData.salario) : null,
-    hiredAt: employeeData.hiredAt || null,
-    status: employeeData.status,
-    type: employeeData.type,
-    departmentId: employeeData.departmentId || null,
-    filialId: employeeData.filialId || null,
-    liderImediato: employeeData.liderImediato != null ? String(employeeData.liderImediato) : null,
-    gerenteRegional: employeeData.gerenteRegional != null ? String(employeeData.gerenteRegional) : null,
-    valeTransporte: moneyOrNull(employeeData.valeTransporte),
-    valeAlimentacao: moneyOrNull(employeeData.valeAlimentacao),
-    inss: moneyOrNull(employeeData.inss),
-    fgts: moneyOrNull(employeeData.fgts),
-    irrf: moneyOrNull(employeeData.irrf),
-    premioArt62: moneyOrNull(employeeData.premioArt62),
-    premioLoja: moneyOrNull(employeeData.premioLoja),
-    comissao: moneyOrNull(employeeData.comissao),
-    createdAt: now,
-    updatedAt: now,
-    firedAt: employeeData.firedAt || null
-  };
-  upsertEmployee(created);
-  return created;
-}
-
-export function removeEmployee(id) {
-  deleteEmployee(id);
-  syncAll();
-}
-
-/* ---------- Departamentos & Filiais ---------- */
-
-/* Reexporta a lista de departamentos de lib/departamentos.js (dono do
-   domínio). Antes havia uma segunda implementação aqui que comparava o estado
-   com `===` exato, enquanto a de departamentos.js usa sameState() — o mesmo
-   departamento aparecia ou sumia da lista conforme o ponto de entrada. */
-export { listDepartments } from "./departamentos";
-
-export function departmentMetrics(department, state, filialId, dateRange) {
-  if (!department) return { total: 0, ativos: 0, entradas: 0, saidas: 0 };
-  let list = listEmployees(state).filter((e) => e.sector === department.name);
-  if ((!state || state === "todos") && department.estado) {
-    list = list.filter((e) => e.estado === department.estado);
-  }
-  if (filialId) {
-    list = list.filter((e) => e.filialId === filialId);
-  }
-  list = filterByEntryDate(list, dateRange);
-  return metricsFrom(list);
-}
-
-function filterByEntryDate(list, dateRange) {
-  if (!dateRange || (!dateRange.start && !dateRange.end)) return list;
-  return list.filter((e) => {
-    const d = e.hiredAt ? e.hiredAt.split("T")[0] : "";
-    if (dateRange.start && (!d || d < dateRange.start)) return false;
-    if (dateRange.end && (!d || d > dateRange.end)) return false;
-    return true;
-  });
-}
-
-function metricsFrom(list) {
-  const m = { total: list.length, ativos: 0, entradas: 0, saidas: 0 };
-  list.forEach((e) => {
-    if (e.status === "ativo") m.ativos += 1;
-    if (e.type === "efetivado" && e.status === "ativo") m.entradas += 1;
-    if (e.type === "efetivado" && e.status === "desligado") m.saidas += 1;
-  });
-  return m;
 }
 
 /* ---------- Cálculos ---------- */
@@ -253,23 +120,13 @@ export function computedSnapshot(indId, state) {
   }
 }
 
-/* ---------- Snapshots dos indicadores computados ---------- */
-
-/* Retenção e Tempo de permanência deixaram de ser calculados a
-   partir da Equipe: agora são lançamentos manuais mensais (form "mensal"),
-   como Custo da diária/Treinamento/Custo de folha — por isso não têm mais
-   snapshot automático aqui. Só "tempo_contratacao" (vagas) e o custo das
-   vagas continuam recalculados automaticamente. */
-export function syncAll() {
-  activeStates().forEach((state) => syncVacancyIndicator(state));
-
-  /* Reconcilia o custo das vagas: garante um lançamento para toda vaga com
-     salário (inclusive as criadas antes desta regra). O índice por vaga é
-     montado uma vez — antes cada vaga varria e reordenava a lista inteira de
-     lançamentos (O(vagas × lançamentos)). */
-  const costByVacancy = costEntriesByVacancy();
-  getVacancies().forEach((v) => syncVacancyCost(v, costByVacancy));
-}
+/* "tempo_contratacao" e "custo_contratacao" já são calculados ao vivo a
+   partir de "vagas" (ver useDashboardData.js — hiringAvgFor/costVacancyEntries),
+   sem depender de nenhum snapshot gravado. syncAll() não tem mais nada pra
+   recalcular, mas fica como no-op: é chamada em vários pontos do app (boot,
+   troca de estado, fechamento de vaga) e removê-la exigiria tocar em todos
+   esses pontos sem ganho nenhum. */
+export function syncAll() {}
 
 /* Estados cujos dados já estão em memória (otimização de carga). */
 export function activeStates() {
@@ -307,8 +164,6 @@ export function addVacancy({
     filialId: filialId || null
   };
   upsertVacancy(vacancy);
-  syncVacancyIndicator(vacancy.estado);
-  syncVacancyCost(vacancy);
   return vacancy;
 }
 
@@ -318,7 +173,6 @@ export function updateVacancy(
 ) {
   const vacancy = getVacancyById(id);
   if (!vacancy) return null;
-  const prevEstado = vacancy.estado;
   const updated = {
     ...vacancy,
     name,
@@ -331,9 +185,6 @@ export function updateVacancy(
     filialId: filialId !== undefined ? filialId || null : vacancy.filialId
   };
   upsertVacancy(updated);
-  if (prevEstado !== updated.estado) syncVacancyIndicator(prevEstado);
-  syncVacancyIndicator(updated.estado);
-  syncVacancyCost(updated);
   return updated;
 }
 
@@ -344,112 +195,26 @@ export function closeVacancy(id, closeDate = null) {
   if (!vacancy || vacancy.closeAt) return null;
   const updated = { ...vacancy, closeAt: closeDate ? `${String(closeDate).slice(0, 10)}T00:00:00` : nowLocalISO() };
   upsertVacancy(updated);
-  syncVacancyIndicator(updated.estado);
-  syncVacancyCost(updated);
   return updated;
 }
 
 export function deleteVacancyRecord(id) {
-  const vacancy = getVacancyById(id);
-  const estado = vacancy ? vacancy.estado : null;
   deleteVacancy(id);
-  syncVacancyIndicator(estado);
-  removeVacancyCost(id);
 }
 
-/* Exclusão em lote: remove as vagas e recalcula o indicador uma única vez. */
+/* Exclusão em lote. */
 export function deleteVacancies(ids) {
-  const states = new Set();
-  (ids || []).forEach((id) => {
-    const v = getVacancyById(id);
-    if (!v) return;
-    deleteVacancy(id);
-    removeVacancyCost(id);
-    states.add(v.estado || null);
-  });
-  states.forEach((s) => syncVacancyIndicator(s));
+  (ids || []).forEach((id) => deleteVacancy(id));
 }
 
-/* Fechamento em lote: fecha as vagas abertas e recalcula uma única vez. */
+/* Fechamento em lote: fecha as vagas ainda abertas. */
 export function closeVacancies(ids, closeDate = null) {
-  const states = new Set();
   (ids || []).forEach((id) => {
     const v = getVacancyById(id);
     if (!v || v.closeAt) return;
     const closeAt = closeDate ? `${String(closeDate).slice(0, 10)}T00:00:00` : nowLocalISO();
-    const updated = { ...v, closeAt };
-    upsertVacancy(updated);
-    syncVacancyCost(updated);
-    states.add(v.estado || null);
+    upsertVacancy({ ...v, closeAt });
   });
-  states.forEach((s) => syncVacancyIndicator(s));
-}
-
-/* O salário da vaga entra no KPI "Custo de contratação" como um lançamento
-   (um por vaga), esteja ela aberta ou fechada. A data do lançamento é a do
-   fechamento quando houver; senão, a da abertura. Editar/limpar o salário
-   atualiza ou remove o lançamento; excluir a vaga também remove. */
-function shallowEqual(a, b) {
-  const x = a || {};
-  const y = b || {};
-  const keys = Object.keys(x);
-  return keys.length === Object.keys(y).length && keys.every((k) => x[k] === y[k]);
-}
-
-/* Último lançamento de custo de cada vaga (vacancyId → lançamento). Mesma
-   regra de getLatestForMeta (o mais recente na ordem por data), mas para todas
-   as vagas de uma vez. */
-function costEntriesByVacancy() {
-  const byVacancy = new Map();
-  getEntriesFor("custo_contratacao").forEach((e) => {
-    if (e.meta && e.meta.vacancyId) byVacancy.set(e.meta.vacancyId, e);
-  });
-  return byVacancy;
-}
-
-function syncVacancyCost(vacancy, costByVacancy) {
-  if (!vacancy) return;
-  const existing = costByVacancy
-    ? costByVacancy.get(vacancy.id) || null
-    : getLatestForMeta("custo_contratacao", "vacancyId", vacancy.id);
-  const salario = moneyOrNull(vacancy.salario);
-  if (salario === null) {
-    if (existing) removeEntry("custo_contratacao", existing.id);
-    return;
-  }
-  const date = String(vacancy.closeAt || vacancy.openAt || todayISO()).slice(0, 10);
-  const meta = { vacancyId: vacancy.id, vacancyName: vacancy.name, source: "vaga" };
-  if (vacancy.estado) meta.estado = vacancy.estado;
-  if (existing) {
-    /* Sem mudança, não toca no lançamento: cada updateEntry enfileira uma
-       gravação no servidor. O syncAll roda a cada troca de estado e a cada
-       boot — antes regravava o custo de TODAS as vagas toda vez. */
-    if (
-      Number(existing.value) === salario &&
-      existing.date === date &&
-      shallowEqual(existing.meta, meta)
-    ) {
-      return;
-    }
-    updateEntry("custo_contratacao", existing.id, { value: salario, date, meta });
-  } else {
-    addEntry("custo_contratacao", { date, value: salario, state: vacancy.estado, meta });
-  }
-}
-
-function removeVacancyCost(vacancyId) {
-  const existing = getLatestForMeta("custo_contratacao", "vacancyId", vacancyId);
-  if (existing) removeEntry("custo_contratacao", existing.id);
-}
-
-function syncVacancyIndicator(state) {
-  const today = todayISO();
-  const avg = avgHiringDays(state);
-  if (avg === null) {
-    removeEntryForDate("tempo_contratacao", today, state);
-    return;
-  }
-  upsertEntryForDate("tempo_contratacao", today, Number(avg.toFixed(1)), null, state);
 }
 
 export function formatVacancyTempo(vacancy) {

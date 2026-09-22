@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, STATES } from "@/lib/config";
 import { getEntriesFor, getAllEntries, getBranches } from "@/lib/store";
 import {
@@ -30,17 +30,6 @@ import {
 import { aggregateEntries, diariaDivisor, employeeNameKey } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
 import { faturamento } from "@/composables/useFaturamento";
-import { ensureLancamentosSince } from "@/lib/db";
-
-/* Lançamento especial "Salário dos Colaboradores": não vira KPI/gráfico,
-   mas aparece em "Lançamentos recentes" com formatação de moeda. */
-const SALARY_IND = {
-  id: "salario_colaborador",
-  name: "Salário dos Colaboradores",
-  type: "currency",
-  decimals: 2,
-  form: "salario"
-};
 
 /* Centraliza o cálculo dos dados exibidos no dashboard a partir do
    filtro de período (reactive { start, end }) e do estado selecionado.
@@ -63,18 +52,6 @@ export function useDashboardData(filter, options = {}) {
     const current = state.current;
     return stateOverride || current;
   }
-
-  /* A carga inicial de lançamentos traz só uma janela recente (ver
-     LANCAMENTOS_WINDOW_MONTHS em lib/db.js); quando o filtro de período do
-     dashboard pede uma data anterior ao que já está carregado, busca sob
-     demanda o período que falta. */
-  watch(
-    () => [filter.start, currentState()],
-    ([start, s]) => {
-      if (start) ensureLancamentosSince(s, start);
-    },
-    { immediate: true }
-  );
 
   /* Tempo médio de contratação: média das vagas ABERTAS dentro do período
      filtrado (data de abertura no intervalo) — a mesma regra do gráfico de
@@ -348,13 +325,11 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Rótulo (filial) que agrupa um treinamento: usa o shortName gravado no
-     lançamento; para lançamentos antigos, tenta localizar a filial pelo texto
-     do cadastro. */
+  /* Rótulo (filial) que agrupa um treinamento: localiza a filial do cadastro
+     cujo nome/sigla aparece no texto livre de "filial" do lançamento; sem
+     nenhuma batida, usa o próprio texto digitado. */
   function treinamentoFilialLabel(meta) {
-    const m = meta || {};
-    if (m.shortName) return String(m.shortName).toUpperCase();
-    const text = String(m.filial || "").toUpperCase();
+    const text = String((meta && meta.filial) || "").toUpperCase();
     if (!text) return "Sem filial";
     const branches = getBranches();
     const match =
@@ -392,14 +367,15 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Agregação para o gráfico de barras dos Custos Totais: soma os custos
-     lançados por filial (razão social) no período filtrado. */
+     lançados por filial (razão social) no período filtrado. Sem FK pra
+     Filiais: o nome vem gravado no próprio lançamento (meta.razaoSocial). */
   function custosBarByFilial() {
     const ind = getIndicatorById("custo_total");
     if (!ind) return [];
     const byFilial = new Map();
     filteredEntries(ind).forEach((e) => {
       const meta = e.meta || {};
-      const filial = meta.filial || meta.razaoSocial || "Sem filial";
+      const filial = meta.razaoSocial || "Sem filial";
       byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
     return [...byFilial.entries()]
@@ -923,7 +899,6 @@ export function useDashboardData(filter, options = {}) {
       });
     };
     INDICATORS.forEach((ind) => collect(all[ind.id], ind));
-    collect(all[SALARY_IND.id], SALARY_IND);
 
     // Ordenação cronológica decrescente: o lançamento mais recente no topo.
     // Desempate por id (criações mais novas primeiro) para o mesmo dia.
@@ -945,17 +920,8 @@ export function useDashboardData(filter, options = {}) {
       if (entry.meta.motivo) parts.push(entry.meta.motivo);
       return `${formatValue(ind, entry.value)} · ${parts.join(" — ")}`;
     }
-    if (ind.form === "custo" && entry.meta && entry.meta.employeeName) {
-      return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
-    }
-    if (ind.id === "custo_contratacao" && entry.meta && entry.meta.vacancyName) {
-      return `${formatValue(ind, entry.value)} · ${entry.meta.vacancyName}`;
-    }
     if (ind.form === "custo_total" && entry.meta && entry.meta.razaoSocial) {
       return `${formatValue(ind, entry.value)} · ${entry.meta.razaoSocial}`;
-    }
-    if (ind.form === "salario" && entry.meta && entry.meta.employeeName) {
-      return `${formatValue(ind, entry.value)} · ${entry.meta.employeeName}`;
     }
     return formatValue(ind, entry.value);
   }

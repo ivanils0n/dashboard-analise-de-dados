@@ -6,14 +6,20 @@ import { createId, compareDateAsc } from "./utils";
 export function emptyData() {
   return {
     version: 1,
-    entries: {},
-    employees: [],
     vacancies: [],
     turnovers: [],
     permanencias: [],
     headcounts: [],
     branches: [],
-    departments: []
+    // Substituem a antiga tabela genérica "lancamentos" (indicador_id + meta
+    // json): cada indicador manual (Diária, Treinamento, Custo de folha,
+    // Absenteísmo) agora tem lista própria, no mesmo padrão das acima.
+    diarias: [],
+    treinamentos: [],
+    custoFolha: [],
+    absenteismo: [],
+    // Marcação de "mês incompleto" (ver lib/monthStatus.js) — mesmo padrão.
+    mesesIncompletos: []
   };
 }
 
@@ -33,12 +39,47 @@ export function bindRemote(adapter) {
 
 const ok = () => remote != null;
 
+/* indicador_id (usado pelos formulários desde a época da tabela genérica
+   "lancamentos") -> lista dedicada no store. Mantém a API pública de sempre
+   (getEntriesFor/addEntry/... com Entry = {id, date, value, meta}) para que
+   metrics.js, useDashboardData.js e os modais de indicador não precisem
+   saber que a origem do dado mudou de um dicionário genérico pra 4 tabelas. */
+const ENTRY_LISTS = {
+  custo_diaria: "diarias",
+  treinamento: "treinamentos",
+  custo_total: "custoFolha",
+  absenteismo: "absenteismo",
+  mes_incompleto: "mesesIncompletos"
+};
+
+function entryList(indicatorId) {
+  const key = ENTRY_LISTS[indicatorId];
+  if (!key) throw new Error(`Indicador de lançamento desconhecido: "${indicatorId}".`);
+  return key;
+}
+
+// "mes_incompleto" (ver lib/monthStatus.js) usa o mesmo mecanismo de
+// lançamento, mas não é um indicador de verdade — não deve aparecer em
+// getAllEntries() (tabela de lançamentos, exportação).
+const PUBLIC_ENTRY_INDICATORS = ["custo_diaria", "treinamento", "custo_total", "absenteismo"];
+
 export function getAllEntries() {
-  return data.entries;
+  const all = {};
+  PUBLIC_ENTRY_INDICATORS.forEach((indicatorId) => {
+    all[indicatorId] = data[ENTRY_LISTS[indicatorId]];
+  });
+  return all;
 }
 
 export function getEntriesFor(indicatorId, state) {
-  let list = (data.entries[indicatorId] || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
+  // Tolerante a indicadores sem lançamento próprio (ex.: "headcount",
+  // "turnover" — calculados, não vêm de uma lista de entries): o dashboard
+  // chama isso genericamente para TODO indicador em INDICATORS, esperando
+  // lista vazia de volta, não uma exceção. Só addEntry/updateEntry/... (a
+  // escrita) devem falhar alto num indicatorId desconhecido — ver entryList.
+  const key = ENTRY_LISTS[indicatorId];
+  if (!key) return [];
+  let list = (data[key] || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
   if (state && state !== "todos") {
     const target = String(state).trim().toUpperCase();
     list = list.filter(
@@ -56,16 +97,16 @@ function _withState(meta, state) {
 }
 
 export function addEntry(indicatorId, { date, value, meta, state }) {
-  if (!data.entries[indicatorId]) data.entries[indicatorId] = [];
+  const key = entryList(indicatorId);
   const entry = { id: createId(), date, value: Number(value), meta: _withState(meta, state) };
-  data.entries[indicatorId].push(entry);
-  data.entries[indicatorId].sort((a, b) => compareDateAsc(a.date, b.date));
+  data[key].push(entry);
+  data[key].sort((a, b) => compareDateAsc(a.date, b.date));
   if (ok()) remote.entryAdded(indicatorId, entry);
 }
 
 export function upsertEntryForDate(indicatorId, date, value, meta, state) {
-  if (!data.entries[indicatorId]) data.entries[indicatorId] = [];
-  const list = data.entries[indicatorId];
+  const key = entryList(indicatorId);
+  const list = data[key];
   const mergedMeta = _withState(meta, state);
   const mEstado = mergedMeta ? mergedMeta.estado : null;
   const idx = list.findIndex((e) => {
@@ -90,24 +131,24 @@ export function upsertEntryForDate(indicatorId, date, value, meta, state) {
 }
 
 export function removeEntryForDate(indicatorId, date, state) {
-  if (!data.entries[indicatorId]) return;
+  const key = entryList(indicatorId);
   const removedIds = [];
-  data.entries[indicatorId] = data.entries[indicatorId].filter((e) => {
+  data[key] = data[key].filter((e) => {
     if (e.date !== date) return true;
     const eEstado = e.meta ? e.meta.estado : null;
     if (state && state !== "todos" && eEstado !== state) return true;
     removedIds.push(e.id);
     return false;
   });
-  if (removedIds.length && ok()) remote.entriesRemoved(removedIds, state);
+  if (removedIds.length && ok()) remote.entriesRemoved(indicatorId, removedIds, state);
 }
 
 export function removeEntry(indicatorId, entryId) {
-  if (!data.entries[indicatorId]) return;
-  const entry = data.entries[indicatorId].find((e) => e.id === entryId);
-  data.entries[indicatorId] = data.entries[indicatorId].filter((e) => e.id !== entryId);
+  const key = entryList(indicatorId);
+  const entry = data[key].find((e) => e.id === entryId);
+  data[key] = data[key].filter((e) => e.id !== entryId);
   const estado = entry && entry.meta ? entry.meta.estado : null;
-  if (entry && ok()) remote.entriesRemoved([entryId], estado);
+  if (entry && ok()) remote.entriesRemoved(indicatorId, [entryId], estado);
 }
 
 /* `patch.state` funciona como em addEntry: vira `meta.estado` (os formulários
@@ -115,79 +156,61 @@ export function removeEntry(indicatorId, entryId) {
    descartava o estado do lançamento e ele sumia dos filtros por estado.
    Sem `state` no patch, o meta segue como veio. */
 export function updateEntry(indicatorId, entryId, patch) {
-  if (!data.entries[indicatorId]) return;
-  const idx = data.entries[indicatorId].findIndex((e) => e.id === entryId);
+  const key = entryList(indicatorId);
+  const idx = data[key].findIndex((e) => e.id === entryId);
   if (idx < 0) return;
-  const previous = data.entries[indicatorId][idx];
+  const previous = data[key][idx];
   const { state, ...fields } = patch;
   const updated = { ...previous, ...fields };
   if ("state" in patch) {
     updated.meta = _withState(fields.meta !== undefined ? fields.meta : previous.meta, state);
   }
-  data.entries[indicatorId][idx] = updated;
-  data.entries[indicatorId].sort((a, b) => compareDateAsc(a.date, b.date));
+  data[key][idx] = updated;
+  data[key].sort((a, b) => compareDateAsc(a.date, b.date));
   if (!ok()) return;
   /* Mudar de estado muda de tabela no servidor: remove a linha da antiga (se
      for a mesma tabela, o upsert abaixo substitui a exclusão na fila). O envio
      usa `updated` — após o sort, `idx` já pode apontar para outro lançamento. */
   const prevEstado = (previous.meta && previous.meta.estado) || null;
   const nextEstado = (updated.meta && updated.meta.estado) || null;
-  if (prevEstado !== nextEstado) remote.entriesRemoved([entryId], prevEstado);
+  if (prevEstado !== nextEstado) remote.entriesRemoved(indicatorId, [entryId], prevEstado);
   remote.entryUpdated(indicatorId, updated);
 }
 
 /* Exclusão em lote de lançamentos. `rows` é um array de
    { indicatorId, entry }. Remove todos de uma vez e enfileira as exclusões
-   remotas agrupadas por estado. */
+   remotas agrupadas por (indicatorId, estado) — cada indicador tem sua
+   própria tabela física, então o agrupamento não pode ser só por estado. */
 export function removeEntries(rows) {
   if (!rows || !rows.length) return;
   const removable = rows.filter(({ indicatorId, entry }) => {
-    if (!data.entries[indicatorId]) return false;
-    return data.entries[indicatorId].some((e) => e.id === entry.id);
+    const key = ENTRY_LISTS[indicatorId];
+    if (!key) return false;
+    return data[key].some((e) => e.id === entry.id);
   });
   if (!removable.length) return;
 
   const groups = new Map();
-  removable.forEach(({ entry }) => {
+  removable.forEach(({ indicatorId, entry }) => {
     const estado = entry.meta && entry.meta.estado ? entry.meta.estado : "__none__";
-    if (!groups.has(estado)) groups.set(estado, []);
-    groups.get(estado).push(entry.id);
+    const groupKey = `${indicatorId}::${estado}`;
+    if (!groups.has(groupKey)) groups.set(groupKey, { indicatorId, estado, ids: [] });
+    groups.get(groupKey).ids.push(entry.id);
   });
 
-  groups.forEach((ids, estado) => {
-    if (ok()) remote.entriesRemoved(ids, estado === "__none__" ? null : estado);
+  groups.forEach(({ indicatorId, estado, ids }) => {
+    if (ok()) remote.entriesRemoved(indicatorId, ids, estado === "__none__" ? null : estado);
   });
 
   removable.forEach(({ indicatorId, entry }) => {
-    if (!data.entries[indicatorId]) return;
-    data.entries[indicatorId] = data.entries[indicatorId].filter((e) => e.id !== entry.id);
+    const key = entryList(indicatorId);
+    data[key] = data[key].filter((e) => e.id !== entry.id);
   });
 }
 
 export function getLatestForMeta(indicatorId, metaKey, metaValue) {
   const matches = getEntriesFor(indicatorId).filter((e) => e.meta && e.meta[metaKey] === metaValue);
   return matches.length ? matches[matches.length - 1] : null;
-}
-
-export function getEmployees() {
-  return data.employees;
-}
-
-export function upsertEmployee(employee) {
-  const idx = data.employees.findIndex((e) => e.id === employee.id);
-  if (idx >= 0) data.employees[idx] = employee;
-  else data.employees.push(employee);
-  if (ok()) remote.employeeSaved(employee);
-}
-
-export function deleteEmployee(id) {
-  const emp = data.employees.find((e) => e.id === id);
-  data.employees = data.employees.filter((e) => e.id !== id);
-  if (ok()) remote.employeeRemoved(id, emp ? emp.estado : null);
-}
-
-export function getEmployeeById(id) {
-  return getEmployees().find((e) => e.id === id) || null;
 }
 
 export function getVacancies() {
@@ -295,27 +318,6 @@ export function getBranchById(id) {
   return getBranches().find((b) => b.id === id) || null;
 }
 
-export function getDepartments() {
-  return data.departments;
-}
-
-export function upsertDepartment(department) {
-  const idx = data.departments.findIndex((d) => d.id === department.id);
-  if (idx >= 0) data.departments[idx] = department;
-  else data.departments.push(department);
-  if (ok()) remote.departmentSaved(department);
-}
-
-export function deleteDepartment(id) {
-  const dep = data.departments.find((d) => d.id === id);
-  data.departments = data.departments.filter((d) => d.id !== id);
-  if (ok()) remote.departmentRemoved(id, dep ? dep.estado : null);
-}
-
-export function getDepartmentById(id) {
-  return getDepartments().find((d) => d.id === id) || null;
-}
-
 export function resetData() {
   Object.assign(data, emptyData());
 }
@@ -323,14 +325,16 @@ export function resetData() {
 export function replaceFromCache(cached) {
   const d = emptyData();
   if (cached && typeof cached === "object") {
-    d.entries = cached.entries && typeof cached.entries === "object" ? cached.entries : {};
-    d.employees = Array.isArray(cached.employees) ? cached.employees : [];
     d.vacancies = Array.isArray(cached.vacancies) ? cached.vacancies : [];
     d.turnovers = Array.isArray(cached.turnovers) ? cached.turnovers : [];
     d.permanencias = Array.isArray(cached.permanencias) ? cached.permanencias : [];
     d.headcounts = Array.isArray(cached.headcounts) ? cached.headcounts : [];
     d.branches = Array.isArray(cached.branches) ? cached.branches : [];
-    d.departments = Array.isArray(cached.departments) ? cached.departments : [];
+    d.diarias = Array.isArray(cached.diarias) ? cached.diarias : [];
+    d.treinamentos = Array.isArray(cached.treinamentos) ? cached.treinamentos : [];
+    d.custoFolha = Array.isArray(cached.custoFolha) ? cached.custoFolha : [];
+    d.absenteismo = Array.isArray(cached.absenteismo) ? cached.absenteismo : [];
+    d.mesesIncompletos = Array.isArray(cached.mesesIncompletos) ? cached.mesesIncompletos : [];
   }
   Object.assign(data, d);
 }
@@ -351,17 +355,21 @@ function mergeNewItems(current, incoming) {
   return fresh.length ? current.concat(fresh) : null;
 }
 
+const MERGE_LIST_KEYS = [
+  "vacancies",
+  "turnovers",
+  "permanencias",
+  "headcounts",
+  "branches",
+  "diarias",
+  "treinamentos",
+  "custoFolha",
+  "absenteismo",
+  "mesesIncompletos"
+];
+
 export function mergeFromRemote(remoteData) {
-  Object.entries(remoteData.entries || {}).forEach(([indicatorId, list]) => {
-    const merged = mergeNewItems(data.entries[indicatorId] || [], list);
-    if (merged) {
-      merged.sort((a, b) => compareDateAsc(a.date, b.date));
-      data.entries[indicatorId] = merged;
-    } else if (!data.entries[indicatorId]) {
-      data.entries[indicatorId] = [];
-    }
-  });
-  ["employees", "vacancies", "turnovers", "permanencias", "headcounts", "branches", "departments"].forEach((key) => {
+  MERGE_LIST_KEYS.forEach((key) => {
     const merged = mergeNewItems(data[key], remoteData[key]);
     if (merged) data[key] = merged;
   });

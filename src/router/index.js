@@ -8,9 +8,7 @@ import AppLayout from "@/components/layout/AppLayout.vue";
 const views = {
   login: () => import("@/views/LoginView.vue"),
   dashboard: () => import("@/views/DashboardView.vue"),
-  equipe: () => import("@/views/EquipeView.vue"),
   filiais: () => import("@/views/FiliaisView.vue"),
-  departamentos: () => import("@/views/DepartamentosView.vue"),
   usuarios: () => import("@/views/UsuariosView.vue")
 };
 
@@ -33,21 +31,9 @@ const routes = [
         meta: { requiresAuth: true }
       },
       {
-        path: "equipe",
-        name: "equipe",
-        component: views.equipe,
-        meta: { requiresAuth: true, editOnly: true }
-      },
-      {
         path: "filiais",
         name: "filiais",
         component: views.filiais,
-        meta: { requiresAuth: true, editOnly: true }
-      },
-      {
-        path: "departamentos",
-        name: "departamentos",
-        component: views.departamentos,
         meta: { requiresAuth: true, editOnly: true }
       },
       {

@@ -4,10 +4,24 @@
 export const ESTADOS = ["RO", "AM", "PA"] as const;
 export type Estado = (typeof ESTADOS)[number];
 
+// Sentinela usado nas rotas de leitura para "sem filtro de estado" — desde a
+// consolidação das abas (uma só por entidade, com a coluna estado_sigla
+// distinguindo RO/AM/PA), isso permite ler os 3 estados numa única chamada ao
+// Apps Script em vez de 3. Nunca aceito em escrita (criar/editar sem saber o
+// estado seria ambíguo).
+export const ESTADO_TODOS = "TODOS" as const;
+export type EstadoFiltro = Estado | typeof ESTADO_TODOS;
+
 export function normalizeEstado(value: string | undefined | null): Estado | null {
   if (!value) return null;
   const upper = value.toUpperCase();
   return (ESTADOS as readonly string[]).includes(upper) ? (upper as Estado) : null;
+}
+
+export function normalizeEstadoFiltro(value: string | undefined | null): EstadoFiltro | null {
+  if (!value) return null;
+  if (value.toUpperCase() === ESTADO_TODOS) return ESTADO_TODOS;
+  return normalizeEstado(value);
 }
 
 export type ColumnType = "text" | "number" | "boolean" | "date" | "timestamptz" | "json";
@@ -40,54 +54,6 @@ export type EntityDef = {
 };
 
 export const ENTITIES: Record<string, EntityDef> = {
-  colaboradores: {
-    key: "colaboradores",
-    label: "Colaboradores",
-    hasUpdatedAt: true,
-    orderBy: "criado_em desc",
-    search: ["nome", "usuario", "cargo"],
-    filters: [
-      { param: "status", column: "status", kind: "eq" },
-      { param: "setor", column: "setor", kind: "ilike" },
-      { param: "cargo", column: "cargo", kind: "ilike" },
-      { param: "department_id", column: "department_id", kind: "eq" },
-      { param: "filial_id", column: "filial_id", kind: "eq" },
-      { param: "tipo", column: "tipo", kind: "eq" }
-    ],
-    columns: [
-      { name: "id", type: "text" },
-      { name: "nome", type: "text", required: true },
-      { name: "setor", type: "text", required: true },
-      { name: "cargo", type: "text" },
-      { name: "usuario", type: "text", required: true },
-      { name: "estado_sigla", type: "text", stateRef: true },
-      { name: "salario", type: "number" },
-      { name: "department_id", type: "text" },
-      { name: "filial_id", type: "text" },
-      { name: "lider_imediato", type: "text" },
-      { name: "gerente_regional", type: "text" },
-      { name: "regional", type: "text" },
-      { name: "vale_transporte", type: "number" },
-      { name: "vale_alimentacao", type: "number" },
-      { name: "inss", type: "number" },
-      { name: "fgts", type: "number" },
-      { name: "irrf", type: "number" },
-      { name: "premio_art_62", type: "number" },
-      { name: "premio_loja", type: "number" },
-      { name: "comissao", type: "number" },
-      { name: "entrada_em", type: "date" },
-      {
-        name: "status",
-        type: "text",
-        required: true,
-        values: ["ativo", "desligado", "afastado"]
-      },
-      { name: "tipo", type: "text", required: true, values: ["efetivado", "experiencia"] },
-      { name: "criado_em", type: "timestamptz", readOnly: true },
-      { name: "atualizado_em", type: "timestamptz", readOnly: true },
-      { name: "desligado_em", type: "timestamptz" }
-    ]
-  },
   vagas: {
     key: "vagas",
     label: "Vagas",
@@ -193,52 +159,135 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "atualizado_em", type: "timestamptz", readOnly: true }
     ]
   },
-  departamentos: {
-    key: "departamentos",
-    label: "Departamentos",
-    hasUpdatedAt: true,
-    orderBy: "criado_em desc",
-    search: ["nome", "sigla"],
-    filters: [],
-    columns: [
-      { name: "id", type: "text" },
-      { name: "nome", type: "text", required: true },
-      { name: "sigla", type: "text" },
-      { name: "estado_sigla", type: "text", stateRef: true },
-      { name: "criado_em", type: "timestamptz", readOnly: true },
-      { name: "atualizado_em", type: "timestamptz", readOnly: true }
-    ]
-  },
-  lancamentos: {
-    key: "lancamentos",
-    label: "Lançamentos",
-    orderBy: "data desc, criado_em desc",
-    search: ["indicador_id"],
+  // Substituem a antiga tabela genérica "lancamentos" (indicador_id + meta
+  // json): cada indicador manual agora tem colunas tipadas próprias. Custo de
+  // contratação não tem aba — é calculado ao vivo a partir de "vagas".
+  diarias: {
+    key: "diarias",
+    label: "Diárias",
+    orderBy: "competencia desc",
+    search: ["nome_colaborador"],
     filters: [
-      { param: "indicador_id", column: "indicador_id", kind: "eq" },
-      { param: "data_de", column: "data", kind: "gte" },
-      { param: "data_ate", column: "data", kind: "lte" }
+      { param: "data_de", column: "competencia", kind: "gte" },
+      { param: "data_ate", column: "competencia", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
-      { name: "indicador_id", type: "text", required: true },
-      { name: "data", type: "date", required: true },
-      { name: "valor", type: "number", notNull: true },
-      { name: "meta", type: "json" },
-      { name: "criado_em", type: "timestamptz", readOnly: true }
+      { name: "nome_colaborador", type: "text", required: true },
+      { name: "funcao", type: "text" },
+      { name: "departamento", type: "text" },
+      { name: "filial", type: "text" },
+      { name: "lider_imediato", type: "text" },
+      { name: "gerente_regional", type: "text" },
+      { name: "regional", type: "text" },
+      { name: "motivo", type: "text" },
+      { name: "competencia", type: "date", required: true },
+      { name: "sem_periodo", type: "boolean", notNull: true },
+      { name: "valor", type: "number", notNull: true, required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  treinamentos: {
+    key: "treinamentos",
+    label: "Treinamentos",
+    orderBy: "competencia desc",
+    search: ["nome_colaborador"],
+    filters: [
+      { param: "data_de", column: "competencia", kind: "gte" },
+      { param: "data_ate", column: "competencia", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "nome_colaborador", type: "text", required: true },
+      { name: "cargo", type: "text" },
+      // Sem coluna própria de sigla: o gráfico por filial (useDashboardData.js
+      // -> treinamentoFilialLabel) agrupa comparando este texto com o
+      // cadastro de Filiais.
+      { name: "filial", type: "text" },
+      { name: "tema", type: "text" },
+      { name: "modalidade", type: "text", values: ["Presencial", "Online"] },
+      { name: "competencia", type: "date", required: true },
+      // Única fonte de carga horária (antes havia "value" + "meta.cargaHoraria"
+      // redundantes — ver comentário no frontend/useDashboardData.js).
+      { name: "horas", type: "number", notNull: true, required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  custo_folha: {
+    key: "custo_folha",
+    label: "Custo de folha de salário",
+    orderBy: "competencia desc",
+    search: ["razao_social", "filial_cnpj"],
+    filters: [
+      { param: "cnpj", column: "filial_cnpj", kind: "eq" },
+      { param: "data_de", column: "competencia", kind: "gte" },
+      { param: "data_ate", column: "competencia", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      // Sem FK pra Filiais: guarda CNPJ e razão social direto, do mesmo jeito
+      // que o modal de Custo de Folha já busca/mostra (ver LaunchModal.vue).
+      { name: "filial_cnpj", type: "text", required: true },
+      { name: "razao_social", type: "text", required: true },
+      { name: "percent", type: "number" },
+      { name: "competencia", type: "date", required: true },
+      { name: "valor", type: "number", notNull: true, required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  absenteismo: {
+    key: "absenteismo",
+    label: "Absenteísmo",
+    orderBy: "competencia desc",
+    search: [],
+    filters: [
+      { param: "data_de", column: "competencia", kind: "gte" },
+      { param: "data_ate", column: "competencia", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "competencia", type: "date", required: true },
+      { name: "valor", type: "number", notNull: true, required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  // Marcação de "mês incompleto" (ver src/lib/monthStatus.js no frontend):
+  // a existência de uma linha para o mês+estado já é o marcador, sem mais
+  // nenhum dado — também vivia na antiga "lancamentos" genérica.
+  meses_incompletos: {
+    key: "meses_incompletos",
+    label: "Meses incompletos",
+    orderBy: "competencia desc",
+    search: [],
+    filters: [],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "competencia", type: "date", required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
     ]
   }
 };
 
 export const ENTITY_KEYS = Object.keys(ENTITIES);
 
-export function tableName(entityKey: string, estado: Estado): string {
-  return `${entityKey}_${estado.toLowerCase()}`;
+// Uma aba por entidade (não mais uma por entidade x estado): quem separa RO/AM/PA
+// agora é a coluna estado_sigla dentro da própria aba, não o nome dela.
+export function tableName(entityKey: string): string {
+  return entityKey;
 }
 
-// Valida nomes no formato "colaboradores_ro" usados pelo endpoint em lote.
-export function parseStateTable(table: string): { entityKey: string; estado: Estado } | null {
-  const match = /^([a-z]+)_(ro|am|pa)$/.exec(table);
+// Valida os nomes usados pelo endpoint em lote (sincronização do frontend):
+// "vagas_ro" (um estado) ou "vagas" puro (todos os estados, só para leitura —
+// ver ESTADO_TODOS em routes/data.ts). Checa o nome inteiro contra ENTITIES
+// antes de tentar separar um sufixo de estado — necessário porque algumas
+// chaves de entidade já têm "_" no nome (ex.: "custo_folha"), então uma regex
+// genérica não dá pra distinguir "custo_folha" de "custo_folha_ro" sem
+// primeiro validar contra a lista real de entidades.
+export function parseStateTable(
+  table: string
+): { entityKey: string; estado: EstadoFiltro } | null {
+  if (table in ENTITIES) return { entityKey: table, estado: ESTADO_TODOS };
+  const match = /^(.+)_(ro|am|pa)$/.exec(table);
   if (!match) return null;
   const entityKey = match[1];
   if (!(entityKey in ENTITIES)) return null;

@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { requireAuth } from "../middleware/auth";
-import { ENTITIES, normalizeEstado } from "../db/tables";
-import type { Estado } from "../db/tables";
+import { ENTITIES, normalizeEstado, normalizeEstadoFiltro } from "../db/tables";
+import type { Estado, EstadoFiltro } from "../db/tables";
 import * as records from "../services/records";
 import { fail, ok, okList, readJsonBody } from "../utils/http";
 import { buildPagination, parsePagination } from "../utils/pagination";
@@ -13,6 +13,17 @@ function parseEstado(value: string): Estado {
   const estado = normalizeEstado(value);
   if (!estado) {
     throw new ApiError(400, "Estado inválido. Use um de: RO, AM, PA.", "invalid_state");
+  }
+  return estado;
+}
+
+// Só a listagem aceita "todos" (leitura agregada dos 3 estados numa única
+// chamada ao Apps Script — ver ESTADO_TODOS). Criar/editar/apagar continuam
+// exigindo um estado concreto, então usam parseEstado acima.
+function parseEstadoFiltro(value: string): EstadoFiltro {
+  const estado = normalizeEstadoFiltro(value);
+  if (!estado) {
+    throw new ApiError(400, "Estado inválido. Use um de: RO, AM, PA, TODOS.", "invalid_state");
   }
   return estado;
 }
@@ -32,7 +43,7 @@ export function recordsRoutes(entityKey: string) {
   const app = new Hono<AppEnv>();
 
   app.get("/:estado", requireAuth(), async (c) => {
-    const estado = parseEstado(c.req.param("estado"));
+    const estado = parseEstadoFiltro(c.req.param("estado"));
     const { page, limit } = parsePagination(c);
     const filters = parseFilters(c, entityKey);
     const search = c.req.query("q") ?? undefined;

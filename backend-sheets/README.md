@@ -145,13 +145,46 @@ npm run seed        # cria abas/cabeçalhos + admin inicial na planilha configur
 
 ## Modelo de dados na planilha
 
-Uma aba por `entidade_estado` (`colaboradores_ro`, `vagas_am`, ...) + uma aba
-`usuarios`. Linha 1 = cabeçalho com os nomes de coluna (ver `src/db/tables.ts`
-para a lista completa por entidade). Coluna A é sempre `id` (uuid). O corpo
-das abas é formatado como texto simples pelo `setup` (evita o Sheets
+Uma aba por entidade (`vagas`, `headcount`, `turnover`, `permanencia`,
+`filiais`, `diarias`, `treinamentos`, `custo_folha`, `absenteismo`,
+`meses_incompletos`) + uma aba `usuarios` — 11 abas ao todo. RO/AM/PA convivem na mesma aba, distinguidos
+pela coluna `estado_sigla`; o Worker filtra por estado em memória depois de
+ler a aba (ver `matchesEstado` em `src/services/records.ts`). Isso substituiu
+o modelo antigo de uma aba por `entidade_estado` (`vagas_ro`, `vagas_am`, ...),
+que chegava a 22 abas — a consolidação reduz o número de abas e permite ler
+os 3 estados de uma vez (rota/tabela sem sufixo de estado, ex.:
+`GET /api/data/vagas` ou `GET /api/vagas/todos`) em vez de uma chamada ao
+Apps Script por estado.
+
+Não existem mais `colaboradores` nem `departamentos` — o cadastro de quem
+trabalha onde passou a vir só da importação mensal em `headcount`
+(`mes_referencia` + `remuneracao`). A antiga aba genérica `lancamentos`
+(`indicador_id` + `meta` json, usada por vários indicadores manuais) também
+não existe mais: `diarias`, `treinamentos`, `custo_folha` e `absenteismo` têm
+colunas tipadas próprias, e `meses_incompletos` guarda a marcação de "mês
+incompleto" (a existência da linha já é o marcador). `custo_contratacao` não
+tem aba — é calculado ao vivo a partir de `vagas` (salário × vagas fechadas
+no período).
+
+Linha 1 = cabeçalho com os nomes de coluna (ver `src/db/tables.ts` para a
+lista completa por entidade). Coluna A é sempre `id` (uuid). O corpo das
+abas é formatado como texto simples pelo `setup` (evita o Sheets
 reinterpretar datas/números ao digitar ou colar dados). Editar uma linha
 existente ou apagá-la diretamente na planilha é seguro — a API localiza cada
 registro pelo `id`, não pela posição da linha.
+
+Migrando uma planilha antiga:
+1. `npm run seed` — cria todas as abas novas com o cabeçalho certo.
+2. `npm run migrate:consolidate` — junta `vagas_ro/am/pa` etc. (se ainda
+   existirem por estado) nas abas únicas por entidade, gravando `estado_sigla`.
+3. `npm run migrate:restructure` — copia os dados da antiga `lancamentos`
+   (ou `lancamentos_ro/am/pa`) para `diarias`/`treinamentos`/`custo_folha`/
+   `absenteismo`/`meses_incompletos`.
+
+Confira os dados na planilha antes de apagar qualquer coisa. Só então:
+`npm run migrate:consolidate -- --delete-old` (abas antigas por estado) e
+`npm run migrate:restructure -- --delete-old` (apaga `lancamentos`,
+`colaboradores` e `departamentos`, com ou sem sufixo de estado).
 
 ## Formato das respostas, autenticação e perfis
 

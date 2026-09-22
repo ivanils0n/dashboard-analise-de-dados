@@ -3,7 +3,6 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
 import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
-import SalaryPicker from "@/components/dashboard/SalaryPicker.vue";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
 import { employeeNameKey } from "@/lib/metrics";
@@ -20,17 +19,12 @@ import {
   updateEntry,
   removeEntries,
   getEntriesFor,
-  getLatestForMeta,
-  getEmployeeById,
   getVacancyById,
   getTurnoverById,
   getHeadcountById,
-  getEmployees,
-  getDepartmentById,
   getBranchById
 } from "@/lib/store";
 import {
-  saveEmployee,
   addVacancy,
   updateVacancy,
   closeVacancy,
@@ -113,24 +107,12 @@ const { state: filters } = useFilters();
    (custo_diaria, treinamento ou custo_total). */
 const editingEntryId = ref(null);
 
-/* "Salário dos Colaboradores" entra no menu de lançamentos sem virar um
-   indicador/KPI — a remuneração é gravada no próprio colaborador. */
-const SALARIO_OPTION = {
-  id: "salario_colaborador",
-  name: "Salário dos Colaboradores",
-  form: "salario",
-  type: "currency",
-  decimals: 2
-};
-
 const indicatorId = ref(MANUAL_INDICATORS[0].id);
 const activeTab = ref("");
 
-const indicatorOptions = computed(() => [...MANUAL_INDICATORS, SALARIO_OPTION]);
+const indicatorOptions = computed(() => MANUAL_INDICATORS);
 
-const indicator = computed(() =>
-  indicatorId.value === SALARIO_OPTION.id ? SALARIO_OPTION : getIndicatorById(indicatorId.value)
-);
+const indicator = computed(() => getIndicatorById(indicatorId.value));
 
 /* ---------- Vaga (Tempo médio de contratação) ---------- */
 const vaga = reactive({
@@ -156,16 +138,11 @@ function setCloseDate(id, value) {
   closeDates[id] = value;
 }
 
-/* ---------- Custo ---------- */
-const custo = reactive({ query: "", employeeId: null, value: "" });
-const custoExisting = ref(null);
-
 /* ---------- Diária ---------- */
 /* A diária é vinculada a MÊS/ANO (competência), não a um dia — o registro é
-   gravado no 1º dia do mês escolhido, igual ao Treinamento. */
+   gravado no 1º dia do mês escolhido, igual ao Treinamento. Sem cadastro de
+   Colaboradores no sistema, o nome é sempre texto livre. */
 const diaria = reactive({
-  query: "",
-  employeeId: null,
   employeeName: "",
   funcao: "",
   departamento: "",
@@ -181,17 +158,13 @@ const diaria = reactive({
 /* ---------- Treinamento ---------- */
 /* O treinamento é vinculado a MÊS/ANO (competência), não a um dia. O registro
    é gravado no 1º dia do mês escolhido para manter compatibilidade com as
-   consultas por data existentes. */
+   consultas por data existentes. Sem cadastro de Colaboradores, o nome é
+   sempre texto livre. */
 const treinamento = reactive({
-  query: "",
-  employeeId: null,
-  /* Lançamento importado da planilha (sem vínculo com a Equipe): guarda o
-     nome e o estado gravados, para que ele continue editável. */
   employeeName: "",
   estado: "",
   cargo: "",
   filial: "",
-  filialShort: "",
   month: currentYm(),
   tema: "",
   cargaHoraria: "",
@@ -210,10 +183,6 @@ const custosTot = reactive({
   custos: "",
   percent: ""
 });
-
-/* ---------- Absenteísmo (ocorrência) ---------- */
-const sub = reactive({ kind: null, employee: null }); // kind: "salario"
-const salario = reactive({ value: "" });
 
 const estado = ref("");
 
@@ -235,11 +204,6 @@ function initModal() {
   indicatorId.value = MANUAL_INDICATORS[0].id;
   estado.value = filters.current === "todos" ? DEFAULT_STATE : filters.current;
   editingVacancyId.value = null;
-  custo.employeeId = null;
-  custo.query = "";
-  custo.value = "";
-  custoExisting.value = null;
-  closeSub();
   resetDiaria();
   resetTreinamento();
   resetCustosTot();
@@ -300,10 +264,8 @@ function prefillEdit(indId, entry) {
   editingEntryId.value = entry.id;
 
   if (indId === "custo_diaria") {
-    diaria.employeeId = m.employeeId || null;
     diaria.employeeName = m.employeeName || "";
     diaria.funcao = m.funcao || "";
-    diaria.query = "";
     diaria.departamento = m.departamento || "";
     diaria.filial = m.filial || "";
     diaria.liderImediato = m.liderImediato || "";
@@ -317,13 +279,10 @@ function prefillEdit(indId, entry) {
   }
 
   if (indId === "treinamento") {
-    treinamento.employeeId = m.employeeId || null;
     treinamento.employeeName = m.employeeName || "";
     treinamento.estado = m.estado || "";
-    treinamento.query = "";
     treinamento.cargo = m.cargo || "";
     treinamento.filial = m.filial || "";
-    treinamento.filialShort = m.shortName || "";
     treinamento.month = entry.date ? String(entry.date).slice(0, 7) : currentYm();
     treinamento.tema = m.tema || "";
     treinamento.cargaHoraria = entry.value != null ? String(entry.value) : "";
@@ -339,7 +298,9 @@ function prefillEdit(indId, entry) {
       custosTot.estado = nextEstado;
     }
     custosTot.query = "";
-    custosTot.branchId = m.filialId || null;
+    // Sem FK gravada: reencontra a filial pelo CNPJ (só pra pré-selecionar
+    // na aba Filial ao editar; o lançamento em si já tem CNPJ/razão social).
+    custosTot.branchId = (m.cnpj && listBranches().find((b) => b.cnpj === m.cnpj)?.id) || null;
     custosTot.month = entry.date ? String(entry.date).slice(0, 7) : currentYm();
     custosTot.custos = normalizeCurrencyInput(entry.value != null ? String(entry.value) : "");
     custosTot.percent = m.percent != null ? String(m.percent) : "";
@@ -356,8 +317,6 @@ function prefillEdit(indId, entry) {
 }
 
 function resetDiaria() {
-  diaria.query = "";
-  diaria.employeeId = null;
   diaria.employeeName = "";
   diaria.funcao = "";
   diaria.departamento = "";
@@ -371,13 +330,10 @@ function resetDiaria() {
 }
 
 function resetTreinamento() {
-  treinamento.query = "";
-  treinamento.employeeId = null;
   treinamento.employeeName = "";
-  treinamento.estado = "";
+  treinamento.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   treinamento.cargo = "";
   treinamento.filial = "";
-  treinamento.filialShort = "";
   treinamento.month = currentYm();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
@@ -428,19 +384,9 @@ const tabs = computed(() => {
         { id: "novo", label: "Novo" },
         { id: "historico", label: "Histórico" }
       ];
-    case "custo":
-      return [
-        { id: "colaborador", label: "Colaborador" },
-        { id: "custo", label: "Custo" }
-      ];
-    case "diaria":
-      return [
-        { id: "colaborador", label: "Colaborador" },
-        { id: "diaria", label: "Diária" }
-      ];
     case "treinamento":
       return [
-        { id: "colaborador", label: "Colaborador" },
+        { id: "colaborador", label: "Histórico" },
         { id: "treinamento", label: "Treinamento" }
       ];
     case "custo_total":
@@ -478,7 +424,6 @@ const canSubmitForm = computed(() => {
     f === "vaga" ||
     f === "turnover" ||
     f === "headcount" ||
-    f === "custo" ||
     f === "diaria" ||
     f === "treinamento" ||
     f === "custo_total" ||
@@ -492,54 +437,6 @@ function buildForm() {
 
 function showTab(id) {
   activeTab.value = id;
-}
-
-/* ---------- Salário dos Colaboradores ---------- */
-
-const pickerDefaultState = computed(() =>
-  filters.current === "todos" ? DEFAULT_STATE : filters.current
-);
-
-function closeSub() {
-  sub.kind = null;
-  sub.employee = null;
-}
-
-function openSalary(employee) {
-  if (!employee) return;
-  sub.employee = employee;
-  salario.value = employee.salario != null ? String(employee.salario) : "";
-  sub.kind = "salario";
-}
-
-function saveSalary() {
-  const emp = sub.employee;
-  if (!emp) return toast("Selecione um colaborador na lista.");
-  const raw = String(salario.value).trim();
-  if (raw === "" || isNaN(Number(raw)) || Number(raw) < 0) {
-    return toast("Informe um salário mensal válido (R$).");
-  }
-  const value = Number(raw);
-
-  saveEmployee({ id: emp.id, salario: value });
-
-  /* Registra o lançamento do salário (um por colaborador) para aparecer
-     em "Lançamentos recentes", como os demais lançamentos manuais. */
-  const existing = getLatestForMeta("salario_colaborador", "employeeId", emp.id);
-  if (existing) {
-    updateEntry("salario_colaborador", existing.id, { value, date: todayISO() });
-  } else {
-    addEntry("salario_colaborador", {
-      date: todayISO(),
-      value,
-      state: emp.estado || null,
-      meta: { employeeId: emp.id, employeeName: String(emp.name).toUpperCase() }
-    });
-  }
-
-  emit("saved");
-  toast(`Salário atualizado para ${emp.name}: ${formatCurrency(value)}.`);
-  closeSub();
 }
 
 /* ---------- Vaga ---------- */
@@ -1656,106 +1553,7 @@ function submitMensal() {
   resetMensalForm();
 }
 
-/* ---------- Custo ---------- */
-
-const custoResults = computed(() => {
-  const q = normalizeText(custo.query).trim();
-  const employees = getEmployees();
-  const filtered = q
-    ? employees.filter((e) => normalizeText(`${e.name} ${e.sector} ${e.user}`).includes(q))
-    : employees;
-  /* Índice único employeeId -> último custo de contratação (evita reler e
-     reordenar a lista completa para cada colaborador). */
-  const latestByEmployee = new Map();
-  getEntriesFor("custo_contratacao").forEach((entry) => {
-    const id = entry.meta && entry.meta.employeeId;
-    if (id) latestByEmployee.set(id, entry);
-  });
-  return filtered.map((e) => ({ employee: e, existing: latestByEmployee.get(e.id) || null }));
-});
-
-const custoEmployeeName = computed(() => {
-  if (!custo.employeeId) return "";
-  const emp = getEmployeeById(custo.employeeId);
-  return emp ? `${emp.name} · ${emp.sector}` : "";
-});
-
-function pickEmployee(e) {
-  custo.employeeId = e.id;
-  const existing = getLatestForMeta("custo_contratacao", "employeeId", e.id);
-  custoExisting.value = existing || null;
-  custo.value = existing ? existing.value : "";
-  showTab("custo");
-}
-
-function submitCusto() {
-  if (!custo.employeeId) return toast("Selecione um colaborador na aba Colaborador.");
-  const value = custo.value;
-  if (value === "" || isNaN(Number(value))) return toast("Informe o custo de contratação.");
-
-  const emp = getEmployeeById(custo.employeeId);
-  const existing = getLatestForMeta("custo_contratacao", "employeeId", emp.id);
-
-  if (existing) {
-    updateEntry("custo_contratacao", existing.id, { value: Number(value), date: todayISO() });
-    emit("saved");
-    toast(`Custo médio de contratação atualizado para ${emp.name}.`);
-    close();
-    return;
-  }
-
-  const st = emp.estado || null;
-  addEntry("custo_contratacao", {
-    date: todayISO(),
-    value,
-    state: st,
-    meta: { employeeId: emp.id, employeeName: String(emp.name).toUpperCase() }
-  });
-  emit("saved");
-  toast(`Custo médio de contratação lançado para ${emp.name}.`);
-  close();
-}
-
 /* ---------- Diária ---------- */
-
-const diariaResults = computed(() => {
-  const q = normalizeText(diaria.query).trim();
-  const employees = getEmployees();
-  if (!q) return employees;
-  return employees.filter((e) => normalizeText(`${e.name} ${e.sector} ${e.user}`).includes(q));
-});
-
-function pickDiariaEmployee(e) {
-  diaria.employeeId = e.id;
-  diaria.employeeName = e.name;
-  fillDiariaContext(e);
-  showTab("diaria");
-}
-
-/* Colaborador não cadastrado (ou ainda não importado): lança a diária mesmo
-   assim, sem vínculo, usando o nome digitado na busca. */
-function pickDiariaEmployeeManual() {
-  const name = diaria.query.trim();
-  if (!name) return;
-  diaria.employeeId = null;
-  diaria.employeeName = name;
-  diaria.query = "";
-  showTab("diaria");
-}
-
-/* Preenche o contexto organizacional automaticamente a partir do cadastro do
-   colaborador (departamento, filial e líder). O "regional" é o estado. */
-function fillDiariaContext(emp) {
-  const up = (v) => String(v == null ? "" : v).toUpperCase();
-  diaria.funcao = up(emp.cargo);
-  const dep = emp.departmentId ? getDepartmentById(emp.departmentId) : null;
-  diaria.departamento = dep ? up(dep.name) : up(emp.sector);
-  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
-  diaria.filial = filial ? up(`${filial.shortName} ${filial.name}`.trim()) : "";
-  diaria.liderImediato = up(emp.liderImediato);
-  diaria.gerenteRegional = up(emp.gerenteRegional);
-  diaria.regional = up(emp.estado);
-}
 
 /* ---------- Mês/ano da diária (competência) ---------- */
 const diariaYearOptions = yearOptions(4, 1);
@@ -1783,13 +1581,10 @@ function setDiariaCurrentMonth() {
 }
 
 function submitDiaria() {
-  /* O colaborador cadastrado não é mais obrigatório: se não houver vínculo,
-     lança mesmo assim usando o nome digitado (útil também para a futura
-     importação por planilha, que pode não encontrar todo mundo cadastrado). */
-  const emp = diaria.employeeId ? getEmployeeById(diaria.employeeId) : null;
+  // Sem cadastro de Colaboradores no sistema: o nome é sempre texto livre.
   const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
-  const employeeName = up(emp ? emp.name : diaria.employeeName);
-  if (!employeeName) return toast("Informe o colaborador (selecione um cadastrado ou digite o nome).");
+  const employeeName = up(diaria.employeeName);
+  if (!employeeName) return toast("Informe o nome do colaborador.");
   if (!diaria.mes) return toast("Informe o mês da diária.");
   const valueRaw = String(diaria.value).trim();
   if (valueRaw === "" || isNaN(Number(valueRaw)) || Number(valueRaw) < 0) {
@@ -1800,9 +1595,8 @@ function submitDiaria() {
   const payload = {
     date: `${diaria.mes}-01`,
     value,
-    state: emp ? emp.estado || null : diaria.regional || null,
+    state: diaria.regional || null,
     meta: {
-      employeeId: emp ? emp.id : null,
       employeeName,
       funcao: up(diaria.funcao),
       departamento: up(diaria.departamento),
@@ -1829,12 +1623,11 @@ function submitDiaria() {
   emit("saved");
   toast(`Diária lançada para ${employeeName} em ${diariaMonthLabel.value}: ${formatCurrency(value)}.`);
 
-  /* Mantém o colaborador selecionado para o próximo lançamento, apenas
-     limpando os dados específicos da diária. */
+  /* Mantém o restante do contexto preenchido para o próximo lançamento,
+     apenas limpando o valor. */
   diaria.value = "";
   diaria.motivo = "";
   diaria.mes = currentYm();
-  if (emp) fillDiariaContext(emp);
 }
 
 /* ---------- Importação de diárias por planilha ---------- */
@@ -2028,28 +1821,6 @@ function confirmDiImport() {
 
 /* ---------- Treinamento ---------- */
 
-const treinamentoEmployeeName = computed(() => {
-  if (!treinamento.employeeId) return treinamento.employeeName;
-  const emp = getEmployeeById(treinamento.employeeId);
-  return emp ? `${emp.name} · ${emp.cargo || emp.sector}` : "";
-});
-
-function pickTreinamentoEmployee(e) {
-  treinamento.employeeId = e.id;
-  treinamento.employeeName = "";
-  treinamento.estado = "";
-  fillTreinamentoContext(e);
-  showTab("treinamento");
-}
-
-/* Preenche cargo, loja (filial) e estado automaticamente do colaborador. */
-function fillTreinamentoContext(emp) {
-  treinamento.cargo = String(emp.cargo || "").toUpperCase();
-  const filial = emp.filialId ? getBranchById(emp.filialId) : null;
-  treinamento.filial = filial ? String(`${filial.shortName} ${filial.name}`.trim()).toUpperCase() : "";
-  treinamento.filialShort = filial && filial.shortName ? String(filial.shortName).toUpperCase() : "";
-}
-
 /* ---------- Mês/ano do treinamento (competência) ---------- */
 const treinamentoYearOptions = yearOptions(4, 1);
 
@@ -2076,39 +1847,30 @@ function setTreinamentoCurrentMonth() {
 }
 
 function submitTreinamento() {
-  const found = treinamento.employeeId ? getEmployeeById(treinamento.employeeId) : null;
-  /* Lançamento importado da planilha não tem vínculo com a Equipe: ao editar,
-     mantém o nome e o estado gravados. */
-  const emp = found
-    ? { id: found.id, name: found.name, estado: found.estado }
-    : editingEntryId.value && treinamento.employeeName
-      ? { id: null, name: treinamento.employeeName, estado: treinamento.estado || null }
-      : null;
-  if (!emp) return toast("Selecione um colaborador na aba Colaborador.");
+  // Sem cadastro de Colaboradores no sistema: o nome é sempre texto livre.
+  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
+  const employeeName = up(treinamento.employeeName);
+  if (!employeeName) return toast("Informe o nome do colaborador.");
   if (!treinamento.month) return toast("Informe o mês/ano do treinamento.");
   const carga = parseHoursBR(treinamento.cargaHoraria);
   if (carga === null || carga < 0) {
     return toast("Informe a carga horária do treinamento (ex.: 8, 12:00 ou 12:30).");
   }
 
-  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
   const filial = up(treinamento.filial);
   const mod =
     (MODALIDADE_OPTIONS.find((o) => o.value === treinamento.modalidade) || {}).label ||
     treinamento.modalidade;
+  const estado = up(treinamento.estado);
   const payload = {
     date: `${treinamento.month}-01`,
     value: carga,
-    state: emp.estado || null,
+    state: estado,
     meta: {
-      employeeId: emp.id,
-      employeeName: up(emp.name),
+      employeeName,
       cargo: up(treinamento.cargo),
       filial,
-      shortName: up(treinamento.filialShort),
-      estado: emp.estado || null,
       tema: up(treinamento.tema),
-      cargaHoraria: carga,
       modalidade: mod,
       competencia: treinamento.month
     }
@@ -2118,7 +1880,7 @@ function submitTreinamento() {
     updateEntry("treinamento", editingEntryId.value, payload);
     editingEntryId.value = null;
     emit("saved");
-    toast(`Treinamento atualizado para ${emp.name}: ${formatHoursClock(carga)}.`);
+    toast(`Treinamento atualizado para ${employeeName}: ${formatHoursClock(carga)}.`);
     close();
     return;
   }
@@ -2126,82 +1888,56 @@ function submitTreinamento() {
   addEntry("treinamento", payload);
 
   emit("saved");
-  toast(`Treinamento lançado para ${emp.name}: ${formatHoursClock(carga)}.`);
+  toast(`Treinamento lançado para ${employeeName}: ${formatHoursClock(carga)}.`);
 
-  /* Mantém o colaborador selecionado, limpando os dados do treinamento. */
+  /* Limpa os dados do treinamento, mantendo cargo/filial para o próximo. */
   treinamento.month = currentYm();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
-  fillTreinamentoContext(found);
 }
 
-/* ---------- Lista única de colaboradores (aba Colaborador do Treinamento) ----------
-   Uma só lista: colaboradores da Equipe (com ou sem treinamento) e os
-   importados da planilha (treinamentos sem vínculo com a Equipe, agrupados por
-   nome). Clicar num colaborador lança/edita o treinamento dele; marcar e
-   excluir remove os treinamentos (e as horas) no estado do filtro atual, em
-   todos os meses — o cadastro da Equipe nunca é alterado. */
+/* ---------- Histórico por colaborador (aba Colaborador do Treinamento) ----------
+   Sem cadastro de Colaboradores: agrupa só pelos treinamentos já lançados
+   (nome digitado na hora), no estado do filtro atual. Clicar num colaborador
+   edita o treinamento (se só houver um) ou expande a lista para escolher
+   qual; marcar e excluir remove os treinamentos (e as horas) dele, em todos
+   os meses. */
+const trQuery = ref("");
+
 const trPeople = computed(() => {
-  const byEmployee = new Map();
   const byName = new Map();
-  const push = (map, key, entry) => {
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(entry);
-  };
   getEntriesFor("treinamento", filters.current).forEach((e) => {
-    const m = e.meta || {};
-    if (m.employeeId) push(byEmployee, m.employeeId, e);
-    else push(byName, m.employeeName || "Sem colaborador", e);
+    const name = (e.meta && e.meta.employeeName) || "Sem colaborador";
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(e);
   });
 
-  const build = (key, name, employee, list, cargo, search) => {
+  const people = [];
+  byName.forEach((list, name) => {
     const entries = list.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
-    return {
-      key,
+    const cargo = (entries.find((e) => e.meta && e.meta.cargo) || {}).meta;
+    people.push({
+      key: `name:${name}`,
       name,
-      employee,
-      cargo: String(cargo || ""),
-      search,
+      cargo: String((cargo && cargo.cargo) || ""),
+      search: `${name} ${(cargo && cargo.cargo) || ""}`,
       entries,
       count: entries.length,
       horas: entries.reduce((sum, e) => sum + (Number(e.value) || 0), 0)
-    };
-  };
-
-  const people = [];
-  getEmployees().forEach((emp) => {
-    const list = byEmployee.get(emp.id) || [];
-    byEmployee.delete(emp.id);
-    people.push(
-      build(`emp:${emp.id}`, emp.name, emp, list, emp.cargo || emp.sector, `${emp.name} ${emp.cargo || ""} ${emp.sector || ""} ${emp.user || ""}`)
-    );
-  });
-  /* Treinamentos de um colaborador que já não existe na Equipe entram como
-     importados (só o nome gravado no lançamento). */
-  byEmployee.forEach((list, id) => {
-    const name = (list[0].meta && list[0].meta.employeeName) || "Sem colaborador";
-    people.push(build(`orphan:${id}`, name, null, list, list[0].meta && list[0].meta.cargo, name));
-  });
-  byName.forEach((list, name) => {
-    const cargo = (list.find((e) => e.meta && e.meta.cargo) || {}).meta;
-    people.push(build(`name:${name}`, name, null, list, cargo && cargo.cargo, `${name} ${(cargo && cargo.cargo) || ""}`));
+    });
   });
 
-  /* Quem já tem treinamento primeiro; depois por nome. */
-  return people.sort(
-    (a, b) => Number(b.count > 0) - Number(a.count > 0) || a.name.localeCompare(b.name, "pt-BR")
-  );
+  return people.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 });
 
 const trPeopleVisible = computed(() => {
-  const q = normalizeText(treinamento.query).trim();
+  const q = normalizeText(trQuery.value).trim();
   if (!q) return trPeople.value;
   return trPeople.value.filter((x) => normalizeText(x.search).includes(q));
 });
 
-/* Só quem tem treinamento pode ser marcado para exclusão. */
-const trSelectable = computed(() => trPeopleVisible.value.filter((x) => x.count > 0));
+const trSelectable = computed(() => trPeopleVisible.value);
 const trSelected = ref(new Set());
 const trAllSelected = computed(
   () => trSelectable.value.length > 0 && trSelectable.value.every((x) => trSelected.value.has(x.key))
@@ -2219,27 +1955,17 @@ function toggleTrAll() {
   trSelected.value = trAllSelected.value ? new Set() : new Set(trSelectable.value.map((x) => x.key));
 }
 
-/* Novo treinamento para um colaborador da Equipe (descarta uma edição em
-   andamento e limpa os campos do treinamento). */
-function newTreinamentoFor(emp) {
-  if (!emp) return;
+/* Novo treinamento: descarta uma edição em andamento, limpa os campos e vai
+   para a aba de lançamento. */
+function newTreinamento() {
   editingEntryId.value = null;
-  treinamento.month = currentYm();
-  treinamento.tema = "";
-  treinamento.cargaHoraria = "";
-  treinamento.modalidade = "presencial";
-  pickTreinamentoEmployee(emp);
+  resetTreinamento();
+  showTab("treinamento");
 }
 
-/* Clique no colaborador: sem treinamento → novo; com um só → edita; com vários
-   → expande a lista para escolher qual editar. Com uma edição em andamento, o
-   clique num colaborador sem treinamento só troca o colaborador do lançamento. */
+/* Clique no colaborador: um só treinamento → edita; vários → expande a lista
+   para escolher qual. */
 function onTrPersonClick(x) {
-  if (!x.count) {
-    if (editingEntryId.value) pickTreinamentoEmployee(x.employee);
-    else newTreinamentoFor(x.employee);
-    return;
-  }
   if (x.count === 1) {
     prefillEdit("treinamento", x.entries[0]);
     return;
@@ -2369,8 +2095,7 @@ async function onTrImportFile(e) {
       return {
         ...row,
         estado,
-        filial: filial || null,
-        shortName: branch && branch.shortName ? up(branch.shortName) : null
+        filial: filial || null
       };
     });
     trMonth.value = currentYm();
@@ -2406,11 +2131,9 @@ function confirmTrImport() {
         employeeName: up(r.name),
         cargo: up(r.cargo) || null,
         filial: r.filial,
-        shortName: r.shortName,
         estado: r.estado,
         competencia: trMonth.value || null,
         tema: up(r.tema) || null,
-        cargaHoraria: Number(r.carga),
         modalidade: r.modalidadeLabel || "Presencial"
       }
     });
@@ -2523,12 +2246,8 @@ function submitCustosTotal() {
     value: custos,
     state: b.estado || null,
     meta: {
-      filialId: b.id,
-      branchId: b.branchId || null,
       cnpj: b.cnpj || null,
       razaoSocial: b.name || null,
-      shortName: b.shortName || null,
-      filial: [b.shortName, b.name].filter(Boolean).join(" ").trim() || null,
       percent,
       competencia: custosTot.month
     }
@@ -2547,7 +2266,7 @@ function submitCustosTotal() {
      valor anterior em vez de duplicar a linha (a soma dos custos contaria a
      filial duas vezes). */
   const existingCusto = getEntriesFor("custo_total").find(
-    (e) => e.date === dataCompetencia && e.meta && e.meta.filialId === b.id
+    (e) => e.date === dataCompetencia && e.meta && b.cnpj && e.meta.cnpj === b.cnpj
   );
   if (existingCusto) {
     updateEntry("custo_total", existingCusto.id, payload);
@@ -2570,8 +2289,6 @@ function submitCustosTotal() {
 function handleSubmit() {
   if (!indicator.value) return;
   const form = indicator.value.form;
-  if (form === "salario") return; // ações no submodal
-  if (form === "custo") return submitCusto();
   if (form === "diaria") return submitDiaria();
   if (form === "treinamento") return submitTreinamento();
   if (form === "custo_total") return submitCustosTotal();
@@ -2584,23 +2301,6 @@ function handleSubmit() {
 function close() {
   emit("close");
 }
-
-/* Impede que o Escape feche o modal principal enquanto um submodal está aberto. */
-function onSubKeydown(e) {
-  if (e.key === "Escape") {
-    e.preventDefault();
-    e.stopPropagation();
-    closeSub();
-  }
-}
-
-watch(
-  () => sub.kind,
-  (kind) => {
-    if (kind) window.addEventListener("keydown", onSubKeydown, true);
-    else window.removeEventListener("keydown", onSubKeydown, true);
-  }
-);
 
 /* Escape fecha apenas a revisão de importação de treinamentos (não o modal). */
 function onTrReviewKeydown(e) {
@@ -2712,15 +2412,6 @@ onUnmounted(() => {
             Clique com o botão direito no card do indicador para ver o histórico.
           </p>
         </div>
-      </template>
-
-      <!-- ===== SALÁRIO DOS COLABORADORES ===== -->
-      <template v-if="indicator.form === 'salario'">
-        <SalaryPicker
-          :default-state="pickerDefaultState"
-          helper="Clique em um colaborador para preencher ou editar a remuneração individual."
-          @select="openSalary"
-        />
       </template>
 
       <!-- ===== VAGA ===== -->
@@ -3332,85 +3023,9 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <!-- ===== CUSTO ===== -->
-      <template v-if="indicator.form === 'custo'">
-        <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label for="custoSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
-            <input id="custoSearch" v-model="custo.query" type="search" class="input-field" placeholder="Nome, setor ou usuário..." />
-          </div>
-          <div class="flex max-h-56 flex-col gap-1 overflow-y-auto">
-            <p v-if="!custoResults.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
-              Nenhum colaborador encontrado.
-            </p>
-            <button
-              v-for="{ employee: e, existing } in custoResults"
-              :key="e.id"
-              type="button"
-              class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="custo.employeeId === e.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
-              @click="pickEmployee(e)"
-            >
-              <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
-              <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ existing
-                  ? `Já lançado: ${formatValue(getIndicatorById('custo_contratacao'), existing.value)}`
-                  : e.sector }}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div v-show="activeTab === 'custo'" class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1.5">
-            <label for="custoSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
-            <input id="custoSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="custoEmployeeName" placeholder="Nenhum selecionado" />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label for="custoValue" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Custo médio de contratação (R$)</label>
-            <input id="custoValue" v-model="custo.value" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
-          </div>
-          <p v-if="custoExisting" class="text-xs text-amber-600 dark:text-amber-400">
-            Já existe um lançamento. Salvar substituirá o valor anterior.
-          </p>
-        </div>
-      </template>
-
       <!-- ===== DIÁRIA ===== -->
       <template v-if="indicator.form === 'diaria'">
-        <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label for="diariaSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
-            <input id="diariaSearch" v-model="diaria.query" type="search" class="input-field" placeholder="Nome, setor ou usuário..." />
-          </div>
-          <div class="flex max-h-56 flex-col gap-1 overflow-y-auto">
-            <p v-if="!diariaResults.length" class="py-2 text-sm text-zinc-500 dark:text-zinc-400">
-              Nenhum colaborador encontrado.
-            </p>
-            <button
-              v-for="e in diariaResults"
-              :key="e.id"
-              type="button"
-              class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="diaria.employeeId === e.id ? 'bg-accent/10 dark:bg-accent/10' : ''"
-              @click="pickDiariaEmployee(e)"
-            >
-              <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ e.name }}</strong>
-              <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ e.sector }}</span>
-            </button>
-          </div>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            Ao selecionar, departamento, filial e líder são preenchidos do cadastro do colaborador; o regional é o estado.
-          </p>
-          <p v-if="diaria.query.trim()" class="text-xs">
-            Colaborador não cadastrado?
-            <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="pickDiariaEmployeeManual">
-              Lançar mesmo assim para "{{ diaria.query.trim() }}"
-            </button>
-          </p>
-        </div>
-
-        <div v-show="activeTab === 'diaria'" class="flex flex-col gap-4">
+        <div class="flex flex-col gap-4">
           <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex min-w-0 flex-col gap-0.5">
@@ -3437,16 +3052,8 @@ onUnmounted(() => {
               v-upper
               type="text"
               class="input-field"
-              :class="diaria.employeeId ? 'cursor-default bg-zinc-100 dark:bg-zinc-800' : ''"
-              :readonly="!!diaria.employeeId"
               placeholder="Nome do colaborador"
             />
-            <p class="text-xs">
-              <span v-if="!diaria.employeeId" class="text-zinc-400 dark:text-zinc-500">Sem vínculo com o cadastro da Equipe. </span>
-              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="showTab('colaborador')">
-                {{ diaria.employeeId ? "Trocar colaborador" : "Buscar colaborador cadastrado" }}
-              </button>
-            </p>
           </div>
 
           <fieldset class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
@@ -3520,27 +3127,29 @@ onUnmounted(() => {
         <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
           <div class="flex flex-col gap-1.5">
             <label for="trSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
-            <input id="trSearch" v-model="treinamento.query" type="search" class="input-field" placeholder="Nome, cargo, setor ou usuário..." />
+            <input id="trSearch" v-model="trQuery" type="search" class="input-field" placeholder="Nome ou cargo..." />
           </div>
           <div class="flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex min-w-0 flex-col">
-                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Colaboradores</strong>
+                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Colaboradores já lançados</strong>
                 <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Clique em um colaborador para lançar ou editar o treinamento. Marque para excluir os treinamentos
-                  (e as horas) deles — o cadastro da Equipe não é alterado.
+                  Clique em um colaborador para editar o treinamento. Marque para excluir os treinamentos (e as horas) dele.
                 </span>
               </div>
-              <label class="flex cursor-pointer items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 cursor-pointer accent-accent"
-                  :checked="trAllSelected"
-                  :disabled="!trSelectable.length"
-                  @change="toggleTrAll"
-                />
-                Selecionar todos
-              </label>
+              <div class="flex items-center gap-3">
+                <button type="button" class="btn-ghost btn-sm" @click="newTreinamento">+ Novo</button>
+                <label class="flex cursor-pointer items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 cursor-pointer accent-accent"
+                    :checked="trAllSelected"
+                    :disabled="!trSelectable.length"
+                    @change="toggleTrAll"
+                  />
+                  Selecionar todos
+                </label>
+              </div>
             </div>
 
             <div
@@ -3566,18 +3175,13 @@ onUnmounted(() => {
               <div v-for="x in trPeopleVisible" :key="x.key">
                 <div
                   class="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  :class="
-                    trSelected.has(x.key) || (x.employee && treinamento.employeeId === x.employee.id)
-                      ? 'bg-accent/10 dark:bg-accent/10'
-                      : ''
-                  "
+                  :class="trSelected.has(x.key) ? 'bg-accent/10 dark:bg-accent/10' : ''"
                   role="button"
                   tabindex="0"
                   @click="onTrPersonClick(x)"
                   @keydown.enter.self.prevent="onTrPersonClick(x)"
                 >
                   <input
-                    v-if="x.count"
                     type="checkbox"
                     class="h-4 w-4 shrink-0 cursor-pointer accent-accent"
                     :checked="trSelected.has(x.key)"
@@ -3585,19 +3189,10 @@ onUnmounted(() => {
                     @click.stop
                     @change="toggleTrPerson(x.key)"
                   />
-                  <span v-else class="h-4 w-4 shrink-0"></span>
                   <strong class="min-w-0 flex-1 truncate text-sm text-zinc-900 dark:text-zinc-100">{{ x.name }}</strong>
                   <span class="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ x.cargo }}<template v-if="x.count"> · {{ x.count }} treinamento(s) · {{ formatHoursClock(x.horas) }}</template>
+                    {{ x.cargo }} · {{ x.count }} treinamento(s) · {{ formatHoursClock(x.horas) }}
                   </span>
-                  <button
-                    v-if="x.employee && x.count"
-                    type="button"
-                    class="shrink-0 rounded-md border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-200 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                    @click.stop="newTreinamentoFor(x.employee)"
-                  >
-                    + Novo
-                  </button>
                 </div>
                 <div
                   v-if="trExpanded === x.key"
@@ -3640,10 +3235,10 @@ onUnmounted(() => {
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label for="trSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador selecionado</label>
-            <input id="trSelected" class="input-field cursor-default bg-zinc-100 dark:bg-zinc-800" readonly :value="treinamentoEmployeeName" placeholder="Nenhum selecionado" />
-            <p v-if="treinamento.employeeId" class="text-xs">
-              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="showTab('colaborador')">Trocar colaborador</button>
+            <label for="trSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
+            <input id="trSelected" v-model="treinamento.employeeName" v-upper type="text" class="input-field" placeholder="Nome do colaborador" />
+            <p class="text-xs">
+              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="showTab('colaborador')">Ver histórico por colaborador</button>
             </p>
           </div>
 
@@ -3655,6 +3250,12 @@ onUnmounted(() => {
             <div class="flex flex-col gap-1.5">
               <label for="trFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Loja (Filial)</label>
               <input id="trFilial" v-model="treinamento.filial" v-upper type="text" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+              <select id="trEstado" v-model="treinamento.estado" class="input-field">
+                <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
+              </select>
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="trMonth" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês do treinamento</label>
@@ -3813,44 +3414,6 @@ onUnmounted(() => {
         <button v-if="canSubmitForm" type="submit" class="btn-primary">{{ submitLabel }}</button>
       </div>
     </form>
-
-    <!-- ===== Submodal: Salário do colaborador ===== -->
-    <Teleport to="body">
-      <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
-      <div
-        v-if="sub.kind === 'salario' && sub.employee"
-        class="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 py-10"
-        @click.self="closeSub"
-      >
-        <form class="mac-panel w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900" novalidate @submit.prevent="saveSalary">
-          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <div>
-              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Remuneração do colaborador</h3>
-              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ sub.employee.name }} · {{ sub.employee.sector }}
-              </p>
-            </div>
-            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="closeSub">&times;</button>
-          </div>
-
-          <div class="flex flex-col gap-4 px-6 py-5">
-            <div class="flex flex-col gap-1.5">
-              <label for="salValue" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Salário mensal (R$)</label>
-              <input id="salValue" v-model="salario.value" type="number" min="0" step="any" class="input-field" placeholder="0,00" />
-            </div>
-            <p v-if="sub.employee.salario != null" class="text-xs text-amber-600 dark:text-amber-400">
-              Salário atual: {{ formatCurrency(sub.employee.salario) }}. Salvar substituirá o valor.
-            </p>
-          </div>
-
-          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <button type="button" class="btn-ghost" @click="closeSub">Cancelar</button>
-            <button type="submit" class="btn-primary">Salvar salário</button>
-          </div>
-        </form>
-      </div>
-      </Transition>
-    </Teleport>
 
     <!-- ===== Revisão de importação de diárias ===== -->
     <Teleport to="body">

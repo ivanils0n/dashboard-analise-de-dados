@@ -6,7 +6,6 @@ import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./store";
-import { compareDateAsc } from "./utils";
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
 
@@ -34,43 +33,75 @@ function stateTable(base, state) {
   return map[state] || `${base}_ro`;
 }
 
-function entryToRow(indicatorId, entry) {
+/* Conversores Entry ({id, date, value, meta}) -> linha da planilha, um por
+   indicador que antes vivia na tabela genérica "lancamentos". `entry.meta`
+   sempre carrega `estado` (ver _withState em store.js). */
+function diariaToRow(entry) {
+  const meta = entry.meta || {};
   return {
     id: entry.id,
-    indicador_id: indicatorId,
-    data: entry.date,
-    valor: Number(entry.value),
-    meta: entry.meta ?? null
+    nome_colaborador: meta.employeeName || "",
+    funcao: meta.funcao || null,
+    departamento: meta.departamento || null,
+    filial: meta.filial || null,
+    lider_imediato: meta.liderImediato || null,
+    gerente_regional: meta.gerenteRegional || null,
+    regional: meta.regional || null,
+    motivo: meta.motivo || null,
+    competencia: entry.date,
+    sem_periodo: Boolean(meta.semPeriodo),
+    valor: Number(entry.value) || 0,
+    estado_sigla: meta.estado || null
   };
 }
 
-function employeeToRow(emp) {
+function treinamentoToRow(entry) {
+  const meta = entry.meta || {};
   return {
-    id: emp.id,
-    nome: emp.name ?? "",
-    setor: emp.sector ?? "",
-    cargo: emp.cargo != null ? String(emp.cargo) : null,
-    usuario: String(emp.user ?? ""),
-    estado_sigla: emp.estado ?? null,
-    salario: emp.salario != null ? Number(emp.salario) : null,
-    entrada_em: emp.hiredAt ? String(emp.hiredAt).split("T")[0] : null,
-    status: emp.status || "ativo",
-    tipo: emp.type || "efetivado",
-    department_id: emp.departmentId || null,
-    filial_id: emp.filialId || null,
-    lider_imediato: emp.liderImediato != null ? String(emp.liderImediato) : null,
-    gerente_regional: emp.gerenteRegional != null ? String(emp.gerenteRegional) : null,
-    vale_transporte: emp.valeTransporte != null ? Number(emp.valeTransporte) : null,
-    vale_alimentacao: emp.valeAlimentacao != null ? Number(emp.valeAlimentacao) : null,
-    inss: emp.inss != null ? Number(emp.inss) : null,
-    fgts: emp.fgts != null ? Number(emp.fgts) : null,
-    irrf: emp.irrf != null ? Number(emp.irrf) : null,
-    premio_art_62: emp.premioArt62 != null ? Number(emp.premioArt62) : null,
-    premio_loja: emp.premioLoja != null ? Number(emp.premioLoja) : null,
-    comissao: emp.comissao != null ? Number(emp.comissao) : null,
-    criado_em: envTimestamp(emp.createdAt) || new Date().toISOString(),
-    atualizado_em: envTimestamp(emp.updatedAt),
-    desligado_em: envTimestamp(emp.firedAt)
+    id: entry.id,
+    nome_colaborador: meta.employeeName || "",
+    cargo: meta.cargo || null,
+    filial: meta.filial || null,
+    tema: meta.tema || null,
+    modalidade: meta.modalidade || null,
+    competencia: entry.date,
+    // Única fonte de carga horária (a "cargaHoraria" em meta era cópia redundante).
+    horas: Number(entry.value) || 0,
+    estado_sigla: meta.estado || null
+  };
+}
+
+function custoFolhaToRow(entry) {
+  const meta = entry.meta || {};
+  return {
+    id: entry.id,
+    filial_cnpj: meta.cnpj || null,
+    razao_social: meta.razaoSocial || null,
+    percent: meta.percent != null && meta.percent !== "" ? Number(meta.percent) : null,
+    competencia: entry.date,
+    valor: Number(entry.value) || 0,
+    estado_sigla: meta.estado || null
+  };
+}
+
+function absenteismoToRow(entry) {
+  const meta = entry.meta || {};
+  return {
+    id: entry.id,
+    competencia: entry.date,
+    valor: Number(entry.value) || 0,
+    estado_sigla: meta.estado || null
+  };
+}
+
+// "mes_incompleto" (ver lib/monthStatus.js): a existência da linha já é o
+// marcador — sem "valor" nenhum a gravar.
+function mesIncompletoToRow(entry) {
+  const meta = entry.meta || {};
+  return {
+    id: entry.id,
+    competencia: entry.date,
+    estado_sigla: meta.estado || null
   };
 }
 
@@ -137,17 +168,6 @@ function branchToRow(branch) {
     estado_sigla: branch.estado ?? null,
     criado_em: envTimestamp(branch.createdAt) || new Date().toISOString(),
     atualizado_em: envTimestamp(branch.updatedAt)
-  };
-}
-
-function departmentToRow(department) {
-  return {
-    id: department.id,
-    nome: department.name ?? "",
-    sigla: department.shortName ?? null,
-    estado_sigla: department.estado ?? null,
-    criado_em: envTimestamp(department.createdAt) || new Date().toISOString(),
-    atualizado_em: envTimestamp(department.updatedAt)
   };
 }
 
@@ -263,25 +283,38 @@ async function _flushNow(keepalive) {
   }
 }
 
+// indicador_id (do formulário) -> { table (aba física), toRow }. Substitui a
+// antiga tabela genérica "lancamentos": cada indicador manual tem aba própria.
+const ENTRY_TABLE_META = {
+  custo_diaria: { table: "diarias", toRow: diariaToRow },
+  treinamento: { table: "treinamentos", toRow: treinamentoToRow },
+  custo_total: { table: "custo_folha", toRow: custoFolhaToRow },
+  absenteismo: { table: "absenteismo", toRow: absenteismoToRow },
+  mes_incompleto: { table: "meses_incompletos", toRow: mesIncompletoToRow }
+};
+
+function entryTableMeta(indicatorId) {
+  const meta = ENTRY_TABLE_META[indicatorId];
+  if (!meta) throw new Error(`Indicador de lançamento desconhecido: "${indicatorId}".`);
+  return meta;
+}
+
 export function registerRemote() {
   bindRemote({
     entryAdded(indicatorId, entry) {
+      const { table, toRow } = entryTableMeta(indicatorId);
       const estado = entry.meta ? entry.meta.estado : null;
-      _enqueue(stateTable("lancamentos", estado), entry.id, { type: "upsert", row: entryToRow(indicatorId, entry) });
+      _enqueue(stateTable(table, estado), entry.id, { type: "upsert", row: toRow(entry) });
     },
     entryUpdated(indicatorId, entry) {
+      const { table, toRow } = entryTableMeta(indicatorId);
       const estado = entry.meta ? entry.meta.estado : null;
-      _enqueue(stateTable("lancamentos", estado), entry.id, { type: "upsert", row: entryToRow(indicatorId, entry) });
+      _enqueue(stateTable(table, estado), entry.id, { type: "upsert", row: toRow(entry) });
     },
-    entriesRemoved(ids, estado) {
-      const table = stateTable("lancamentos", estado);
-      ids.forEach((id) => _enqueue(table, id, { type: "delete", id }));
-    },
-    employeeSaved(employee) {
-      _enqueue(stateTable("colaboradores", employee.estado), employee.id, { type: "upsert", row: employeeToRow(employee) });
-    },
-    employeeRemoved(id, estado) {
-      _enqueue(stateTable("colaboradores", estado), id, { type: "delete", id });
+    entriesRemoved(indicatorId, ids, estado) {
+      const { table } = entryTableMeta(indicatorId);
+      const physicalTable = stateTable(table, estado);
+      ids.forEach((id) => _enqueue(physicalTable, id, { type: "delete", id }));
     },
     vacancySaved(vacancy) {
       _enqueue(stateTable("vagas", vacancy.estado), vacancy.id, { type: "upsert", row: vacancyToRow(vacancy) });
@@ -312,56 +345,82 @@ export function registerRemote() {
     },
     branchRemoved(id, estado) {
       _enqueue(stateTable("filiais", estado), id, { type: "delete", id });
-    },
-    departmentSaved(department) {
-      _enqueue(stateTable("departamentos", department.estado), department.id, { type: "upsert", row: departmentToRow(department) });
-    },
-    departmentRemoved(id, estado) {
-      _enqueue(stateTable("departamentos", estado), id, { type: "delete", id });
     }
   });
 }
 
-function entryFromRow(row) {
-  return { id: row.id, date: row.data, value: Number(row.valor), meta: row.meta || null };
-}
-
-function mapRemoteEntries(rows) {
-  const mapped = {};
-  rows.forEach((row) => {
-    if (!mapped[row.indicador_id]) mapped[row.indicador_id] = [];
-    mapped[row.indicador_id].push(entryFromRow(row));
-  });
-  return mapped;
-}
-
-function mapRemoteEmployee(row, impliedState) {
+/* Conversores linha da planilha -> Entry ({id, date, value, meta}), um por
+   tabela dedicada. Mantêm exatamente a forma que metrics.js/useDashboardData.js
+   e os modais de indicador já esperavam da antiga "lancamentos" — só a
+   origem do dado mudou. */
+function mapRemoteDiaria(row, impliedState) {
   return {
     id: row.id,
-    name: row.nome ?? "",
-    sector: row.setor ?? "",
-    cargo: row.cargo != null ? String(row.cargo) : null,
-    user: row.usuario != null ? String(row.usuario) : "",
-    estado: row.estado_sigla || impliedState || null,
-    salario: row.salario != null ? Number(row.salario) : null,
-    hiredAt: row.entrada_em ? String(row.entrada_em).split("T")[0] + "T00:00:00" : null,
-    status: row.status || "ativo",
-    type: row.tipo || "efetivado",
-    departmentId: row.department_id || null,
-    filialId: row.filial_id || null,
-    liderImediato: row.lider_imediato != null ? String(row.lider_imediato) : null,
-    gerenteRegional: row.gerente_regional != null ? String(row.gerente_regional) : null,
-    valeTransporte: row.vale_transporte != null ? Number(row.vale_transporte) : null,
-    valeAlimentacao: row.vale_alimentacao != null ? Number(row.vale_alimentacao) : null,
-    inss: row.inss != null ? Number(row.inss) : null,
-    fgts: row.fgts != null ? Number(row.fgts) : null,
-    irrf: row.irrf != null ? Number(row.irrf) : null,
-    premioArt62: row.premio_art_62 != null ? Number(row.premio_art_62) : null,
-    premioLoja: row.premio_loja != null ? Number(row.premio_loja) : null,
-    comissao: row.comissao != null ? Number(row.comissao) : null,
-    createdAt: row.criado_em,
-    updatedAt: row.atualizado_em,
-    firedAt: row.desligado_em
+    date: row.competencia,
+    value: Number(row.valor) || 0,
+    meta: {
+      employeeName: row.nome_colaborador || "",
+      funcao: row.funcao || null,
+      departamento: row.departamento || null,
+      filial: row.filial || null,
+      liderImediato: row.lider_imediato || null,
+      gerenteRegional: row.gerente_regional || null,
+      regional: row.regional || null,
+      motivo: row.motivo || null,
+      semPeriodo: Boolean(row.sem_periodo),
+      estado: row.estado_sigla || impliedState || null
+    }
+  };
+}
+
+function mapRemoteTreinamento(row, impliedState) {
+  return {
+    id: row.id,
+    date: row.competencia,
+    value: Number(row.horas) || 0,
+    meta: {
+      employeeName: row.nome_colaborador || "",
+      cargo: row.cargo || null,
+      filial: row.filial || null,
+      tema: row.tema || null,
+      modalidade: row.modalidade || null,
+      estado: row.estado_sigla || impliedState || null
+    }
+  };
+}
+
+// Sem FK pra Filiais: guarda CNPJ e razão social direto na linha (mesmo
+// jeito que o modal de Custo de Folha busca/mostra — ver submitCustosTotal
+// em LaunchModal.vue), sem depender do cadastro de Filiais pra exibir.
+function mapRemoteCustoFolha(row, impliedState) {
+  return {
+    id: row.id,
+    date: row.competencia,
+    value: Number(row.valor) || 0,
+    meta: {
+      cnpj: row.filial_cnpj || null,
+      razaoSocial: row.razao_social || null,
+      percent: row.percent != null && row.percent !== "" ? Number(row.percent) : null,
+      estado: row.estado_sigla || impliedState || null
+    }
+  };
+}
+
+function mapRemoteAbsenteismo(row, impliedState) {
+  return {
+    id: row.id,
+    date: row.competencia,
+    value: Number(row.valor) || 0,
+    meta: { estado: row.estado_sigla || impliedState || null }
+  };
+}
+
+function mapRemoteMesIncompleto(row, impliedState) {
+  return {
+    id: row.id,
+    date: row.competencia,
+    value: 1,
+    meta: { estado: row.estado_sigla || impliedState || null }
   };
 }
 
@@ -431,34 +490,29 @@ function mapRemoteBranch(row, impliedState) {
   };
 }
 
-function mapRemoteDepartment(row, impliedState) {
-  return {
-    id: row.id,
-    name: row.nome ?? "",
-    shortName: row.sigla ?? "",
-    estado: row.estado_sigla || impliedState || null,
-    createdAt: row.criado_em,
-    updatedAt: row.atualizado_em
-  };
-}
-
 /* Tabelas de dados por estado (nome-base → lista do store + mapeador de linha).
    Fonte única para restaurar do cache, aplicar delta e hidratar — antes cada
-   um desses caminhos repetia a mesma cadeia de if/else. `lancamentos` é
-   tratado à parte (agrupa por indicador). */
+   um desses caminhos repetia a mesma cadeia de if/else. Desde que
+   diarias/treinamentos/custo_folha/absenteismo ganharam abas próprias (no
+   lugar da antiga "lancamentos" genérica), todas as tabelas passam por aqui
+   uniformemente — nenhuma precisa mais de tratamento especial. */
 const TABLE_KINDS = {
-  colaboradores: { key: "employees", map: mapRemoteEmployee },
   vagas: { key: "vacancies", map: mapRemoteVacancy },
   turnover: { key: "turnovers", map: mapRemoteTurnover },
   permanencia: { key: "permanencias", map: mapRemotePermanencia },
   headcount: { key: "headcounts", map: mapRemoteHeadcount },
   filiais: { key: "branches", map: mapRemoteBranch },
-  departamentos: { key: "departments", map: mapRemoteDepartment }
+  diarias: { key: "diarias", map: mapRemoteDiaria },
+  treinamentos: { key: "treinamentos", map: mapRemoteTreinamento },
+  custo_folha: { key: "custoFolha", map: mapRemoteCustoFolha },
+  absenteismo: { key: "absenteismo", map: mapRemoteAbsenteismo },
+  meses_incompletos: { key: "mesesIncompletos", map: mapRemoteMesIncompleto }
 };
-const KIND_KEYS = Object.values(TABLE_KINDS).map((kind) => kind.key);
 const DATA_TABLES = Object.keys(TABLE_KINDS);
 
-/* "colaboradores_ro" → { base: "colaboradores", estado: "RO" } */
+/* "vagas_ro" → { base: "vagas", estado: "RO" }. Divide no ÚLTIMO "_" —
+   necessário porque algumas chaves de tabela já têm "_" no nome
+   (ex.: "custo_folha_ro" → base "custo_folha", não "custo"). */
 function splitTable(tabela) {
   const i = tabela.lastIndexOf("_");
   return i > 0
@@ -468,14 +522,16 @@ function splitTable(tabela) {
 
 function emptyPayload() {
   return {
-    entries: {},
-    employees: [],
     vacancies: [],
     turnovers: [],
     permanencias: [],
     headcounts: [],
     branches: [],
-    departments: []
+    diarias: [],
+    treinamentos: [],
+    custoFolha: [],
+    absenteismo: [],
+    mesesIncompletos: []
   };
 }
 
@@ -483,23 +539,11 @@ function statesOf(state) {
   return state === "todos" ? STATES.slice() : [state || DEFAULT_STATE];
 }
 
-/* Coloca uma linha do banco no payload do store. Devolve a data do
-   lançamento (usada para saber até onde o histórico está carregado) ou null. */
+// Coloca uma linha do banco no payload do store.
 function addRowToPayload(payload, tabela, row, estado) {
   const { base } = splitTable(tabela);
-  if (base === "lancamentos") {
-    const indicator = row.indicador_id || "headcount";
-    if (!payload.entries[indicator]) payload.entries[indicator] = [];
-    payload.entries[indicator].push(entryFromRow(row));
-    return row.data || null;
-  }
   const kind = TABLE_KINDS[base];
   if (kind) payload[kind.key].push(kind.map(row, estado));
-  return null;
-}
-
-function sortEntries(entries) {
-  Object.keys(entries).forEach((k) => entries[k].sort((a, b) => compareDateAsc(a.date, b.date)));
 }
 
 const _loadedStates = {};
@@ -508,54 +552,9 @@ export function loadedStates() {
   return _loadedStates;
 }
 
-/* Janela inicial de lançamentos: em vez de baixar o histórico inteiro de um
-   estado (que só cresce com o tempo), a carga inicial traz só os últimos N
-   meses via a rota paginada /api/lancamentos/:estado (que já suporta
-   data_de/data_ate com índice dedicado no banco). Períodos mais antigos são
-   buscados sob demanda quando o filtro de data do dashboard pedir por eles
-   (ver ensureLancamentosSince). `_coveredSince[estado]`: string ISO = data
-   mais antiga garantidamente carregada; `null` = já tem o histórico
-   completo (fallback ou carga antiga); `undefined` = ainda não se sabe. */
-const LANCAMENTOS_WINDOW_MONTHS = 24;
-const LANCAMENTOS_PAGE_LIMIT = 500;
-/* Páginas de lançamentos buscadas em paralelo (limitado para não abrir dezenas
-   de conexões ao banco de uma vez). */
-const LANCAMENTOS_PAGE_CONCURRENCY = 4;
-const _coveredSince = {};
-
 /* Marcado quando o navegador recusa uma gravação do cache local (cota cheia):
    o cache fica incompleto e não pode receber a versão do delta. */
 let _cacheDirty = false;
-
-function isoMonthsAgo(months) {
-  const d = new Date();
-  d.setDate(1); // evita overflow (ex.: dia 31 num mês sem dia 31) ao voltar meses
-  d.setMonth(d.getMonth() - months);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
-}
-
-function shiftDayISO(iso, deltaDays) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + deltaDays);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/* Executa `fn` sobre os itens com no máximo `limit` chamadas simultâneas,
-   preservando a ordem dos resultados. */
-async function mapLimit(items, limit, fn) {
-  const results = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
 
 /* Grava linhas no cache local; para na primeira recusa e marca o cache como
    incompleto (ver _cacheDirty). */
@@ -567,116 +566,6 @@ function persistRows(tabela, rows) {
     }
   }
   return true;
-}
-
-/* Pagina a rota REST de lançamentos (limite 500/página) até completar o
-   intervalo pedido. `dataAte` opcional (sem teto = até hoje). A primeira
-   página revela o total de páginas; as demais são buscadas em paralelo. */
-async function fetchLancamentosRange(state, dataDe, dataAte) {
-  const suffix = state.toLowerCase();
-  const fetchPage = (page) => {
-    const params = new URLSearchParams({ limit: String(LANCAMENTOS_PAGE_LIMIT), page: String(page) });
-    if (dataDe) params.set("data_de", dataDe);
-    if (dataAte) params.set("data_ate", dataAte);
-    return apiFetch(`/api/lancamentos/${suffix}?${params.toString()}`);
-  };
-
-  const first = await fetchPage(1);
-  const rows = [...((first && first.data) || [])];
-  const totalPages = (first && first.pagination && first.pagination.totalPages) || 0;
-  if (totalPages > 1) {
-    const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-    const rest = await mapLimit(pages, LANCAMENTOS_PAGE_CONCURRENCY, fetchPage);
-    rest.forEach((res) => rows.push(...((res && res.data) || [])));
-  }
-
-  /* Confere a integridade: com uma ordenação não determinística no servidor
-     (empates de data/criado_em de uma importação em lote), páginas diferentes
-     podem repetir ou pular linhas — e os totais dos KPIs (ex.: horas de
-     Treinamento) ficam errados sem nenhum aviso. Quantidade de ids distintos
-     diferente do total informado = carga incompleta; quem chama refaz pelo
-     download completo (não paginado). */
-  const expected = first && first.pagination && first.pagination.total;
-  if (Number.isFinite(expected) && new Set(rows.map((r) => r.id)).size !== expected) {
-    throw new Error(`Paginação de lançamentos incompleta (${state}): esperado ${expected} registro(s).`);
-  }
-  return rows;
-}
-
-/* Lançamentos da carga inicial de um estado: tenta a janela recente
-   (paginada); se a rota falhar por qualquer motivo, cai para o download
-   completo de antes (mesmo formato de resultado que fetchTable). */
-async function fetchLancamentosInitial(state, suffix) {
-  const windowStart = isoMonthsAgo(LANCAMENTOS_WINDOW_MONTHS);
-  try {
-    const data = await fetchLancamentosRange(state, windowStart, null);
-    _coveredSince[state] = windowStart;
-    return { data };
-  } catch (err) {
-    console.error(`[API] Falha ao paginar lançamentos_${suffix} por período, baixando tudo:`, err);
-    try {
-      const full = await apiFetch(`/api/data/lancamentos_${suffix}`);
-      _coveredSince[state] = null; // já tem o histórico completo
-      return { data: full && full.data ? full.data : [] };
-    } catch (fallbackErr) {
-      return { error: fallbackErr };
-    }
-  }
-}
-
-/* Estende a janela de lançamentos já carregada para trás quando o filtro de
-   período do dashboard pede uma data anterior ao que já está em memória.
-   Não faz nada quando o estado ainda não foi carregado (a hidratação normal
-   cuida disso), quando já tem o histórico completo, ou quando a data pedida
-   já está coberta. */
-export async function ensureLancamentosSince(next, neededStartISO) {
-  if (!neededStartISO) return;
-  const targets = statesOf(next).filter((s) => {
-    if (!_loadedStates[s]) return false;
-    const covered = _coveredSince[s];
-    if (covered === null || covered === undefined) return false;
-    return neededStartISO < covered;
-  });
-  if (!targets.length) return;
-
-  const epoch = _epoch;
-  beginLoading("Carregando período anterior...");
-  try {
-    await Promise.all(
-      targets.map(async (s) => {
-        const suffix = s.toLowerCase();
-        const dataAte = shiftDayISO(_coveredSince[s], -1);
-        try {
-          const rows = await fetchLancamentosRange(s, neededStartISO, dataAte);
-          if (epoch !== _epoch) return;
-          persistRows(`lancamentos_${suffix}`, rows);
-          mergeFromRemote({ entries: mapRemoteEntries(rows) });
-          _coveredSince[s] = neededStartISO;
-        } catch (err) {
-          console.error(`[API] Falha ao estender o período carregado de ${s}, baixando tudo:`, err);
-          /* Mesmo caminho da carga inicial (ver fetchLancamentosInitial): sem a
-             paginação, cai para o download completo — que já traz todo o
-             histórico, então o estado deixa de precisar de novas extensões. */
-          try {
-            const full = await apiFetch(`/api/data/lancamentos_${suffix}`);
-            if (epoch !== _epoch) return;
-            const rows = (full && full.data) || [];
-            persistRows(`lancamentos_${suffix}`, rows);
-            mergeFromRemote({ entries: mapRemoteEntries(rows) });
-            _coveredSince[s] = null;
-          } catch (fallbackErr) {
-            console.error(`[API] Falha ao baixar os lançamentos de ${s}:`, fallbackErr);
-          }
-        }
-      })
-    );
-    if (_cacheDirty) {
-      DataCache.resetAll();
-      _cacheDirty = false;
-    }
-  } finally {
-    endLoading();
-  }
 }
 
 /* Baixa os dados dos estados informados, exibindo a tela de carregamento
@@ -706,7 +595,7 @@ function hydrateOneState(s) {
   return promise;
 }
 
-/* Baixa e grava em cache as 8 tabelas de um único estado. Cada estado é
+/* Baixa e grava em cache todas as tabelas de um único estado. Cada estado é
    isolado dos demais (ver _hydrateStates): a falha de um (ex.: timeout numa
    consulta grande) não impede os outros de serem carregados e marcados. */
 async function loadStateFromApi(s) {
@@ -720,51 +609,128 @@ async function loadStateFromApi(s) {
       return { error: err };
     }
   };
-  const [lan, ...others] = await Promise.all([
-    fetchLancamentosInitial(s, suffix),
-    ...DATA_TABLES.map((base) => fetchTable(`${base}_${suffix}`))
-  ]);
+  const results = await Promise.all(DATA_TABLES.map((base) => fetchTable(`${base}_${suffix}`)));
 
   // Logout/login durante o download: descarta em vez de misturar sessões.
   if (epoch !== _epoch) return false;
 
-  const errored = [lan, ...others].filter((res) => res && res.error);
+  const errored = results.filter((res) => res && res.error);
   if (errored.length) {
     // Não marca o estado como carregado quando a consulta falha (ex.: sem
     // sessão autenticada ainda). Assim o estado é baixado novamente no
     // próximo acesso — evita telas vazias por estado "marcado" sem dados.
     errored.forEach((res) => console.error("[API]", res.error.message));
-    delete _coveredSince[s];
     return false;
   }
 
   const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
-  const rowsLan = rowsOf(lan);
   const payload = emptyPayload();
-  payload.entries = mapRemoteEntries(rowsLan);
 
-  let persisted = persistRows(`lancamentos_${suffix}`, rowsLan);
+  let persisted = true;
   DATA_TABLES.forEach((base, i) => {
-    const rows = rowsOf(others[i]);
+    const rows = rowsOf(results[i]);
     if (persisted) persisted = persistRows(`${base}_${suffix}`, rows);
     const kind = TABLE_KINDS[base];
     payload[kind.key] = rows.map((row) => kind.map(row, s));
   });
+  if (!persisted) _cacheDirty = true;
 
   mergeFromRemote(payload);
   _loadedStates[s] = true;
   return true;
 }
 
+/* Separa linhas de uma aba consolidada (RO+AM+PA numa só) pelo estado de
+   cada uma. Linha sem estado_sigla reconhecível cai no estado padrão em vez
+   de ser perdida (não deveria acontecer, mas é mais seguro que sumir dado). */
+function bucketByEstado(rows) {
+  const buckets = { RO: [], AM: [], PA: [] };
+  rows.forEach((row) => {
+    const estado = String(row.estado_sigla || "").toUpperCase();
+    (buckets[estado] || buckets[DEFAULT_STATE]).push(row);
+  });
+  return buckets;
+}
+
+/* Baixa e grava em cache todas as tabelas dos 3 estados numa única leva de
+   chamadas (uma por tabela, sem sufixo de estado) em vez de 3 levas (uma por
+   estado) — usado só na carga inicial "do zero" de todos os estados juntos
+   (ver _hydrateStates). Reduz N×3 para N chamadas ao Worker/Apps Script, que
+   tem limite de execuções simultâneas (ver comentário em sheets.ts). */
+async function loadAllStatesFromApi() {
+  const epoch = _epoch;
+  const fetchTable = async (name) => {
+    try {
+      return await apiFetch(`/api/data/${name}`);
+    } catch (err) {
+      console.error(`[API] Erro ao consultar ${name}:`, err);
+      return { error: err };
+    }
+  };
+  const results = await Promise.all(DATA_TABLES.map((base) => fetchTable(base)));
+
+  if (epoch !== _epoch) return false;
+
+  const errored = results.filter((res) => res && res.error);
+  if (errored.length) {
+    errored.forEach((res) => console.error("[API]", res.error.message));
+    return false;
+  }
+
+  const rowsOf = (res) => (res && !res.error && res.data ? res.data : []);
+  const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };
+
+  let persisted = true;
+  DATA_TABLES.forEach((base, i) => {
+    const buckets = bucketByEstado(rowsOf(results[i]));
+    const kind = TABLE_KINDS[base];
+    STATES.forEach((s) => {
+      if (persisted) persisted = persistRows(`${base}_${s.toLowerCase()}`, buckets[s]);
+      payloads[s][kind.key] = buckets[s].map((row) => kind.map(row, s));
+    });
+  });
+
+  if (!persisted) _cacheDirty = true;
+
+  STATES.forEach((s) => {
+    mergeFromRemote(payloads[s]);
+    _loadedStates[s] = true;
+  });
+  return true;
+}
+
+/* Como hydrateOneState, mas para os 3 estados de uma vez: registra a mesma
+   promise em _stateInflight para cada estado, para que um hydrateOneState('RO')
+   concorrente espere essa carga em vez de disparar outro download. */
+function hydrateAllStates() {
+  const promise = loadAllStatesFromApi().finally(() => {
+    STATES.forEach((s) => {
+      if (_stateInflight.get(s) === promise) _stateInflight.delete(s);
+    });
+  });
+  STATES.forEach((s) => _stateInflight.set(s, promise));
+  return promise;
+}
+
 /* Carrega os estados pendentes em paralelo (antes era um for-of sequencial
    com await, que somava a latência de cada estado em vez de correr junto —
    a causa principal da demora ao entrar com o filtro em "todos", que carrega
-   RO+AM+PA de uma vez). */
+   RO+AM+PA de uma vez). Quando os 3 estados estão pendentes ao mesmo tempo
+   (carga inicial "do zero" em "todos"), usa hydrateAllStates (1 chamada por
+   tabela) em vez de 3 hydrateOneState em paralelo (3 chamadas por tabela). */
 async function _hydrateStates(states) {
   const pending = states.filter((s) => !_loadedStates[s]);
   if (!pending.length) return true;
 
-  const results = await Promise.all(pending.map((s) => hydrateOneState(s)));
+  const isFreshAllStates = STATES.every((s) => pending.includes(s));
+  let results;
+  if (isFreshAllStates) {
+    const ok = await hydrateAllStates();
+    results = pending.map(() => ok);
+  } else {
+    results = await Promise.all(pending.map((s) => hydrateOneState(s)));
+  }
+
   const loaded = pending.filter((_, i) => results[i]);
 
   if (loaded.length) {
@@ -786,29 +752,20 @@ function keyTable(key) {
 function stateCachedKeys(suffix) {
   return DataCache.keys().filter((key) => {
     const { base, estado } = splitTable(keyTable(key));
-    return estado.toLowerCase() === suffix && (base === "lancamentos" || base in TABLE_KINDS);
+    return estado.toLowerCase() === suffix && base in TABLE_KINDS;
   });
 }
 
 /* Reconstrói em memória (merge, sem apagar o resto) o estado a partir das
-   chaves do sessionStorage. Reusa os mesmos mapeamentos do download.
-   Também recalcula `_coveredSince[state]` a partir da data mais antiga
-   presente no cache — necessário porque esse controle vive só em memória e
-   se perde a cada F5, mas o cache local (sessionStorage) sobrevive. */
+   chaves do sessionStorage. Reusa os mesmos mapeamentos do download. */
 function mergeStateFromCache(state) {
   const payload = emptyPayload();
-  let minLancamentoDate = null;
   stateCachedKeys(state.toLowerCase()).forEach((key) => {
     const item = DataCache.readItem(key);
     if (!item || !item.id) return;
-    const date = addRowToPayload(payload, keyTable(key), item, state);
-    if (date && (!minLancamentoDate || date < minLancamentoDate)) minLancamentoDate = date;
+    addRowToPayload(payload, keyTable(key), item, state);
   });
-  sortEntries(payload.entries);
   mergeFromRemote(payload);
-  /* Sem nenhum lançamento em cache ainda: assume a janela padrão como
-     coberta (seguro — no pior caso dispara uma busca extra depois). */
-  _coveredSince[state] = minLancamentoDate || isoMonthsAgo(LANCAMENTOS_WINDOW_MONTHS);
 }
 
 /* Carrega estado(s) priorizando o cache local + delta sync (egress mínimo):
@@ -862,7 +819,6 @@ function loadLocalIntoMemory() {
 
   const payload = emptyPayload();
   const tablesSeen = {};
-  const minLancamentoByState = {};
 
   keys.forEach((key) => {
     const item = DataCache.readItem(key);
@@ -873,23 +829,17 @@ function loadLocalIntoMemory() {
     const tabela = rest.slice(0, sep);
     tablesSeen[tabela] = true;
     const { estado } = splitTable(tabela);
-    const date = addRowToPayload(payload, tabela, item, estado);
-    if (date && (!minLancamentoByState[estado] || date < minLancamentoByState[estado])) {
-      minLancamentoByState[estado] = date;
-    }
+    addRowToPayload(payload, tabela, item, estado);
   });
 
-  sortEntries(payload.entries);
   replaceFromCache(payload);
 
   clearLoadedTracking();
   STATES.forEach((s) => {
     const suffix = s.toLowerCase();
-    if (tablesSeen["lancamentos_" + suffix] || tablesSeen["colaboradores_" + suffix]) {
+    // Qualquer tabela vista pra esse estado já basta pra considerá-lo carregado.
+    if (DATA_TABLES.some((base) => tablesSeen[`${base}_${suffix}`])) {
       _loadedStates[s] = true;
-      /* Ver mergeStateFromCache: recalcula a cada boot pois esse controle
-         só existe em memória. */
-      _coveredSince[s] = minLancamentoByState[s] || isoMonthsAgo(LANCAMENTOS_WINDOW_MONTHS);
     }
   });
   return true;
@@ -897,7 +847,6 @@ function loadLocalIntoMemory() {
 
 function clearLoadedTracking() {
   Object.keys(_loadedStates).forEach((k) => delete _loadedStates[k]);
-  Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
 }
 
 /* Boot:

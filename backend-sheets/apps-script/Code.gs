@@ -49,6 +49,9 @@ function doPost(e) {
       case "delete":
         data = deleteRows(body.sheet, body.rows);
         break;
+      case "deleteSheet":
+        data = deleteSheet(body.sheet);
+        break;
       default:
         return respond({ success: false, error: 'Ação desconhecida: "' + body.action + '".' });
     }
@@ -121,6 +124,17 @@ function deleteRows(sheetName, rows) {
     sheet.deleteRow(rowNumber);
   });
   return { deleted: sorted.length };
+}
+
+// Usada só na migração/limpeza (ver scripts/migrate-consolidate.mjs): apaga
+// uma aba inteira depois que os dados dela já foram copiados para a aba nova
+// consolidada. Não reclama se a aba já não existir (idempotente).
+function deleteSheet(sheetName) {
+  var ss = spreadsheet_();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { deleted: false };
+  ss.deleteSheet(sheet);
+  return { deleted: true };
 }
 
 function respond(payload) {

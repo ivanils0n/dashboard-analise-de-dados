@@ -84,6 +84,117 @@ function toCellValue(column: ColumnDef | undefined, value: unknown): unknown {
   return String(value);
 }
 
+// Colunas numéricas às vezes são preenchidas à mão direto na planilha (sem
+// passar pelo formulário do app, que já normaliza o valor antes de enviar) —
+// aceita mais formatos do que `Number(raw)` entenderia sozinho:
+//   - horário "H:MM" ou "H:MM:SS" (ex.: carga horária de treinamento digitada
+//     como "01:00") -> horas decimais (1, 1.5, ...);
+//   - número no padrão BR, com vírgula decimal e opcionalmente ponto de
+//     milhar (ex.: "1.234,56" ou "1234,56") -> ponto decimal.
+function parseFlexibleNumber(raw: string): number | null {
+  // Símbolo de moeda/espaços (ex.: "R$ 200,00", "$ 12.50") não fazem parte do
+  // número em si — tira antes de tentar qualquer formato abaixo.
+  const s = raw.trim().replace(/^(r\$|\$|R\$)\s*/i, "").trim();
+  if (!s) return null;
+
+  const time = /^(\d{1,3}):([0-5]?\d)(?::([0-5]?\d))?$/.exec(s);
+  if (time) {
+    const hours = Number(time[1]);
+    const minutes = Number(time[2]);
+    const seconds = time[3] ? Number(time[3]) : 0;
+    return hours + minutes / 60 + seconds / 3600;
+  }
+
+  // Célula sem formato de texto: o Sheets converte "01:00" digitado num
+  // horário de verdade, e a resposta chega como timestamp ISO (o horário do
+  // dia é a parte que importa; a data em si é só a época interna do Sheets).
+  const isoTime = /T(\d{2}):(\d{2}):(\d{2})/.exec(s);
+  if (isoTime) {
+    const hours = Number(isoTime[1]);
+    const minutes = Number(isoTime[2]);
+    const seconds = Number(isoTime[3]);
+    return hours + minutes / 60 + seconds / 3600;
+  }
+
+  if (/^-?[\d.,]+$/.test(s) && s.includes(",")) {
+    // Vírgula é o separador decimal; ponto (se houver) é separador de milhar.
+    const normalized = s.replace(/\./g, "").replace(",", ".");
+    const num = Number(normalized);
+    if (Number.isFinite(num)) return num;
+  }
+
+  const plain = Number(s);
+  return Number.isFinite(plain) ? plain : null;
+}
+
+const MESES_PT = [
+  "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+];
+
+function mesPorNome(word: string): number | null {
+  if (!word || word.length < 3) return null;
+  const idx = MESES_PT.findIndex((nome) => nome.startsWith(word));
+  return idx >= 0 ? idx + 1 : null;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// Colunas de data/competência também são preenchidas à mão direto na
+// planilha. Aceita os mesmos formatos que o import por planilha do frontend
+// já entende (ver parseDiariaMes em src/lib/export.js): dd/mm/aaaa,
+// dd-mm-aaaa (e variantes com ano de 2 dígitos), mm/aaaa, aaaa-mm, mm/aa e
+// nome do mês (com ou sem ano) — um campo "competência" que só tem mês vira
+// o dia 1º desse mês. Sem bater com nenhum formato conhecido, devolve null
+// (quem chama mantém o texto original em vez de perder o dado). */
+function parseFlexibleDate(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  let m = s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{2})$/);
+  if (m) return `20${m[3]}-${m[2]}-${m[1]}`;
+
+  const text = s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ");
+
+  // mm/aaaa · mm-aaaa · mm.aaaa
+  m = text.match(/^(\d{1,2})[\/\-.](\d{4})$/);
+  if (m) {
+    const mes = Number(m[1]);
+    return mes >= 1 && mes <= 12 ? `${m[2]}-${pad2(mes)}-01` : null;
+  }
+  // aaaa-mm · aaaa/mm
+  m = text.match(/^(\d{4})[\/\-.](\d{1,2})$/);
+  if (m) {
+    const mes = Number(m[2]);
+    return mes >= 1 && mes <= 12 ? `${m[1]}-${pad2(mes)}-01` : null;
+  }
+  // mm/aa (assume 20aa)
+  m = text.match(/^(\d{1,2})[\/\-.](\d{2})$/);
+  if (m) {
+    const mes = Number(m[1]);
+    return mes >= 1 && mes <= 12 ? `20${m[2]}-${pad2(mes)}-01` : null;
+  }
+  // nome do mês, com ou sem ano ("ago", "agosto/26", "agosto de 2026")
+  m = text.match(/^([a-z]+)\.?(?:\s*[\/\-.\s]\s*(?:de\s+)?(\d{4}|\d{2}))?$/);
+  if (m) {
+    const mes = mesPorNome(m[1]);
+    if (mes) {
+      const ano = m[2] ? (m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2])) : new Date().getFullYear();
+      return `${ano}-${pad2(mes)}-01`;
+    }
+  }
+  return null;
+}
+
 function fromCellValue(column: ColumnDef | undefined, raw: unknown): unknown {
   if (raw === undefined || raw === null || raw === "") return null;
   if (column?.type === "json") {
@@ -95,13 +206,23 @@ function fromCellValue(column: ColumnDef | undefined, raw: unknown): unknown {
     }
   }
   if (column?.type === "number") {
-    const num = Number(raw);
-    return Number.isFinite(num) ? num : null;
+    if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+    return parseFlexibleNumber(String(raw));
   }
   if (column?.type === "boolean") {
     if (typeof raw === "boolean") return raw;
     return String(raw).toLowerCase() === "true";
   }
+  if (column?.type === "date") {
+    const parsed = parseFlexibleDate(String(raw));
+    if (parsed) return parsed;
+  }
+  // A coluna de estado (estado_sigla) é comparada por igualdade exata em
+  // vários pontos (matchesEstado em services/records.ts) — sem isso, uma
+  // linha digitada à mão como " ro", "Ro" ou "RO " (espaço/caixa diferente do
+  // esperado) simplesmente sumia do estado ao filtrar, mesmo "parecendo"
+  // igual visualmente.
+  if (column?.stateRef) return String(raw).trim().toUpperCase();
   // Datas/timestamps: o Apps Script pode devolver um Date (célula formatada
   // como data) — nesse caso já chega como string ISO (JSON.stringify de um
   // Date vira toJSON()). Texto puro passa direto.

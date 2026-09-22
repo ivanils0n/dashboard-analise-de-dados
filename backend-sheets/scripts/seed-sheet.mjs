@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 // Script de setup, roda uma vez localmente (node scripts/seed-sheet.mjs).
 // Chama o Apps Script (apps-script/Code.gs) já publicado para criar as abas
-// da planilha (uma por entidade x estado, + "usuarios") com o cabeçalho
-// certo e, se ainda não houver nenhum, um usuário admin inicial.
+// da planilha (uma por entidade, + "usuarios") com o cabeçalho certo e, se
+// ainda não houver nenhum, um usuário admin inicial.
+//
+// Desde a consolidação das abas por estado (ver README/CHANGELOG), cada
+// entidade tem uma única aba com a coluna estado_sigla distinguindo RO/AM/PA
+// — não mais uma aba por entidade x estado. Para migrar dados de uma
+// planilha antiga (com abas "vagas_ro" etc.), rode scripts/migrate-consolidate.mjs
+// antes ou depois deste setup. Colaboradores/Departamentos e a antiga aba
+// genérica "lancamentos" não existem mais — rode scripts/migrate-restructure.mjs
+// para migrar os dados dela para diarias/treinamentos/custo_folha/absenteismo/meses_incompletos.
 //
 // Lê as credenciais de .dev.vars (mesmo arquivo usado pelo `wrangler dev`)
 // ou das variáveis de ambiente já exportadas no shell.
@@ -54,14 +62,7 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
 
 // ---------- schema (espelha backend-sheets/src/db/tables.ts) ----------
 
-const ESTADOS = ["ro", "am", "pa"];
 const ENTITY_COLUMNS = {
-  colaboradores: [
-    "id", "nome", "setor", "cargo", "usuario", "estado_sigla", "salario", "department_id",
-    "filial_id", "lider_imediato", "gerente_regional", "regional", "vale_transporte",
-    "vale_alimentacao", "inss", "fgts", "irrf", "premio_art_62", "premio_loja", "comissao",
-    "entrada_em", "status", "tipo", "criado_em", "atualizado_em", "desligado_em"
-  ],
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial_id", "estado_sigla"],
   headcount: [
     "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao", "mes_referencia",
@@ -70,16 +71,28 @@ const ENTITY_COLUMNS = {
   turnover: ["id", "filial_id", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
   permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial_id", "estado_sigla"],
   filiais: ["id", "id_filial", "cnpj", "nome", "abreviado", "gerente", "estado_sigla", "criado_em", "atualizado_em"],
-  departamentos: ["id", "nome", "sigla", "estado_sigla", "criado_em", "atualizado_em"],
-  lancamentos: ["id", "indicador_id", "data", "valor", "meta", "criado_em"]
+  // Substituem a antiga "lancamentos" genérica (ver migrate-restructure.mjs
+  // para migrar dados de uma planilha antiga). Colaboradores/Departamentos
+  // saíram do sistema — Headcount passou a ser a fonte de colaborador/mês.
+  diarias: [
+    "id", "nome_colaborador", "funcao", "departamento", "filial", "lider_imediato",
+    "gerente_regional", "regional", "motivo", "competencia", "sem_periodo", "valor",
+    "estado_sigla"
+  ],
+  treinamentos: [
+    "id", "nome_colaborador", "cargo", "filial", "tema", "modalidade",
+    "competencia", "horas", "estado_sigla"
+  ],
+  custo_folha: ["id", "filial_cnpj", "razao_social", "percent", "competencia", "valor", "estado_sigla"],
+  absenteismo: ["id", "competencia", "valor", "estado_sigla"],
+  // Marcação de "mês incompleto" (ver src/lib/monthStatus.js no frontend).
+  meses_incompletos: ["id", "competencia", "estado_sigla"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];
 
 const targetSheets = [{ title: "usuarios", header: USERS_COLUMNS }];
 for (const entity of Object.keys(ENTITY_COLUMNS)) {
-  for (const estado of ESTADOS) {
-    targetSheets.push({ title: `${entity}_${estado}`, header: ENTITY_COLUMNS[entity] });
-  }
+  targetSheets.push({ title: entity, header: ENTITY_COLUMNS[entity] });
 }
 
 // ---------- cliente do Apps Script ----------
