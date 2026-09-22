@@ -8,8 +8,8 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 - **Vue Router** — SPA com roteamento por hash (funciona em hospedagem estática sem rewrite)
 - **Tailwind CSS v4** — estilização 100% utilitária e responsiva
 - **Vite** — build, code-splitting automático por rota e chunks de bibliotecas
-- **Cloudflare Workers + Hono** — backend/API (pasta `backend/`)
-- **CockroachDB** — banco de dados (PostgreSQL wire), acessado pelo driver `pg`
+- **Cloudflare Workers + Hono** — backend/API (pasta `backend-sheets/`)
+- **Google Sheets** — banco de dados, acessado via um Google Apps Script publicado como Web App
 - **Chart.js** e **SheetJS (xlsx)** — via npm (sem CDN)
 
 ## Funcionalidades
@@ -21,7 +21,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 - **Modal "Lançar dados" dinâmico**: cada indicador manual (Absenteísmo, Tempo médio de contratação, Custo de contratação, Turnover, Turnover (Exp)) altera o formulário e as abas do modal.
 - **Exportação e importação**: botão de menu com **XLSX** (4 planilhas: `Indicadores`, `Lançamentos`, `Equipe` e `Filiais`), **CSV** e **Baixar template**; **Importar planilha** verifica duplicados (dados já existentes são ignorados).
 - **Apresentação**: modo de slides com gráficos por indicador e navegação.
-- **Persistência**: `sessionStorage` como cache offline + **sincronização com o CockroachDB** via API (delta sync).
+- **Persistência**: `sessionStorage` como cache offline + sincronização com a **planilha Google Sheets** via API (download completo, sem sync incremental).
 - **Autenticação** por perfil (admin / analista / visitante) e controle de acesso por rota.
 
 ## Indicadores e origem dos dados
@@ -42,21 +42,25 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 ```
 ├── index.html                    # Ponto de entrada (monta a SPA)
 ├── vite.config.js                # Vite + Tailwind + variáveis de ambiente
-├── backend/                      # API (Cloudflare Worker + Hono)
-│   ├── package.json              # hono, pg, wrangler
-│   ├── wrangler.toml             # Configuração do Worker (nodejs_compat)
-│   ├── .dev.vars.example         # DATABASE_URL / JWT_SECRET (local)
+├── backend-sheets/                # API (Cloudflare Worker + Hono)
+│   ├── package.json              # hono, wrangler
+│   ├── wrangler.jsonc            # Configuração do Worker (nodejs_compat)
+│   ├── .dev.vars.example         # APPS_SCRIPT_URL / APPS_SCRIPT_SECRET / JWT_SECRET (local)
+│   ├── apps-script/
+│   │   └── Code.gs               # Ponte publicada no Google Apps Script (Web App)
 │   └── src/
-│       ├── index.js              # App Hono + CORS + rotas
-│       ├── lib/
-│       │   ├── db.js             # Pool pg (CockroachDB)
-│       │   ├── auth.js           # Senha (PBKDF2) + JWT (HS256) + middleware
-│       │   └── tables.js         # Allowlist de tabelas/colunas
+│       ├── index.ts              # App Hono + CORS + rotas
+│       ├── db/
+│       │   ├── sheets.ts         # Cliente do Apps Script (leitura/escrita na planilha)
+│       │   └── tables.ts         # Metadados das entidades/colunas + aba "usuarios"
+│       ├── services/             # records, users, auth, estados
+│       ├── middleware/           # requireAuth, rate limit de login
+│       ├── utils/                # jwt, password, http, errors, validation, pagination
 │       └── routes/
-│           ├── auth.js           # login, me, change-name, change-password
-│           ├── users.js          # listar/criar/excluir usuários (admin)
-│           ├── data.js           # leitura/escrita em lote + changelog
-│           └── delta.js          # version, sync
+│           ├── auth.ts           # login, me, change-name, change-password
+│           ├── users.ts          # listar/criar/excluir usuários (admin)
+│           ├── records.ts        # CRUD por entidade/estado
+│           └── data.ts           # leitura/escrita em lote (usado pelo front)
 ├── src/
 │   ├── main.js                   # Bootstrap (dados + auth) e montagem do app
 │   ├── App.vue                   # Root: rota + toast + diálogo global
@@ -65,9 +69,9 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 │   ├── lib/                      # Domínio e dados
 │   │   ├── config.js             # Indicadores (manual/computado), estados, perfis
 │   │   ├── utils.js              # Formatação de valores, datas e horas
-│   │   ├── cache.js              # Cache delta por item (sessionStorage)
+│   │   ├── cache.js              # Cache por item (sessionStorage)
 │   │   ├── api.js                # Cliente HTTP da API (Bearer JWT)
-│   │   ├── db.js                 # Delta sync + fila em lote (API)
+│   │   ├── db.js                 # Download completo + fila de escrita em lote (API)
 │   │   ├── store.js              # Estado reativo (Vue) + write-through remoto
 │   │   ├── employees.js          # Domínio da equipe e indicadores calculados
 │   │   ├── filiais.js            # Domínio de filiais
@@ -88,44 +92,29 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 │   └── views/                    # Login, Dashboard, Equipe, Filiais,
 │                                 # Departamentos, Usuários
 ├── public/logo.png               # Logo (servido na raiz)
-└── sql/schema.sql                # Tabelas do CockroachDB (sem RLS/policies)
+└── backend-sheets/apps-script/Code.gs   # Ponte da planilha (fora do deploy do Worker)
 ```
 
-## Backend: Cloudflare Worker (Hono) + CockroachDB
+## Backend: Cloudflare Worker (Hono) + Google Sheets
 
-O front é 100% offline-first (cache em `sessionStorage`), mas sincroniza com um
-banco **CockroachDB** através de uma API em **Cloudflare Worker** (framework
-**Hono**), na pasta `backend/`. As credenciais do banco nunca vão para o browser:
-só o Worker as acessa.
+O front é 100% offline-first (cache em `sessionStorage`), mas sincroniza com uma
+**planilha do Google Sheets** através de uma API em **Cloudflare Worker** (framework
+**Hono**), na pasta `backend-sheets/`. A planilha nunca é acessada direto pelo
+browser: só o Worker fala com ela, por meio de um Google Apps Script publicado
+como Web App (ver `backend-sheets/apps-script/Code.gs`).
 
-### 1. Criar o banco
+Passo a passo completo de configuração (criar a planilha, publicar o Apps
+Script, variáveis, seed): **[`backend-sheets/README.md`](backend-sheets/README.md)**.
 
-1. Crie um cluster no [CockroachDB Cloud](https://cockroachlabs.cloud/) (ou rode local com `cockroach start-single-node`).
-2. Em **SQL Shell / SQL Editor**, execute [`sql/schema.sql`](sql/schema.sql). Ele cria as tabelas (`lancamentos_*`, `colaboradores_*`, `vagas_*`, `filiais_*`, `departamentos_*`, `usuarios`, `registro_alteracoes`) **sem RLS/policies** e o usuário inicial `admin` (senha `Admin@123`).
-3. Copie a **connection string** (botão *Connect*), no formato:
-   `postgresql://usuario:senha@host:26257/defaultdb?sslmode=require`.
-
-### 2. Configurar as variáveis do Worker
-
-Estas variáveis **não** entram no bundle do front:
-
-| Variável | Descrição |
-| --- | --- |
-| `DATABASE_URL` | Connection string do CockroachDB |
-| `JWT_SECRET` | String aleatória longa para assinar os JWT |
-
-- **Local**: copie `backend/.dev.vars.example` para `backend/.dev.vars` e preencha. O arquivo está no `.gitignore`.
-- **Produção (Cloudflare)**: **Workers & Pages → seu Worker → Settings → Variables and Secrets**.
-
-### 3. Rodar localmente
+### Rodar localmente
 
 O front (Vite) e o Worker (wrangler) rodam em processos separados:
 
 ```bash
-npm install                    # front
-npm --prefix backend install   # API
-npm run dev:api                # Worker em http://127.0.0.1:8787
-npm run dev                    # front em http://localhost:5173
+npm install                          # front
+npm --prefix backend-sheets install  # API
+npm run dev:api                      # Worker em http://127.0.0.1:8787
+npm run dev                          # front em http://localhost:5173
 ```
 
 Aponte o front para o Worker no `.env` (padrão do `wrangler dev`):
@@ -139,11 +128,11 @@ VITE_API_URL=http://127.0.0.1:8787
 A autenticação é **própria** (não há Supabase Auth):
 
 - Login em `POST /api/auth/login` (`usuario`/`senha`) → devolve um **JWT (HS256)** com validade de 6h.
-- A senha é guardada como **PBKDF2-SHA256** (100.000 iterações) na coluna `usuarios.senha_hash`.
+- A senha é guardada como **PBKDF2-SHA256** (100.000 iterações) na coluna `senha_hash` da aba `usuarios`.
 - O JWT fica apenas no `sessionStorage` (chave `gg-auth`); nada de tokens em disco.
 - Perfis: `admin` (tudo), `analista` (edita dados) e `visitante` (somente leitura).
 
-> O usuário inicial é `admin` / `Admin@123`. **Troque a senha** no primeiro acesso (menu do avatar).
+> O usuário inicial é criado pelo script de seed (`npm run seed` em `backend-sheets/`). Veja `backend-sheets/README.md`.
 
 ## Deploy
 
@@ -152,14 +141,15 @@ O front (estático) e o Worker (API) são publicados separadamente.
 ### 1. Worker (API)
 
 ```bash
-cd backend
+cd backend-sheets
 npx wrangler login          # uma vez
-npx wrangler secret put DATABASE_URL
+npx wrangler secret put APPS_SCRIPT_URL
+npx wrangler secret put APPS_SCRIPT_SECRET
 npx wrangler secret put JWT_SECRET
 npm run deploy              # publica o Worker e mostra a URL pública
 ```
 
-Anote a URL (ex.: `https://gente-gestao-api.SEU-SUBDOMINIO.workers.dev`).
+Anote a URL (ex.: `https://gente-gestao-api-sheets.SEU-SUBDOMINIO.workers.dev`).
 
 ### 2. Front
 
@@ -197,5 +187,5 @@ Tudo é centralizado em `src/lib/config.js`. Adicione um novo objeto ao array `I
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Chart.js](https://www.chartjs.org/)
 - [SheetJS](https://sheetjs.com/)
-- [node-postgres (pg)](https://node-postgres.com/)
-- [CockroachDB](https://www.cockroachlabs.com/)
+- [Hono](https://hono.dev/)
+- [Google Apps Script](https://developers.google.com/apps-script)

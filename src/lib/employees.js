@@ -422,9 +422,8 @@ function syncVacancyCost(vacancy, costByVacancy) {
   if (vacancy.estado) meta.estado = vacancy.estado;
   if (existing) {
     /* Sem mudança, não toca no lançamento: cada updateEntry enfileira uma
-       gravação no servidor (e uma linha no changelog que todos os clientes
-       precisam baixar no próximo delta). O syncAll roda a cada troca de estado
-       e a cada boot — antes regravava o custo de TODAS as vagas toda vez. */
+       gravação no servidor. O syncAll roda a cada troca de estado e a cada
+       boot — antes regravava o custo de TODAS as vagas toda vez. */
     if (
       Number(existing.value) === salario &&
       existing.date === date &&

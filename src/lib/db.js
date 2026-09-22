@@ -1,25 +1,19 @@
-/* Camada de dados: cache por item (sessionStorage) + delta sync via API
-   (Cloudflare Worker → CockroachDB), escritas em fila com debounce, sessão/
-   purga via resetLocalState. */
+/* Camada de dados: cache por item (sessionStorage) + download completo via API
+   (Cloudflare Worker → Google Sheets), escritas em fila com debounce, sessão/
+   purga via resetLocalState. Sem sincronização incremental: o cache local
+   vale até um logout/login novo ou até "Recarregar Dados" ser acionado. */
 import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
-import {
-  bindRemote,
-  mergeFromRemote,
-  replaceFromCache,
-  resetData,
-  upsertManyInList,
-  useData
-} from "./store";
-import { compareDateAsc, sameState } from "./utils";
+import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./store";
+import { compareDateAsc } from "./utils";
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
 const MAX_FLUSH_RETRIES = 3; // tentativas extras após falha de rede/servidor
 
-/* Corrige timestamps "hora local" para o Postgres sem duplicar fuso.
+/* Corrige timestamps "hora local" para a planilha sem duplicar fuso.
    Valores que já vêm do banco com fuso (Z ou ±HH:MM) são preservados. */
 function envTimestamp(localIso) {
   if (!localIso) return null;
@@ -770,10 +764,6 @@ async function _hydrateStates(states) {
   const pending = states.filter((s) => !_loadedStates[s]);
   if (!pending.length) return true;
 
-  /* A versão do delta é lida ANTES do download: o que mudar durante o
-     download volta no próximo delta (reaplicar é idempotente). Lida depois,
-     uma alteração feita nesse intervalo ficava para sempre fora do cache. */
-  const versionBefore = await deltaVersao();
   const results = await Promise.all(pending.map((s) => hydrateOneState(s)));
   const loaded = pending.filter((_, i) => results[i]);
 
@@ -782,12 +772,6 @@ async function _hydrateStates(states) {
       // Cache incompleto (cota cheia): descarta tudo — o próximo boot baixa de novo.
       DataCache.resetAll();
       _cacheDirty = false;
-    } else if (versionBefore) {
-      /* Se outros estados já estavam em memória, a versão gravada por eles
-         (mais antiga) é mantida: avançá-la esconderia deles as alterações
-         intermediárias. */
-      const othersLoaded = STATES.some((s) => _loadedStates[s] && !pending.includes(s));
-      if (!othersLoaded || !DataCache.getVersion()) DataCache.setVersion(versionBefore);
     }
     console.info(`[API] Dados carregados: ${loaded.join(", ")}.`);
   }
@@ -803,29 +787,6 @@ function stateCachedKeys(suffix) {
   return DataCache.keys().filter((key) => {
     const { base, estado } = splitTable(keyTable(key));
     return estado.toLowerCase() === suffix && (base === "lancamentos" || base in TABLE_KINDS);
-  });
-}
-
-/* Remove do cache local tudo de um estado, para que ele seja baixado por
-   inteiro na próxima vez (nunca fica um cache "meio atualizado"). */
-function dropStateCache(estado) {
-  stateCachedKeys(estado.toLowerCase()).forEach((key) => DataCache.removeKey(key));
-}
-
-/* Tira da memória os dados de um estado — usado antes de rebaixá-lo por
-   inteiro, já que o merge por id manteria as linhas velhas/excluídas. */
-function dropStateFromMemory(estado) {
-  const data = useData();
-  KIND_KEYS.forEach((key) => {
-    data[key] = data[key].filter((item) => !sameState(item.estado, estado));
-  });
-  /* Lançamento sem estado no meta é gravado na tabela padrão (RO) — ver
-     stateTable/entryAdded. */
-  Object.keys(data.entries).forEach((indicator) => {
-    data.entries[indicator] = data.entries[indicator].filter((e) => {
-      const st = e.meta && e.meta.estado;
-      return !(st ? sameState(st, estado) : estado === DEFAULT_STATE);
-    });
   });
 }
 
@@ -875,149 +836,24 @@ export function hydrateState(next) {
   return promise;
 }
 
+// Sem sincronização incremental: se os estados pedidos já têm itens no cache
+// local, reconstrói a memória a partir dele (sem ida à API); senão, baixa
+// tudo. O cache só é invalidado por um logout/login novo ou por "Recarregar
+// Dados" (ver resetLocalState/reloadData) — nunca por uma simples atualização
+// de página (F5).
 async function _hydrateState(pending) {
-  // Limpa (uma vez) resíduos de PII de versões antigas gravados em localStorage.
   DataCache.removeLegacy();
 
-  const versao = DataCache.getVersion();
-  if (versao > 0 && pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0)) {
+  if (pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0)) {
     pending.forEach((s) => {
       mergeStateFromCache(s);
       _loadedStates[s] = true;
     });
-
-    const delta = await fetchDelta(versao);
-    if (delta) {
-      if (delta.changes.length && applyDelta(delta.changes)) DataCache.setVersion(delta.versaoAtual);
-      console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);
-      return true;
-    }
-
-    // Delta indisponível: recarrega por completo para não exibir dados velhos
-    // (e tira da memória o que veio do cache, senão o merge por id o preservaria).
-    pending.forEach((s) => {
-      delete _loadedStates[s];
-      delete _coveredSince[s];
-      dropStateFromMemory(s);
-      dropStateCache(s);
-    });
+    console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);
+    return true;
   }
 
   return _hydrateStates(pending);
-}
-
-async function deltaVersao() {
-  try {
-    const data = await apiFetch("/api/delta/version");
-    return Number(data && data.data && data.data.versao) || 0;
-  } catch (err) {
-    console.warn("[API] Versão do delta indisponível:", err.message);
-    return 0;
-  }
-}
-
-async function fetchDelta(versao) {
-  try {
-    const data = await apiFetch(`/api/delta/sync?versao=${Number(versao) || 0}`);
-    const payload = data && data.data ? data.data : {};
-    return {
-      versaoAtual: Number(payload.versaoAtual) || Number(versao) || 0,
-      changes: Array.isArray(payload.changes) ? payload.changes : []
-    };
-  } catch (err) {
-    console.warn("[API] Falha no delta sync:", err);
-    return null;
-  }
-}
-
-/* Aplica um delta de uma vez. Só o resultado líquido de cada registro conta
-   (o último vence), remoções e inserções são feitas em lote (uma passada por
-   lista) e cada indicador é reordenado uma única vez — a versão anterior
-   varria e reordenava as listas inteiras a cada alteração.
-   Alterações de estados que NÃO estão em memória são ignoradas e o cache
-   local desses estados é descartado: eles serão baixados por inteiro quando
-   forem pedidos. (Antes o delta marcava o estado como "carregado" só por
-   citá-lo, e ele ficava com apenas os poucos registros alterados.)
-   Devolve false se o cache local recusou alguma gravação — nesse caso o cache
-   já foi descartado e a versão NÃO deve ser gravada. */
-function applyDelta(changes) {
-  const net = new Map();
-  (changes || []).forEach((c) => {
-    if (c && c.tabela) net.set(`${c.tabela}:${c.registro_id}`, c);
-  });
-
-  const removals = new Map(); // tabela → Set(ids)
-  const upserts = new Map(); // tabela → [linhas]
-  const skippedStates = new Set();
-  let cacheOk = true;
-
-  net.forEach((c) => {
-    const { estado } = splitTable(c.tabela);
-    if (!_loadedStates[estado]) {
-      skippedStates.add(estado);
-      return;
-    }
-    if (c.operacao === "delete") {
-      DataCache.removeItem(c.tabela, c.registro_id);
-      if (!removals.has(c.tabela)) removals.set(c.tabela, new Set());
-      removals.get(c.tabela).add(c.registro_id);
-    } else if (c.operacao === "upsert" && c.dados) {
-      if (cacheOk && !DataCache.setItem(c.tabela, c.registro_id, c.dados)) cacheOk = false;
-      if (!upserts.has(c.tabela)) upserts.set(c.tabela, []);
-      upserts.get(c.tabela).push(c.dados);
-    }
-  });
-
-  skippedStates.forEach((estado) => {
-    if (estado) dropStateCache(estado);
-  });
-
-  const data = useData();
-
-  removals.forEach((ids, tabela) => {
-    const { base } = splitTable(tabela);
-    if (base === "lancamentos") {
-      Object.keys(data.entries).forEach((indicator) => {
-        const list = data.entries[indicator];
-        if (list.some((e) => ids.has(e.id))) {
-          data.entries[indicator] = list.filter((e) => !ids.has(e.id));
-        }
-      });
-    } else if (TABLE_KINDS[base]) {
-      const key = TABLE_KINDS[base].key;
-      data[key] = data[key].filter((item) => !ids.has(item.id));
-    }
-  });
-
-  const touchedIndicators = new Set();
-  upserts.forEach((rows, tabela) => {
-    const { base, estado } = splitTable(tabela);
-    if (base === "lancamentos") {
-      const byIndicator = new Map();
-      rows.forEach((row) => {
-        const indicator = row.indicador_id || "headcount";
-        if (!byIndicator.has(indicator)) byIndicator.set(indicator, []);
-        byIndicator.get(indicator).push(entryFromRow(row));
-      });
-      byIndicator.forEach((items, indicator) => {
-        if (!data.entries[indicator]) data.entries[indicator] = [];
-        upsertManyInList(data.entries[indicator], items);
-        touchedIndicators.add(indicator);
-      });
-    } else if (TABLE_KINDS[base]) {
-      const { key, map } = TABLE_KINDS[base];
-      upsertManyInList(
-        data[key],
-        rows.map((row) => map(row, estado))
-      );
-    }
-  });
-  touchedIndicators.forEach((indicator) => {
-    data.entries[indicator].sort((a, b) => compareDateAsc(a.date, b.date));
-  });
-
-  if (!cacheOk) DataCache.resetAll();
-  return cacheOk;
 }
 
 function loadLocalIntoMemory() {
@@ -1064,48 +900,22 @@ function clearLoadedTracking() {
   Object.keys(_coveredSince).forEach((k) => delete _coveredSince[k]);
 }
 
-/* Boot com Delta Sync:
-   1) reconstrói a memória a partir do sessionStorage (renderização rápida);
-   2) se não houver cache utilizável -> download completo + semeadura item a item;
-   3) se houver cache -> pede apenas os itens alterados/deletados desde a
-      última versão e aplica via setItem/removeItem. */
-export async function hydrateWithDelta(state) {
+/* Boot:
+   1) reconstrói a memória a partir do sessionStorage (renderização rápida,
+      sem ida à API) — vale até um logout/login novo ou "Recarregar Dados";
+   2) se não houver cache utilizável, baixa tudo da planilha. */
+async function hydrateOnBoot(state) {
   DataCache.removeLegacy();
 
   const hasLocal = loadLocalIntoMemory();
-  const versao = DataCache.getVersion();
-
-  /* Sem cache — ou com itens mas sem versão (a versão não chegou a ser
-     gravada): não há ponto de partida confiável para o delta (pedir a partir
-     da versão 0 traria o changelog inteiro). Baixa tudo. */
-  if (!hasLocal || versao <= 0) {
-    console.info("[API] Sem cache utilizável — baixando dados completos.");
-    if (hasLocal) {
-      DataCache.resetAll();
-      resetData();
-    }
-    clearLoadedTracking();
-    return await hydrate(state);
-  }
-  console.info("[API] Cache local restaurado do sessionStorage.");
-
-  const delta = await fetchDelta(versao);
-  if (!delta) {
-    console.info("[API] Delta indisponível — baixando dados completos (fallback).");
-    DataCache.resetAll();
-    clearLoadedTracking();
-    resetData();
-    return await hydrate(state);
-  }
-
-  if (delta.versaoAtual <= versao || !delta.changes.length) {
-    console.info(`[API] Sem alterações (versão ${versao}) — usando cache local.`);
+  if (hasLocal) {
+    console.info("[API] Cache local restaurado do sessionStorage.");
     return true;
   }
 
-  console.info(`[API] Delta sync: ${delta.changes.length} alteração(ões) desde a versão ${versao}.`);
-  if (applyDelta(delta.changes)) DataCache.setVersion(delta.versaoAtual);
-  return true;
+  console.info("[API] Sem cache utilizável — baixando dados completos.");
+  clearLoadedTracking();
+  return await hydrate(state);
 }
 
 /* Boot: chamado pelo main.js antes da montagem do app. Só hidrata quando já
@@ -1121,7 +931,7 @@ export async function bootstrapData(authed) {
     console.info("[API] Sem sessão ativa — dados serão carregados após o login.");
     return;
   }
-  await hydrateWithDelta(DEFAULT_FILTER_STATE);
+  await hydrateOnBoot(DEFAULT_FILTER_STATE);
 }
 
 /* Descarta escritas locais ainda pendentes (fila com debounce). Usado no

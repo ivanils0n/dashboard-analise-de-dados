@@ -1,7 +1,10 @@
 export type Perfil = "admin" | "analista" | "visitante";
 
 export type Bindings = {
-  HYPERDRIVE: Hyperdrive;
+  // URL do Google Apps Script publicado como Web App (ver apps-script/Code.gs).
+  APPS_SCRIPT_URL: string;
+  // Segredo combinado enviado em toda chamada ao Apps Script (Propriedades do script lá).
+  APPS_SCRIPT_SECRET: string;
   JWT_SECRET: string;
   CORS_ORIGIN?: string;
   LOGIN_LIMITER?: RateLimit;
@@ -9,7 +12,6 @@ export type Bindings = {
 
 export type TokenPayload = {
   sub: string;
-  email: string;
   usuario: string;
   nome: string;
   perfil: Perfil;

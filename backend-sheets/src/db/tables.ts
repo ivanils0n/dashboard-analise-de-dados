@@ -244,3 +244,15 @@ export function parseStateTable(table: string): { entityKey: string; estado: Est
   if (!(entityKey in ENTITIES)) return null;
   return { entityKey, estado: normalizeEstado(match[2]) as Estado };
 }
+
+// Aba "usuarios" — não é um recurso por estado, então fica fora de ENTITIES.
+export const USERS_SHEET = "usuarios";
+export const USERS_COLUMNS: ColumnDef[] = [
+  { name: "id", type: "text" },
+  { name: "usuario", type: "text", required: true },
+  { name: "nome", type: "text", required: true },
+  { name: "perfil", type: "text", required: true, values: ["admin", "analista", "visitante"] },
+  { name: "ativo", type: "boolean", notNull: true },
+  { name: "senha_hash", type: "text", required: true },
+  { name: "criado_em", type: "timestamptz", readOnly: true }
+];

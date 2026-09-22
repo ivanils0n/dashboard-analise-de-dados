@@ -8,8 +8,6 @@ import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
 import estadosRoutes from "./routes/estados";
 import { recordsRoutes } from "./routes/records";
-import auditRoutes from "./routes/audit";
-import deltaRoutes from "./routes/delta";
 import dataRoutes from "./routes/data";
 
 const app = new Hono<AppEnv>();
@@ -36,11 +34,11 @@ app.use(
 );
 
 app.get("/", (c) =>
-  c.json({ success: true, data: { service: "gente-gestao-api", status: "ok" } })
+  c.json({ success: true, data: { service: "gente-gestao-api-sheets", status: "ok" } })
 );
 
 app.get("/api/test", (c) =>
-  c.json({ success: true, data: { message: "Backend funcionando" } })
+  c.json({ success: true, data: { message: "Backend (Google Sheets) funcionando" } })
 );
 
 app.route("/api/auth", authRoutes);
@@ -52,15 +50,13 @@ for (const entityKey of ENTITY_KEYS) {
   app.route(`/api/${entityKey}`, recordsRoutes(entityKey));
 }
 
-app.route("/api/registro-alteracoes", auditRoutes);
-app.route("/api/delta", deltaRoutes);
 app.route("/api/data", dataRoutes);
 
 app.notFound((c) => c.json({ success: false, error: { message: "Rota não encontrada." } }, 404));
 
 app.onError((err, c) => {
   // Erros controlados devolvem a mensagem; o resto vira 500 genérico
-  // (evita vazar detalhes internos do banco).
+  // (evita vazar detalhes internos da planilha).
   if (err instanceof ApiError) {
     return c.json(
       { success: false, error: { message: err.message, code: err.code } },

@@ -1,4 +1,4 @@
-/* Autenticação própria (API → CockroachDB): sessão e perfil em sessionStorage
+/* Autenticação própria (API → Google Sheets): sessão e perfil em sessionStorage
    (sem tokens em disco); logout/expiração purgam memória+cache+fila; RBAC por
    perfil admin/analista/visitante; perfil validado via /api/auth/me. */
 import { reactive } from "vue";

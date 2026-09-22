@@ -1,5 +1,5 @@
 /* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada na API
-   (CockroachDB) via adaptador "remote" (write-through em lote com debounce). */
+   (Google Sheets) via adaptador "remote" (write-through em lote com debounce). */
 import { reactive } from "vue";
 import { createId, compareDateAsc } from "./utils";
 

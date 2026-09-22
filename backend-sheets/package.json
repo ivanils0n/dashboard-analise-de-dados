@@ -1,22 +1,20 @@
 {
-  "name": "gente-gestao-api",
+  "name": "gente-gestao-api-sheets",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Backend do Dashboard People Analytics (Cloudflare Workers + Hono + TypeScript)",
+  "description": "Backend do Dashboard People Analytics usando Google Sheets como banco (Cloudflare Workers + Hono + TypeScript)",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed": "node scripts/seed-sheet.mjs"
   },
   "dependencies": {
-    "hono": "^4.13.7",
-    "pg": "^8.13.1",
-    "pg-cloudflare": "^1.4.0"
+    "hono": "^4.13.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260911.1",
-    "@types/pg": "^8.11.10",
     "typescript": "^5.7.2",
     "wrangler": "^4.0.0"
   }

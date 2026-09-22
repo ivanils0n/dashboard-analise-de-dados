@@ -1,30 +1,13 @@
-/* Cache local (sessionStorage) para delta sync por item:
-   ggd:<tabela>:<id> = JSON do registro, ggd:meta = versão/savedAt.
-   sessionStorage evita persistir PII em disco. */
+/* Cache local (sessionStorage) por item: ggd:<tabela>:<id> = JSON do registro.
+   sessionStorage evita persistir PII em disco; vale até um logout/login novo
+   ou "Recarregar Dados" (ver resetLocalState/reloadData em lib/db.js). */
 
 import { safeSetItem, sessionStore, localStore } from "./utils";
 
 const PREFIX = "ggd:";
-const META_KEY = "ggd:meta";
 const LEGACY_KEY = "gg-data-cache";
 
 export const DataCache = {
-  /* ---- Meta ---- */
-  getVersion() {
-    try {
-      const raw = sessionStore.getItem(META_KEY);
-      if (!raw) return 0;
-      const meta = JSON.parse(raw);
-      return typeof meta.versao === "number" && meta.versao > 0 ? meta.versao : 0;
-    } catch (e) {
-      return 0;
-    }
-  },
-
-  setVersion(versao) {
-    safeSetItem(sessionStore, META_KEY, JSON.stringify({ versao: Number(versao) || 0, savedAt: Date.now() }));
-  },
-
   /* ---- Itens ---- */
   keyFor(tabela, id) {
     return PREFIX + tabela + ":" + id;

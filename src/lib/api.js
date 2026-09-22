@@ -1,4 +1,4 @@
-/* Cliente HTTP da API (Cloudflare Worker → CockroachDB).
+/* Cliente HTTP da API (Cloudflare Worker → Google Sheets).
    A URL base vem de VITE_API_URL (ou VITE_API_BASE, por compatibilidade).
    Lê o JWT direto do sessionStorage (chave gg-auth) para evitar dependência
    circular com auth.js. */

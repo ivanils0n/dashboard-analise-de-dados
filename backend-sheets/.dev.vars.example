@@ -1,0 +1,16 @@
+# Copie para .dev.vars (NÃO vai para o git) — usado pelo `wrangler dev` e pelo script de seed.
+
+# URL do Google Apps Script publicado como Web App (termina em /exec).
+# Ver apps-script/Code.gs e README.md para o passo a passo de publicação.
+APPS_SCRIPT_URL=https://script.google.com/macros/s/SEU_ID_DE_IMPLANTACAO/exec
+
+# Mesmo valor colocado em Propriedades do script > SHARED_SECRET no Apps Script.
+# Gere uma string aleatória longa.
+APPS_SCRIPT_SECRET=troque-por-uma-string-aleatoria-bem-longa
+
+# Segredo para assinar os JWT (HS256). Gere uma string aleatória longa (diferente da acima).
+JWT_SECRET=troque-por-uma-string-aleatoria-bem-longa
+
+# Origens permitidas no CORS, separadas por vírgula (opcional).
+# Em produção já vem do wrangler.jsonc; use aqui para sobrescrever no dev.
+# CORS_ORIGIN=http://localhost:5173

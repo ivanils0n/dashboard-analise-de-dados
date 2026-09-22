@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:api": "npm --prefix backend run dev",
+    "dev:api": "npm --prefix backend-sheets run dev",
     "build": "vite build",
     "preview": "vite preview"
   },
