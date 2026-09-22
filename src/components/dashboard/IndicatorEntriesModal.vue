@@ -459,7 +459,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <th v-if="canEdit" class="px-4 py-2.5"></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody class="uppercase">
                 <tr v-for="entry in rows" :key="entry.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
                   <td v-if="canEdit" class="px-4 py-2.5">
                     <input
@@ -473,7 +473,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <td v-for="col in columns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">
                     {{ cellText(entry, col) }}
                   </td>
-                  <td v-if="canEdit" class="px-4 py-2.5 text-right">
+                  <td v-if="canEdit" class="normal-case px-4 py-2.5 text-right">
                     <div class="flex justify-end gap-2">
                       <button type="button" class="btn-ghost-sm" aria-label="Editar registro" @click="editRow(entry)">Editar</button>
                       <button type="button" class="icon-btn-sm" aria-label="Excluir registro" @click="removeRow(entry)">&times;</button>

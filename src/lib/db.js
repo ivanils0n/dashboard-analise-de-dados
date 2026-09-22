@@ -62,6 +62,7 @@ function treinamentoToRow(entry) {
     nome_colaborador: meta.employeeName || "",
     cargo: meta.cargo || null,
     filial: meta.filial || null,
+    gerente_regional: meta.gerenteRegional || null,
     tema: meta.tema || null,
     modalidade: meta.modalidade || null,
     competencia: entry.date,
@@ -121,7 +122,7 @@ function vacancyToRow(vacancy) {
 function turnoverToRow(t) {
   return {
     id: t.id,
-    filial_id: t.filialId || null,
+    filial: t.filial || null,
     mes_referencia: t.mesReferencia ? `${String(t.mesReferencia).slice(0, 7)}-01` : null,
     admitidos: Number(t.admitidos) || 0,
     demitidos: Number(t.demitidos) || 0,
@@ -152,7 +153,7 @@ function headcountToRow(h) {
     mes_referencia: h.mesReferencia ? `${String(h.mesReferencia).slice(0, 7)}-01` : null,
     status: h.status === "demitido" ? "demitido" : "ativo",
     demitido_mes: h.demitidoMes ? `${String(h.demitidoMes).slice(0, 7)}-01` : null,
-    filial_id: h.filialId || null,
+    filial: h.filial || null,
     estado_sigla: h.estado || null
   };
 }
@@ -160,14 +161,11 @@ function headcountToRow(h) {
 function branchToRow(branch) {
   return {
     id: branch.id,
-    id_filial: branch.branchId ?? "",
     cnpj: branch.cnpj ?? "",
     nome: branch.name ?? "",
     abreviado: branch.shortName ?? "",
     gerente: branch.manager || null,
-    estado_sigla: branch.estado ?? null,
-    criado_em: envTimestamp(branch.createdAt) || new Date().toISOString(),
-    atualizado_em: envTimestamp(branch.updatedAt)
+    estado_sigla: branch.estado ?? null
   };
 }
 
@@ -382,6 +380,7 @@ function mapRemoteTreinamento(row, impliedState) {
       employeeName: row.nome_colaborador || "",
       cargo: row.cargo || null,
       filial: row.filial || null,
+      gerenteRegional: row.gerente_regional || null,
       tema: row.tema || null,
       modalidade: row.modalidade || null,
       estado: row.estado_sigla || impliedState || null
@@ -440,7 +439,7 @@ function mapRemoteVacancy(row, impliedState) {
 function mapRemoteTurnover(row, impliedState) {
   return {
     id: row.id,
-    filialId: row.filial_id || null,
+    filial: row.filial || null,
     mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
     admitidos: row.admitidos != null ? Number(row.admitidos) : 0,
     demitidos: row.demitidos != null ? Number(row.demitidos) : 0,
@@ -471,7 +470,7 @@ function mapRemoteHeadcount(row, impliedState) {
     mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
     status: row.status === "demitido" ? "demitido" : "ativo",
     demitidoMes: row.demitido_mes ? String(row.demitido_mes).slice(0, 7) : null,
-    filialId: row.filial_id || null,
+    filial: row.filial || null,
     estado: row.estado_sigla || impliedState || null
   };
 }
@@ -479,14 +478,11 @@ function mapRemoteHeadcount(row, impliedState) {
 function mapRemoteBranch(row, impliedState) {
   return {
     id: row.id,
-    branchId: row.id_filial ?? "",
     cnpj: row.cnpj ?? "",
     name: row.nome ?? "",
     shortName: row.abreviado ?? "",
     manager: row.gerente || null,
-    estado: row.estado_sigla || impliedState || null,
-    createdAt: row.criado_em,
-    updatedAt: row.atualizado_em
+    estado: row.estado_sigla || impliedState || null
   };
 }
 

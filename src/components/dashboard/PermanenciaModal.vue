@@ -11,13 +11,7 @@ import {
   deletePermanenciaRecords
 } from "@/lib/employees";
 import { getBranchById, getPermanenciaById } from "@/lib/store";
-import {
-  readWorkbookFile,
-  parsePermanenciaSheet,
-  downloadPermanenciaTemplate,
-  exportPermanencia
-} from "@/lib/export";
-import { hydrateState } from "@/lib/db";
+import { exportPermanencia } from "@/lib/export";
 import { formatDate, daysBetween, normalizeText, singleMonthOfRange, ymLabel } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
 import { dateFilter } from "@/composables/useDateFilter";
@@ -202,51 +196,6 @@ watch(search, () => {
   selectedIds.value = new Set();
 });
 
-/* ---------- Importação por planilha ---------- */
-const importInput = ref(null);
-
-function sheetToUse(wb) {
-  if (wb.Sheets["Permanência"]) return wb.Sheets["Permanência"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-async function onImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  try {
-    await hydrateState("todos");
-    const wb = await readWorkbookFile(file);
-    const sheet = sheetToUse(wb);
-    const parsed = sheet ? parsePermanenciaSheet(sheet) : [];
-    if (!parsed.length) {
-      toast("Nenhum registro encontrado na planilha. Use o template de permanência.");
-      return;
-    }
-    let ok = 0;
-    let skipped = 0;
-    parsed.forEach((row) => {
-      if (!row.colaboradorText || !row.dataAdmissao || !row.dataDemissao) {
-        skipped++;
-        return;
-      }
-      const est = row.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
-      addPermanenciaRecord({
-        colaborador: row.colaboradorText,
-        dataAdmissao: String(row.dataAdmissao).slice(0, 10),
-        dataDemissao: String(row.dataDemissao).slice(0, 10),
-        estado: est
-      });
-      ok++;
-    });
-    toast(`Importação concluída — ${ok} registro(s) lançado(s)${skipped ? ` · ${skipped} ignorado(s)` : ""}.`);
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de permanência.");
-  }
-}
-
 function handleExport() {
   if (!filteredList.value.length) return toast("Nenhum registro para exportar com os filtros atuais.");
   exportPermanencia(filteredList.value);
@@ -275,22 +224,6 @@ function handleExport() {
           Demissões no mês selecionado no filtro do dashboard{{ selectedMonthLabel ? ":" : "." }}
           <strong v-if="selectedMonthLabel" class="text-zinc-800 dark:text-zinc-100 capitalize">{{ selectedMonthLabel }}</strong>
         </span>
-      </div>
-
-      <div v-if="canEdit" class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex min-w-0 flex-col gap-0.5">
-            <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar por planilha</strong>
-            <p class="text-xs text-zinc-500 dark:text-zinc-400">
-              Colunas: Colaborador · Data de admissão · Data de demissão · Estado.
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-ghost btn-sm" @click="downloadPermanenciaTemplate">Baixar template</button>
-            <button type="button" class="btn-primary btn-sm" @click="importInput?.click()">Importar planilha</button>
-            <input ref="importInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onImportFile" />
-          </div>
-        </div>
       </div>
 
       <div v-if="canEdit && showForm" class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">

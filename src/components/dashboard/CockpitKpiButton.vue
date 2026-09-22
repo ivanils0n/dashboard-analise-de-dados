@@ -12,7 +12,7 @@ const props = defineProps({
   selected: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["select"]);
+const emit = defineEmits(["select", "context"]);
 
 const PERCENT = { type: "percent", decimals: 1 };
 
@@ -43,6 +43,7 @@ const valueText = computed(() => {
     :title="kpi.desc"
     :aria-pressed="selected"
     @click="emit('select', kpi.id)"
+    @contextmenu.prevent="emit('context', kpi.id)"
   >
     <span
       class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition"

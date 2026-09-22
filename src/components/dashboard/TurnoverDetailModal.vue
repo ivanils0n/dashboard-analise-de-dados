@@ -3,8 +3,7 @@ import { computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATE_NAMES } from "@/lib/config";
-import { turnoverEntriesInRange } from "@/lib/employees";
-import { getBranchById } from "@/lib/store";
+import { turnoverEntriesInRange, findBranchByShortName } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, ymLabel } from "@/lib/utils";
@@ -32,16 +31,26 @@ const range = computed(() =>
   dateFilter.start ? { start: dateFilter.start, end: dateFilter.end } : null
 );
 
+/* Cada linha traz Admissões e Demissões lado a lado (mesmo lançamento traz
+   os dois números) — o card de destaque acima segue mostrando o total do
+   kind selecionado (Admissões ou Demissões, conforme o card/gráfico clicado). */
 const rows = computed(() =>
   turnoverEntriesInRange(state.current, range.value).map((t) => {
-    const branch = t.filialId ? getBranchById(t.filialId) : null;
-    const quantidade = Number(isAdmissao.value ? t.admitidos : t.demitidos) || 0;
+    const admissoes = Number(t.admitidos) || 0;
+    const demissoes = Number(t.demitidos) || 0;
     const ativos = Number(t.ativos) || 0;
+    const quantidade = isAdmissao.value ? admissoes : demissoes;
+    /* `t.filial` é lançado como o nome abreviado da filial (ex.: "PVH 5") —
+       busca o cadastro em Filiais para exibir o nome completo; sem
+       correspondência, mostra o texto lançado mesmo. */
+    const branch = t.filial ? findBranchByShortName(t.filial, t.estado) : null;
     return {
       id: t.id,
       mes: t.mesReferencia,
-      empresa: branch ? branch.name : "—",
+      empresa: branch ? branch.name : t.filial || "—",
       estado: t.estado || "",
+      admissoes,
+      demissoes,
       quantidade,
       ativos,
       taxa: ativos ? (quantidade / ativos) * 100 : null
@@ -49,9 +58,15 @@ const rows = computed(() =>
   })
 );
 
-const total = computed(() => rows.value.reduce((sum, r) => sum + r.quantidade, 0));
 const totalAtivos = computed(() => rows.value.reduce((sum, r) => sum + r.ativos, 0));
-const totalTaxa = computed(() => (totalAtivos.value ? (total.value / totalAtivos.value) * 100 : null));
+
+/* Totais dos dois lados sempre visíveis no card de destaque — o do kind
+   selecionado (Admissões ou Demissões, conforme o card/gráfico clicado) em
+   maior destaque, mesmo padrão da tabela. */
+const totalAdmissoes = computed(() => rows.value.reduce((sum, r) => sum + r.admissoes, 0));
+const totalDemissoes = computed(() => rows.value.reduce((sum, r) => sum + r.demissoes, 0));
+const entradaTaxa = computed(() => (totalAtivos.value ? (totalAdmissoes.value / totalAtivos.value) * 100 : null));
+const saidaTaxa = computed(() => (totalAtivos.value ? (totalDemissoes.value / totalAtivos.value) * 100 : null));
 
 const escopo = computed(() => {
   const st = state.current;
@@ -72,15 +87,37 @@ const periodo = computed(() => (dateFilter.start ? ymLabel(String(dateFilter.end
       <div
         class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/25 bg-accent/5 p-4 dark:border-accent/25 dark:bg-accent/10"
       >
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ label }}</p>
-          <p class="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ total }}</p>
+        <div class="flex flex-wrap items-center gap-x-8 gap-y-2">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Admissões</p>
+            <p
+              class="text-3xl font-bold tabular-nums"
+              :class="isAdmissao ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400'"
+            >
+              {{ totalAdmissoes }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Demissões</p>
+            <p
+              class="text-3xl font-bold tabular-nums"
+              :class="!isAdmissao ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400'"
+            >
+              {{ totalDemissoes }}
+            </p>
+          </div>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 text-right">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ rateLabel }}</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Entrada</p>
             <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-              {{ totalTaxa === null ? "—" : formatValue(PERCENT, totalTaxa) }}
+              {{ entradaTaxa === null ? "—" : formatValue(PERCENT, entradaTaxa) }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Saída</p>
+            <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+              {{ saidaTaxa === null ? "—" : formatValue(PERCENT, saidaTaxa) }}
             </p>
           </div>
         </div>
@@ -94,16 +131,18 @@ const periodo = computed(() => (dateFilter.start ? ymLabel(String(dateFilter.end
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Mês</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
-                <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">{{ label }}</th>
+                <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold" :class="{ 'text-accent': isAdmissao }">Admissões</th>
+                <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold" :class="{ 'text-accent': !isAdmissao }">Demissões</th>
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">{{ rateLabel }} (%)</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="uppercase">
               <tr v-for="r in rows" :key="r.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ r.mes ? ymLabel(r.mes) : "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ r.empresa }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ r.estado || "—" }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{{ r.quantidade }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums" :class="isAdmissao ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600 dark:text-zinc-300'">{{ r.admissoes }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums" :class="!isAdmissao ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600 dark:text-zinc-300'">{{ r.demissoes }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
                   {{ r.taxa === null ? "—" : formatValue(PERCENT, r.taxa) }}
                 </td>

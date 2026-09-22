@@ -46,6 +46,10 @@ const form = reactive({
 const periodFrom = computed(() => dateFilter.start);
 const periodTo = computed(() => dateFilter.end);
 
+/* `immediate: true`: sem isso, o estado inicial do formulário nunca disparava
+   o hydrate (só uma troca depois de aberto) — se o filtro do dashboard não
+   tivesse carregado esse(s) estado(s) ainda, a coluna Filial abria em branco
+   até o usuário trocar o filtro de Estado manualmente. */
 watch(
   () => form.estado,
   async (state) => {
@@ -55,7 +59,8 @@ watch(
     } catch (err) {
       console.warn("[VacanciesModal] Falha ao carregar dados do estado:", err);
     }
-  }
+  },
+  { immediate: true }
 );
 
 function clearFilters() {
@@ -387,7 +392,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <th v-if="canEdit" class="px-4 py-2.5"></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody class="uppercase">
                 <tr
                   v-for="v in rows"
                   :key="v.id"
@@ -414,7 +419,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <td class="whitespace-nowrap px-4 py-2.5">
                     <Badge :tone="v.closeAt ? 'dark' : 'accent'">{{ v.closeAt ? "Fechada" : "Aberta" }}</Badge>
                   </td>
-                  <td v-if="canEdit" class="whitespace-nowrap px-4 py-2.5 text-right">
+                  <td v-if="canEdit" class="normal-case whitespace-nowrap px-4 py-2.5 text-right">
                     <button type="button" class="btn-ghost-sm" @click="editRow(v)">Editar</button>
                   </td>
                 </tr>

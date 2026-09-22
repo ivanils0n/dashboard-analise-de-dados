@@ -27,7 +27,6 @@ onActivated(() => {
 
 const form = reactive({
   id: null,
-  branchId: "",
   cnpj: "",
   name: "",
   shortName: "",
@@ -42,10 +41,10 @@ const tableList = computed(() => {
   let list = listBranches(filters.current);
   if (q) {
     list = list.filter((b) =>
-      normalizeText(`${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`).includes(q)
+      normalizeText(`${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`).includes(q)
     );
   }
-  return list.slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  return list.slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 });
 
 const total = computed(() => listBranches(filters.current).length);
@@ -57,7 +56,6 @@ const summaryText = computed(() =>
 
 function resetForm() {
   form.id = null;
-  form.branchId = "";
   form.cnpj = "";
   form.name = "";
   form.shortName = "";
@@ -67,7 +65,6 @@ function resetForm() {
 
 function fillForm(branch) {
   form.id = branch.id;
-  form.branchId = branch.branchId;
   form.cnpj = branch.cnpj;
   form.name = branch.name;
   form.shortName = branch.shortName;
@@ -79,7 +76,6 @@ function handleSubmit() {
   const up = (v) => String(v == null ? "" : v).trim().toUpperCase();
   const data = {
     id: form.id || undefined,
-    branchId: up(form.branchId),
     cnpj: form.cnpj.trim(),
     name: up(form.name),
     shortName: up(form.shortName),
@@ -87,8 +83,8 @@ function handleSubmit() {
     estado: form.estado || null
   };
 
-  if (!data.branchId || !data.cnpj || !data.name || !data.shortName) {
-    return toast("Preencha os campos obrigatórios (Id, CNPJ, Nome e Abreviado).");
+  if (!data.cnpj || !data.name || !data.shortName) {
+    return toast("Preencha os campos obrigatórios (CNPJ, Nome e Abreviado).");
   }
   if (!data.estado) return toast("Selecione o estado da filial.");
 
@@ -177,10 +173,6 @@ function edit(id) {
       </div>
       <form class="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3" novalidate @submit.prevent="handleSubmit">
         <div class="flex flex-col gap-1.5">
-          <label for="branchIdFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Id Filial</label>
-          <input id="branchIdFilial" v-model="form.branchId" v-upper type="text" class="input-field" required placeholder="Ex.: 8" />
-        </div>
-        <div class="flex flex-col gap-1.5">
           <label for="branchCnpj" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">CNPJ Filial</label>
           <input id="branchCnpj" v-model="form.cnpj" v-upper type="text" class="input-field" required placeholder="00.000.000/0000-00" />
         </div>
@@ -247,7 +239,6 @@ function edit(id) {
                   @change="toggleSelectAll"
                 />
               </th>
-              <th class="px-5 py-3 font-semibold">Id</th>
               <th class="px-5 py-3 font-semibold">CNPJ</th>
               <th class="px-5 py-3 font-semibold">Nome</th>
               <th class="px-5 py-3 font-semibold">Abreviado</th>
@@ -272,7 +263,6 @@ function edit(id) {
                   @change="toggleBranch(b.id)"
                 />
               </td>
-              <td class="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{{ b.branchId }}</td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ b.cnpj }}</td>
               <td class="px-5 py-3 text-zinc-600 dark:text-zinc-300">{{ b.name }}</td>
               <td class="px-5 py-3"><Badge tone="muted">{{ b.shortName }}</Badge></td>

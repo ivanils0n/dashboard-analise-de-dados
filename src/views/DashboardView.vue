@@ -26,7 +26,6 @@ import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
-import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
@@ -38,7 +37,7 @@ import { removeEntry, removeEntries } from "@/lib/store";
 import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
-import { toXLSX, toCSV, downloadTemplate, importFile } from "@/lib/export";
+import { toXLSX, toCSV } from "@/lib/export";
 import { hydrateState } from "@/lib/db";
 
 const { dateFilter: df } = useDateFilter();
@@ -270,17 +269,18 @@ const permanenciaBarChartRef = ref(null);
 const editingRow = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
+const editHeadcountTarget = ref(null);
 const viewIndicatorTarget = ref(null);
 
-/* Colunas exibidas no modal de registros (clique direito no KPI). */
+/* Colunas exibidas no modal de registros (clique direito no KPI). Regional
+   passou a vir do próprio estado do lançamento (estado_sigla → meta.estado,
+   ver diariaToRow em lib/db.js) em vez do texto lançado à mão. */
 const diariaColumns = [
   { label: "Mês", monthYear: true },
   { label: "Colaborador", meta: "employeeName" },
-  { label: "Departamento", meta: "departamento" },
   { label: "Filial", meta: "filial" },
-  { label: "Líder imediato", meta: "liderImediato" },
   { label: "Gerente regional", meta: "gerenteRegional" },
-  { label: "Regional", meta: "regional" },
+  { label: "Regional", meta: "estado" },
   { label: "Diária", meta: "motivo" },
   { label: "Valor pago", value: true }
 ];
@@ -290,6 +290,7 @@ const treinamentoColumns = [
   { label: "Colaborador", meta: "employeeName" },
   { label: "Cargo", meta: "cargo" },
   { label: "Loja", meta: "filial" },
+  { label: "Gerente regional", meta: "gerenteRegional" },
   { label: "Estado", meta: "estado" },
   { label: "Tema do treinamento", meta: "tema" },
   /* `value` (não meta.cargaHoraria): é o que o KPI, os gráficos e os modais
@@ -424,6 +425,7 @@ function openLaunch() {
   preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
+  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
@@ -433,6 +435,7 @@ function closeLaunch() {
   preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
+  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = null;
 }
 
@@ -442,6 +445,7 @@ function openLaunchView(indicatorId) {
   preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
   editTarget.value = null;
   editVacancyTarget.value = null;
+  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = indicatorId;
   launchOpen.value = true;
 }
@@ -456,6 +460,23 @@ function onVacancyEdit(vacancyId) {
   vacanciesOpen.value = false;
   editTarget.value = null;
   editVacancyTarget.value = vacancyId;
+  editHeadcountTarget.value = null;
+  launchOpen.value = true;
+}
+
+/* Editar um colaborador a partir do card de informações do Headcount (botão
+   "Editar" na lista — ver HeadcountEstadoModal.vue). */
+function onHeadcountEdit(id) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
+  headcountEstadoOpen.value = false;
+  editTarget.value = null;
+  editVacancyTarget.value = null;
+  editHeadcountTarget.value = id;
+  viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
 
@@ -473,6 +494,7 @@ function onEntriesEdit({ indicatorId, entry }) {
   mensalEntriesOpen.value = false;
   editTarget.value = { indicatorId, entry };
   editVacancyTarget.value = null;
+  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
@@ -493,37 +515,7 @@ function onMenuClick(action) {
   menuOpen.value = false;
   if (action === "xlsx") toXLSX();
   else if (action === "csv") toCSV();
-  else if (action === "template") downloadTemplate();
-  else if (action === "import") fileInput.value?.click();
   else if (action === "incomplete") toggleMonthIncomplete();
-}
-
-const fileInput = ref(null);
-const importing = ref(false);
-
-function onImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  if (file) {
-    importing.value = true;
-    importFile(
-      file,
-      (summary) => {
-        importing.value = false;
-        if (summary.error) {
-          toast("Erro ao importar a planilha.");
-          return;
-        }
-        const parts = [`${summary.imported} lançamento(s) importado(s)`];
-        if (summary.duplicates) parts.push(`${summary.duplicates} duplicado(s) ignorado(s)`);
-        if (summary.invalid) parts.push(`${summary.invalid} inválido(s)`);
-        if (summary.importedBranches) parts.push(`${summary.importedBranches} filial(ais) importada(s)`);
-        if (summary.duplicateBranches) parts.push(`${summary.duplicateBranches} filial(ais) duplicada(s)`);
-        toast("Importação concluída — " + parts.join(" · "));
-      },
-      filters.current
-    );
-  }
-  e.target.value = "";
 }
 
 function openEditEntry(row) {
@@ -558,15 +550,21 @@ function onSelectKpi(id) {
 }
 
 /* Clique direito em um KPI abre o modal correspondente:
-   Headcount/Retenção → colaboradores do mês filtrado (aba Histórico do
-   Lançamento) — Retenção vem do próprio quadro do Headcount, não tem mais
-   lançamento manual próprio; Diárias, Treinamento e Custos Totais →
-   registros; Absenteísmo → histórico do lançamento mensal; Turnover →
-   histórico de lançamentos de quantidade (aba Histórico do Lançamento);
-   Tempo de permanência → modal próprio (importação por planilha de
+   Headcount → card de informações (colaboradores do mês e estado filtrados,
+   mesmo modal do clique numa barra do gráfico de Headcount — ver
+   HeadcountEstadoModal.vue); Retenção → colaboradores do mês filtrado (aba
+   Histórico do Lançamento), pois vem do próprio quadro do Headcount e não
+   tem lançamento manual próprio; Diárias, Treinamento e Custos Totais →
+   registros; Absenteísmo → histórico do lançamento mensal; Turnover → modal
+   de informações (Admissões/Demissões — mesmo destino do clique na pizza do
+   gráfico de Turnover, ver onTurnoverChartInfo em KpiChartCard.vue); Tempo de
+   permanência → modal próprio (importação por planilha de
    colaborador/admissão/demissão). */
 function onKpiContext(id) {
-  if (id === "headcount" || id === "retencao") openLaunchView("headcount");
+  if (id === "headcount") {
+    headcountEstadoSigla.value = filters.current;
+    headcountEstadoOpen.value = true;
+  } else if (id === "retencao") openLaunchView("headcount");
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "treinamento") treinamentoEntriesOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
@@ -574,7 +572,7 @@ function onKpiContext(id) {
     mensalEntriesIndicatorId.value = id;
     mensalEntriesOpen.value = true;
   } else if (id === "turnover") {
-    openLaunchView(id);
+    openTurnoverDetail("admissoes");
   } else if (id === "tempo_permanencia") {
     permanenciaEditId.value = null;
     permanenciaOpen.value = true;
@@ -696,9 +694,6 @@ watch(activeTab, (tab) => {
         >
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('xlsx')">Baixar em XLSX</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('csv')">Baixar em CSV</button>
-          <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('template')">Baixar template</button>
-          <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
-          <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('import')">Importar planilha</button>
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
           <button
             type="button"
@@ -710,7 +705,6 @@ watch(activeTab, (tab) => {
             {{ monthIncomplete ? "Desmarcar mês incompleto" : "Marcar mês como incompleto" }}{{ filteredMonth ? ` (${filteredMonthLabel})` : "" }}
           </button>
         </div>
-        <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden @change="onImportFile" />
         </div>
       </div>
     </div>
@@ -724,7 +718,8 @@ watch(activeTab, (tab) => {
       :show-values="showValues"
       @edit-vacancy="onVacancyEdit"
       @edit-permanencia="onPermanenciaEdit"
-      @open-turnover="openLaunchView('turnover')"
+      @edit-headcount="onHeadcountEdit"
+      @kpi-context="onKpiContext"
     />
 
     <div v-else key="visao-geral">
@@ -1082,7 +1077,7 @@ watch(activeTab, (tab) => {
       <div v-else class="p-6">
         <EmptyState
           title="Sem colaboradores desligados no período"
-          text="Importe uma planilha ou lance um registro (botão direito no KPI de Tempo médio de permanência) ou ajuste o filtro."
+          text="Lance um registro (botão direito no KPI de Tempo médio de permanência) ou ajuste o filtro."
         />
       </div>
     </section>
@@ -1095,6 +1090,7 @@ watch(activeTab, (tab) => {
       :open="launchOpen"
       :edit-entry="editTarget"
       :edit-vacancy-id="editVacancyTarget"
+      :edit-headcount-id="editHeadcountTarget"
       :view-indicator-id="viewIndicatorTarget"
       @close="closeLaunch"
       @saved="onSaved"
@@ -1138,6 +1134,7 @@ watch(activeTab, (tab) => {
       :open="headcountEstadoOpen"
       :estado="headcountEstadoSigla"
       @close="headcountEstadoOpen = false"
+      @edit="onHeadcountEdit"
     />
     <TrainingFilialModal
       v-if="treinamentoFilialOpen"
@@ -1225,7 +1222,6 @@ watch(activeTab, (tab) => {
       </div>
     </Modal>
 
-    <LoadingOverlay :show="importing" :label="'Processando planilha...'" />
   </div>
 </template>
 

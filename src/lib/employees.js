@@ -280,10 +280,10 @@ export function turnoverQuantitiesInRange(state, range) {
   );
 }
 
-export function addTurnoverEntry({ filialId = null, mesReferencia, admitidos = 0, demitidos = 0, ativos = 0, estado }) {
+export function addTurnoverEntry({ filial = null, mesReferencia, admitidos = 0, demitidos = 0, ativos = 0, estado }) {
   const record = {
     id: createId(),
-    filialId: filialId || null,
+    filial: filial || null,
     mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
     admitidos: Number(admitidos) || 0,
     demitidos: Number(demitidos) || 0,
@@ -294,12 +294,12 @@ export function addTurnoverEntry({ filialId = null, mesReferencia, admitidos = 0
   return record;
 }
 
-export function updateTurnoverEntry(id, { filialId, mesReferencia, admitidos, demitidos, ativos, estado }) {
+export function updateTurnoverEntry(id, { filial, mesReferencia, admitidos, demitidos, ativos, estado }) {
   const record = getTurnoverById(id);
   if (!record) return null;
   const updated = {
     ...record,
-    filialId: filialId !== undefined ? filialId || null : record.filialId,
+    filial: filial !== undefined ? filial || null : record.filial,
     mesReferencia:
       mesReferencia !== undefined ? (mesReferencia ? String(mesReferencia).slice(0, 7) : null) : record.mesReferencia,
     admitidos: admitidos !== undefined ? Number(admitidos) || 0 : record.admitidos,
@@ -437,18 +437,18 @@ export function headcountCountInRange(state, range) {
 /* Localiza um colaborador do headcount pelo código (usado pelas importações
    de "novos colaboradores" — evita duplicar quem já existe — e de
    "demitidos" — localiza quem terá o status alterado). Comparação
-   tolerante a espaços/caixa. Quando `filialId` é informado (mesmo `null`),
+   tolerante a espaços/caixa. Quando `filial` é informado (mesmo `null`),
    a busca exige empresa igual — duas filiais podem reaproveitar o mesmo
    código; quando omitido (`undefined`), cai no código isolado (compat.). */
-export function findHeadcountByCodigo(state, codigo, filialId) {
+export function findHeadcountByCodigo(state, codigo, filial) {
   const key = String(codigo || "").trim().toLowerCase();
   if (!key) return null;
   const list = filterByState(getHeadcounts(), state).filter(
     (h) => String(h.codigo || "").trim().toLowerCase() === key
   );
-  if (filialId !== undefined) {
-    const fid = filialId || null;
-    return list.find((h) => (h.filialId || null) === fid) || null;
+  if (filial !== undefined) {
+    const fKey = normalizeBranchKey(filial);
+    return list.find((h) => normalizeBranchKey(h.filial) === fKey) || null;
   }
   return list[0] || null;
 }
@@ -484,7 +484,7 @@ export function addHeadcountRecord({
   remuneracao = null,
   dataAdmissao = null,
   mesReferencia,
-  filialId = null,
+  filial = null,
   estado
 }) {
   const record = {
@@ -497,7 +497,7 @@ export function addHeadcountRecord({
     mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
     status: "ativo",
     demitidoMes: null,
-    filialId: filialId || null,
+    filial: filial || null,
     estado: estado || null
   };
   upsertHeadcount(record);
@@ -506,7 +506,7 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { codigo, colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, status, demitidoMes, filialId, estado }
+  { codigo, colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, status, demitidoMes, filial, estado }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
@@ -522,7 +522,7 @@ export function updateHeadcountRecord(
     status: status !== undefined ? (status === "demitido" ? "demitido" : "ativo") : record.status,
     demitidoMes:
       demitidoMes !== undefined ? (demitidoMes ? String(demitidoMes).slice(0, 7) : null) : record.demitidoMes,
-    filialId: filialId !== undefined ? filialId || null : record.filialId,
+    filial: filial !== undefined ? filial || null : record.filial,
     estado: estado !== undefined ? estado || null : record.estado
   };
   upsertHeadcount(updated);

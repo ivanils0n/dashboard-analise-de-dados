@@ -66,11 +66,11 @@ const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial_id", "estado_sigla"],
   headcount: [
     "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao", "mes_referencia",
-    "status", "demitido_mes", "filial_id", "estado_sigla"
+    "status", "demitido_mes", "filial", "estado_sigla"
   ],
-  turnover: ["id", "filial_id", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
+  turnover: ["id", "filial", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
   permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial_id", "estado_sigla"],
-  filiais: ["id", "id_filial", "cnpj", "nome", "abreviado", "gerente", "estado_sigla", "criado_em", "atualizado_em"],
+  filiais: ["id", "cnpj", "nome", "abreviado", "gerente", "estado_sigla"],
   // Substituem a antiga "lancamentos" genérica (ver migrate-restructure.mjs
   // para migrar dados de uma planilha antiga). Colaboradores/Departamentos
   // saíram do sistema — Headcount passou a ser a fonte de colaborador/mês.
@@ -80,7 +80,7 @@ const ENTITY_COLUMNS = {
     "estado_sigla"
   ],
   treinamentos: [
-    "id", "nome_colaborador", "cargo", "filial", "tema", "modalidade",
+    "id", "nome_colaborador", "cargo", "filial", "gerente_regional", "tema", "modalidade",
     "competencia", "horas", "estado_sigla"
   ],
   custo_folha: ["id", "filial_cnpj", "razao_social", "percent", "competencia", "valor", "estado_sigla"],

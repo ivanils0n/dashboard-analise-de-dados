@@ -23,6 +23,7 @@ import {
   daysBetween,
   todayISO,
   singleMonthOfRange,
+  upperText,
   addMonthsYm,
   firstDayOfYm,
   lastDayOfYm
@@ -314,7 +315,7 @@ export function useDashboardData(filter, options = {}) {
       .filter(({ days }) => days !== null && Number.isFinite(days) && days >= 0)
       .map(({ v, days }) => {
         return {
-          label: v.name || "Vaga",
+          label: upperText(v.name || "Vaga"),
           value: Number(days.toFixed(1)),
           tooltipValue: `${days.toFixed(1)} dias${v.closeAt ? "" : " (em aberto)"}`,
           /* Identifica a vaga por trás da barra (nomes podem se repetir) —
@@ -339,11 +340,16 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Agregação para o gráfico de barras do Treinamento: soma a carga horária
-     por filial (loja) no período filtrado. */
-  function treinamentoBarByFilial() {
+     por filial (loja) no período filtrado. `gerenteRegional`, quando
+     informado (filtro do Painel), restringe aos lançamentos daquele gerente
+     antes de somar — ver treinamentoGerentesRegionais. */
+  function treinamentoBarByFilial(gerenteRegional) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
-    const entries = filteredEntries(ind);
+    let entries = filteredEntries(ind);
+    if (gerenteRegional) {
+      entries = entries.filter((e) => (e.meta && e.meta.gerenteRegional) === gerenteRegional);
+    }
     const byFilial = new Map();
     entries.forEach((e) => {
       const filial = treinamentoFilialLabel(e.meta);
@@ -358,11 +364,30 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Lançamentos de treinamento de uma filial (usados ao clicar na barra). */
-  function treinamentoFilialEntries(label) {
+  /* Gerentes regionais que aparecem nos lançamentos de Treinamento do período
+     filtrado (para o filtro do gráfico no Painel), em ordem alfabética. */
+  function treinamentoGerentesRegionais() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
-    const entries = filteredEntries(ind);
+    const set = new Set();
+    filteredEntries(ind).forEach((e) => {
+      const gr = e.meta && e.meta.gerenteRegional;
+      if (gr) set.add(gr);
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }
+
+  /* Lançamentos de treinamento de uma filial (usados ao clicar na barra).
+     `gerenteRegional`, quando informado, restringe ao mesmo filtro aplicado
+     na barra (ver treinamentoBarByFilial) — sem isso o card abriria com mais
+     lançamentos do que os somados na barra clicada. */
+  function treinamentoFilialEntries(label, gerenteRegional) {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    let entries = filteredEntries(ind);
+    if (gerenteRegional) {
+      entries = entries.filter((e) => (e.meta && e.meta.gerenteRegional) === gerenteRegional);
+    }
     return entries.filter((e) => treinamentoFilialLabel(e.meta) === label);
   }
 
@@ -375,7 +400,7 @@ export function useDashboardData(filter, options = {}) {
     const byFilial = new Map();
     filteredEntries(ind).forEach((e) => {
       const meta = e.meta || {};
-      const filial = meta.razaoSocial || "Sem filial";
+      const filial = upperText(meta.razaoSocial || "Sem filial");
       byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
     });
     return [...byFilial.entries()]
@@ -400,7 +425,7 @@ export function useDashboardData(filter, options = {}) {
         const meta = e.meta || {};
         const value = Number(e.value) || 0;
         return {
-          label: meta.vacancyName || meta.funcao || "Sem função",
+          label: upperText(meta.vacancyName || meta.funcao || "Sem função"),
           value,
           tooltipValue: `${formatCurrency(value)} — ${formatDate(e.date)}`,
           vacancyId: meta.vacancyId || null,
@@ -445,7 +470,7 @@ export function useDashboardData(filter, options = {}) {
   }
 
   function diariaColaboradorName(entry) {
-    return (entry.meta && entry.meta.employeeName) || "Sem colaborador";
+    return upperText((entry.meta && entry.meta.employeeName) || "Sem colaborador");
   }
 
   /* Diárias de um colaborador (a barra clicada), as mesmas que compõem o valor
@@ -781,7 +806,7 @@ export function useDashboardData(filter, options = {}) {
       .filter((p) => p.dataAdmissao && p.dataDemissao)
       .map((p) => ({
         date: String(p.dataDemissao).slice(0, 10),
-        label: p.colaborador || "—",
+        label: upperText(p.colaborador || "—"),
         value: daysBetween(p.dataAdmissao, p.dataDemissao),
         permanenciaId: p.id
       }))
@@ -935,7 +960,7 @@ export function useDashboardData(filter, options = {}) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1026,7 +1051,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Treinamento",
         sub: "Carga horária por filial no período filtrado",
-        data: treinamentoBarByFilial(),
+        data: treinamentoBarByFilial(treinamentoGerente),
         valueFormat: "hours"
       };
     }
@@ -1112,6 +1137,7 @@ export function useDashboardData(filter, options = {}) {
     diariaDailySeries,
     diariaSemPeriodoCount,
     treinamentoBarByFilial,
+    treinamentoGerentesRegionais,
     treinamentoFilialEntries,
     headcountBarByState,
     ticketMedioBarByState,

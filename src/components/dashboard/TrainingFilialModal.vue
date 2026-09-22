@@ -44,21 +44,22 @@ const rows = computed(() => {
     const meta = e.meta || {};
     const name = employeeName(e);
     if (!byEmployee.has(name)) {
-      byEmployee.set(name, { name, cargo: meta.cargo || "", horas: 0, treinamentos: 0 });
+      byEmployee.set(name, { name, cargo: meta.cargo || "", gerenteRegional: meta.gerenteRegional || "", horas: 0, treinamentos: 0 });
     }
     const row = byEmployee.get(name);
     row.horas += Number(e.value) || 0;
     row.treinamentos += 1;
     if (!row.cargo && meta.cargo) row.cargo = meta.cargo;
+    if (!row.gerenteRegional && meta.gerenteRegional) row.gerenteRegional = meta.gerenteRegional;
   });
   return [...byEmployee.values()].sort((a, b) => b.horas - a.horas);
 });
 
-/* Busca por nome/cargo (ignora maiúsculas/minúsculas e acentos). */
+/* Busca por nome/cargo/gerente regional (ignora maiúsculas/minúsculas e acentos). */
 const filteredRows = computed(() => {
   const q = normalizeText(search.value).trim();
   if (!q) return rows.value;
-  return rows.value.filter((r) => normalizeText(`${r.name} ${r.cargo || ""}`).includes(q));
+  return rows.value.filter((r) => normalizeText(`${r.name} ${r.cargo || ""} ${r.gerenteRegional || ""}`).includes(q));
 });
 
 /* ---------- Seleção múltipla / exclusão em lote ----------
@@ -179,10 +180,11 @@ function close() {
                 </th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Cargo</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Gerente regional</th>
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Horas</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="uppercase">
               <tr
                 v-for="r in filteredRows"
                 :key="r.name"
@@ -202,6 +204,9 @@ function close() {
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
                   {{ r.cargo || "—" }}
+                </td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
+                  {{ r.gerenteRegional || "—" }}
                 </td>
                 <td
                   class="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100"

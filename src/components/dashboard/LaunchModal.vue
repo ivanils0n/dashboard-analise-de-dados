@@ -2,7 +2,6 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
-import LoadingOverlay from "@/components/ui/LoadingOverlay.vue";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
 import { employeeNameKey } from "@/lib/metrics";
@@ -33,7 +32,6 @@ import {
   closeVacancies,
   listVacancies,
   formatVacancyTempo,
-  findBranchByShortName,
   listTurnoverEntries,
   addTurnoverEntry,
   updateTurnoverEntry,
@@ -46,26 +44,11 @@ import {
   findHeadcountByCodigo,
   findHeadcountMatches,
   deleteHeadcountRecord,
-  deleteHeadcountRecords
+  deleteHeadcountRecords,
+  findBranchByShortName,
+  normalizeBranchKey
 } from "@/lib/employees";
-import {
-  readWorkbookFile,
-  parseTreinamentoSheet,
-  downloadTreinamentoTemplate,
-  parseVagasSheet,
-  downloadVagasTemplate,
-  exportVagas,
-  parseDiariaSheet,
-  downloadDiariaTemplate,
-  parseTurnoverSheet,
-  downloadTurnoverTemplate,
-  exportTurnover,
-  parseHeadcountSheet,
-  downloadHeadcountTemplate,
-  exportHeadcount,
-  parseHeadcountDemitidosSheet,
-  downloadHeadcountDemitidosTemplate
-} from "@/lib/export";
+import { exportVagas, exportTurnover, exportHeadcount } from "@/lib/export";
 import {
   todayISO,
   formatDate,
@@ -93,6 +76,9 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   editEntry: { type: Object, default: null },
   editVacancyId: { type: String, default: null },
+  /* Abre direto no formulário de edição de um colaborador do Headcount
+     (vindo do "Editar" no card de informações — ver HeadcountEstadoModal.vue). */
+  editHeadcountId: { type: String, default: null },
   /* Abre direto na aba Histórico de um indicador (ex.: Turnover, vindo do
      botão direito no card do KPI), sem pré-selecionar nenhum registro. */
   viewIndicatorId: { type: String, default: null }
@@ -124,7 +110,6 @@ const vaga = reactive({
   filialId: null
 });
 const editingVacancyId = ref(null);
-const vagaImportInput = ref(null);
 
 /* Datas de fechamento escolhidas na aba Histórico (padrão: hoje). */
 const closeDates = reactive({});
@@ -165,6 +150,7 @@ const treinamento = reactive({
   estado: "",
   cargo: "",
   filial: "",
+  gerenteRegional: "",
   month: currentYm(),
   tema: "",
   cargaHoraria: "",
@@ -219,11 +205,9 @@ function initModal() {
   selectedTurnoverIds.value = new Set();
   resetHeadcountForm();
   headcountSearch.value = "";
-  headcountFilterFilialId.value = null;
+  headcountFilterFilial.value = null;
   headcountAdmissaoStart.value = "";
   headcountAdmissaoEnd.value = "";
-  headcountDemitidosResult.value = null;
-  headcountDemitidosPending.value = [];
   selectedHeadcountIds.value = new Set();
   resetMensalForm();
 
@@ -240,6 +224,15 @@ function initModal() {
     indicatorId.value = "tempo_contratacao";
     buildForm();
     editVacancy(props.editVacancyId);
+    return;
+  }
+
+  /* Modo edição de colaborador (aberto pelo card de informações do KPI de
+     Headcount — ver HeadcountEstadoModal.vue). */
+  if (props.editHeadcountId) {
+    indicatorId.value = "headcount";
+    buildForm();
+    editHeadcount(props.editHeadcountId);
     return;
   }
 
@@ -283,6 +276,7 @@ function prefillEdit(indId, entry) {
     treinamento.estado = m.estado || "";
     treinamento.cargo = m.cargo || "";
     treinamento.filial = m.filial || "";
+    treinamento.gerenteRegional = m.gerenteRegional || "";
     treinamento.month = entry.date ? String(entry.date).slice(0, 7) : currentYm();
     treinamento.tema = m.tema || "";
     treinamento.cargaHoraria = entry.value != null ? String(entry.value) : "";
@@ -334,6 +328,7 @@ function resetTreinamento() {
   treinamento.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   treinamento.cargo = "";
   treinamento.filial = "";
+  treinamento.gerenteRegional = "";
   treinamento.month = currentYm();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
@@ -612,59 +607,6 @@ async function editVacancy(id) {
   showTab("nova");
 }
 
-/* ---------- Importação de vagas por planilha ---------- */
-function vagaSheetToUse(wb) {
-  if (wb.Sheets["Vagas"]) return wb.Sheets["Vagas"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-async function onVagaImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  try {
-    const wb = await readWorkbookFile(file);
-    const sheet = vagaSheetToUse(wb);
-    const parsed = sheet ? parseVagasSheet(sheet) : [];
-    if (!parsed.length) {
-      toast("Nenhuma vaga encontrada na planilha. Use o template de vagas.");
-      return;
-    }
-    let ok = 0;
-    let skipped = 0;
-    parsed.forEach((row) => {
-      if (!row.name || !row.openAt) {
-        skipped++;
-        return;
-      }
-      const branch = row.filialText ? findBranchByShortName(row.filialText) : null;
-      const est =
-        row.estado ||
-        (branch && branch.estado) ||
-        (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
-      addVacancy({
-        name: String(row.name).toUpperCase(),
-        openAt: row.openAt,
-        closeAt: row.closeAt,
-        salario: row.salario,
-        tipoContratacao: row.tipo,
-        estado: est,
-        filialId: branch ? branch.id : null
-      });
-      ok++;
-    });
-    emit("saved");
-    toast(
-      `Importação concluída — ${ok} vaga(s) lançada(s)${skipped ? ` · ${skipped} ignorada(s)` : ""}.`
-    );
-    showTab("historico");
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de vagas.");
-  }
-}
-
 /* Exporta as vagas conforme os filtros atuais da aba Histórico (busca e
    "somente dias negativos"). */
 function handleExportVagas() {
@@ -763,14 +705,13 @@ function handleBulkVacancyClose() {
    Turnover, mas usada no cálculo de Turnover (%) e Retenção (ver
    turnoverRateStats/retentionRate em lib/employees.js). */
 const turnover = reactive({
-  filialId: null,
+  filial: null,
   mesReferencia: "",
   admitidos: "",
   demitidos: "",
   ativos: ""
 });
 const editingTurnoverId = ref(null);
-const turnoverImportInput = ref(null);
 const turnoverSearch = ref("");
 /* Filtro pelos cards do Histórico: "admissoes" mostra só as empresas com
    admissões, "demissoes" só as com demissões (clicar de novo remove). */
@@ -778,7 +719,7 @@ const turnoverKindFilter = ref(null);
 const selectedTurnoverIds = ref(new Set());
 
 function resetTurnoverForm() {
-  turnover.filialId = null;
+  turnover.filial = null;
   turnover.mesReferencia = "";
   turnover.admitidos = "";
   turnover.demitidos = "";
@@ -794,7 +735,7 @@ function submitTurnover() {
   if (!turnover.mesReferencia) return toast("Informe o mês de referência.");
   const st = effectiveVagaEstado();
   const payload = {
-    filialId: turnover.filialId,
+    filial: turnover.filial,
     mesReferencia: turnover.mesReferencia,
     admitidos: Number(turnover.admitidos) || 0,
     demitidos: Number(turnover.demitidos) || 0,
@@ -819,7 +760,7 @@ function editTurnover(id) {
   const t = getTurnoverById(id);
   if (!t) return;
   editingTurnoverId.value = id;
-  turnover.filialId = t.filialId || null;
+  turnover.filial = t.filial || null;
   turnover.mesReferencia = t.mesReferencia || "";
   turnover.admitidos = t.admitidos != null ? String(t.admitidos) : "";
   turnover.demitidos = t.demitidos != null ? String(t.demitidos) : "";
@@ -850,8 +791,7 @@ async function removeTurnover(id) {
 const turnoverList = computed(() => listTurnoverEntries(estado.value));
 
 function turnoverFilial(t) {
-  const b = t && t.filialId ? getBranchById(t.filialId) : null;
-  return b ? b.name || b.shortName : "";
+  return (t && t.filial) || "";
 }
 
 const filteredTurnover = computed(() => {
@@ -923,87 +863,6 @@ async function handleBulkTurnoverDelete() {
   toast(`${n} registro(s) excluído(s).`);
 }
 
-/* ---------- Importação de turnover por planilha ---------- */
-function turnoverSheetToUse(wb) {
-  if (wb.Sheets["Turnover"]) return wb.Sheets["Turnover"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-async function onTurnoverImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  try {
-    await hydrateState("todos");
-    const wb = await readWorkbookFile(file);
-    const sheet = turnoverSheetToUse(wb);
-    const parsed = sheet ? parseTurnoverSheet(sheet) : [];
-    if (!parsed.length) {
-      toast("Nenhum registro encontrado na planilha. Use o template de turnover.");
-      return;
-    }
-    const toImport = [];
-    const duplicates = [];
-    let skipped = 0;
-    parsed.forEach((row) => {
-      if (!row.mesReferencia) {
-        skipped++;
-        return;
-      }
-      const est = row.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
-      /* Cruza a Filial com o Estado definitivo da linha — evita achar a
-         filial errada quando o nome abreviado se repete em outro estado. */
-      const branch = row.filialText ? findBranchByShortName(row.filialText, est) : null;
-      const filialId = branch ? branch.id : null;
-      const item = {
-        filialId,
-        mesReferencia: row.mesReferencia,
-        admitidos: row.admitidos,
-        demitidos: row.demitidos,
-        ativos: row.ativos,
-        estado: est
-      };
-      /* Duplicado: já existe um lançamento para a mesma filial + mês de
-         referência (mesmo critério usado pela edição manual). */
-      const dup = listTurnoverEntries(est).some(
-        (t) => (t.filialId || null) === filialId && t.mesReferencia === row.mesReferencia
-      );
-      if (dup) duplicates.push(item);
-      else toImport.push(item);
-    });
-
-    if (duplicates.length) {
-      /* "Cancelar importação" e clicar fora do modal levam ao mesmo
-         resultado (ConfirmDialog resolve `false` nos dois casos): aborta a
-         importação inteira, sem lançar nem os registros novos. */
-      const importDuplicates = await confirm({
-        title: "Lançamentos já cadastrados",
-        message: `${duplicates.length} registro(s) já existem no turnover (mesma filial e mês de referência). Deseja importar mesmo assim?`,
-        confirmText: "Importar mesmo assim",
-        cancelText: "Cancelar importação"
-      });
-      if (!importDuplicates) {
-        toast("Importação cancelada.");
-        return;
-      }
-    }
-
-    const finalList = toImport.concat(duplicates);
-    finalList.forEach((item) => addTurnoverEntry(item));
-
-    emit("saved");
-    const parts = [`${finalList.length} registro(s) lançado(s)`];
-    if (duplicates.length) parts.push(`${duplicates.length} duplicado(s) importado(s) mesmo assim`);
-    if (skipped) parts.push(`${skipped} ignorado(s)`);
-    toast("Importação concluída — " + parts.join(" · "));
-    showTab("historico");
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de turnover.");
-  }
-}
-
 function handleExportTurnover() {
   if (!filteredTurnover.value.length) return toast("Nenhum registro para exportar com os filtros atuais.");
   exportTurnover(filteredTurnover.value, "turnover");
@@ -1016,20 +875,11 @@ const headcount = reactive({
   funcao: "",
   remuneracao: "",
   dataAdmissao: "",
-  filialId: null
+  filial: null
 });
 const editingHeadcountId = ref(null);
-const headcountImportInput = ref(null);
-const headcountDemitidosImportInput = ref(null);
-const headcountDemitidosResult = ref(null);
-const headcountDemitidosPending = ref([]);
-/* Linhas ignoradas na importação de novos colaboradores (sem Data de admissão
-   válida): { items, resolve } enquanto o modal pergunta se devem ser importadas. */
-const headcountIgnoredReview = ref(null);
-const headcountDemitidosTotal = ref(0);
-const headcountDemitidosCounts = ref(null);
 const headcountSearch = ref("");
-const headcountFilterFilialId = ref(null);
+const headcountFilterFilial = ref(null);
 /* Filtro por Data de admissão (De/Até) na aba Histórico — independente do
    mês travado pelo filtro do dashboard (headcountViewMonth). */
 const headcountAdmissaoStart = ref("");
@@ -1043,13 +893,17 @@ const headcountBranches = computed(() =>
 
 /* Empresas do filtro do Histórico — só as que realmente têm colaborador na
    tabela (mês/estado do filtro do dashboard), não o cadastro inteiro de
-   filiais. */
+   filiais. Deduplica pela chave normalizada do nome abreviado lançado
+   (h.filial pode variar de grafia entre registros — ver normalizeBranchKey
+   em lib/employees.js) e usa o shortName do cadastro como valor canônico do
+   filtro; filteredHeadcount compara por essa mesma chave normalizada. */
 const headcountFilterBranches = computed(() => {
   const seen = new Map();
   headcountList.value.forEach((h) => {
-    if (!h.filialId || seen.has(h.filialId)) return;
-    const b = getBranchById(h.filialId);
-    if (b) seen.set(h.filialId, b);
+    const key = normalizeBranchKey(h.filial);
+    if (!key || seen.has(key)) return;
+    const b = findBranchByShortName(h.filial, h.estado);
+    if (b) seen.set(key, b);
   });
   return Array.from(seen.values()).sort((a, b) =>
     String(a.shortName || "").localeCompare(String(b.shortName || ""))
@@ -1062,7 +916,7 @@ function resetHeadcountForm() {
   headcount.funcao = "";
   headcount.remuneracao = "";
   headcount.dataAdmissao = "";
-  headcount.filialId = null;
+  headcount.filial = null;
   editingHeadcountId.value = null;
 }
 
@@ -1091,7 +945,7 @@ function submitHeadcount() {
     /* O quadro não tem mais "mês de lançamento" próprio — o filtro por mês
        usa a Data de admissão como base (ver activeInMonth em employees.js). */
     mesReferencia: String(headcount.dataAdmissao).slice(0, 7),
-    filialId: headcount.filialId,
+    filial: headcount.filial,
     estado: st
   };
 
@@ -1117,7 +971,7 @@ function editHeadcount(id) {
   headcount.funcao = h.funcao || "";
   headcount.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
   headcount.dataAdmissao = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "";
-  headcount.filialId = h.filialId || null;
+  headcount.filial = h.filial || null;
   if (h.estado && h.estado !== estado.value) estado.value = h.estado;
   showTab("novo");
 }
@@ -1146,21 +1000,22 @@ const headcountViewMonthLabel = computed(() => ymLabel(headcountViewMonth.value)
 const headcountList = computed(() => listHeadcountRecords(filters.current, headcountViewMonth.value));
 
 function headcountBranchLabel(h) {
-  const b = h && h.filialId ? getBranchById(h.filialId) : null;
+  const b = h && h.filial ? findBranchByShortName(h.filial, h.estado) : null;
   return b ? `${b.shortName} — ${b.name}` : "";
 }
 
 /* Histórico: só o nome completo da empresa (sem a sigla). A busca continua
    usando headcountBranchLabel, então ainda encontra pela sigla. */
 function headcountBranchName(h) {
-  const b = h && h.filialId ? getBranchById(h.filialId) : null;
+  const b = h && h.filial ? findBranchByShortName(h.filial, h.estado) : null;
   return b ? b.name : "";
 }
 
 const filteredHeadcount = computed(() => {
   let list = headcountList.value;
-  if (headcountFilterFilialId.value) {
-    list = list.filter((h) => h.filialId === headcountFilterFilialId.value);
+  if (headcountFilterFilial.value) {
+    const key = normalizeBranchKey(headcountFilterFilial.value);
+    list = list.filter((h) => normalizeBranchKey(h.filial) === key);
   }
   if (headcountAdmissaoStart.value) {
     list = list.filter((h) => h.dataAdmissao && String(h.dataAdmissao).slice(0, 10) >= headcountAdmissaoStart.value);
@@ -1210,275 +1065,6 @@ async function handleBulkHeadcountDelete() {
   selectedHeadcountIds.value = new Set();
   emit("saved");
   toast(`${n} registro(s) excluído(s).`);
-}
-
-/* ---------- Importação de headcount por planilha ---------- */
-function headcountSheetToUse(wb) {
-  if (wb.Sheets["Headcount"]) return wb.Sheets["Headcount"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-/* "Novos colaboradores": só cria registro para quem ainda não existe no
-   headcount (verificado por Empresa + Código) — evita duplicar quem já foi
-   lançado antes, já que o headcount agora é um quadro persistente, não
-   reimportado todo mês. Quando encontra duplicidade, avisa e pergunta se
-   quer importar mesmo assim (em vez de ignorar direto). */
-async function onHeadcountImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  try {
-    const wb = await readWorkbookFile(file);
-    const sheet = headcountSheetToUse(wb);
-    const parsed = sheet ? parseHeadcountSheet(sheet) : [];
-    if (!parsed.length) {
-      toast("Nenhum registro encontrado na planilha. Use o template de headcount.");
-      return;
-    }
-
-    const toImport = [];
-    const duplicates = [];
-    const ignored = [];
-    parsed.forEach((row) => {
-      const est = row.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
-      /* Cruza a Empresa com o Estado definitivo da linha — evita achar a
-         filial errada quando o nome abreviado se repete em outro estado. */
-      const empresa = row.empresaText ? findBranchByShortName(row.empresaText, est) : null;
-      const filialId = empresa ? empresa.id : null;
-      /* Sem Data de admissão válida a linha é separada: o modal abaixo mostra
-         o motivo e pergunta se ela deve ser importada mesmo assim. */
-      if (!row.dataAdmissao) {
-        ignored.push({
-          linha: row.linha,
-          colaborador: row.colaboradorText,
-          codigo: row.codigo,
-          motivo: headcountIgnoreReason(row),
-          item: {
-            codigo: row.codigo,
-            colaborador: row.colaboradorText,
-            funcao: row.funcaoText,
-            remuneracao: row.remuneracao,
-            dataAdmissao: null,
-            filialId,
-            estado: est
-          }
-        });
-        return;
-      }
-      const dup = row.codigo && findHeadcountByCodigo(est, row.codigo, filialId);
-      const item = {
-        codigo: row.codigo,
-        colaborador: row.colaboradorText,
-        funcao: row.funcaoText,
-        remuneracao: row.remuneracao,
-        dataAdmissao: row.dataAdmissao,
-        mesReferencia: String(row.dataAdmissao).slice(0, 7),
-        filialId,
-        estado: est
-      };
-      if (dup) duplicates.push(item);
-      else toImport.push(item);
-    });
-
-    if (duplicates.length) {
-      /* "Cancelar importação" e clicar fora do modal levam ao mesmo
-         resultado (ConfirmDialog resolve `false` nos dois casos): aborta a
-         importação inteira, sem lançar nem os registros novos. */
-      const importDuplicates = await confirm({
-        title: "Colaboradores já cadastrados",
-        message: `${duplicates.length} registro(s) já existem no headcount (mesma empresa e código). Deseja importar mesmo assim?`,
-        confirmText: "Importar mesmo assim",
-        cancelText: "Cancelar importação"
-      });
-      if (!importDuplicates) {
-        toast("Importação cancelada.");
-        return;
-      }
-    }
-
-    /* Linhas ignoradas (sem Data de admissão válida): mostra o motivo de cada
-       uma e pergunta se devem ser importadas. Sem data, o registro vai para o
-       mês do filtro atual do dashboard (o banco exige um mês de referência). */
-    let ignoredImported = 0;
-    if (ignored.length) {
-      const importIgnored = await askImportIgnoredHeadcount(ignored);
-      if (importIgnored) {
-        const fallbackYm = headcountIgnoredFallbackYm();
-        ignored.forEach(({ item }) => toImport.push({ ...item, mesReferencia: fallbackYm }));
-        ignoredImported = ignored.length;
-      }
-    }
-    const skipped = ignored.length - ignoredImported;
-
-    const finalList = toImport.concat(duplicates);
-    finalList.forEach((item) => addHeadcountRecord(item));
-
-    emit("saved");
-    const parts = [`${finalList.length} colaborador(es) lançado(s)`];
-    if (duplicates.length) parts.push(`${duplicates.length} duplicado(s) importado(s) mesmo assim`);
-    if (ignoredImported) parts.push(`${ignoredImported} importado(s) sem data de admissão`);
-    if (skipped) parts.push(`${skipped} ignorado(s)`);
-    toast("Importação concluída — " + parts.join(" · "));
-    showTab("historico");
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de headcount.");
-  }
-}
-
-/* Motivo pelo qual uma linha do headcount é ignorada (Data de admissão). */
-function headcountIgnoreReason(row) {
-  const raw = String(row.dataAdmissaoTexto ?? "").trim();
-  return raw
-    ? `Data de admissão inválida ("${raw}") — use aaaa-mm-dd ou dd/mm/aaaa`
-    : "Data de admissão não preenchida";
-}
-
-/* Mês de referência das linhas importadas sem Data de admissão: o mês do
-   filtro do dashboard (ou o atual, se o filtro não for um mês fechado). */
-function headcountIgnoredFallbackYm() {
-  return singleMonthOfRange(dateFilter.start, dateFilter.end) || currentYm();
-}
-
-/* Abre o modal de linhas ignoradas e espera a resposta (true = importar). */
-function askImportIgnoredHeadcount(items) {
-  return new Promise((resolve) => {
-    headcountIgnoredReview.value = { items, resolve };
-  });
-}
-
-function answerIgnoredHeadcount(answer) {
-  const review = headcountIgnoredReview.value;
-  headcountIgnoredReview.value = null;
-  if (review) review.resolve(answer);
-}
-
-/* "Demitidos": não cria registro novo — localiza o colaborador pelo Código +
-   Nome (sem depender mais de Empresa) e muda o status para "demitido" a
-   partir do mês de desligamento da própria linha. A planilha traz demitidos
-   de todos os meses de uma vez (sem mês único escolhido na tela); quem já
-   estiver demitido simplesmente é pulado. Quando Código + Nome batem em mais
-   de um colaborador do headcount (duplicidade), a linha fica pendente e a
-   tela abre um modal pedindo para escolher qual é qual antes de fechar o
-   resumo final. */
-function headcountDemitidosSheetToUse(wb) {
-  if (wb.Sheets["Demitidos"]) return wb.Sheets["Demitidos"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-/* Aplica o desligamento a um registro já resolvido do headcount (seja pelo
-   match direto, seja pela escolha manual na duplicidade) — soma nos
-   contadores do resumo final. Só altera o status do headcount: não cria mais
-   nada no Turnover (que virou lançamento de quantidade, não por colaborador)
-   nem no Tempo médio de permanência (que agora tem seu próprio modal e
-   importação, ver PermanenciaModal.vue). */
-function applyHeadcountDemitido(match, demitidoMes, counts) {
-  if (match.status === "demitido") {
-    counts.jaDemitidos++;
-    return;
-  }
-  markHeadcountDemitido(match.id, demitidoMes);
-  counts.alterados++;
-}
-
-function finishHeadcountDemitidosImport() {
-  emit("saved");
-  headcountDemitidosResult.value = {
-    total: headcountDemitidosTotal.value,
-    ...headcountDemitidosCounts.value
-  };
-  showTab("historico");
-}
-
-async function onHeadcountDemitidosImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  try {
-    const wb = await readWorkbookFile(file);
-    const sheet = headcountDemitidosSheetToUse(wb);
-    const parsed = sheet ? parseHeadcountDemitidosSheet(sheet) : [];
-    if (!parsed.length) {
-      toast("Nenhum colaborador encontrado na planilha. Use o template de demitidos.");
-      return;
-    }
-    const est = effectiveVagaEstado();
-
-    const counts = {
-      alterados: 0,
-      jaDemitidos: 0,
-      semData: 0,
-      naoEncontrado: 0,
-      naoResolvidos: 0
-    };
-    const pending = [];
-
-    parsed.forEach((row) => {
-      /* A "Data de desligamento" vem de cada linha da planilha — sem seletor
-         de mês na tela, linha sem data é ignorada. */
-      if (!row.demitidoMes) {
-        counts.semData++;
-        return;
-      }
-      const matches = findHeadcountMatches(est, row.codigo, row.colaboradorText);
-      if (!matches.length) {
-        counts.naoEncontrado++;
-        return;
-      }
-      if (matches.length > 1) {
-        pending.push({
-          codigo: row.codigo,
-          colaboradorText: row.colaboradorText,
-          demitidoMes: row.demitidoMes,
-          candidates: matches,
-          selectedId: null
-        });
-        return;
-      }
-      applyHeadcountDemitido(matches[0], row.demitidoMes, counts);
-    });
-
-    headcountDemitidosTotal.value = parsed.length;
-    headcountDemitidosCounts.value = counts;
-
-    if (pending.length) {
-      headcountDemitidosPending.value = pending;
-    } else {
-      finishHeadcountDemitidosImport();
-    }
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de demitidos.");
-  }
-}
-
-/* Resolve as duplicidades (Código + Nome batendo em mais de um colaborador):
-   aplica o desligamento à opção escolhida em cada uma; quem ficou sem
-   escolha entra em "naoResolvidos" no resumo final. */
-function confirmHeadcountDemitidosPending() {
-  const counts = { ...headcountDemitidosCounts.value };
-  headcountDemitidosPending.value.forEach((item) => {
-    const match = item.selectedId ? item.candidates.find((c) => c.id === item.selectedId) : null;
-    if (!match) {
-      counts.naoResolvidos++;
-      return;
-    }
-    applyHeadcountDemitido(match, item.demitidoMes, counts);
-  });
-  headcountDemitidosCounts.value = counts;
-  headcountDemitidosPending.value = [];
-  finishHeadcountDemitidosImport();
-}
-
-/* Pula todas as duplicidades pendentes sem aplicar nada. */
-function skipHeadcountDemitidosPending() {
-  const counts = { ...headcountDemitidosCounts.value };
-  counts.naoResolvidos += headcountDemitidosPending.value.length;
-  headcountDemitidosCounts.value = counts;
-  headcountDemitidosPending.value = [];
-  finishHeadcountDemitidosImport();
 }
 
 function handleExportHeadcount() {
@@ -1630,195 +1216,6 @@ function submitDiaria() {
   diaria.mes = currentYm();
 }
 
-/* ---------- Importação de diárias por planilha ---------- */
-const diImportInput = ref(null);
-const diReviewOpen = ref(false);
-const diRows = ref([]);
-const diImporting = ref(false);
-
-const diValidRows = computed(() => diRows.value.filter((r) => !r.errors.length));
-const diErrorCount = computed(() => diRows.value.length - diValidRows.value.length);
-/* Cada linha válida vira exatamente uma diária (lançada no mês informado).
-   Os colaboradores NÃO são cruzados com a Equipe: entram como estão na
-   planilha, só para visualização nas diárias (não contam no Headcount). Nomes
-   iguais (sem acento, caixa e espaços) são juntados num único colaborador. */
-/* Chave de uma diária: colaborador, mês, motivo e valor. Não inclui estado nem
-   filial (podem variar entre importações da mesma planilha). */
-function diKey(name, mes, motivo, valor) {
-  const flat = (v) => normalizeText(v).replace(/\s+/g, "");
-  return [employeeNameKey(name), mes || "", flat(motivo), Math.round(Number(valor) * 100)].join("|");
-}
-
-/* Diárias já lançadas, contadas por chave. A diária é por MÊS (sem dia), então
-   linhas iguais na mesma planilha podem ser legítimas (3 diárias de R$ 150 no
-   mês). Por isso a comparação é por QUANTIDADE: cada diária já existente
-   "consome" uma linha igual da planilha — importar a mesma planilha de novo não
-   duplica, mas linhas repetidas de propósito continuam valendo. */
-const diExistingCounts = computed(() => {
-  const counts = new Map();
-  getEntriesFor("custo_diaria").forEach((e) => {
-    const m = e.meta || {};
-    const mes = m.semPeriodo ? "" : String(e.date || "").slice(0, 7);
-    const key = diKey(m.employeeName, mes, m.motivo, e.value);
-    counts.set(key, (counts.get(key) || 0) + 1);
-  });
-  return counts;
-});
-
-const diDupRows = computed(() => {
-  const counts = new Map(diExistingCounts.value);
-  const dup = new Set();
-  diValidRows.value.forEach((r) => {
-    const key = diKey(r.colaboradorText, r.periodo.ok ? r.periodo.mes : "", r.motivoText, r.pagamento);
-    const left = counts.get(key) || 0;
-    if (left > 0) {
-      counts.set(key, left - 1);
-      dup.add(r);
-    }
-  });
-  return dup;
-});
-
-const diEntriesCount = computed(() => diValidRows.value.length - diDupRows.value.size);
-const diDistinctCount = computed(
-  () => new Set(diValidRows.value.map((r) => employeeNameKey(r.colaboradorText))).size
-);
-
-function diPeriodoLabel(r) {
-  if (!r.periodo.ok) return "Sem período";
-  const [y, m] = r.periodo.mes.split("-");
-  return `${MONTHS_SHORT[Number(m) - 1] || m}/${y}`;
-}
-
-function diSheetToUse(wb) {
-  if (wb.Sheets["Diária"]) return wb.Sheets["Diária"];
-  if (wb.Sheets["Diaria"]) return wb.Sheets["Diaria"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-async function onDiImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  diImporting.value = true;
-  try {
-    /* Filiais e colaboradores podem ser de qualquer estado — garante que
-       tudo esteja carregado antes de tentar casar a planilha. */
-    await hydrateState("todos");
-    const wb = await readWorkbookFile(file);
-    const sheet = diSheetToUse(wb);
-    /* Periodo só com o nome do mês ("agosto") assume o ano do mês filtrado no dashboard. */
-    const defaultYear = Number(String(singleMonthOfRange(dateFilter.start, dateFilter.end) || currentYm()).slice(0, 4));
-    const parsed = sheet ? parseDiariaSheet(sheet, { defaultYear }) : [];
-    if (!parsed.length) {
-      toast("Nenhuma diária encontrada na planilha. Use o template de diária.");
-      return;
-    }
-    diRows.value = parsed.map((row) => {
-      /* Só invalida a linha (não importa) quando falta colaborador ou
-         pagamento. Filial e período em branco/não reconhecidos são apenas
-         avisos — a diária é lançada mesmo assim, sem esses dados. */
-      const errors = [];
-      const warnings = [];
-      if (!row.filialText) warnings.push("Filial não informada.");
-      if (!row.colaboradorText) errors.push("Colaborador não informado.");
-      if (!row.periodo.ok) warnings.push(row.periodo.reason);
-      if (row.pagamento === null) errors.push("Pagamento inválido ou não informado.");
-      /* Estado: coluna opcional da planilha; sem ela (ou inválido), o do
-         filtro atual do dashboard. */
-      const estadoRow = String(row.estadoText || "").toUpperCase().trim();
-      const estado = STATES.includes(estadoRow)
-        ? estadoRow
-        : filters.current !== "todos"
-          ? filters.current
-          : DEFAULT_STATE;
-      /* Sem Estado na planilha e com o filtro em "Todos", tudo cairia em RO sem
-         ninguém perceber — avisa, para a soma por estado não ficar errada. */
-      if (!STATES.includes(estadoRow) && filters.current === "todos") {
-        warnings.push(`Estado não informado — será lançada em ${DEFAULT_STATE}.`);
-      }
-      return {
-        ...row,
-        estado,
-        errors,
-        warnings
-      };
-    });
-    diReviewOpen.value = true;
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de diárias.");
-  } finally {
-    diImporting.value = false;
-  }
-}
-
-/* Sentinela gravada como `date` das diárias sem período (ver monthlyBarData
-   em KpiChartCard.vue, que isola esse grupo numa barra "Sem período"). */
-const NO_PERIODO_DATE = "0001-01-01";
-
-function confirmDiImport() {
-  const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
-  const errorCount = diErrorCount.value;
-  let entriesOk = 0;
-
-  /* Nomes iguais viram um só colaborador: a primeira grafia vale para todas as
-     linhas — inclusive as de diárias já lançadas antes (mesma pessoa em
-     importações diferentes). */
-  const canonical = new Map();
-  getEntriesFor("custo_diaria").forEach((e) => {
-    const name = e.meta && e.meta.employeeName;
-    const key = employeeNameKey(name);
-    if (key && !canonical.has(key)) canonical.set(key, name);
-  });
-
-  let duplicated = 0;
-  diValidRows.value.forEach((r) => {
-    if (diDupRows.value.has(r)) {
-      duplicated++;
-      return;
-    }
-    const key = employeeNameKey(r.colaboradorText);
-    if (!canonical.has(key)) canonical.set(key, String(r.colaboradorText).replace(/\s+/g, " ").trim().toUpperCase());
-    const employeeName = canonical.get(key);
-    /* Filial e estado entram como vêm na planilha (sem cruzar com o cadastro
-       de Filiais). */
-    const state = r.estado;
-    const mes = r.periodo.ok ? r.periodo.mes : null;
-
-    const meta = {
-      employeeId: null,
-      employeeName,
-      funcao: up(r.funcaoText),
-      departamento: null,
-      filial: up(r.filialText),
-      liderImediato: null,
-      gerenteRegional: null,
-      regional: state,
-      motivo: up(r.motivoText),
-      competencia: mes,
-      semPeriodo: !mes
-    };
-
-    addEntry("custo_diaria", {
-      date: mes ? `${mes}-01` : NO_PERIODO_DATE,
-      value: Number(r.pagamento),
-      state,
-      meta
-    });
-    entriesOk++;
-  });
-
-  diReviewOpen.value = false;
-  diRows.value = [];
-  emit("saved");
-  const parts = [`${entriesOk} diária(s) lançada(s)`];
-  if (duplicated) parts.push(`${duplicated} já lançada(s) (não repetida(s))`);
-  if (errorCount) parts.push(`${errorCount} linha(s) com erro não importada(s)`);
-  toast("Importação concluída — " + parts.join(" · "));
-}
-
 /* ---------- Treinamento ---------- */
 
 /* ---------- Mês/ano do treinamento (competência) ---------- */
@@ -1870,6 +1267,7 @@ function submitTreinamento() {
       employeeName,
       cargo: up(treinamento.cargo),
       filial,
+      gerenteRegional: up(treinamento.gerenteRegional),
       tema: up(treinamento.tema),
       modalidade: mod,
       competencia: treinamento.month
@@ -1992,161 +1390,6 @@ async function deleteTrSelected() {
   toast(`${chosen.length} colaborador(es) e ${entries.length} treinamento(s) excluído(s).`);
 }
 
-/* ---------- Importação de treinamentos por planilha ----------
-   Os colaboradores são lançados exatamente como vêm na planilha — sem cruzar
-   com o cadastro da Equipe. Cargo, Filial e Estado são colunas opcionais; sem
-   Estado, vale o estado do filtro atual do dashboard. */
-const trImportInput = ref(null);
-const trReviewOpen = ref(false);
-const trRows = ref([]);
-const trImporting = ref(false);
-
-function trHasCarga(r) {
-  return r.carga !== null && r.carga !== undefined && !isNaN(Number(r.carga));
-}
-
-/* Detecta linhas já lançadas: mesmo estado, colaborador, tema, carga horária e
-   mês de competência. Sem isso, importar a mesma planilha duas vezes dobrava as
-   horas de Treinamento (a soma do KPI conta cada lançamento). */
-function trKey(estado, name, tema, carga, ym) {
-  const flat = (v) => normalizeText(v).replace(/\s+/g, "");
-  return [String(estado || "").toUpperCase(), flat(name), flat(tema), Math.round(Number(carga) * 60), ym].join("|");
-}
-
-const trExistingKeys = computed(() => {
-  const keys = new Set();
-  getEntriesFor("treinamento").forEach((e) => {
-    const m = e.meta || {};
-    keys.add(trKey(m.estado, m.employeeName, m.tema, e.value, String(e.date || "").slice(0, 7)));
-  });
-  return keys;
-});
-
-function trIsDuplicate(r) {
-  return trHasCarga(r) && trExistingKeys.value.has(trKey(r.estado, r.name, r.tema, r.carga, trMonth.value));
-}
-
-const trDupCount = computed(() => trRows.value.filter(trIsDuplicate).length);
-const trValidCount = computed(() => trRows.value.filter((r) => trHasCarga(r) && !trIsDuplicate(r)).length);
-const trInvalidCount = computed(() => trRows.value.filter((r) => !trHasCarga(r)).length);
-
-/* Linhas sem carga horária (não serão lançadas) primeiro; depois por nome. */
-const visibleTrRows = computed(() =>
-  trRows.value
-    .slice()
-    .sort(
-      (a, b) =>
-        Number(trHasCarga(a)) - Number(trHasCarga(b)) || String(a.name || "").localeCompare(String(b.name || ""))
-    )
-);
-
-/* Mês/competência dos treinamentos importados. */
-const trMonth = ref(currentYm());
-const trYearOptions = yearOptions(4, 1);
-
-const trMonthNum = computed(() =>
-  trMonth.value ? Number(trMonth.value.split("-")[1]) : new Date().getMonth() + 1
-);
-const trYearNum = computed(() =>
-  trMonth.value ? Number(trMonth.value.split("-")[0]) : new Date().getFullYear()
-);
-const trMonthLabel = computed(() => {
-  if (!trMonth.value) return "";
-  const [y, m] = trMonth.value.split("-");
-  return `${MONTHS_SHORT[Number(m) - 1] || m}/${y}`;
-});
-
-function setTrMonth(m) {
-  trMonth.value = `${trYearNum.value}-${String(m).padStart(2, "0")}`;
-}
-function setTrYear(y) {
-  trMonth.value = `${y}-${String(trMonthNum.value).padStart(2, "0")}`;
-}
-
-function trSheetToUse(wb) {
-  if (wb.Sheets["Treinamento"]) return wb.Sheets["Treinamento"];
-  const keys = Object.keys(wb.Sheets || {});
-  return keys.length ? wb.Sheets[keys[0]] : null;
-}
-
-async function onTrImportFile(e) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  trImporting.value = true;
-  try {
-    const wb = await readWorkbookFile(file);
-    const sheet = trSheetToUse(wb);
-    const parsed = sheet ? parseTreinamentoSheet(sheet) : [];
-    if (!parsed.length) {
-      toast("Nenhum treinamento encontrado na planilha. Use o template de treinamento.");
-      return;
-    }
-    const defaultEstado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
-    const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
-    trRows.value = parsed.map((row) => {
-      const estadoRow = up(row.estado);
-      const estado = STATES.includes(estadoRow) ? estadoRow : defaultEstado;
-      /* A filial da planilha é resolvida pelo nome abreviado (no estado da
-         linha); se não existir no cadastro de Filiais, o texto digitado vale
-         como está. */
-      const branch = row.filialText ? findBranchByShortName(row.filialText, estado) : null;
-      const filial = branch ? up(`${branch.shortName} ${branch.name}`) : up(row.filialText);
-      return {
-        ...row,
-        estado,
-        filial: filial || null
-      };
-    });
-    trMonth.value = currentYm();
-    trReviewOpen.value = true;
-  } catch (err) {
-    console.error(err);
-    toast("Não foi possível ler a planilha de treinamentos.");
-  } finally {
-    trImporting.value = false;
-  }
-}
-
-function confirmTrImport() {
-  let ok = 0;
-  let invalid = 0;
-  let duplicated = 0;
-  const dataTreinamento = trMonth.value ? `${trMonth.value}-01` : todayISO();
-  const up = (v) => String(v == null ? "" : v).toUpperCase().trim();
-  trRows.value.forEach((r) => {
-    if (!trHasCarga(r)) {
-      invalid++;
-      return;
-    }
-    if (trIsDuplicate(r)) {
-      duplicated++;
-      return;
-    }
-    addEntry("treinamento", {
-      date: dataTreinamento,
-      value: Number(r.carga),
-      state: r.estado,
-      meta: {
-        employeeName: up(r.name),
-        cargo: up(r.cargo) || null,
-        filial: r.filial,
-        estado: r.estado,
-        competencia: trMonth.value || null,
-        tema: up(r.tema) || null,
-        modalidade: r.modalidadeLabel || "Presencial"
-      }
-    });
-    ok++;
-  });
-  trReviewOpen.value = false;
-  trRows.value = [];
-  emit("saved");
-  const parts = [`${ok} treinamento(s) lançado(s) em ${trMonthLabel.value}`];
-  if (duplicated) parts.push(`${duplicated} já lançado(s) neste mês (não repetido(s))`);
-  if (invalid) parts.push(`${invalid} sem carga horária`);
-  toast("Importação concluída — " + parts.join(" · "));
-}
 
 /* ---------- Custos Totais (por filial) ---------- */
 
@@ -2155,7 +1398,7 @@ const custosTotResults = computed(() => {
   let list = listBranches(custosTot.estado);
   if (q) {
     list = list.filter((b) =>
-      normalizeText(`${b.branchId} ${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`)
+      normalizeText(`${b.cnpj} ${b.name} ${b.shortName} ${b.manager || ""}`)
         .includes(q)
     );
   }
@@ -2302,26 +1545,8 @@ function close() {
   emit("close");
 }
 
-/* Escape fecha apenas a revisão de importação de treinamentos (não o modal). */
-function onTrReviewKeydown(e) {
-  if (e.key === "Escape") {
-    e.preventDefault();
-    e.stopPropagation();
-    trReviewOpen.value = false;
-  }
-}
-
-watch(
-  () => trReviewOpen.value,
-  (open) => {
-    if (open) window.addEventListener("keydown", onTrReviewKeydown, true);
-    else window.removeEventListener("keydown", onTrReviewKeydown, true);
-  }
-);
-
 onUnmounted(() => {
   window.removeEventListener("keydown", onSubKeydown, true);
-  window.removeEventListener("keydown", onTrReviewKeydown, true);
 });
 </script>
 
@@ -2470,22 +1695,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar vagas por planilha</strong>
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Nome da vaga · Data de abertura · Data de fechamento · Tipo de contratação (CLT/PJ) · Salário (R$) · Estado · Filial.
-                  A filial é cruzada com o cadastro da aba Filiais.
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="downloadVagasTemplate">Baixar template</button>
-                <button type="button" class="btn-primary btn-sm" @click="vagaImportInput?.click()">Importar planilha</button>
-                <input ref="vagaImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onVagaImportFile" />
-              </div>
-            </div>
-          </div>
 
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-ghost" @click="setVagaNow">Abrir hoje</button>
@@ -2643,9 +1852,9 @@ onUnmounted(() => {
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="turnoverFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
-              <select id="turnoverFilial" v-model="turnover.filialId" class="input-field">
+              <select id="turnoverFilial" v-model="turnover.filial" class="input-field">
                 <option :value="null">— Sem filial —</option>
-                <option v-for="b in turnoverBranches" :key="b.id" :value="b.id">{{ b.name }}</option>
+                <option v-for="b in turnoverBranches" :key="b.id" :value="b.name">{{ b.name }}</option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
@@ -2674,22 +1883,6 @@ onUnmounted(() => {
             KPI de Headcount. Admitidos também alimenta as Novas contratações da Retenção.
           </p>
 
-          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar por planilha</strong>
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Filial · Mês de referência · Admitidos · Demitidos · Ativos · Estado.
-                  A filial é cruzada com o cadastro da aba Filiais.
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="downloadTurnoverTemplate">Baixar template</button>
-                <button type="button" class="btn-primary btn-sm" @click="turnoverImportInput?.click()">Importar planilha</button>
-                <input ref="turnoverImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onTurnoverImportFile" />
-              </div>
-            </div>
-          </div>
 
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-primary" @click="submitTurnover">
@@ -2698,33 +1891,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Importar demitidos: só muda o status no headcount — fica fora da aba "Novo"/"Histórico", visível nas duas. -->
-        <div class="rounded-xl border border-dashed border-red-300 p-3 dark:border-red-900/50">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex min-w-0 flex-col gap-0.5">
-              <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar demitidos</strong>
-              <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                Colunas: Colaborador · Data de admissão (opcional) · Data de desligamento. Pode trazer demitidos de todos os meses
-                numa planilha só — cada linha usa a própria data. Localiza pelo Nome quem já está no headcount (a Empresa não é
-                necessária). Se o nome bater em mais de um colaborador, a tela pede para escolher qual é qual. Só muda o status
-                para "demitido" no headcount — quem já estiver demitido é pulado sem alterar nada, e nome que não bater com
-                ninguém no headcount é ignorado (não cria lançamento novo). Para registrar o tempo de permanência, use o modal
-                próprio "Tempo médio de permanência".
-              </p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <button type="button" class="btn-ghost btn-sm" @click="downloadHeadcountDemitidosTemplate">Baixar template</button>
-              <button type="button" class="btn-danger-ghost btn-sm" @click="headcountDemitidosImportInput?.click()">Importar planilha</button>
-              <input
-                ref="headcountDemitidosImportInput"
-                type="file"
-                hidden
-                accept=".xlsx,.xls,.csv"
-                @change="onHeadcountDemitidosImportFile"
-              />
-            </div>
-          </div>
-        </div>
 
         <div v-show="activeTab === 'historico'" class="flex flex-col gap-3">
           <p v-if="!turnoverList.length" class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
@@ -2852,9 +2018,9 @@ onUnmounted(() => {
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="flex flex-col gap-1.5">
               <label for="hcEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
-              <select id="hcEmpresa" v-model="headcount.filialId" class="input-field">
+              <select id="hcEmpresa" v-model="headcount.filial" class="input-field">
                 <option :value="null">— Sem empresa —</option>
-                <option v-for="b in headcountBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
+                <option v-for="b in headcountBranches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
@@ -2895,23 +2061,6 @@ onUnmounted(() => {
             como base: mostra quem já tinha sido admitido até aquele mês e ainda não foi desligado.
           </p>
 
-          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar novos colaboradores</strong>
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Código · Colaborador · Empresa · Função · Remuneração · Data de admissão · Estado.
-                  Obrigatórias: Colaborador e Data de admissão — as demais (inclusive o Código) são opcionais.
-                  Quem já existir (mesma Empresa e Código) é avisado antes de importar; sem Código, não há essa verificação.
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="downloadHeadcountTemplate">Baixar template</button>
-                <button type="button" class="btn-primary btn-sm" @click="headcountImportInput?.click()">Importar planilha</button>
-                <input ref="headcountImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onHeadcountImportFile" />
-              </div>
-            </div>
-          </div>
 
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-primary" @click="submitHeadcount">
@@ -2943,9 +2092,9 @@ onUnmounted(() => {
             </div>
             <div class="flex flex-col gap-1.5 sm:w-56">
               <label for="headcountFilterEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
-              <select id="headcountFilterEmpresa" v-model="headcountFilterFilialId" class="input-field">
+              <select id="headcountFilterEmpresa" v-model="headcountFilterFilial" class="input-field">
                 <option :value="null">Todas as empresas</option>
-                <option v-for="b in headcountFilterBranches" :key="b.id" :value="b.id">{{ b.name }}</option>
+                <option v-for="b in headcountFilterBranches" :key="b.id" :value="b.shortName">{{ b.name }}</option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5 sm:w-40">
@@ -3026,24 +2175,6 @@ onUnmounted(() => {
       <!-- ===== DIÁRIA ===== -->
       <template v-if="indicator.form === 'diaria'">
         <div class="flex flex-col gap-4">
-          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar diárias por planilha</strong>
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Filial · Colaborador · Função · Periodo · Motivo · Pagamento (opcional: Estado).
-                  Periodo é o mês da diária: 08/2026, ago/26, agosto (sem ano vale o do mês filtrado) ou uma data.
-                  Filial e colaborador entram como estão na planilha; sem Estado, vale o do filtro atual.
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="downloadDiariaTemplate">Baixar template</button>
-                <button type="button" class="btn-primary btn-sm" @click="diImportInput?.click()">Importar planilha</button>
-                <input ref="diImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onDiImportFile" />
-              </div>
-            </div>
-          </div>
-
           <div class="flex flex-col gap-1.5">
             <label for="diariaSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
             <input
@@ -3217,23 +2348,6 @@ onUnmounted(() => {
         </div>
 
         <div v-show="activeTab === 'treinamento'" class="flex flex-col gap-4">
-          <div class="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <strong class="text-sm text-zinc-800 dark:text-zinc-100">Importar treinamentos por planilha</strong>
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Colunas: Colaborador · Tema do treinamento · Carga horária (horas) · Modalidade
-                  (opcionais: Cargo · Filial · Estado). Os colaboradores são lançados como estão na planilha.
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="downloadTreinamentoTemplate">Baixar template</button>
-                <button type="button" class="btn-primary btn-sm" @click="trImportInput?.click()">Importar planilha</button>
-                <input ref="trImportInput" type="file" hidden accept=".xlsx,.xls,.csv" @change="onTrImportFile" />
-              </div>
-            </div>
-          </div>
-
           <div class="flex flex-col gap-1.5">
             <label for="trSelected" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
             <input id="trSelected" v-model="treinamento.employeeName" v-upper type="text" class="input-field" placeholder="Nome do colaborador" />
@@ -3250,6 +2364,10 @@ onUnmounted(() => {
             <div class="flex flex-col gap-1.5">
               <label for="trFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Loja (Filial)</label>
               <input id="trFilial" v-model="treinamento.filial" v-upper type="text" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="trGerenteRegional" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente regional</label>
+              <input id="trGerenteRegional" v-model="treinamento.gerenteRegional" v-upper type="text" class="input-field" />
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="trEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
@@ -3415,164 +2533,6 @@ onUnmounted(() => {
       </div>
     </form>
 
-    <!-- ===== Revisão de importação de diárias ===== -->
-    <Teleport to="body">
-      <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
-      <div
-        v-if="diReviewOpen"
-        class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 p-4 py-10"
-      >
-        <div class="mac-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
-          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <div>
-              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar diárias importadas</h3>
-              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ diRows.length }} linha(s) · {{ diEntriesCount }} lançamento(s) a criar ·
-                {{ diDistinctCount }} colaborador(es) · {{ diDupRows.size }} já lançada(s) ·
-                {{ diErrorCount }} linha(s) com erro
-              </p>
-            </div>
-            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="diReviewOpen = false">&times;</button>
-          </div>
-
-          <div class="flex flex-1 flex-col gap-2 overflow-y-auto px-6 py-4">
-            <p class="text-xs text-zinc-500 dark:text-zinc-400">
-              Os colaboradores são lançados exatamente como estão na planilha, sem vínculo com a Equipe (só para
-              visualização nas diárias — não contam no Headcount). Nomes iguais são juntados num único colaborador.
-            </p>
-
-            <div
-              v-for="(r, idx) in diRows"
-              :key="idx"
-              class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-              :class="r.errors.length ? 'border-red-400 bg-red-50/60 dark:border-red-500/40 dark:bg-red-500/5' : r.warnings.length ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/5' : ''"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div class="flex min-w-0 flex-col gap-0.5">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <strong class="text-sm text-zinc-900 dark:text-zinc-100">Linha {{ r.rowNumber }} — {{ r.colaboradorText || "Sem colaborador" }}</strong>
-                  </div>
-                  <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ r.filialText || "Sem filial" }} · {{ r.estado }}<span v-if="r.funcaoText"> · {{ r.funcaoText }}</span> ·
-                    {{ diPeriodoLabel(r) }}<span v-if="r.motivoText"> · {{ r.motivoText }}</span> ·
-                    {{ r.pagamento != null ? formatCurrency(r.pagamento) : "sem pagamento" }}
-                  </p>
-                </div>
-              </div>
-
-              <p v-if="diDupRows.has(r)" class="mt-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                Já lançada (mesmo colaborador, mês, motivo e valor) — não será lançada de novo.
-              </p>
-
-              <ul v-if="r.errors.length" class="mt-2 list-disc pl-4 text-xs font-medium text-red-600 dark:text-red-400">
-                <li v-for="(msg, i) in r.errors" :key="'err' + i">{{ msg }}</li>
-              </ul>
-
-              <ul v-if="r.warnings.length" class="mt-2 list-disc pl-4 text-xs font-medium text-amber-600 dark:text-amber-400">
-                <li v-for="(msg, i) in r.warnings" :key="'warn' + i">{{ msg }}</li>
-              </ul>
-
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <button type="button" class="btn-ghost" @click="diReviewOpen = false">Cancelar</button>
-            <button type="button" class="btn-primary" :disabled="!diEntriesCount" @click="confirmDiImport">
-              Lançar {{ diEntriesCount }} diária(s)
-            </button>
-          </div>
-        </div>
-      </div>
-      </Transition>
-    </Teleport>
-
-    <LoadingOverlay :show="diImporting" label="Importando diárias..." />
-
-    <!-- ===== Revisão de importação de treinamentos ===== -->
-    <Teleport to="body">
-      <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
-      <div
-        v-if="trReviewOpen"
-        class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 p-4 py-10"
-      >
-        <div class="mac-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
-          <div class="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <div>
-              <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100">Revisar treinamentos importados</h3>
-              <p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                {{ trRows.length }} linha(s) · {{ trInvalidCount }} sem carga horária · {{ trDupCount }} já lançada(s)
-              </p>
-            </div>
-            <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="Fechar" @click="trReviewOpen = false">&times;</button>
-          </div>
-
-          <div class="flex flex-1 flex-col gap-2 overflow-y-auto px-6 py-4">
-            <div class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-              <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Mês do treinamento</span>
-              <select
-                class="input-field w-auto"
-                :value="trMonthNum"
-                aria-label="Mês do treinamento"
-                @change="setTrMonth(Number($event.target.value))"
-              >
-                <option v-for="(mName, i) in MONTHS_SHORT" :key="i + 1" :value="i + 1">{{ mName }}</option>
-              </select>
-              <select
-                class="input-field w-auto"
-                :value="trYearNum"
-                aria-label="Ano do treinamento"
-                @change="setTrYear(Number($event.target.value))"
-              >
-                <option v-for="y in trYearOptions" :key="y" :value="y">{{ y }}</option>
-              </select>
-              <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                Competência: <strong class="text-zinc-700 dark:text-zinc-200">{{ trMonthLabel }}</strong>
-              </span>
-            </div>
-
-            <p class="text-xs text-zinc-500 dark:text-zinc-400">
-              Os colaboradores são lançados exatamente como estão na planilha. Linhas sem carga horária, ou já lançadas no
-              mesmo mês (mesmo colaborador, tema e carga horária), não são lançadas — para não duplicar as horas.
-            </p>
-
-            <div
-              v-for="(r, idx) in visibleTrRows"
-              :key="idx"
-              class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-            >
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div class="flex min-w-0 flex-col gap-0.5">
-                  <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ r.name }}</strong>
-                  <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ r.tema || "Sem tema" }} · {{ r.carga != null ? formatHoursClock(r.carga) : "sem carga horária" }} ·
-                    {{ r.modalidadeLabel || "Presencial" }}
-                  </p>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-500">
-                    {{ [r.cargo, r.filial, r.estado].filter(Boolean).join(" · ") }}
-                  </p>
-                </div>
-                <span v-if="!trHasCarga(r)" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                  Sem carga horária — não será lançado
-                </span>
-                <span v-else-if="trIsDuplicate(r)" class="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                  Já lançado neste mês — não será lançado de novo
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2 border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
-            <button type="button" class="btn-ghost" @click="trReviewOpen = false">Cancelar</button>
-            <button type="button" class="btn-primary" :disabled="!trValidCount" @click="confirmTrImport">
-              Lançar {{ trValidCount }} treinamento(s) em {{ trMonthLabel }}
-            </button>
-          </div>
-        </div>
-      </div>
-      </Transition>
-    </Teleport>
-
-    <LoadingOverlay :show="trImporting" label="Importando treinamentos..." />
   </Modal>
 
   <!-- Duplicidade na importação de demitidos: mesmo Código + Nome batendo em

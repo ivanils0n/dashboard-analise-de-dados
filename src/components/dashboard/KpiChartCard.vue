@@ -49,6 +49,15 @@ function onTurnoverDetail(kind) {
   emit("turnover-detail", kind);
 }
 
+/* Clique (esquerdo ou direito) na própria pizza do Turnover: mesmo modal de
+   informações dos cards de Admissões/Demissões — a fatia clicada decide qual
+   (0 = Entrada/Admissões, 1 = Saída/Demissões, ver chartPieData em
+   useDashboardData.js); fora de uma fatia (ex.: buraco central), cai em
+   Admissões. */
+function onTurnoverChartInfo(sliceIndex) {
+  onTurnoverDetail(sliceIndex === 1 ? "demissoes" : "admissoes");
+}
+
 /* Altura do gráfico nos cards empilhados (padrão do BarChart: 288px). */
 const STACKED_HEIGHT_PX = 340;
 
@@ -147,6 +156,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
         :center-value="centerInfo.value"
         :center-caption="centerInfo.caption"
         :value-format="card.valueFormat || 'percent'"
+        :clickable="!!turnoverSummary"
+        @chart-click="onTurnoverChartInfo"
+        @chart-contextmenu="onTurnoverChartInfo"
       />
       <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
     </div>
@@ -189,6 +201,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
             :center-value="centerInfo.value"
             :center-caption="centerInfo.caption"
             :value-format="card.valueFormat || 'percent'"
+            :clickable="!!turnoverSummary"
+            @chart-click="onTurnoverChartInfo"
+            @chart-contextmenu="onTurnoverChartInfo"
           />
           <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
         </div>

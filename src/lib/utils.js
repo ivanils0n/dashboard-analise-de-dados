@@ -180,6 +180,15 @@ export function normalizeText(value) {
     .toLowerCase();
 }
 
+/* Texto livre exibido em modais e gráficos (nome, filial, tema, gerente...):
+   força maiúsculas mesmo quando o dado vem de fora dos formulários da tela
+   (edição direta na planilha, importações antigas) — os formulários já
+   digitam em maiúsculas (ver diretiva v-upper), isto é a rede de segurança
+   na exibição. */
+export function upperText(value) {
+  return value === null || value === undefined ? value : String(value).toUpperCase();
+}
+
 /* Compara siglas de estado tolerando caixa e espaços ("ro" = " RO " = "RO"). */
 export function sameState(value, target) {
   return (

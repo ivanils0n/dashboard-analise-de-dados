@@ -66,11 +66,11 @@ const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial_id", "estado_sigla"],
   headcount: [
     "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao", "mes_referencia",
-    "status", "demitido_mes", "filial_id", "estado_sigla"
+    "status", "demitido_mes", "filial", "estado_sigla"
   ],
-  turnover: ["id", "filial_id", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
+  turnover: ["id", "filial", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
   permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial_id", "estado_sigla"],
-  filiais: ["id", "id_filial", "cnpj", "nome", "abreviado", "gerente", "estado_sigla", "criado_em", "atualizado_em"]
+  filiais: ["id", "cnpj", "nome", "abreviado", "gerente", "estado_sigla"]
 };
 
 // Índice da coluna estado_sigla em cada linha (todas as entidades têm).

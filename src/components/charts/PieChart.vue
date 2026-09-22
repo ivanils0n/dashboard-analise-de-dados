@@ -17,7 +17,7 @@ const props = defineProps({
   valueFormat: { type: String, default: "percent" }
 });
 
-const emit = defineEmits(["chart-click"]);
+const emit = defineEmits(["chart-click", "chart-contextmenu"]);
 
 const canvas = ref(null);
 const overPlot = ref(false);
@@ -29,8 +29,28 @@ function insidePlot(evt) {
   return evt.offsetX >= area.left && evt.offsetX <= area.right && evt.offsetY >= area.top && evt.offsetY <= area.bottom;
 }
 
+/* Índice da fatia sob o ponteiro (ex.: Turnover — 0 = Entrada/Admissões,
+   1 = Saída/Demissões), para quem ouve "chart-click"/"chart-contextmenu"
+   abrir o detalhe daquela fatia específica; `null` quando o clique cai fora
+   de qualquer fatia (ex.: buraco central da rosca), mantendo o
+   comportamento padrão de quem ouve o evento. */
+function sliceIndexAt(evt) {
+  if (!chart) return null;
+  const hits = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, false);
+  return hits.length ? hits[0].index : null;
+}
+
 function onCanvasClick(evt) {
-  if (props.clickable && insidePlot(evt)) emit("chart-click");
+  if (props.clickable && insidePlot(evt)) emit("chart-click", sliceIndexAt(evt));
+}
+
+/* Botão direito na área do gráfico: mesmo destino do clique esquerdo (abre o
+   modal de informações), sem o menu de contexto do navegador. */
+function onCanvasContext(evt) {
+  if (props.clickable && insidePlot(evt)) {
+    evt.preventDefault();
+    emit("chart-contextmenu", sliceIndexAt(evt));
+  }
 }
 
 function onCanvasMove(evt) {
@@ -107,6 +127,7 @@ watch(
       :class="overPlot ? 'cursor-pointer' : ''"
       aria-hidden="true"
       @click="onCanvasClick"
+      @contextmenu="onCanvasContext"
       @mousemove="onCanvasMove"
       @mouseleave="overPlot = false"
     ></canvas>

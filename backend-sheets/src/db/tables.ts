@@ -97,7 +97,8 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "mes_referencia", type: "date", required: true },
       { name: "status", type: "text", values: ["ativo", "demitido"], notNull: true },
       { name: "demitido_mes", type: "date" },
-      { name: "filial_id", type: "text" },
+      // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/diarias/treinamentos.
+      { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
@@ -105,15 +106,15 @@ export const ENTITIES: Record<string, EntityDef> = {
     key: "turnover",
     label: "Turnover",
     orderBy: "mes_referencia desc",
-    search: [],
+    search: ["filial"],
     filters: [
-      { param: "filial_id", column: "filial_id", kind: "eq" },
       { param: "data_de", column: "mes_referencia", kind: "gte" },
       { param: "data_ate", column: "mes_referencia", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
-      { name: "filial_id", type: "text" },
+      // Sem FK pra Filiais: texto livre (nome/sigla), como diarias/treinamentos.
+      { name: "filial", type: "text" },
       { name: "mes_referencia", type: "date", required: true },
       { name: "admitidos", type: "number", notNull: true },
       { name: "demitidos", type: "number", notNull: true },
@@ -143,20 +144,16 @@ export const ENTITIES: Record<string, EntityDef> = {
   filiais: {
     key: "filiais",
     label: "Filiais",
-    hasUpdatedAt: true,
-    orderBy: "criado_em desc",
-    search: ["nome", "abreviado", "cnpj", "id_filial"],
+    orderBy: "nome asc",
+    search: ["nome", "abreviado", "cnpj"],
     filters: [{ param: "gerente", column: "gerente", kind: "ilike" }],
     columns: [
       { name: "id", type: "text" },
-      { name: "id_filial", type: "text", required: true },
       { name: "cnpj", type: "text", required: true },
       { name: "nome", type: "text", required: true },
       { name: "abreviado", type: "text", required: true },
       { name: "gerente", type: "text" },
-      { name: "estado_sigla", type: "text", stateRef: true },
-      { name: "criado_em", type: "timestamptz", readOnly: true },
-      { name: "atualizado_em", type: "timestamptz", readOnly: true }
+      { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
   // Substituem a antiga tabela genérica "lancamentos" (indicador_id + meta
@@ -204,6 +201,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       // -> treinamentoFilialLabel) agrupa comparando este texto com o
       // cadastro de Filiais.
       { name: "filial", type: "text" },
+      { name: "gerente_regional", type: "text" },
       { name: "tema", type: "text" },
       { name: "modalidade", type: "text", values: ["Presencial", "Online"] },
       { name: "competencia", type: "date", required: true },

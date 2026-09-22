@@ -1,7 +1,7 @@
 // Domínio de Filiais.
 
 import { getBranches, upsertBranch, deleteBranch } from "./store";
-import { createId, nowLocalISO, sameState } from "./utils";
+import { createId, sameState } from "./utils";
 
 export function listBranches(state) {
   const all = getBranches();
@@ -12,22 +12,18 @@ export function listBranches(state) {
 }
 
 export function saveBranch(data) {
-  const now = nowLocalISO();
   const existing = data.id ? getBranches().find((b) => b.id === data.id) : null;
   if (existing) {
-    upsertBranch({ ...existing, ...data, updatedAt: now });
+    upsertBranch({ ...existing, ...data });
     return;
   }
   upsertBranch({
     id: createId(),
-    branchId: data.branchId,
     cnpj: data.cnpj,
     name: data.name,
     shortName: data.shortName,
     manager: data.manager,
-    estado: data.estado,
-    createdAt: now,
-    updatedAt: now
+    estado: data.estado
   });
 }
 

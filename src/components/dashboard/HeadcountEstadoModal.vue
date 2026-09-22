@@ -3,10 +3,12 @@ import { computed, ref } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
-import { listHeadcountRecords } from "@/lib/employees";
-import { getBranchById } from "@/lib/store";
+import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { formatCurrency, formatDate, normalizeText, ymLabel } from "@/lib/utils";
+import { useDialog } from "@/composables/useDialog";
+import { useToast } from "@/composables/useToast";
+import { canEditData } from "@/lib/auth";
 
 /* Colaboradores do quadro de um estado (barra clicada no gráfico de
    Headcount), no mês do filtro do dashboard. Usa a mesma regra da contagem da
@@ -17,7 +19,14 @@ const props = defineProps({
   estado: { type: String, default: "" }
 });
 
-const emit = defineEmits(["close"]);
+/* "edit": pede ao pai para abrir o colaborador no Lançamento (Headcount),
+   que hospeda o formulário de edição — ver onHeadcountEdit em
+   DashboardView.vue. Exclusão é resolvida aqui mesmo, sem passar pelo pai. */
+const emit = defineEmits(["close", "edit"]);
+
+const { confirm } = useDialog();
+const { show: toast } = useToast();
+const canEdit = canEditData();
 
 const search = ref("");
 
@@ -27,10 +36,13 @@ const ym = computed(() =>
   dateFilter.start ? String(dateFilter.end || dateFilter.start).slice(0, 7) : ""
 );
 
+/* `h.filial` é lançado como o nome abreviado da filial (ex.: "PVH 5") —
+   busca o cadastro em Filiais para exibir o nome completo; sem
+   correspondência, mostra o texto lançado mesmo. */
 const rows = computed(() =>
   listHeadcountRecords(props.estado, ym.value || undefined).map((h) => {
-    const branch = h.filialId ? getBranchById(h.filialId) : null;
-    return { ...h, empresa: branch ? branch.name : "" };
+    const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
+    return { ...h, empresa: branch ? branch.name : h.filial || "" };
   })
 );
 
@@ -46,7 +58,35 @@ const totalRemuneracao = computed(() =>
   rows.value.reduce((sum, h) => sum + (Number(h.remuneracao) || 0), 0)
 );
 
-const stateName = computed(() => STATE_NAMES[props.estado] || props.estado);
+/* Sem estado (ou "todos"): abre pelo botão direito no KPI de Headcount, que
+   segue o filtro de estado do dashboard em vez de uma barra específica. */
+const stateName = computed(() =>
+  !props.estado || props.estado === "todos" ? "Todos os estados" : STATE_NAMES[props.estado] || props.estado
+);
+
+function editRow(h) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  emit("edit", h.id);
+}
+
+async function removeRow(h) {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  const ok = await confirm({
+    title: "Excluir colaborador?",
+    message: `O registro de "${h.colaborador}" será removido permanentemente.`,
+    confirmText: "Excluir",
+    danger: true
+  });
+  if (!ok) return;
+  deleteHeadcountRecord(h.id);
+  toast("Colaborador excluído.");
+}
 </script>
 
 <template>
@@ -110,9 +150,10 @@ const stateName = computed(() => STATE_NAMES[props.estado] || props.estado);
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Função</th>
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Remuneração</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Admissão</th>
+                <th v-if="canEdit" class="px-4 py-2.5"></th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="uppercase">
               <tr
                 v-for="h in filteredRows"
                 :key="h.id"
@@ -127,6 +168,12 @@ const stateName = computed(() => STATE_NAMES[props.estado] || props.estado);
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
                   {{ h.dataAdmissao ? formatDate(h.dataAdmissao) : "—" }}
+                </td>
+                <td v-if="canEdit" class="normal-case whitespace-nowrap px-4 py-2.5 text-right">
+                  <div class="flex justify-end gap-2">
+                    <button type="button" class="btn-ghost-sm" aria-label="Editar colaborador" @click="editRow(h)">Editar</button>
+                    <button type="button" class="icon-btn-sm" aria-label="Excluir colaborador" @click="removeRow(h)">&times;</button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -153,3 +200,67 @@ const stateName = computed(() => STATE_NAMES[props.estado] || props.estado);
     </div>
   </Modal>
 </template>
+
+<style scoped>
+.input-field {
+  border-radius: 0.5rem;
+  border: 1px solid rgb(212 212 216);
+  background-color: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: rgb(24 24 27);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-field:focus {
+  border-color: #E8AF3E;
+  box-shadow: 0 0 0 2px rgb(232 175 62 / 0.2);
+}
+:global(.dark) .input-field {
+  border-color: rgb(63 63 70);
+  background-color: rgb(9 9 11);
+  color: rgb(244 244 245);
+}
+.btn-ghost-sm {
+  border-radius: 0.5rem;
+  border: 1px solid rgb(212 212 216);
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(63 63 70);
+  transition: background-color 0.15s;
+}
+.btn-ghost-sm:hover {
+  background-color: rgb(244 244 245);
+}
+:global(.dark) .btn-ghost-sm {
+  border-color: rgb(63 63 70);
+  color: rgb(228 228 231);
+}
+:global(.dark) .btn-ghost-sm:hover {
+  background-color: rgb(39 39 42);
+}
+.icon-btn-sm {
+  display: flex;
+  height: 1.9rem;
+  width: 1.9rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: rgb(113 113 122);
+  transition: background-color 0.15s, color 0.15s;
+}
+.icon-btn-sm:hover {
+  background-color: rgb(244 244 245);
+  color: rgb(24 24 27);
+}
+:global(.dark) .icon-btn-sm {
+  color: rgb(161 161 170);
+}
+:global(.dark) .icon-btn-sm:hover {
+  background-color: rgb(39 39 42);
+  color: rgb(244 244 245);
+}
+</style>

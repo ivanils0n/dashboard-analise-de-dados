@@ -36,9 +36,7 @@ function latest(key) {
 
 const info = computed(() => [
   { label: "Função", value: latest("funcao") },
-  { label: "Departamento", value: latest("departamento") },
   { label: "Filial", value: latest("filial") },
-  { label: "Líder imediato", value: latest("liderImediato") },
   { label: "Gerente regional", value: latest("gerenteRegional") },
   { label: "Regional", value: latest("regional") || latest("estado") }
 ]);
@@ -81,7 +79,7 @@ function close() {
       <dl class="grid gap-3 rounded-xl border border-zinc-200 p-4 sm:grid-cols-2 dark:border-zinc-800">
         <div v-for="item in info" :key="item.label" class="flex flex-col gap-0.5">
           <dt class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-400">{{ item.label }}</dt>
-          <dd class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ item.value || "—" }}</dd>
+          <dd class="uppercase text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ item.value || "—" }}</dd>
         </div>
       </dl>
 
@@ -96,7 +94,7 @@ function close() {
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Valor pago</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="uppercase">
               <tr
                 v-for="e in sorted"
                 :key="e.id"
