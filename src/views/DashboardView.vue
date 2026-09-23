@@ -37,7 +37,8 @@ import { singleMonthOfRange, ymLabel, safeSetItem, localStore, normalizeText, fo
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
 import { toXLSX, toCSV } from "@/lib/export";
-import { hydrateState } from "@/lib/db";
+import { hydrateState, reloadData } from "@/lib/db";
+import { syncAll } from "@/lib/employees";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
@@ -415,6 +416,23 @@ const custoContratacaoMapa = computed(() =>
   }))
 );
 
+/* "Recarregar dados": limpa o cache e baixa tudo de novo da planilha. */
+const reloading = ref(false);
+async function handleReload() {
+  if (reloading.value) return;
+  reloading.value = true;
+  try {
+    await reloadData();
+    syncAll();
+    toast("Dados recarregados.");
+  } catch (err) {
+    console.error("[DashboardView] Falha ao recarregar os dados:", err);
+    toast("Não foi possível recarregar os dados.");
+  } finally {
+    reloading.value = false;
+  }
+}
+
 function openLaunch() {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -616,6 +634,19 @@ watch(activeTab, (tab) => {
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Gente &amp; Gestão</h1>
+        <button
+          type="button"
+          class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          aria-label="Recarregar dados"
+          title="Recarregar dados"
+          :disabled="reloading"
+          @click="handleReload"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="reloading ? 'animate-spin' : ''">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <polyline points="21 3 21 9 15 9" />
+          </svg>
+        </button>
       </div>
 
       <!-- Abas: em telas médias+ ficam na TopBar. -->

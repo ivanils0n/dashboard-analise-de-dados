@@ -85,14 +85,13 @@ export const ENTITIES: Record<string, EntityDef> = {
     key: "headcount",
     label: "Headcount",
     orderBy: "mes_referencia desc",
-    search: ["codigo", "colaborador", "funcao"],
+    search: ["colaborador", "funcao"],
     filters: [
       { param: "data_de", column: "mes_referencia", kind: "gte" },
       { param: "data_ate", column: "mes_referencia", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
-      { name: "codigo", type: "text" },
       { name: "colaborador", type: "text", required: true },
       { name: "funcao", type: "text" },
       { name: "remuneracao", type: "number" },

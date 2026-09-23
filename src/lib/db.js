@@ -156,7 +156,6 @@ function permanenciaToRow(p) {
 function headcountToRow(h) {
   return {
     id: h.id,
-    codigo: h.codigo != null ? String(h.codigo) : null,
     colaborador: h.colaborador ?? "",
     funcao: h.funcao != null ? String(h.funcao) : null,
     remuneracao: h.remuneracao != null ? Number(h.remuneracao) : null,
@@ -363,20 +362,26 @@ export function registerRemote() {
    tabela dedicada. Mantêm exatamente a forma que metrics.js/useDashboardData.js
    e os modais de indicador já esperavam da antiga "lancamentos" — só a
    origem do dado mudou. */
+/* Textos descritivos vindos da planilha (nomes, filial, função...) sempre em
+   maiúsculas na tela, mesmo que tenham sido digitados em minúsculas. */
+function up(v) {
+  return v == null ? v : String(v).toUpperCase();
+}
+
 function mapRemoteDiaria(row, impliedState) {
   return {
     id: row.id,
     date: row.competencia,
     value: Number(row.valor) || 0,
     meta: {
-      employeeName: row.nome_colaborador || "",
-      funcao: row.funcao || null,
-      departamento: row.departamento || null,
-      filial: row.filial || null,
-      liderImediato: row.lider_imediato || null,
-      gerenteRegional: row.gerente_regional || null,
-      regional: row.regional || null,
-      motivo: row.motivo || null,
+      employeeName: up(row.nome_colaborador) || "",
+      funcao: up(row.funcao) || null,
+      departamento: up(row.departamento) || null,
+      filial: up(row.filial) || null,
+      liderImediato: up(row.lider_imediato) || null,
+      gerenteRegional: up(row.gerente_regional) || null,
+      regional: up(row.regional) || null,
+      motivo: up(row.motivo) || null,
       semPeriodo: Boolean(row.sem_periodo),
       estado: row.estado_sigla || impliedState || null
     }
@@ -389,11 +394,11 @@ function mapRemoteTreinamento(row, impliedState) {
     date: row.competencia,
     value: Number(row.horas) || 0,
     meta: {
-      employeeName: row.nome_colaborador || "",
-      cargo: row.cargo || null,
-      filial: row.filial || null,
-      gerenteRegional: row.gerente_regional || null,
-      tema: row.tema || null,
+      employeeName: up(row.nome_colaborador) || "",
+      cargo: up(row.cargo) || null,
+      filial: up(row.filial) || null,
+      gerenteRegional: up(row.gerente_regional) || null,
+      tema: up(row.tema) || null,
       modalidade: row.modalidade || null,
       estado: row.estado_sigla || impliedState || null
     }
@@ -410,7 +415,7 @@ function mapRemoteCustoFolha(row, impliedState) {
     value: Number(row.valor) || 0,
     meta: {
       cnpj: row.filial_cnpj || null,
-      razaoSocial: row.razao_social || null,
+      razaoSocial: up(row.razao_social) || null,
       percent: row.percent != null && row.percent !== "" ? Number(row.percent) : null,
       estado: row.estado_sigla || impliedState || null
     }
@@ -438,21 +443,21 @@ function mapRemoteMesIncompleto(row, impliedState) {
 function mapRemoteVacancy(row, impliedState) {
   return {
     id: row.id,
-    name: row.nome ?? "",
+    name: up(row.nome) ?? "",
     openAt: row.aberta_em,
     closeAt: row.fechada_em,
     salario: row.salario != null ? Number(row.salario) : null,
     tipoContratacao: row.tipo_contratacao || null,
-    filial: row.filial || null,
+    filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null,
-    recrutador: row.recrutador || null
+    recrutador: up(row.recrutador) || null
   };
 }
 
 function mapRemoteTurnover(row, impliedState) {
   return {
     id: row.id,
-    filial: row.filial || null,
+    filial: up(row.filial) || null,
     mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
     admitidos: row.admitidos != null ? Number(row.admitidos) : 0,
     demitidos: row.demitidos != null ? Number(row.demitidos) : 0,
@@ -464,10 +469,10 @@ function mapRemoteTurnover(row, impliedState) {
 function mapRemotePermanencia(row, impliedState) {
   return {
     id: row.id,
-    colaborador: row.colaborador ?? "",
+    colaborador: up(row.colaborador) ?? "",
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     dataDemissao: row.data_demissao ? String(row.data_demissao).slice(0, 10) : null,
-    filial: row.filial || null,
+    filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null
   };
 }
@@ -475,15 +480,14 @@ function mapRemotePermanencia(row, impliedState) {
 function mapRemoteHeadcount(row, impliedState) {
   return {
     id: row.id,
-    codigo: row.codigo != null ? String(row.codigo) : null,
-    colaborador: row.colaborador ?? "",
-    funcao: row.funcao != null ? String(row.funcao) : null,
+    colaborador: up(row.colaborador) ?? "",
+    funcao: row.funcao != null ? up(row.funcao) : null,
     remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
     status: row.status === "demitido" ? "demitido" : "ativo",
     demitidoMes: row.demitido_mes ? String(row.demitido_mes).slice(0, 7) : null,
-    filial: row.filial || null,
+    filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null
   };
 }
@@ -492,9 +496,9 @@ function mapRemoteBranch(row, impliedState) {
   return {
     id: row.id,
     cnpj: row.cnpj ?? "",
-    name: row.nome ?? "",
-    shortName: row.abreviado ?? "",
-    manager: row.gerente || null,
+    name: up(row.nome) ?? "",
+    shortName: up(row.abreviado) ?? "",
+    manager: up(row.gerente) || null,
     estado: row.estado_sigla || impliedState || null
   };
 }

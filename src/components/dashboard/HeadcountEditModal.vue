@@ -25,7 +25,6 @@ const emit = defineEmits(["close", "saved"]);
 const { show: toast } = useToast();
 
 const form = reactive({
-  codigo: "",
   colaborador: "",
   funcao: "",
   remuneracao: "",
@@ -37,7 +36,6 @@ const form = reactive({
 function loadRecord(id) {
   const h = id ? getHeadcountById(id) : null;
   if (!h) return;
-  form.codigo = h.codigo || "";
   form.colaborador = h.colaborador || "";
   form.funcao = h.funcao || "";
   form.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
@@ -94,7 +92,6 @@ async function submit() {
   saving.value = true;
   try {
     updateHeadcountRecord(props.recordId, {
-      codigo: form.codigo,
       colaborador: nome,
       funcao: form.funcao,
       remuneracao,
@@ -120,15 +117,9 @@ async function submit() {
         <input id="hcEditColaborador" v-model="form.colaborador" type="text" class="input-field uppercase" placeholder="Nome do colaborador" />
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="flex flex-col gap-1.5">
-          <label for="hcEditCodigo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Código</label>
-          <input id="hcEditCodigo" v-model="form.codigo" type="text" class="input-field" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="hcEditFuncao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Função</label>
-          <input id="hcEditFuncao" v-model="form.funcao" type="text" class="input-field uppercase" />
-        </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="hcEditFuncao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Função</label>
+        <input id="hcEditFuncao" v-model="form.funcao" type="text" class="input-field uppercase" />
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">

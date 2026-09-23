@@ -124,10 +124,15 @@ export async function listRecords(
   return { data, total: filtered.length };
 }
 
-export async function listAllRecords(env: Bindings, entityKey: string, estado: EstadoFiltro) {
+export async function listAllRecords(
+  env: Bindings,
+  entityKey: string,
+  estado: EstadoFiltro,
+  clientSignal?: AbortSignal
+) {
   const entity = ENTITIES[entityKey];
   const table = tableName(entityKey);
-  const { rows } = await readTable(env, table, entity.columns);
+  const { rows } = await readTable(env, table, entity.columns, clientSignal);
   return rows.filter((row) => matchesEstado(entity, row, estado));
 }
 

@@ -853,7 +853,6 @@ function handleExportTurnover() {
 
 /* ---------- Headcount (quadro de colaboradores lançado por mês) ---------- */
 const headcount = reactive({
-  codigo: "",
   colaborador: "",
   funcao: "",
   remuneracao: "",
@@ -893,7 +892,6 @@ const headcountFilterBranches = computed(() => {
 });
 
 function resetHeadcountForm() {
-  headcount.codigo = "";
   headcount.colaborador = "";
   headcount.funcao = "";
   headcount.remuneracao = "";
@@ -918,7 +916,6 @@ function submitHeadcount() {
   if (remuneracao !== null && isNaN(remuneracao)) return toast("Informe uma remuneração válida (R$).");
 
   const payload = {
-    codigo: headcount.codigo,
     colaborador: nome,
     funcao: headcount.funcao,
     remuneracao,
@@ -1004,7 +1001,7 @@ const filteredHeadcount = computed(() => {
   const q = normalizeText(headcountSearch.value).trim();
   if (!q) return list;
   return list.filter((h) =>
-    normalizeText([h.codigo, h.colaborador, h.funcao, h.estado || "", headcountBranchLabel(h)].join(" ")).includes(q)
+    normalizeText([h.colaborador, h.funcao, h.estado || "", headcountBranchLabel(h)].join(" ")).includes(q)
   );
 });
 
@@ -1986,12 +1983,8 @@ onUnmounted(() => {
       <!-- ===== HEADCOUNT ===== -->
       <template v-if="indicator.form === 'headcount'">
         <div v-show="activeTab === 'novo'" class="flex flex-col gap-4">
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="grid gap-4">
             <div class="flex flex-col gap-1.5">
-              <label for="hcCodigo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Código</label>
-              <input id="hcCodigo" v-model="headcount.codigo" type="text" class="input-field" placeholder="Ex.: 3375" />
-            </div>
-            <div class="flex flex-col gap-1.5 sm:col-span-1 lg:col-span-2">
               <label for="hcColaborador" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
               <input id="hcColaborador" v-model="headcount.colaborador" v-upper type="text" class="input-field uppercase" placeholder="Nome do colaborador" />
             </div>
@@ -2067,7 +2060,7 @@ onUnmounted(() => {
                 v-model="headcountSearch"
                 type="search"
                 class="input-field"
-                placeholder="Código, colaborador, função, estado..."
+                placeholder="Colaborador, função, estado..."
               />
             </div>
             <div class="flex flex-col gap-1.5 sm:w-56">
@@ -2140,8 +2133,8 @@ onUnmounted(() => {
                   </button>
                   <Badge v-if="h.status === 'demitido'" tone="dark">Demitido em {{ ymLabel(h.demitidoMes) }}</Badge>
                 </div>
-                <span v-if="h.codigo || h.funcao || h.estado || headcountBranchName(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
-                  {{ [h.codigo, headcountBranchName(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}
+                <span v-if="h.funcao || h.estado || headcountBranchName(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  {{ [headcountBranchName(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}
                 </span>
                 <span v-if="h.remuneracao != null" class="text-xs text-zinc-500 dark:text-zinc-400">
                   Remuneração: {{ formatCurrency(h.remuneracao) }}

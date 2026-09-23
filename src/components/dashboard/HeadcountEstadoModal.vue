@@ -50,7 +50,7 @@ const filteredRows = computed(() => {
   const q = normalizeText(search.value).trim();
   if (!q) return rows.value;
   return rows.value.filter((h) =>
-    normalizeText([h.codigo, h.colaborador, h.empresa, h.funcao].join(" ")).includes(q)
+    normalizeText([h.colaborador, h.empresa, h.funcao].join(" ")).includes(q)
   );
 });
 
@@ -134,7 +134,7 @@ async function removeRow(h) {
           v-model="search"
           type="search"
           class="input-field"
-          placeholder="Código, nome, empresa ou função..."
+          placeholder="Nome, empresa ou função..."
         />
       </div>
 
@@ -148,7 +148,6 @@ async function removeRow(h) {
               <tr
                 class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400"
               >
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Código</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Função</th>
@@ -163,7 +162,6 @@ async function removeRow(h) {
                 :key="h.id"
                 class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
               >
-                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.codigo || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">
                   <button
                     v-if="canEdit"

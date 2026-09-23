@@ -33,19 +33,6 @@ function filterByState(list, state) {
   return list.filter((x) => sameState(x.estado, state));
 }
 
-/* Chave de comparação de nomes de pessoas: ignora caixa, acentos, espaços e
-   pontuação — "Porto Velho", "PORTO VELHO", "portovelho" e "Porto-Velho"
-   tornam-se a mesma chave. Usada pela busca do Headcount por nome
-   (findHeadcountMatches) — o cadastro de Colaboradores que também usava isso
-   foi removido do sistema. */
-export function normalizePersonName(name) {
-  return String(name ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
-
 /* Chave de comparação de nomes abreviados de filial: ignora caixa, acentos,
    espaços/pontuação e zeros à esquerda de cada número.
    Ex.: "pvh5", "PVH 5", "pvh05", "Pvh-05" → mesma chave ("pvh5"). */
@@ -449,51 +436,7 @@ export function headcountCountInRange(state, range) {
   return list.filter((h) => activeInMonth(h, ym)).length;
 }
 
-/* Localiza um colaborador do headcount pelo código (usado pelas importações
-   de "novos colaboradores" — evita duplicar quem já existe — e de
-   "demitidos" — localiza quem terá o status alterado). Comparação
-   tolerante a espaços/caixa. Quando `filial` é informado (mesmo `null`),
-   a busca exige empresa igual — duas filiais podem reaproveitar o mesmo
-   código; quando omitido (`undefined`), cai no código isolado (compat.). */
-export function findHeadcountByCodigo(state, codigo, filial) {
-  const key = String(codigo || "").trim().toLowerCase();
-  if (!key) return null;
-  const list = filterByState(getHeadcounts(), state).filter(
-    (h) => String(h.codigo || "").trim().toLowerCase() === key
-  );
-  if (filial !== undefined) {
-    const fKey = normalizeBranchKey(filial);
-    return list.find((h) => normalizeBranchKey(h.filial) === fKey) || null;
-  }
-  return list[0] || null;
-}
-
-/* Localiza colaboradores do headcount por Código + Nome (usado pela
-   importação de "demitidos" — não depende mais de Empresa). Nome comparado
-   normalizado (ver normalizePersonName), tolerante a acentos/caixa/espaços.
-   Busca primeiro por Código + Nome; se nada bater (ex.: código divergente na
-   planilha), cai para busca só pelo Nome. Devolve todos os registros
-   encontrados — mais de um significa duplicidade, que a tela trata pedindo
-   para escolher qual é qual. */
-export function findHeadcountMatches(state, codigo, colaborador) {
-  const nameKey = normalizePersonName(colaborador);
-  if (!nameKey) return [];
-  let list = getHeadcounts();
-  if (state && state !== "todos") list = list.filter((h) => sameState(h.estado, state));
-
-  const codeKey = String(codigo || "").trim().toLowerCase();
-  if (codeKey) {
-    const byCodeAndName = list.filter(
-      (h) => String(h.codigo || "").trim().toLowerCase() === codeKey && normalizePersonName(h.colaborador) === nameKey
-    );
-    if (byCodeAndName.length) return byCodeAndName;
-  }
-
-  return list.filter((h) => normalizePersonName(h.colaborador) === nameKey);
-}
-
 export function addHeadcountRecord({
-  codigo = null,
   colaborador,
   funcao = null,
   remuneracao = null,
@@ -504,7 +447,6 @@ export function addHeadcountRecord({
 }) {
   const record = {
     id: createId(),
-    codigo: codigo != null ? String(codigo) : null,
     colaborador: String(colaborador || "").toUpperCase(),
     funcao: funcao != null ? String(funcao).toUpperCase() : null,
     remuneracao: moneyOrNull(remuneracao),
@@ -521,13 +463,12 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { codigo, colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, status, demitidoMes, filial, estado }
+  { colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, status, demitidoMes, filial, estado }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
   const updated = {
     ...record,
-    codigo: codigo !== undefined ? (codigo != null ? String(codigo) : null) : record.codigo,
     colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
     funcao: funcao !== undefined ? (funcao != null ? String(funcao).toUpperCase() : null) : record.funcao,
     remuneracao: remuneracao !== undefined ? moneyOrNull(remuneracao) : record.remuneracao,

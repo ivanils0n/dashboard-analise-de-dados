@@ -79,13 +79,12 @@ function permanenciaRows(list) {
   return rows;
 }
 
-const HEADCOUNT_HEADER = ["Código", "Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Status"];
+const HEADCOUNT_HEADER = ["Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Status"];
 
 function headcountRows(list) {
   const rows = [HEADCOUNT_HEADER];
   (list || []).forEach((h) => {
     rows.push([
-      h.codigo || "",
       h.colaborador || "",
       h.filial || "",
       h.funcao || "",
@@ -185,7 +184,7 @@ function allTables() {
     { name: "Vagas", rows: vagasRows(getVacancies()), cols: [28, 16, 18, 20, 14, 10, 14, 12, 14] },
     { name: "Turnover", rows: turnoverRows(getTurnovers()), cols: [20, 16, 12, 12, 10, 10] },
     { name: "Permanência", rows: permanenciaRows(getPermanencias()), cols: [28, 18, 18, 10] },
-    { name: "Headcount", rows: headcountRows(getHeadcounts()), cols: [12, 28, 14, 22, 16, 18, 10, 12] },
+    { name: "Headcount", rows: headcountRows(getHeadcounts()), cols: [28, 14, 22, 16, 18, 10, 12] },
     { name: "Filiais", rows: filiaisRows(getBranches()), cols: [14, 22, 30, 18, 22, 10] },
     { name: "Diárias", rows: diariasRows(getEntriesFor("custo_diaria")), cols: [12, 28, 20, 20, 26, 14, 10, 12] },
     { name: "Treinamentos", rows: treinamentosRows(getEntriesFor("treinamento")), cols: [14, 28, 20, 20, 26, 14, 20, 10] },

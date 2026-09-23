@@ -9,7 +9,9 @@ import {
   turnoverAvgTenureDays,
   headcountCountInRange,
   turnoverRateStats,
-  retentionRate
+  retentionRate,
+  findBranchByShortName,
+  normalizeBranchKey
 } from "@/lib/employees";
 import {
   formatValue,
@@ -341,13 +343,18 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Rótulo (filial) que agrupa um treinamento: localiza a filial do cadastro
-     cujo nome/sigla aparece no texto livre de "filial" do lançamento; sem
-     nenhuma batida, usa o próprio texto digitado. */
+     pela sigla (ignorando caixa, espaços e zeros à esquerda: "PVH05" = "PVH 5"),
+     depois pelo nome, e por fim por "contém"; sem nenhuma batida, usa o
+     próprio texto digitado. */
   function treinamentoFilialLabel(meta) {
-    const text = String((meta && meta.filial) || "").toUpperCase();
+    const text = String((meta && meta.filial) || "").toUpperCase().trim();
     if (!text) return "Sem filial";
+    const key = normalizeBranchKey(text);
     const branches = getBranches();
     const match =
+      findBranchByShortName(text, meta && meta.estado) ||
+      branches.find((b) => normalizeBranchKey(b.shortName) === key) ||
+      branches.find((b) => normalizeBranchKey(b.name) === key) ||
       branches.find((b) => b.shortName && text.includes(String(b.shortName).toUpperCase())) ||
       branches.find((b) => b.name && text.includes(String(b.name).toUpperCase()));
     return match ? String(match.shortName || match.name).toUpperCase() : text;

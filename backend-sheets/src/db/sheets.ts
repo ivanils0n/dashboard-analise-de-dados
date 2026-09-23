@@ -20,16 +20,41 @@ function sleep(ms: number): Promise<void> {
 // erro em vez do JSON esperado. O boot do front dispara várias tabelas em
 // paralelo, então isso acontece na prática — repete com backoff (+jitter)
 // antes de desistir, em vez de propagar um 500 por uma sobrecarga passageira.
+// Leitura que passa de 6 s na 1ª tentativa (Apps Script "frio") é cancelada e
+// refeita na hora, sem limite — a 2ª pega o script já quente. Só vale pra
+// "read": cancelar uma gravação no meio poderia duplicar/perder linhas.
+const FIRST_READ_TIMEOUT_MS = 8000;
+
 async function callAppsScriptOnce<T>(
   env: Bindings,
   action: string,
-  params: Record<string, unknown>
-): Promise<{ ok: true; data: T } | { ok: false; retriable: boolean; message: string }> {
-  const res = await fetch(env.APPS_SCRIPT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ secret: env.APPS_SCRIPT_SECRET, action, ...params })
-  });
+  params: Record<string, unknown>,
+  timeoutMs?: number,
+  clientSignal?: AbortSignal
+): Promise<{ ok: true; data: T } | { ok: false; retriable: boolean; message: string; timedOut?: boolean }> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = timeoutMs ? setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs) : null;
+  // Cliente (navegador) desistiu — recarregou/fechou a página: cancela também a chamada ao Apps Script.
+  const onClientAbort = () => controller.abort();
+  clientSignal?.addEventListener("abort", onClientAbort);
+  let res: Response;
+  try {
+    res = await fetch(env.APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: env.APPS_SCRIPT_SECRET, action, ...params }),
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (timedOut) {
+      return { ok: false, retriable: true, timedOut: true, message: `Apps Script sem resposta em ${timeoutMs! / 1000}s na ação "${action}".` };
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+    clientSignal?.removeEventListener("abort", onClientAbort);
+  }
 
   const text = await res.text();
   if (!res.ok) {
@@ -61,15 +86,19 @@ async function callAppsScriptOnce<T>(
 async function callAppsScript<T>(
   env: Bindings,
   action: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  clientSignal?: AbortSignal
 ): Promise<T> {
   let lastMessage = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const result = await callAppsScriptOnce<T>(env, action, params);
+    if (clientSignal?.aborted) throw new Error("Requisição cancelada pelo cliente.");
+    const timeoutMs = action === "read" && attempt === 1 ? FIRST_READ_TIMEOUT_MS : undefined;
+    const result = await callAppsScriptOnce<T>(env, action, params, timeoutMs, clientSignal);
     if (result.ok) return result.data;
     if (!result.retriable || attempt === MAX_ATTEMPTS) throw new Error(result.message);
 
     lastMessage = result.message;
+    if ("timedOut" in result && result.timedOut) continue; // refaz na hora, sem espera
     const jitter = Math.random() * RETRY_BASE_DELAY_MS;
     await sleep(RETRY_BASE_DELAY_MS * attempt + jitter);
   }
@@ -256,9 +285,10 @@ export type IndexedTable = {
 export async function readTable(
   env: Bindings,
   sheetName: string,
-  columns: ColumnDef[]
+  columns: ColumnDef[],
+  clientSignal?: AbortSignal
 ): Promise<IndexedTable> {
-  const rawRows = await callAppsScript<unknown[][]>(env, "read", { sheet: sheetName });
+  const rawRows = await callAppsScript<unknown[][]>(env, "read", { sheet: sheetName }, clientSignal);
 
   const rows: SheetRow[] = [];
   const rowNumberById = new Map<string, number>();

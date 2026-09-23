@@ -14,7 +14,7 @@ data.get("/:table", requireAuth(), async (c) => {
   const parsed = parseStateTable(c.req.param("table"));
   if (!parsed) return fail(c, 404, "Tabela inválida.", "invalid_table");
 
-  const rows = await listAllRecords(c.env, parsed.entityKey, parsed.estado);
+  const rows = await listAllRecords(c.env, parsed.entityKey, parsed.estado, c.req.raw.signal);
   return ok(c, rows);
 });
 

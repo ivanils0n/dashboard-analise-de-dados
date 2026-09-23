@@ -42,9 +42,8 @@ function readToken() {
   }
 }
 
-/* Sem resposta em 30 s a chamada é abortada. Sem isso, uma requisição
-   pendurada (rede caiu, Worker frio demais) nunca terminava e a tela de
-   carregamento ficava presa para sempre. */
+/* Sem resposta em 30 s uma gravação (POST etc.) é abortada, para a tela de
+   carregamento não ficar presa. Leituras (GET) ficam sem limite — ver apiFetch. */
 const REQUEST_TIMEOUT_MS = 30000;
 
 /* Registrado pelo auth.js (evita import circular): chamado quando a API
@@ -71,7 +70,9 @@ export async function apiFetch(
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  /* Leituras (GET) não têm limite: a 2ª tentativa do Worker à planilha fica
+     ativa até responder — recarregar ou fechar a página cancela a requisição. */
+  const timer = method === "GET" ? null : setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res;
   try {
     res = await fetch(API_BASE + path, {
@@ -90,7 +91,7 @@ export async function apiFetch(
     }
     throw e;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 
   let data = null;
