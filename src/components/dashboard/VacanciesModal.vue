@@ -20,7 +20,10 @@ const props = defineProps({
      KPI/gráfico:
        tempo_contratacao  vagas abertas no mês (data de abertura)
        custo_contratacao  vagas fechadas com salário no mês (data de fechamento) */
-  indicatorId: { type: String, default: "tempo_contratacao" }
+  indicatorId: { type: String, default: "tempo_contratacao" },
+  /* Filial já selecionada ao abrir (clique numa barra do gráfico de custo de
+     contratação); "__sem_filial__" = vagas sem filial. */
+  initialFilial: { type: String, default: null }
 });
 const emit = defineEmits(["close", "edit"]);
 
@@ -50,10 +53,12 @@ const periodTo = computed(() => dateFilter.end);
    o hydrate (só uma troca depois de aberto) — se o filtro do dashboard não
    tivesse carregado esse(s) estado(s) ainda, a tabela abria vazia até o
    usuário trocar o filtro de Estado manualmente. */
+let firstEstadoRun = true;
 watch(
   () => form.estado,
   async (state) => {
-    form.filial = "todos";
+    form.filial = firstEstadoRun && props.initialFilial ? props.initialFilial : "todos";
+    firstEstadoRun = false;
     try {
       await hydrateState(state === "todos" ? "todos" : state);
     } catch (err) {
@@ -134,6 +139,12 @@ const baseList = computed(() => {
 /* Soma dos salários das vagas exibidas (Custo de contratação): mês e estado
    filtrados, mais filial e busca se aplicados. */
 const totalSalarios = computed(() => baseList.value.reduce((sum, v) => sum + (Number(v.salario) || 0), 0));
+
+/* Custo médio de contratação das vagas exibidas (só as com salário). */
+const custoMedio = computed(() => {
+  const withSalary = baseList.value.filter((v) => Number(v.salario) > 0);
+  return withSalary.length ? withSalary.reduce((s, v) => s + Number(v.salario), 0) / withSalary.length : null;
+});
 
 const openCount = computed(() => baseList.value.filter((v) => !v.closeAt).length);
 const closedCount = computed(() => baseList.value.filter((v) => v.closeAt).length);
@@ -342,6 +353,10 @@ watch(rows, () => nextTick(updateTableWidths));
         <div v-if="isCost" class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-accent/25 dark:bg-accent/10">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Total de salários</span>
           <p class="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatCurrency(totalSalarios) }}</p>
+        </div>
+        <div v-if="isCost" class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 dark:border-accent/25 dark:bg-accent/10">
+          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Custo médio de contratação</span>
+          <p class="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ custoMedio === null ? "—" : formatCurrency(custoMedio) }}</p>
         </div>
       </div>
 

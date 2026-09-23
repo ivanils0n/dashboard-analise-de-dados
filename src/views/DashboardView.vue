@@ -12,6 +12,7 @@ import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue"
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
+import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
@@ -32,7 +33,7 @@ import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
-import { getIndicatorById } from "@/lib/config";
+import { getIndicatorById, STATES } from "@/lib/config";
 import { singleMonthOfRange, ymLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
@@ -123,6 +124,25 @@ const mensalEntriesOpen = ref(false);
 const mensalEntriesIndicatorId = ref(null);
 const vacanciesOpen = ref(false);
 const vacancyIndicatorId = ref("tempo_contratacao");
+/* Filial pré-selecionada no modal de Vagas (clique numa barra do custo). */
+const vacancyInitialFilial = ref(null);
+
+/* Fatia "OUTRAS" da pizza de custo: modal com as filiais agrupadas nela. */
+const outrasFiliaisOpen = ref(false);
+const outrasFiliaisItems = ref([]);
+
+function onCustoFilial(filial) {
+  if (filial === "__outras__") {
+    const outras = dashboard.custoContratacaoMedioPorFilial().find((r) => r.key === "__outras__");
+    outrasFiliaisItems.value = outras ? outras.items : [];
+    outrasFiliaisOpen.value = true;
+    return;
+  }
+  outrasFiliaisOpen.value = false;
+  vacancyIndicatorId.value = "custo_contratacao";
+  vacancyInitialFilial.value = filial || null;
+  vacanciesOpen.value = true;
+}
 const permanenciaOpen = ref(false);
 
 /* Modal ao clicar em uma barra do gráfico de Treinamento (por filial). */
@@ -194,15 +214,12 @@ function onHiringBarContext({ index }) {
 
 /* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
    vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
-function onKpiCardBarClick({ card, barData }, { index, label }) {
+function onKpiCardBarClick({ card, pieData }, { index, label }) {
   if (card.id === "custo_diaria") return onDiariaBarClick({ label });
   if (card.id === "headcount") return onHeadcountBarClick({ label });
   if (card.id !== "custo_contratacao") return;
-  const row = barData[index];
-  if (!row) return;
-  vacancyDetailId.value = row.vacancyId;
-  vacancyDetailFallback.value = { name: row.label, salario: row.value, date: row.date };
-  vacancyDetailOpen.value = true;
+  const row = (pieData || [])[index];
+  if (row && row.key) onCustoFilial(row.key);
 }
 
 function onVacancyDetailEdit(vacancyId) {
@@ -319,11 +336,21 @@ const scrollRef = ref(null);
 
 /* Gráficos por indicador: os que dividem a linha (2 por linha) vêm primeiro,
    na ordem em que aparecem; os demais seguem em largura total. */
-const HALF_WIDTH_CARDS = ["headcount", "turnover", "absenteismo", "retencao"];
+/* Grade de 3 colunas: [Headcount | Turnover | Mapa-filtro] e depois
+   [Absenteísmo | Custo médio de contratação | Retenção]. Os demais gráficos
+   ocupam a largura toda. */
+const CHART_ORDER = ["headcount", "turnover", "absenteismo", "custo_contratacao", "retencao"];
+/* Grade de 12 colunas: Turnover e Custo de contratação mais largos (5), e o
+   mapa-filtro e a Retenção estreitos (3). */
+function chartSpan(id) {
+  if (id === "turnover" || id === "custo_contratacao") return "lg:col-span-5";
+  if (id === "retencao") return "lg:col-span-3";
+  return CHART_ORDER.includes(id) ? "lg:col-span-4" : "lg:col-span-12";
+}
 const orderedKpiChartCards = computed(() => {
-  const half = HALF_WIDTH_CARDS.map((id) => kpiChartCards.value.find((c) => c.id === id)).filter(Boolean);
-  const rest = kpiChartCards.value.filter((c) => !HALF_WIDTH_CARDS.includes(c.id));
-  return [...half, ...rest];
+  const first = CHART_ORDER.map((id) => kpiChartCards.value.find((c) => c.id === id)).filter(Boolean);
+  const rest = kpiChartCards.value.filter((c) => !CHART_ORDER.includes(c.id));
+  return [...first, ...rest];
 });
 let flashTimer = null;
 
@@ -366,8 +393,7 @@ function lineEntries(card) {
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
-  if (card.id === "custo_contratacao") return dashboard.custoContratacaoBarByFuncao();
-  if (card.id === "custo_diaria") return dashboard.custoDiariaBarByColaborador();
+    if (card.id === "custo_diaria") return dashboard.custoDiariaBarByColaborador();
   return [];
 }
 
@@ -385,8 +411,20 @@ const kpiChartViews = computed(() =>
   orderedKpiChartCards.value.map((card) => ({
     card,
     entries: lineEntries(card),
-    pieData: card.id === "ticket_medio" ? dashboard.ticketMedioBarByState() : card.kind === "pie" ? chartPieData(card.id) : [],
-    pieCenter: card.id === "ticket_medio" ? dashboard.ticketMedioPieCenter() : null,
+    pieData:
+      card.id === "ticket_medio"
+        ? dashboard.ticketMedioBarByState()
+        : card.id === "custo_contratacao"
+          ? dashboard.custoContratacaoMedioPorFilial()
+          : card.kind === "pie"
+            ? chartPieData(card.id)
+            : [],
+    pieCenter:
+      card.id === "ticket_medio"
+        ? dashboard.ticketMedioPieCenter()
+        : card.id === "custo_contratacao"
+          ? dashboard.custoContratacaoPieCenter()
+          : null,
     /* Turnover: quantidades de admissões/demissões e taxa total (centro da pizza). */
     turnoverSummary: card.id === "turnover" ? dashboard.cockpitChartFor("turnover").summary : null,
     barData: chartBarData(card),
@@ -405,16 +443,13 @@ const ticketChartRef = ref(null);
    faturamento (especulativo) no cabeçalho dele. null sem faturamento. */
 const custosFaturamento = computed(() => dashboard.ticketMedioFaturamento());
 
-/* Mapa ao lado do gráfico de Custo médio de contratação: RO, AM e PA com o
+/* Mapa-filtro ao lado do gráfico de Turnover (sem valores): RO, AM e PA com o
    filtro em "todos"; só o estado escolhido nos demais casos. */
-const custoContratacaoMapa = computed(() =>
-  dashboard.custoContratacaoPorEstado().map((s) => ({
-    uf: s.uf,
-    text: s.avg === null ? "—" : formatCurrency(s.avg),
-    sub: `${s.count} ${s.count === 1 ? "vaga" : "vagas"}`,
-    filled: s.count > 0
-  }))
-);
+const estadoFiltroMapa = computed(() => {
+  void filters.revision;
+  const ufs = !filters.current || filters.current === "todos" ? STATES : [filters.current];
+  return ufs.map((uf) => ({ uf, text: "", sub: "", filled: true }));
+});
 
 /* "Recarregar dados": limpa o cache e baixa tudo de novo da planilha. */
 const reloading = ref(false);
@@ -574,11 +609,13 @@ function onKpiContext(id) {
     permanenciaOpen.value = true;
   } else if (id === "tempo_contratacao") {
     vacancyIndicatorId.value = "tempo_contratacao";
+    vacancyInitialFilial.value = null;
     vacanciesOpen.value = true;
   } else if (id === "custo_contratacao") {
     /* O custo de contratação vem do salário das vagas fechadas no mês
        filtrado (mesma regra do KPI e do gráfico). */
     vacancyIndicatorId.value = "custo_contratacao";
+    vacancyInitialFilial.value = null;
     vacanciesOpen.value = true;
   }
 }
@@ -719,6 +756,7 @@ watch(activeTab, (tab) => {
       :show-values="showValues"
       @edit-vacancy="onVacancyEdit"
       @edit-permanencia="onPermanenciaEdit"
+      @custo-filial="onCustoFilial"
       @kpi-context="onKpiContext"
     />
 
@@ -792,30 +830,11 @@ watch(activeTab, (tab) => {
         {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
       </button>
     </div>
-    <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-2">
+    <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-12">
       <template v-for="view in gridChartViews" :key="view.card.id">
-        <!-- Custo médio de contratação: gráfico + mapa dos estados ao lado. -->
-        <div
-          v-if="view.card.id === 'custo_contratacao'"
-          class="grid gap-8 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_340px]"
-        >
-          <KpiChartCard
-            stacked
-            :card="view.card"
-            :entries="view.entries"
-            :pie-data="view.pieData"
-            :bar-data="view.barData"
-            :table-data="view.tableData"
-            :show-values="showValues"
-            :data-indicator-card="view.card.id"
-            @bar-click="onKpiCardBarClick(view, $event)"
-          />
-          <UfMapCard :states="custoContratacaoMapa" subtitle="Custo médio de contratação" @select="setState" />
-        </div>
         <KpiChartCard
-          v-else
           stacked
-          :class="HALF_WIDTH_CARDS.includes(view.card.id) ? '' : 'lg:col-span-2'"
+          :class="chartSpan(view.card.id)"
           :card="view.card"
           :entries="view.entries"
           :pie-data="view.pieData"
@@ -827,6 +846,15 @@ watch(activeTab, (tab) => {
           :data-indicator-card="view.card.id"
           @turnover-detail="openTurnoverDetail"
           @bar-click="onKpiCardBarClick(view, $event)"
+        />
+        <!-- Mapa dos estados ao lado do Turnover: só filtro, sem valores. -->
+        <UfMapCard
+          v-if="view.card.id === 'turnover'"
+          class="lg:col-span-3"
+          :states="estadoFiltroMapa"
+          title="Filtrar por estado"
+          :show-values="false"
+          @select="setState"
         />
       </template>
     </div>
@@ -1094,10 +1122,18 @@ watch(activeTab, (tab) => {
       @close="closeLaunch"
       @saved="onSaved"
     />
+    <FiliaisOutrasModal
+      v-if="outrasFiliaisOpen"
+      :open="outrasFiliaisOpen"
+      :items="outrasFiliaisItems"
+      @close="outrasFiliaisOpen = false"
+      @select="onCustoFilial"
+    />
     <VacanciesModal
       v-if="vacanciesOpen"
       :open="vacanciesOpen"
       :indicator-id="vacancyIndicatorId"
+      :initial-filial="vacancyInitialFilial"
       @close="vacanciesOpen = false"
       @edit="onVacancyEdit"
     />

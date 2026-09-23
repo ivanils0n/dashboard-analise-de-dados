@@ -58,6 +58,16 @@ function onTurnoverChartInfo(sliceIndex) {
   onTurnoverDetail(sliceIndex === 1 ? "demissoes" : "admissoes");
 }
 
+/* Clique numa fatia: Turnover abre o detalhe; Custo de contratação abre as vagas
+   da filial (o pai trata o "bar-click" com o índice da fatia). */
+function onPieClick(sliceIndex) {
+  if (props.turnoverSummary) return onTurnoverChartInfo(sliceIndex);
+  if (props.card.id === "custo_contratacao" && sliceIndex != null) {
+    fullscreenOpen.value = false;
+    emit("bar-click", { index: sliceIndex });
+  }
+}
+
 /* Altura do gráfico nos cards empilhados (padrão do BarChart: 288px). */
 const STACKED_HEIGHT_PX = 340;
 
@@ -156,9 +166,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
         :center-value="centerInfo.value"
         :center-caption="centerInfo.caption"
         :value-format="card.valueFormat || 'percent'"
-        :clickable="!!turnoverSummary"
-        @chart-click="onTurnoverChartInfo"
-        @chart-contextmenu="onTurnoverChartInfo"
+        :clickable="!!turnoverSummary || card.id === 'custo_contratacao'"
+        @chart-click="onPieClick"
+        @chart-contextmenu="onPieClick"
       />
       <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
     </div>
@@ -201,9 +211,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
             :center-value="centerInfo.value"
             :center-caption="centerInfo.caption"
             :value-format="card.valueFormat || 'percent'"
-            :clickable="!!turnoverSummary"
-            @chart-click="onTurnoverChartInfo"
-            @chart-contextmenu="onTurnoverChartInfo"
+            :clickable="!!turnoverSummary || card.id === 'custo_contratacao'"
+            @chart-click="onPieClick"
+            @chart-contextmenu="onPieClick"
           />
           <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
         </div>

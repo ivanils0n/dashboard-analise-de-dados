@@ -36,7 +36,7 @@ export const PIE_SECONDARY = "#94a3b8";
 /* Cores das fatias da pizza: as duas primeiras são as do Turnover (Entrada/
    Saída); as demais só entram em pizzas com mais de duas fatias (ex.: uma
    fatia por estado). */
-const PIE_COLORS = [ACCENT, PIE_SECONDARY, "#b45309", "#64748b", "#f2c766"];
+const PIE_COLORS = [ACCENT, PIE_SECONDARY, "#b45309", "#64748b", "#f2c766", "#0f766e", "#7c3aed", "#0284c7", "#65a30d", "#db2777"];
 
 /* Transformação de escala (raiz quadrada) aplicada às barras: comprime a
    altura de valores muito grandes em relação aos pequenos, evitando que

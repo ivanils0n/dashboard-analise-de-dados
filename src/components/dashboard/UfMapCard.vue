@@ -11,7 +11,10 @@ import { STATE_NAMES } from "@/lib/config";
 const props = defineProps({
   states: { type: Array, default: () => [] },
   title: { type: String, default: "Mapa por estado" },
-  subtitle: { type: String, default: "" }
+  subtitle: { type: String, default: "" },
+  /* false: o mapa vira só um filtro de estado — sem valores na lista nem no
+     tooltip. */
+  showValues: { type: Boolean, default: true }
 });
 
 /* Clique (ou Enter/Espaço) num estado: pede ao dashboard para filtrar por ele.
@@ -120,7 +123,7 @@ const shapes = computed(() =>
             @keydown.enter.prevent="selectState(s.uf)"
             @keydown.space.prevent="selectState(s.uf)"
           >
-            <title>{{ s.name }} — {{ s.text }}{{ s.sub ? ` (${s.sub})` : "" }}</title>
+            <title>{{ showValues ? `${s.name} — ${s.text}${s.sub ? ` (${s.sub})` : ""}` : s.name }}</title>
           </path>
           <text
             :x="s.shape.cx"
@@ -147,7 +150,7 @@ const shapes = computed(() =>
           ></span>
           {{ s.name }}
         </span>
-        <span class="text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+        <span v-if="showValues" class="text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
           {{ s.text }}
           <span v-if="s.sub" class="block text-xs font-normal text-zinc-400">{{ s.sub }}</span>
         </span>

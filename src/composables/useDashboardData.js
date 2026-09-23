@@ -186,6 +186,7 @@ export function useDashboardData(filter, options = {}) {
         meta: {
           vacancyId: v.id,
           vacancyName: v.name,
+          filial: v.filial || "",
           source: "vaga",
           ...(v.estado ? { estado: v.estado } : {})
         }
@@ -457,22 +458,44 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  /* Custo médio de contratação por estado, para o mapa da Visão geral: com o
-     filtro em "todos" traz RO, AM e PA; com um estado escolhido, só ele. Mesma
-     regra do gráfico (vagas fechadas com salário, dentro do período filtrado). */
-  function custoContratacaoPorEstado() {
-    const target = currentState();
-    const ufs = !target || target === "todos" ? STATES : [target];
-    return ufs.map((uf) => {
-      const list = filterByRange(costVacancyEntries(uf));
-      const total = list.reduce((sum, e) => sum + e.value, 0);
-      return {
-        uf,
-        count: list.length,
-        total,
-        avg: list.length ? total / list.length : null
-      };
+  /* Custo médio de contratação por filial, no período filtrado (pizza): uma
+     fatia por filial com a média dos salários das vagas fechadas, maior custo
+     primeiro. Só as 8 primeiras ganham fatia própria; o resto vira "OUTRAS"
+     (key "__outras__", com as filiais agrupadas em `items` — abre um modal
+     com elas). key = filial (ou "__sem_filial__", mesma constante do modal de
+     Vagas), usada ao clicar na fatia. */
+  const PIE_MAX_FILIAIS = 8;
+  function custoContratacaoMedioPorFilial() {
+    const byFilial = new Map();
+    filterByRange(costVacancyEntries()).forEach((e) => {
+      const key = (e.meta && e.meta.filial) || "__sem_filial__";
+      const acc = byFilial.get(key) || { count: 0, sum: 0 };
+      acc.count += 1;
+      acc.sum += e.value;
+      byFilial.set(key, acc);
     });
+    const rows = [...byFilial.entries()]
+      .map(([key, acc]) => ({
+        key,
+        label: key === "__sem_filial__" ? "SEM FILIAL" : key,
+        value: acc.sum / acc.count,
+        count: acc.count,
+        sum: acc.sum
+      }))
+      .sort((a, b) => b.value - a.value);
+    if (rows.length <= PIE_MAX_FILIAIS) return rows;
+    const rest = rows.slice(PIE_MAX_FILIAIS);
+    const count = rest.reduce((s, r) => s + r.count, 0);
+    const sum = rest.reduce((s, r) => s + r.sum, 0);
+    return [...rows.slice(0, PIE_MAX_FILIAIS), { key: "__outras__", label: "OUTRAS", value: sum / count, count, sum, items: rest }];
+  }
+
+  /* Centro da pizza: custo médio geral (todas as vagas fechadas do período). */
+  function custoContratacaoPieCenter() {
+    const list = filterByRange(costVacancyEntries());
+    if (!list.length) return null;
+    const avg = list.reduce((s, e) => s + e.value, 0) / list.length;
+    return { value: formatCurrency(avg), caption: "Média geral" };
   }
 
   /* Agregação para o gráfico de barras do Custo médio da diária geral: soma
@@ -790,12 +813,11 @@ export function useDashboardData(filter, options = {}) {
       if (ind.id === "custo_contratacao") {
         return {
           id: "custo_contratacao",
-          kind: "bar",
+          kind: "pie",
           title: ind.name,
-          sub: "Salário por vaga fechada, no período filtrado",
+          sub: "Custo médio (média dos salários) por filial, no período filtrado",
           unit: ind.unit,
-          valueFormat: "currency",
-          variant: "line"
+          valueFormat: "currency"
         };
       }
       if (ind.id === "custo_diaria") {
@@ -1115,12 +1137,12 @@ export function useDashboardData(filter, options = {}) {
     if (kpiId === "custo_contratacao") {
       return {
         id: "custo_contratacao",
-        kind: "bar",
+        kind: "pie",
         title: "Custo médio de contratação",
-        sub: "Salário por vaga fechada, no período filtrado",
-        data: custoContratacaoBarByFuncao(),
-        valueFormat: "currency",
-        variant: "line"
+        sub: "Custo médio (média dos salários) por filial, no período filtrado",
+        data: custoContratacaoMedioPorFilial(),
+        center: custoContratacaoPieCenter(),
+        valueFormat: "currency"
       };
     }
     if (kpiId === "custo_diaria") {
@@ -1173,7 +1195,8 @@ export function useDashboardData(filter, options = {}) {
     ticketMedioFaturamento,
     custosBarByFilial,
     custoContratacaoBarByFuncao,
-    custoContratacaoPorEstado,
+    custoContratacaoMedioPorFilial,
+    custoContratacaoPieCenter,
     kpiValueByEstado,
     custoDiariaBarByColaborador,
     custoDiariaEntriesByColaborador,

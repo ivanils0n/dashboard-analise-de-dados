@@ -30,7 +30,7 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["edit-vacancy", "edit-permanencia", "kpi-context"]);
+const emit = defineEmits(["edit-vacancy", "edit-permanencia", "kpi-context", "custo-filial"]);
 
 const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
@@ -211,14 +211,6 @@ function onCenterBarClick({ index, label }) {
     vacancyDetailOpen.value = true;
     return;
   }
-  if (centerChart.value.id === "custo_contratacao") {
-    const row = centerChart.value.data[index];
-    if (!row) return;
-    vacancyDetailId.value = row.vacancyId;
-    vacancyDetailFallback.value = { name: row.label, salario: row.value, date: row.date };
-    vacancyDetailOpen.value = true;
-    return;
-  }
   if (centerChart.value.id === "tempo_permanencia") {
     const row = centerChart.value.data[index];
     if (!row || !row.permanenciaId) return;
@@ -294,6 +286,11 @@ const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.
    Admissões. Mesmo comportamento da pizza na Visão geral (ver
    onTurnoverChartInfo em KpiChartCard.vue). */
 function onPieClick(sliceIndex) {
+  if (centerChart.value.id === "custo_contratacao") {
+    const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
+    if (row && row.key) emit("custo-filial", row.key);
+    return;
+  }
   if (centerChart.value.id !== "turnover") return;
   openTurnoverDetail(sliceIndex === 1 ? "demissoes" : "admissoes");
 }
@@ -416,7 +413,7 @@ function goNextKpi() {
                 :center-value="pieCenter.value"
                 :center-caption="pieCenter.caption"
                 :value-format="centerChart.valueFormat || 'percent'"
-                :clickable="centerChart.id === 'turnover'"
+                :clickable="centerChart.id === 'turnover' || centerChart.id === 'custo_contratacao'"
                 @chart-click="onPieClick"
                 @chart-contextmenu="onPieClick"
               />
@@ -645,7 +642,7 @@ function goNextKpi() {
               :center-value="pieCenter.value"
               :center-caption="pieCenter.caption"
               :value-format="centerChart.valueFormat || 'percent'"
-              :clickable="centerChart.id === 'turnover'"
+              :clickable="centerChart.id === 'turnover' || centerChart.id === 'custo_contratacao'"
               @chart-click="onPieClick"
               @chart-contextmenu="onPieClick"
             />
