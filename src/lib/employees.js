@@ -24,7 +24,7 @@ import {
   getHeadcountById
 } from "./store";
 import { createId, nowLocalISO, daysBetween, sameState } from "./utils";
-import { loadedStates } from "./db";
+import { loadedStates, reloadData } from "./db";
 
 /* Restringe uma lista ao estado escolhido ("todos"/vazio = sem filtro; nesse
    caso devolve a própria lista, sem cópia). */
@@ -151,7 +151,8 @@ export function addVacancy({
   salario = null,
   tipoContratacao = null,
   estado,
-  filialId = null
+  filial = null,
+  recrutador = null
 }) {
   const vacancy = {
     id: createId(),
@@ -161,7 +162,8 @@ export function addVacancy({
     salario: moneyOrNull(salario),
     tipoContratacao: tipoContratacao || null,
     estado: estado || null,
-    filialId: filialId || null
+    filial: filial || null,
+    recrutador: recrutador || null
   };
   upsertVacancy(vacancy);
   return vacancy;
@@ -169,7 +171,7 @@ export function addVacancy({
 
 export function updateVacancy(
   id,
-  { name, openAt, closeAt, salario, tipoContratacao, estado, filialId }
+  { name, openAt, closeAt, salario, tipoContratacao, estado, filial, recrutador }
 ) {
   const vacancy = getVacancyById(id);
   if (!vacancy) return null;
@@ -182,7 +184,8 @@ export function updateVacancy(
     tipoContratacao:
       tipoContratacao !== undefined ? tipoContratacao || null : vacancy.tipoContratacao,
     estado: estado !== undefined ? estado || null : vacancy.estado,
-    filialId: filialId !== undefined ? filialId || null : vacancy.filialId
+    filial: filial !== undefined ? filial || null : vacancy.filial,
+    recrutador: recrutador !== undefined ? recrutador || null : vacancy.recrutador
   };
   upsertVacancy(updated);
   return updated;
@@ -198,13 +201,19 @@ export function closeVacancy(id, closeDate = null) {
   return updated;
 }
 
-export function deleteVacancyRecord(id) {
+/* Depois de excluir, recarrega os dados direto do servidor (mesmo mecanismo
+   do botão "Recarregar Dados") — sem isso, uma exclusão que falhasse ao
+   gravar na planilha (rede, sobrecarga do Apps Script) ficava "sumida" só
+   localmente, e o app seguia mostrando dados desatualizados até um F5. */
+export async function deleteVacancyRecord(id) {
   deleteVacancy(id);
+  await reloadData();
 }
 
 /* Exclusão em lote. */
-export function deleteVacancies(ids) {
+export async function deleteVacancies(ids) {
   (ids || []).forEach((id) => deleteVacancy(id));
+  await reloadData();
 }
 
 /* Fechamento em lote: fecha as vagas ainda abertas. */
@@ -311,13 +320,16 @@ export function updateTurnoverEntry(id, { filial, mesReferencia, admitidos, demi
   return updated;
 }
 
-export function deleteTurnoverEntry(id) {
+/* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
+export async function deleteTurnoverEntry(id) {
   deleteTurnover(id);
+  await reloadData();
 }
 
 /* Exclusão em lote (aba Histórico do Lançamento). */
-export function deleteTurnoverEntries(ids) {
+export async function deleteTurnoverEntries(ids) {
   (ids || []).forEach((id) => deleteTurnover(id));
+  await reloadData();
 }
 
 /* ---------- Tempo médio de permanência (lançamento manual por planilha) ----------
@@ -347,20 +359,20 @@ export function turnoverAvgTenureDays(state, range) {
   return days.reduce((sum, d) => sum + d, 0) / days.length;
 }
 
-export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filialId = null, estado }) {
+export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filial = null, estado }) {
   const record = {
     id: createId(),
     colaborador: String(colaborador || "").toUpperCase(),
     dataAdmissao: dataAdmissao || null,
     dataDemissao: dataDemissao || null,
-    filialId: filialId || null,
+    filial: filial || null,
     estado: estado || null
   };
   upsertPermanencia(record);
   return record;
 }
 
-export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDemissao, filialId, estado }) {
+export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDemissao, filial, estado }) {
   const record = getPermanenciaById(id);
   if (!record) return null;
   const updated = {
@@ -368,20 +380,23 @@ export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDem
     colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
     dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
     dataDemissao: dataDemissao !== undefined ? dataDemissao || null : record.dataDemissao,
-    filialId: filialId !== undefined ? filialId || null : record.filialId,
+    filial: filial !== undefined ? filial || null : record.filial,
     estado: estado !== undefined ? estado || null : record.estado
   };
   upsertPermanencia(updated);
   return updated;
 }
 
-export function deletePermanenciaRecord(id) {
+/* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
+export async function deletePermanenciaRecord(id) {
   deletePermanencia(id);
+  await reloadData();
 }
 
 /* Exclusão em lote (modal de Tempo médio de permanência). */
-export function deletePermanenciaRecords(ids) {
+export async function deletePermanenciaRecords(ids) {
   (ids || []).forEach((id) => deletePermanencia(id));
+  await reloadData();
 }
 
 /* ---------- Headcount (quadro persistente de colaboradores) ----------
@@ -535,13 +550,16 @@ export function markHeadcountDemitido(id, demitidoMes) {
   return updateHeadcountRecord(id, { status: "demitido", demitidoMes });
 }
 
-export function deleteHeadcountRecord(id) {
+/* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
+export async function deleteHeadcountRecord(id) {
   deleteHeadcount(id);
+  await reloadData();
 }
 
 /* Exclusão em lote (aba Histórico do Lançamento). */
-export function deleteHeadcountRecords(ids) {
+export async function deleteHeadcountRecords(ids) {
   (ids || []).forEach((id) => deleteHeadcount(id));
+  await reloadData();
 }
 
 /* ---------- Cálculo do Turnover (%) e Turnover de Saída (%) ----------

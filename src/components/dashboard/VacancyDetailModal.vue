@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
-import { getVacancyById, getBranchById } from "@/lib/store";
+import { getVacancyById } from "@/lib/store";
 import { formatVacancyTempo, deleteVacancyRecord } from "@/lib/employees";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { canEditData } from "@/lib/auth";
@@ -30,13 +30,6 @@ const { show: toast } = useToast();
 
 const vacancy = computed(() => (props.vacancyId ? getVacancyById(props.vacancyId) : null));
 
-const filialName = computed(() => {
-  const v = vacancy.value;
-  if (!v || !v.filialId) return "—";
-  const b = getBranchById(v.filialId);
-  return b ? b.shortName || b.name : "—";
-});
-
 const tipoLabel = computed(() => {
   const t = vacancy.value && vacancy.value.tipoContratacao;
   return t ? String(t).toUpperCase() : "—";
@@ -61,7 +54,7 @@ async function remove() {
   });
   if (!ok) return;
   const id = vacancy.value.id;
-  deleteVacancyRecord(id);
+  await deleteVacancyRecord(id);
   toast("Vaga excluída.");
   emit("deleted", id);
   close();
@@ -89,7 +82,7 @@ async function remove() {
         </div>
         <div>
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Filial</dt>
-          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ filialName }}</dd>
+          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ vacancy.filial || "—" }}</dd>
         </div>
         <div>
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Estado</dt>
@@ -104,6 +97,10 @@ async function remove() {
           <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">
             {{ vacancy.closeAt ? formatDate(vacancy.closeAt) : "—" }}
           </dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Recrutador</dt>
+          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ vacancy.recrutador || "—" }}</dd>
         </div>
         <div class="col-span-2">
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Tempo de contratação</dt>

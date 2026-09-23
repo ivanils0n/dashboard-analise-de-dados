@@ -2,9 +2,9 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
+import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
-import { employeeNameKey } from "@/lib/metrics";
 import {
   MANUAL_INDICATORS,
   STATES,
@@ -39,10 +39,6 @@ import {
   deleteTurnoverEntries,
   listHeadcountRecords,
   addHeadcountRecord,
-  updateHeadcountRecord,
-  markHeadcountDemitido,
-  findHeadcountByCodigo,
-  findHeadcountMatches,
   deleteHeadcountRecord,
   deleteHeadcountRecords,
   findBranchByShortName,
@@ -52,7 +48,6 @@ import { exportVagas, exportTurnover, exportHeadcount } from "@/lib/export";
 import {
   todayISO,
   formatDate,
-  formatValue,
   formatCurrency,
   currentYm,
   MONTHS_SHORT,
@@ -76,9 +71,6 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   editEntry: { type: Object, default: null },
   editVacancyId: { type: String, default: null },
-  /* Abre direto no formulário de edição de um colaborador do Headcount
-     (vindo do "Editar" no card de informações — ver HeadcountEstadoModal.vue). */
-  editHeadcountId: { type: String, default: null },
   /* Abre direto na aba Histórico de um indicador (ex.: Turnover, vindo do
      botão direito no card do KPI), sem pré-selecionar nenhum registro. */
   viewIndicatorId: { type: String, default: null }
@@ -107,7 +99,8 @@ const vaga = reactive({
   fechamento: "",
   salario: "",
   tipo: "clt",
-  filialId: null
+  filial: null,
+  recrutador: ""
 });
 const editingVacancyId = ref(null);
 
@@ -224,15 +217,6 @@ function initModal() {
     indicatorId.value = "tempo_contratacao";
     buildForm();
     editVacancy(props.editVacancyId);
-    return;
-  }
-
-  /* Modo edição de colaborador (aberto pelo card de informações do KPI de
-     Headcount — ver HeadcountEstadoModal.vue). */
-  if (props.editHeadcountId) {
-    indicatorId.value = "headcount";
-    buildForm();
-    editHeadcount(props.editHeadcountId);
     return;
   }
 
@@ -457,7 +441,7 @@ const filteredVacancies = computed(() => {
   if (q) {
     list = list.filter((v) =>
       normalizeText(
-        [v.name, tipoContratacaoLabel(v.tipoContratacao), vacancyFilial(v), v.estado || ""].join(" ")
+        [v.name, tipoContratacaoLabel(v.tipoContratacao), v.filial || "", v.estado || "", v.recrutador || ""].join(" ")
       ).includes(q)
     );
   }
@@ -492,8 +476,8 @@ watch(
     } catch (err) {
       console.warn("[LaunchModal] Falha ao carregar filiais do estado:", err);
     }
-    if (vaga.filialId && !vagaBranches.value.some((b) => b.id === vaga.filialId)) {
-      vaga.filialId = null;
+    if (vaga.filial && !vagaBranches.value.some((b) => b.shortName === vaga.filial)) {
+      vaga.filial = null;
     }
   }
 );
@@ -504,12 +488,8 @@ function resetVagaForm() {
   vaga.fechamento = "";
   vaga.salario = "";
   vaga.tipo = "clt";
-  vaga.filialId = null;
-}
-
-function vacancyFilial(v) {
-  const b = v && v.filialId ? getBranchById(v.filialId) : null;
-  return b ? b.shortName || b.name : "";
+  vaga.filial = null;
+  vaga.recrutador = "";
 }
 
 function tipoContratacaoLabel(t) {
@@ -564,7 +544,8 @@ function handleVacancyAdd() {
       salario,
       tipoContratacao: vaga.tipo,
       estado: st,
-      filialId: vaga.filialId
+      filial: vaga.filial,
+      recrutador: vaga.recrutador.trim() || null
     });
     editingVacancyId.value = null;
     toast("Vaga atualizada.");
@@ -576,7 +557,8 @@ function handleVacancyAdd() {
       salario,
       tipoContratacao: vaga.tipo,
       estado: st,
-      filialId: vaga.filialId
+      filial: vaga.filial,
+      recrutador: vaga.recrutador.trim() || null
     });
     toast(`Vaga adicionada${closeAt ? " e fechada" : " — aguardando fechamento"}.${st ? ` (${st})` : ""}`);
   }
@@ -588,7 +570,7 @@ function handleVacancyAdd() {
 
 async function editVacancy(id) {
   const v = getVacancyById(id);
-  if (!v) return;
+  if (!v) return toast("Vaga não encontrada — os dados podem ter mudado, recarregue e tente de novo.");
   editingVacancyId.value = id;
   vaga.nome = v.name;
   vaga.abertura = v.openAt ? String(v.openAt).slice(0, 10) : "";
@@ -603,7 +585,8 @@ async function editVacancy(id) {
       console.warn("[LaunchModal] Falha ao carregar filiais do estado:", err);
     }
   }
-  vaga.filialId = v.filialId || null;
+  vaga.filial = v.filial || null;
+  vaga.recrutador = v.recrutador || "";
   showTab("nova");
 }
 
@@ -635,7 +618,7 @@ async function removeVacancy(id) {
     danger: true
   });
   if (!ok) return;
-  deleteVacancyRecord(id);
+  await deleteVacancyRecord(id);
   emit("saved");
   toast("Vaga excluída.");
 }
@@ -675,7 +658,7 @@ async function handleBulkVacancyDelete() {
     danger: true
   });
   if (!ok) return;
-  deleteVacancies(list.map((v) => v.id));
+  await deleteVacancies(list.map((v) => v.id));
   selectedVacancyIds.value = new Set();
   emit("saved");
   toast(`${n} vaga(s) excluída(s).`);
@@ -779,7 +762,7 @@ async function removeTurnover(id) {
     danger: true
   });
   if (!ok) return;
-  deleteTurnoverEntry(id);
+  await deleteTurnoverEntry(id);
   emit("saved");
   toast("Registro excluído.");
 }
@@ -857,7 +840,7 @@ async function handleBulkTurnoverDelete() {
     danger: true
   });
   if (!ok) return;
-  deleteTurnoverEntries(list.map((t) => t.id));
+  await deleteTurnoverEntries(list.map((t) => t.id));
   selectedTurnoverIds.value = new Set();
   emit("saved");
   toast(`${n} registro(s) excluído(s).`);
@@ -877,7 +860,6 @@ const headcount = reactive({
   dataAdmissao: "",
   filial: null
 });
-const editingHeadcountId = ref(null);
 const headcountSearch = ref("");
 const headcountFilterFilial = ref(null);
 /* Filtro por Data de admissão (De/Até) na aba Histórico — independente do
@@ -917,7 +899,6 @@ function resetHeadcountForm() {
   headcount.remuneracao = "";
   headcount.dataAdmissao = "";
   headcount.filial = null;
-  editingHeadcountId.value = null;
 }
 
 function onHeadcountSalaryInput(ev) {
@@ -949,31 +930,28 @@ function submitHeadcount() {
     estado: st
   };
 
-  if (editingHeadcountId.value) {
-    updateHeadcountRecord(editingHeadcountId.value, payload);
-    toast(`Headcount atualizado para ${nome}.`);
-  } else {
-    addHeadcountRecord(payload);
-    toast(`Headcount lançado para ${nome} (admissão em ${formatDate(headcount.dataAdmissao)}).`);
-  }
+  addHeadcountRecord(payload);
+  toast(`Headcount lançado para ${nome} (admissão em ${formatDate(headcount.dataAdmissao)}).`);
 
   resetHeadcountForm();
   showTab("historico");
   emit("saved");
 }
 
-function editHeadcount(id) {
-  const h = getHeadcountById(id);
-  if (!h) return;
-  editingHeadcountId.value = id;
-  headcount.codigo = h.codigo || "";
-  headcount.colaborador = h.colaborador || "";
-  headcount.funcao = h.funcao || "";
-  headcount.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
-  headcount.dataAdmissao = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "";
-  headcount.filial = h.filial || null;
-  if (h.estado && h.estado !== estado.value) estado.value = h.estado;
-  showTab("novo");
+/* Edição de um colaborador existente é feita clicando no nome dele na lista
+   abaixo, que abre o HeadcountEditModal (autocontido) — não passa mais por
+   esta aba "Novo". */
+const headcountEditId = ref(null);
+const headcountEditOpen = ref(false);
+
+function openHeadcountEdit(id) {
+  headcountEditId.value = id;
+  headcountEditOpen.value = true;
+}
+
+function onHeadcountEdited() {
+  headcountEditOpen.value = false;
+  emit("saved");
 }
 
 async function removeHeadcount(id) {
@@ -986,7 +964,7 @@ async function removeHeadcount(id) {
     danger: true
   });
   if (!ok) return;
-  deleteHeadcountRecord(id);
+  await deleteHeadcountRecord(id);
   emit("saved");
   toast("Registro excluído.");
 }
@@ -1061,7 +1039,7 @@ async function handleBulkHeadcountDelete() {
     danger: true
   });
   if (!ok) return;
-  deleteHeadcountRecords(list.map((h) => h.id));
+  await deleteHeadcountRecords(list.map((h) => h.id));
   selectedHeadcountIds.value = new Set();
   emit("saved");
   toast(`${n} registro(s) excluído(s).`);
@@ -1663,9 +1641,9 @@ onUnmounted(() => {
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="vagaFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
-              <select id="vagaFilial" v-model="vaga.filialId" class="input-field">
+              <select id="vagaFilial" v-model="vaga.filial" class="input-field">
                 <option :value="null">— Sem filial —</option>
-                <option v-for="b in vagaBranches" :key="b.id" :value="b.id">{{ b.shortName }} — {{ b.name }}</option>
+                <option v-for="b in vagaBranches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
               </select>
             </div>
           </div>
@@ -1695,6 +1673,10 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <div class="flex flex-col gap-1.5 sm:w-64">
+            <label for="vagaRecrutador" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Recrutador</label>
+            <input id="vagaRecrutador" v-model="vaga.recrutador" v-upper type="text" class="input-field uppercase" placeholder="Ex.: FULANO DE TAL" />
+          </div>
 
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn-ghost" @click="setVagaNow">Abrir hoje</button>
@@ -1803,10 +1785,10 @@ onUnmounted(() => {
               <div class="flex flex-col gap-0.5">
                 <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ v.name }}</strong>
                 <span
-                  v-if="v.tipoContratacao || vacancyFilial(v) || v.estado"
+                  v-if="v.tipoContratacao || v.filial || v.estado || v.recrutador"
                   class="text-xs text-zinc-500 dark:text-zinc-400"
                 >
-                  {{ [tipoContratacaoLabel(v.tipoContratacao), vacancyFilial(v), v.estado].filter(Boolean).join(" · ") }}
+                  {{ [tipoContratacaoLabel(v.tipoContratacao), v.filial, v.estado, v.recrutador].filter(Boolean).join(" · ") }}
                 </span>
                 <span class="text-xs text-zinc-500 dark:text-zinc-400">Abertura: {{ formatDate(v.openAt) }}</span>
                 <span v-if="v.salario != null" class="text-xs text-zinc-500 dark:text-zinc-400">
@@ -2063,9 +2045,7 @@ onUnmounted(() => {
 
 
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-primary" @click="submitHeadcount">
-              {{ editingHeadcountId ? "Salvar alterações" : "+ Lançar headcount" }}
-            </button>
+            <button type="button" class="btn-primary" @click="submitHeadcount">+ Lançar headcount</button>
           </div>
         </div>
 
@@ -2150,7 +2130,14 @@ onUnmounted(() => {
             <div class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="flex flex-col gap-0.5">
                 <div class="flex flex-wrap items-center gap-1.5">
-                  <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ h.colaborador }}</strong>
+                  <button
+                    type="button"
+                    class="text-sm font-bold text-zinc-900 underline-offset-2 hover:text-accent-hover hover:underline dark:text-zinc-100 dark:hover:text-accent-light"
+                    :title="`Editar ${h.colaborador}`"
+                    @click="openHeadcountEdit(h.id)"
+                  >
+                    {{ h.colaborador }}
+                  </button>
                   <Badge v-if="h.status === 'demitido'" tone="dark">Demitido em {{ ymLabel(h.demitidoMes) }}</Badge>
                 </div>
                 <span v-if="h.codigo || h.funcao || h.estado || headcountBranchName(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
@@ -2164,7 +2151,6 @@ onUnmounted(() => {
                 </span>
               </div>
               <div class="flex flex-wrap items-center gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="editHeadcount(h.id)">Editar</button>
                 <button type="button" class="btn-danger-ghost btn-sm" @click="removeHeadcount(h.id)">Excluir</button>
               </div>
             </div>
@@ -2535,149 +2521,14 @@ onUnmounted(() => {
 
   </Modal>
 
-  <!-- Duplicidade na importação de demitidos: mesmo Código + Nome batendo em
-       mais de um colaborador do headcount — escolher qual é qual. -->
-  <Modal
-    v-if="headcountDemitidosPending.length"
-    title="Duplicidade encontrada"
-    subtitle="Esse nome (e código, quando informado) apareceu em mais de um colaborador do headcount — escolha qual é qual para cada um."
-    max-width="max-w-xl"
-    @close="skipHeadcountDemitidosPending"
-  >
-    <div class="flex flex-col gap-4">
-      <div
-        v-for="(item, idx) in headcountDemitidosPending"
-        :key="idx"
-        class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-      >
-        <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-          {{ item.colaboradorText }} <span class="font-normal text-zinc-400"><template v-if="item.codigo">· código {{ item.codigo }} </template><template v-if="item.dataAdmissao">· admissão {{ formatDate(item.dataAdmissao) }} </template>· desligamento {{ formatDate(item.demitidoMes + "-01") }}</span>
-        </p>
-        <div class="mt-2 flex flex-col gap-2">
-          <label
-            v-for="c in item.candidates"
-            :key="c.id"
-            class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition"
-            :class="item.selectedId === c.id
-              ? 'border-accent bg-accent/5 dark:border-accent dark:bg-accent/10'
-              : 'border-zinc-200 dark:border-zinc-700'"
-          >
-            <input
-              type="radio"
-              class="mt-0.5 accent-accent"
-              :name="'headcount-demitido-dup-' + idx"
-              :value="c.id"
-              v-model="item.selectedId"
-            />
-            <span class="flex flex-col">
-              <span class="font-medium text-zinc-800 dark:text-zinc-100">
-                {{ headcountBranchLabel(c) || "Sem empresa" }}<span v-if="c.funcao"> · {{ c.funcao }}</span>
-              </span>
-              <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                Admissão: {{ c.dataAdmissao ? formatDate(c.dataAdmissao) : "—" }} · Estado: {{ c.estado || "—" }}
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    <div class="mt-5 flex justify-end gap-2">
-      <button type="button" class="btn-ghost" @click="skipHeadcountDemitidosPending">Pular todos</button>
-      <button type="button" class="btn-primary" @click="confirmHeadcountDemitidosPending">Confirmar</button>
-    </div>
-  </Modal>
 
-  <!-- Linhas ignoradas na importação de novos colaboradores do Headcount: mostra
-       o motivo e pergunta se devem ser importadas mesmo assim. -->
-  <Modal
-    v-if="headcountIgnoredReview"
-    title="Linhas ignoradas na importação"
-    subtitle="Estas linhas da planilha não foram importadas. Veja o motivo e escolha o que fazer."
-    max-width="max-w-3xl"
-    @close="answerIgnoredHeadcount(false)"
-  >
-    <div class="flex flex-col gap-3">
-      <p class="text-sm text-zinc-700 dark:text-zinc-200">
-        <strong>{{ headcountIgnoredReview.items.length }}</strong> linha(s) estão sem uma Data de admissão válida.
-        Deseja importá-las mesmo assim?
-      </p>
-
-      <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <div class="max-h-[20rem] overflow-auto">
-          <table class="w-full min-w-max text-left text-sm">
-            <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
-              <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Linha</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Código</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Motivo</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="it in headcountIgnoredReview.items"
-                :key="it.linha"
-                class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-              >
-                <td class="whitespace-nowrap px-4 py-2.5 tabular-nums text-zinc-500 dark:text-zinc-400">{{ it.linha }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ it.colaborador }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ it.codigo || "—" }}</td>
-                <td class="px-4 py-2.5 text-amber-700 dark:text-amber-400">{{ it.motivo }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <p class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
-        Se importar, os colaboradores entram <strong>sem Data de admissão</strong>, no mês de referência
-        {{ ymLabel(headcountIgnoredFallbackYm()) }} (mês do filtro atual), e passam a contar no Headcount
-        <strong>a partir desse mês</strong>. Depois você pode editar cada registro no Histórico para informar a data
-        real de admissão.
-      </p>
-    </div>
-    <div class="mt-5 flex justify-end gap-2">
-      <button type="button" class="btn-ghost" @click="answerIgnoredHeadcount(false)">Não importar</button>
-      <button type="button" class="btn-primary" @click="answerIgnoredHeadcount(true)">
-        Importar {{ headcountIgnoredReview.items.length }} mesmo assim
-      </button>
-    </div>
-  </Modal>
-
-  <!-- Resumo da importação de demitidos do Headcount -->
-  <Modal
-    v-if="headcountDemitidosResult"
-    title="Importação de demitidos concluída"
-    max-width="max-w-md"
-    @close="headcountDemitidosResult = null"
-  >
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span class="text-sm text-zinc-600 dark:text-zinc-300">Alterados para demitido</span>
-        <strong class="text-lg text-accent-hover dark:text-accent-light">{{ headcountDemitidosResult.alterados }}</strong>
-      </div>
-      <div class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span class="text-sm text-zinc-600 dark:text-zinc-300">Já estavam demitidos (ignorados)</span>
-        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.jaDemitidos }}</strong>
-      </div>
-      <div v-if="headcountDemitidosResult.naoEncontrado" class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span class="text-sm text-zinc-600 dark:text-zinc-300">Colaborador não encontrado no headcount</span>
-        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.naoEncontrado }}</strong>
-      </div>
-      <div v-if="headcountDemitidosResult.semData" class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span class="text-sm text-zinc-600 dark:text-zinc-300">Sem data de desligamento (ignorados)</span>
-        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.semData }}</strong>
-      </div>
-      <div v-if="headcountDemitidosResult.naoResolvidos" class="flex items-center justify-between rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <span class="text-sm text-zinc-600 dark:text-zinc-300">Duplicidade não resolvida (ignorados)</span>
-        <strong class="text-lg text-zinc-800 dark:text-zinc-100">{{ headcountDemitidosResult.naoResolvidos }}</strong>
-      </div>
-      <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ headcountDemitidosResult.total }} linha(s) lida(s) na planilha.</p>
-    </div>
-    <div class="mt-5 flex justify-end">
-      <button type="button" class="btn-primary" @click="headcountDemitidosResult = null">Entendi</button>
-    </div>
-  </Modal>
+  <HeadcountEditModal
+    v-if="headcountEditOpen"
+    :open="headcountEditOpen"
+    :record-id="headcountEditId"
+    @close="headcountEditOpen = false"
+    @saved="onHeadcountEdited"
+  />
 </template>
 
 <style scoped>

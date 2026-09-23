@@ -10,7 +10,9 @@ import {
   deletePermanenciaRecord,
   deletePermanenciaRecords
 } from "@/lib/employees";
-import { getBranchById, getPermanenciaById } from "@/lib/store";
+import { listBranches } from "@/lib/filiais";
+import { getPermanenciaById } from "@/lib/store";
+import { hydrateState } from "@/lib/db";
 import { exportPermanencia } from "@/lib/export";
 import { formatDate, daysBetween, normalizeText, singleMonthOfRange, ymLabel } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
@@ -44,14 +46,37 @@ const form = reactive({
   colaborador: "",
   dataAdmissao: "",
   dataDemissao: "",
+  filial: null,
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE
 });
+
+/* Filiais disponíveis para o registro, conforme o estado selecionado no
+   formulário — mesma ideia da vaga (ver vagaBranches em LaunchModal.vue). */
+const permBranches = computed(() => listBranches(form.estado === "todos" ? "todos" : form.estado));
+
+/* Garante que as filiais do estado escolhido estejam carregadas e limpa a
+   filial se ela deixar de existir nesse estado. */
+watch(
+  () => form.estado,
+  async (state) => {
+    try {
+      await hydrateState(state === "todos" ? "todos" : state);
+    } catch (err) {
+      console.warn("[PermanenciaModal] Falha ao carregar filiais do estado:", err);
+    }
+    if (form.filial && !permBranches.value.some((b) => b.shortName === form.filial)) {
+      form.filial = null;
+    }
+  },
+  { immediate: true }
+);
 
 function resetForm() {
   editingId.value = null;
   form.colaborador = "";
   form.dataAdmissao = "";
   form.dataDemissao = "";
+  form.filial = null;
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
 }
 
@@ -65,6 +90,7 @@ function editRecord(p) {
   form.colaborador = p.colaborador || "";
   form.dataAdmissao = p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : "";
   form.dataDemissao = p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : "";
+  form.filial = p.filial || null;
   form.estado = p.estado || DEFAULT_STATE;
   showForm.value = true;
 }
@@ -90,6 +116,7 @@ function submitForm() {
     colaborador: nome,
     dataAdmissao: form.dataAdmissao,
     dataDemissao: form.dataDemissao,
+    filial: form.filial,
     estado: form.estado
   };
   if (editingId.value) {
@@ -111,7 +138,7 @@ async function removeRecord(id) {
     danger: true
   });
   if (!ok) return;
-  deletePermanenciaRecord(id);
+  await deletePermanenciaRecord(id);
   toast("Registro excluído.");
 }
 
@@ -137,7 +164,7 @@ const list = computed(() =>
 const filteredList = computed(() => {
   const q = normalizeText(search.value).trim();
   if (!q) return list.value;
-  return list.value.filter((p) => normalizeText([p.colaborador, p.estado || ""].join(" ")).includes(q));
+  return list.value.filter((p) => normalizeText([p.colaborador, p.filial || "", p.estado || ""].join(" ")).includes(q));
 });
 
 function recordDays(p) {
@@ -150,11 +177,6 @@ const avgDays = computed(() => {
   if (!withDays.length) return null;
   return withDays.reduce((a, b) => a + b, 0) / withDays.length;
 });
-
-function recordFilial(p) {
-  const b = p && p.filialId ? getBranchById(p.filialId) : null;
-  return b ? b.shortName || b.name : "";
-}
 
 /* ---------- Seleção múltipla ---------- */
 const selectedIds = ref(new Set());
@@ -187,7 +209,7 @@ async function handleBulkDelete() {
     danger: true
   });
   if (!ok) return;
-  deletePermanenciaRecords(rows.map((p) => p.id));
+  await deletePermanenciaRecords(rows.map((p) => p.id));
   selectedIds.value = new Set();
   toast(`${n} registro(s) excluído(s).`);
 }
@@ -246,6 +268,13 @@ function handleExport() {
               <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
             </select>
           </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+            <select v-model="form.filial" class="input-field">
+              <option :value="null">— Sem filial —</option>
+              <option v-for="b in permBranches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
+            </select>
+          </div>
         </div>
         <div class="mt-3 flex flex-wrap gap-2">
           <button type="button" class="btn-primary btn-sm" @click="submitForm">
@@ -257,7 +286,7 @@ function handleExport() {
 
       <div class="flex flex-wrap items-center gap-2">
         <button v-if="canEdit && !showForm" type="button" class="btn-primary btn-sm" @click="openNewForm">+ Novo registro</button>
-        <input v-model="search" type="search" class="input-field ml-auto w-full sm:w-64" placeholder="Buscar colaborador, estado..." />
+        <input v-model="search" type="search" class="input-field ml-auto w-full sm:w-64" placeholder="Buscar colaborador, filial, estado..." />
         <button type="button" class="btn-ghost btn-sm" @click="handleExport">Exportar</button>
       </div>
 
@@ -305,8 +334,8 @@ function handleExport() {
                 Admissão: {{ formatDate(p.dataAdmissao) }} · Demissão: {{ formatDate(p.dataDemissao) }}
                 <template v-if="recordDays(p) !== null"> · {{ recordDays(p).toFixed(1) }} dias</template>
               </span>
-              <span v-if="recordFilial(p) || p.estado" class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ [recordFilial(p), p.estado].filter(Boolean).join(" · ") }}
+              <span v-if="p.filial || p.estado" class="text-xs text-zinc-500 dark:text-zinc-400">
+                {{ [p.filial, p.estado].filter(Boolean).join(" · ") }}
               </span>
             </div>
             <div v-if="canEdit" class="flex flex-wrap items-center gap-2">

@@ -303,10 +303,11 @@ export function useDashboardData(filter, options = {}) {
      o gráfico de barras do Painel e da Visão geral (Tempo médio de
      contratação): uma barra por vaga, com os dias decorridos até o
      fechamento — ou até hoje, se ainda estiver aberta. */
-  function vacanciesBarByOpen(statusFilter) {
+  function vacanciesBarByOpen(statusFilter, recrutadorFilter) {
     let vacs = listVacancies(currentState()).filter((v) => v.openAt);
     if (statusFilter === "abertas") vacs = vacs.filter((v) => !v.closeAt);
     else if (statusFilter === "fechadas") vacs = vacs.filter((v) => v.closeAt);
+    if (recrutadorFilter) vacs = vacs.filter((v) => v.recrutador === recrutadorFilter);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
     return inRange
       .map((v) => ({ v, days: daysBetween(v.openAt, v.closeAt || todayISO()) }))
@@ -324,6 +325,19 @@ export function useDashboardData(filter, options = {}) {
         };
       })
       .sort((a, b) => b.value - a.value);
+  }
+
+  /* Recrutadores que aparecem nas vagas abertas no período filtrado (para o
+     filtro do gráfico de Tempo médio de contratação no Painel), em ordem
+     alfabética — mesma ideia de treinamentoGerentesRegionais, abaixo. */
+  function vagasRecrutadores() {
+    const vacs = listVacancies(currentState()).filter((v) => v.openAt);
+    const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
+    const set = new Set();
+    inRange.forEach((v) => {
+      if (v.recrutador) set.add(v.recrutador);
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
   }
 
   /* Rótulo (filial) que agrupa um treinamento: localiza a filial do cadastro
@@ -689,9 +703,15 @@ export function useDashboardData(filter, options = {}) {
         entries
       };
 
-      /* Tempo médio de contratação: quantidade de vagas abertas/fechadas. */
+      /* Tempo médio de contratação: quantidade de vagas abertas/fechadas — só
+         as abertas no período filtrado (mesma regra do card/gráfico, ver
+         hiringAvgFor e o modal de Vagas). */
       if (ind.id === "tempo_contratacao") {
-        const vacs = listVacancies(currentState());
+        const vacs = listVacancies(currentState()).filter((v) => {
+          if (!v.openAt) return false;
+          const day = String(v.openAt).slice(0, 10);
+          return !(filter.start && day < filter.start) && !(filter.end && day > filter.end);
+        });
         base.vagasAbertas = vacs.filter((v) => !v.closeAt).length;
         base.vagasFechadas = vacs.filter((v) => v.closeAt).length;
       }
@@ -960,7 +980,7 @@ export function useDashboardData(filter, options = {}) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1061,7 +1081,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Tempo médio de contratação",
         sub: "Vagas abertas no período — dias até o fechamento (ou até hoje, se em aberto)",
-        data: vacanciesBarByOpen(hiringStatus),
+        data: vacanciesBarByOpen(hiringStatus, hiringRecrutador),
         valueFormat: ""
       };
     }
@@ -1139,6 +1159,7 @@ export function useDashboardData(filter, options = {}) {
     treinamentoBarByFilial,
     treinamentoGerentesRegionais,
     treinamentoFilialEntries,
+    vagasRecrutadores,
     headcountBarByState,
     ticketMedioBarByState,
     ticketMedioPieCenter,

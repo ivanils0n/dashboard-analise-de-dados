@@ -11,15 +11,28 @@ import { formatValue } from "@/lib/utils";
    `showCost`: empilha o card de Custo de admissões acima de Admissões (Painel). */
 const props = defineProps({
   summary: { type: Object, required: true },
-  showCost: { type: Boolean, default: false }
+  showCost: { type: Boolean, default: false },
+  /* false no Painel (CockpitPanel): o gráfico já tem a taxa geral no centro
+     da pizza, então o card "Geral" ficaria redundante ali. */
+  showGeral: { type: Boolean, default: true }
 });
 
-/* Clique num card: abre o detalhe (Admissões ou Demissões) — id "admissoes" | "demissoes". */
+/* Clique num card: abre o detalhe — id "geral" | "admissoes" | "demissoes". */
 const emit = defineEmits(["select"]);
 
 const PERCENT = { type: "percent", decimals: 1 };
 
 const cards = computed(() => [
+  ...(props.showGeral
+    ? [
+        {
+          id: "geral",
+          label: "Geral",
+          value: formatValue(PERCENT, props.summary.totalPct),
+          rate: `${props.summary.admissoes + props.summary.demissoes} movimentações`
+        }
+      ]
+    : []),
   {
     id: "admissoes",
     label: "Admissões",

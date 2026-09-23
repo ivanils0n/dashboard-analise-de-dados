@@ -88,10 +88,9 @@ export async function createUser(env: Bindings, input: UserInput) {
 }
 
 export async function updateUser(env: Bindings, id: string, input: UserInput, full: boolean) {
-  const { rowNumberById, rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
-  const rowNumber = rowNumberById.get(id);
+  const { rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
   const current = rowById.get(id);
-  if (!rowNumber || !current) return null;
+  if (!current) return null;
 
   const changes: SheetRow = {};
 
@@ -118,14 +117,13 @@ export async function updateUser(env: Bindings, id: string, input: UserInput, fu
   if (!Object.keys(changes).length) return toSafeUser(current);
 
   const merged = { ...current, ...changes, id };
-  await updateRows(env, USERS_SHEET, USERS_COLUMNS, [{ rowNumber, row: merged }]);
+  await updateRows(env, USERS_SHEET, USERS_COLUMNS, [merged]);
   return toSafeUser(merged);
 }
 
 export async function deleteUser(env: Bindings, id: string) {
-  const { rowNumberById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
-  const rowNumber = rowNumberById.get(id);
-  if (!rowNumber) return false;
-  await deleteRows(env, USERS_SHEET, [rowNumber]);
+  const { rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
+  if (!rowById.get(id)) return false;
+  await deleteRows(env, USERS_SHEET, [id]);
   return true;
 }

@@ -13,12 +13,43 @@
  * 5. Autorize o acesso quando pedido e copie a URL gerada (termina em /exec)
  *    — é o valor de APPS_SCRIPT_URL no backend-sheets/.dev.vars.
  *
+ * Pra atualizar este código numa implantação já existente (sem trocar a
+ * URL): cole o arquivo novo por cima do antigo no editor e vá em
+ * Implantar → Gerenciar implantações → ícone de lápis → Nova versão →
+ * Implantar. "Nova implantação" (passo 4) só é usado na primeira vez.
+ *
  * Toda chamada é um POST com corpo JSON { secret, action, ...params }.
  * Resposta sempre HTTP 200 (limitação do Apps Script) com
  * { success: true, data } ou { success: false, error }.
  */
 
+// Sobe junto em toda resposta — dá pra confirmar pela própria API se a
+// implantação no ar já é esta versão do arquivo, sem precisar abrir o editor
+// do Apps Script. Troque essa string sempre que reimplantar.
+var CODE_VERSION = "2026-09-23-id-lookup-3";
+
+// Ações que gravam na planilha — cada uma roda sob o lock (ver doPost). "read"
+// fica de fora de propósito: travar leituras também derrubaria a velocidade
+// de carregamento do dashboard sem necessidade (elas não corrompem nada).
+var WRITE_ACTIONS = { setup: true, append: true, update: true, delete: true, deleteSheet: true };
+
+// Nenhuma requisição pode passar de 1 min rodando aqui dentro — acima disso,
+// vira erro em vez de continuar (e travar o lock pros outros por mais tempo).
+// Verificado no início e a cada iteração dos laços abaixo (setup/update/
+// delete), os únicos pontos onde o tempo se acumula; os demais são uma
+// chamada só à API do Sheets, que não dá pra interromper no meio.
+var REQUEST_TIMEOUT_MS = 60 * 1000;
+
+function checkTimeout_(startedAt) {
+  if (Date.now() - startedAt > REQUEST_TIMEOUT_MS) {
+    var err = new Error("Tempo limite de 1 minuto excedido nesta requisição.");
+    err.retriable = true; // sinal de sobrecarga passageira, não erro de negócio.
+    throw err;
+  }
+}
+
 function doPost(e) {
+  var startedAt = Date.now();
   var body;
   try {
     body = JSON.parse(e.postData.contents);
@@ -31,11 +62,27 @@ function doPost(e) {
     return respond({ success: false, error: "Não autorizado." });
   }
 
+  // Duas gravações na mesma aba ao mesmo tempo (ex.: marcar "mês incompleto"
+  // nos 3 estados de uma vez, cada um numa requisição separada) podiam se
+  // sobrescrever silenciosamente: appendRows calculava a mesma "próxima linha
+  // livre" pras duas chamadas, e a segunda pisava na primeira. O lock serializa
+  // as gravações — só uma por vez mexe na planilha — sem travar leituras.
+  var lock = null;
+  if (WRITE_ACTIONS[body.action]) {
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(30000)) {
+      // retriable: true — o Worker (sheets.ts) tenta de novo sozinho, com
+      // backoff, em vez de já devolver erro pro usuário.
+      return respond({ success: false, retriable: true, error: "Muitas gravações simultâneas na planilha, tente novamente." });
+    }
+  }
+
   try {
+    checkTimeout_(startedAt); // tempo já gasto até aqui (fila do lock incluída) conta.
     var data;
     switch (body.action) {
       case "setup":
-        data = setupSheets(body.sheets);
+        data = setupSheets(body.sheets, startedAt);
         break;
       case "read":
         data = readRows(body.sheet);
@@ -44,10 +91,10 @@ function doPost(e) {
         data = appendRows(body.sheet, body.values);
         break;
       case "update":
-        data = updateRows(body.sheet, body.updates);
+        data = updateRows(body.sheet, body.updates, startedAt);
         break;
       case "delete":
-        data = deleteRows(body.sheet, body.rows);
+        data = deleteRows(body.sheet, body.ids, startedAt);
         break;
       case "deleteSheet":
         data = deleteSheet(body.sheet);
@@ -57,7 +104,9 @@ function doPost(e) {
     }
     return respond({ success: true, data: data });
   } catch (err) {
-    return respond({ success: false, error: String(err) });
+    return respond({ success: false, retriable: !!err.retriable, error: String(err) });
+  } finally {
+    if (lock) lock.releaseLock();
   }
 }
 
@@ -74,9 +123,10 @@ function sheet_(name) {
 // Cria as abas que faltarem e (re)grava a linha de cabeçalho de cada uma.
 // Formata o corpo (linha 2 em diante) como texto simples — evita que o
 // Sheets reinterprete datas/números/ids longos ao digitar ou colar dados.
-function setupSheets(sheets) {
+function setupSheets(sheets, startedAt) {
   var ss = spreadsheet_();
   (sheets || []).forEach(function (def) {
+    checkTimeout_(startedAt);
     var sheet = ss.getSheetByName(def.title);
     if (!sheet) sheet = ss.insertSheet(def.title);
     var numCols = def.header.length;
@@ -104,23 +154,58 @@ function appendRows(sheetName, values) {
   return { appended: values.length };
 }
 
-// updates: [{ rowNumber, values }] — rowNumber já 1-based contando o cabeçalho.
-function updateRows(sheetName, updates) {
-  var sheet = sheet_(sheetName);
-  (updates || []).forEach(function (update) {
-    sheet.getRange(update.rowNumber, 1, 1, update.values.length).setValues([update.values]);
-  });
-  return { updated: (updates || []).length };
+// Mapa id -> linha, lido agora (sob o lock) em vez de confiar num número de
+// linha calculado pelo Worker antes desta chamada — que podia já estar
+// desatualizado por outra gravação concorrente. A coluna do id é sempre a
+// A (célula A1 = cabeçalho "id"), nunca outra — checado abaixo antes de ler,
+// pra nunca casar update/delete com a coluna errada se alguém reordenar as
+// colunas na mão direto na planilha.
+function idRowMap_(sheet) {
+  var header = sheet.getRange(1, 1).getValue();
+  if (String(header).trim().toLowerCase() !== "id") {
+    throw new Error(
+      'A coluna A da aba "' + sheet.getName() + '" deveria ser "id" (achei "' + header + '"). ' +
+      "Não dá pra saber com segurança qual linha atualizar/apagar — corrija a planilha (ou rode \"setup\" de novo) antes de tentar de novo."
+    );
+  }
+  var lastRow = sheet.getLastRow();
+  var map = {};
+  if (lastRow < 2) return map;
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues(); // coluna A inteira, abaixo do cabeçalho
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i][0];
+    if (id !== "" && id !== null) map[id] = i + 2; // +2: 1-based e pula o cabeçalho
+  }
+  return map;
 }
 
-function deleteRows(sheetName, rows) {
+// updates: [{ id, values }] — a linha é resolvida agora, pelo id, não recebida pronta.
+function updateRows(sheetName, updates, startedAt) {
   var sheet = sheet_(sheetName);
+  var map = idRowMap_(sheet);
+  var applied = 0;
+  (updates || []).forEach(function (update) {
+    checkTimeout_(startedAt);
+    var rowNumber = map[update.id];
+    if (!rowNumber) return; // linha já não existe mais (apagada por outra gravação) — ignora
+    sheet.getRange(rowNumber, 1, 1, update.values.length).setValues([update.values]);
+    applied++;
+  });
+  return { updated: applied };
+}
+
+// ids: [id, ...] — mesma resolução por id da updateRows, acima.
+function deleteRows(sheetName, ids, startedAt) {
+  var sheet = sheet_(sheetName);
+  var map = idRowMap_(sheet);
+  var rowNumbers = (ids || []).map(function (id) { return map[id]; }).filter(Boolean);
   // Ordem decrescente: apagar de baixo para cima evita que uma exclusão
   // desloque o número das linhas seguintes ainda por apagar no mesmo lote.
-  var sorted = (rows || []).slice().sort(function (a, b) {
+  var sorted = rowNumbers.slice().sort(function (a, b) {
     return b - a;
   });
   sorted.forEach(function (rowNumber) {
+    checkTimeout_(startedAt);
     sheet.deleteRow(rowNumber);
   });
   return { deleted: sorted.length };
@@ -138,6 +223,7 @@ function deleteSheet(sheetName) {
 }
 
 function respond(payload) {
+  payload.codeVersion = CODE_VERSION;
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(
     ContentService.MimeType.JSON
   );

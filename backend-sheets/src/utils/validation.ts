@@ -64,12 +64,21 @@ function applyColumn(
   }
 
   const value = coerceValue(column, raw);
-  if (column.values && !column.values.includes(String(value))) {
-    throw new ApiError(
-      400,
-      `Campo "${column.name}" deve ser um de: ${column.values.join(", ")}.`,
-      "invalid_field"
-    );
+  if (column.values) {
+    // Comparação sem diferenciar maiúsculas/minúsculas — dado antigo digitado
+    // à mão direto na planilha (ex.: "CLT") não pode travar uma edição que
+    // nem mexeu nesse campo. Grava sempre o valor canônico da lista.
+    const needle = String(value).toLowerCase();
+    const match = column.values.find((v) => v.toLowerCase() === needle);
+    if (!match) {
+      throw new ApiError(
+        400,
+        `Campo "${column.name}" deve ser um de: ${column.values.join(", ")}.`,
+        "invalid_field"
+      );
+    }
+    target[column.name] = match;
+    return;
   }
   target[column.name] = value;
 }

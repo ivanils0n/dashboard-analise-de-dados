@@ -33,8 +33,7 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 import { getIndicatorById } from "@/lib/config";
-import { removeEntry, removeEntries } from "@/lib/store";
-import { singleMonthOfRange, ymLabel, ymShortLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
+import { singleMonthOfRange, ymLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
 import { toXLSX, toCSV } from "@/lib/export";
@@ -269,7 +268,6 @@ const permanenciaBarChartRef = ref(null);
 const editingRow = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
-const editHeadcountTarget = ref(null);
 const viewIndicatorTarget = ref(null);
 
 /* Colunas exibidas no modal de registros (clique direito no KPI). Regional
@@ -425,7 +423,6 @@ function openLaunch() {
   preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
-  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
@@ -435,7 +432,6 @@ function closeLaunch() {
   preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
-  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = null;
 }
 
@@ -445,7 +441,6 @@ function openLaunchView(indicatorId) {
   preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
   editTarget.value = null;
   editVacancyTarget.value = null;
-  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = indicatorId;
   launchOpen.value = true;
 }
@@ -460,23 +455,6 @@ function onVacancyEdit(vacancyId) {
   vacanciesOpen.value = false;
   editTarget.value = null;
   editVacancyTarget.value = vacancyId;
-  editHeadcountTarget.value = null;
-  launchOpen.value = true;
-}
-
-/* Editar um colaborador a partir do card de informações do Headcount (botão
-   "Editar" na lista — ver HeadcountEstadoModal.vue). */
-function onHeadcountEdit(id) {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
-  headcountEstadoOpen.value = false;
-  editTarget.value = null;
-  editVacancyTarget.value = null;
-  editHeadcountTarget.value = id;
-  viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
 
@@ -494,7 +472,6 @@ function onEntriesEdit({ indicatorId, entry }) {
   mensalEntriesOpen.value = false;
   editTarget.value = { indicatorId, entry };
   editVacancyTarget.value = null;
-  editHeadcountTarget.value = null;
   viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
@@ -516,6 +493,7 @@ function onMenuClick(action) {
   if (action === "xlsx") toXLSX();
   else if (action === "csv") toCSV();
   else if (action === "incomplete") toggleMonthIncomplete();
+  else if (action === "launch") openLaunch();
 }
 
 function openEditEntry(row) {
@@ -572,7 +550,7 @@ function onKpiContext(id) {
     mensalEntriesIndicatorId.value = id;
     mensalEntriesOpen.value = true;
   } else if (id === "turnover") {
-    openTurnoverDetail("admissoes");
+    openTurnoverDetail("geral");
   } else if (id === "tempo_permanencia") {
     permanenciaEditId.value = null;
     permanenciaOpen.value = true;
@@ -638,16 +616,6 @@ watch(activeTab, (tab) => {
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Gente &amp; Gestão</h1>
-        <button
-          v-if="canEdit"
-          type="button"
-          class="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-xl font-bold text-white transition hover:bg-accent-hover"
-          aria-label="Lançar dados"
-          title="Lançar dados"
-          @click="openLaunch"
-        >
-          +
-        </button>
       </div>
 
       <!-- Abas: em telas médias+ ficam na TopBar. -->
@@ -692,6 +660,8 @@ watch(activeTab, (tab) => {
           v-if="menuOpen"
           class="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
         >
+          <button v-if="canEdit" type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('launch')">Lançar dados</button>
+          <div v-if="canEdit" class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('xlsx')">Baixar em XLSX</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('csv')">Baixar em CSV</button>
           <div class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
@@ -718,7 +688,6 @@ watch(activeTab, (tab) => {
       :show-values="showValues"
       @edit-vacancy="onVacancyEdit"
       @edit-permanencia="onPermanenciaEdit"
-      @edit-headcount="onHeadcountEdit"
       @kpi-context="onKpiContext"
     />
 
@@ -1090,7 +1059,6 @@ watch(activeTab, (tab) => {
       :open="launchOpen"
       :edit-entry="editTarget"
       :edit-vacancy-id="editVacancyTarget"
-      :edit-headcount-id="editHeadcountTarget"
       :view-indicator-id="viewIndicatorTarget"
       @close="closeLaunch"
       @saved="onSaved"
@@ -1134,7 +1102,6 @@ watch(activeTab, (tab) => {
       :open="headcountEstadoOpen"
       :estado="headcountEstadoSigla"
       @close="headcountEstadoOpen = false"
-      @edit="onHeadcountEdit"
     />
     <TrainingFilialModal
       v-if="treinamentoFilialOpen"

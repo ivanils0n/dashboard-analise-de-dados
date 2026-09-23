@@ -30,7 +30,7 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["edit-vacancy", "edit-permanencia", "edit-headcount", "kpi-context"]);
+const emit = defineEmits(["edit-vacancy", "edit-permanencia", "kpi-context"]);
 
 const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
@@ -51,12 +51,27 @@ watch(treinamentoGerenteOptions, (opts) => {
   }
 });
 
+/* Filtro por Recrutador do gráfico de Tempo médio de contratação, quando ele
+   é o gráfico central — "" (vazio) = todos os recrutadores. */
+const hiringRecrutadorFilter = ref("");
+const hiringRecrutadorOptions = computed(() => props.dashboard.vagasRecrutadores());
+watch(hiringRecrutadorOptions, (opts) => {
+  if (hiringRecrutadorFilter.value && !opts.includes(hiringRecrutadorFilter.value)) {
+    hiringRecrutadorFilter.value = "";
+  }
+});
+
 /* Painel central: Custo de folha de salário (padrão) quando nada está
    selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
    (linha mensal, barras por filial/estado ou pizza de turnover — ver
    cockpitChartFor em useDashboardData.js). */
 const centerChart = computed(() =>
-  props.dashboard.cockpitChartFor(selectedKpiId.value, hiringStatusFilter.value, treinamentoGerenteFilter.value)
+  props.dashboard.cockpitChartFor(
+    selectedKpiId.value,
+    hiringStatusFilter.value,
+    treinamentoGerenteFilter.value,
+    hiringRecrutadorFilter.value
+  )
 );
 
 /* Soma das horas do gráfico de Treinamento, exibida como KPI só quando um
@@ -353,6 +368,14 @@ function goNextKpi() {
                   v-model="treinamentoGerenteFilter"
                   :options="treinamentoGerenteOptions"
                 />
+                <GerenteRegionalFilter
+                  v-if="centerChart.id === 'tempo_contratacao'"
+                  v-model="hiringRecrutadorFilter"
+                  :options="hiringRecrutadorOptions"
+                  label="Recrutador"
+                  all-label="Todos os recrutadores"
+                  title="Filtrar Tempo médio de contratação por recrutador"
+                />
                 <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
                 <FaturamentoButton v-if="centerChart.faturamentoEnabled" />
                 <button
@@ -397,7 +420,7 @@ function goNextKpi() {
                 @chart-click="onPieClick"
                 @chart-contextmenu="onPieClick"
               />
-              <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :summary="centerChart.summary" @select="openTurnoverDetail" />
+              <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
             </div>
             <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4 overflow-y-auto py-2">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -533,7 +556,6 @@ function goNextKpi() {
       :open="headcountEstadoOpen"
       :estado="headcountEstadoSigla"
       @close="headcountEstadoOpen = false"
-      @edit="emit('edit-headcount', $event)"
     />
 
     <TrainingFilialModal
@@ -592,6 +614,14 @@ function goNextKpi() {
             v-model="treinamentoGerenteFilter"
             :options="treinamentoGerenteOptions"
           />
+          <GerenteRegionalFilter
+            v-if="centerChart.id === 'tempo_contratacao'"
+            v-model="hiringRecrutadorFilter"
+            :options="hiringRecrutadorOptions"
+            label="Recrutador"
+            all-label="Todos os recrutadores"
+            title="Filtrar Tempo médio de contratação por recrutador"
+          />
           <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
           <button
             type="button"
@@ -619,7 +649,7 @@ function goNextKpi() {
               @chart-click="onPieClick"
               @chart-contextmenu="onPieClick"
             />
-            <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :summary="centerChart.summary" @select="openTurnoverDetail" />
+            <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
           </div>
           <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">

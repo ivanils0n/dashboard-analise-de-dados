@@ -61,7 +61,8 @@ export const ENTITIES: Record<string, EntityDef> = {
     search: ["nome"],
     filters: [
       { param: "tipo_contratacao", column: "tipo_contratacao", kind: "eq" },
-      { param: "filial_id", column: "filial_id", kind: "eq" },
+      { param: "filial", column: "filial", kind: "eq" },
+      { param: "recrutador", column: "recrutador", kind: "eq" },
       { param: "aberta", column: "fechada_em", kind: "isnull" },
       // Filtro por período de abertura (também disponível a quem consome a API).
       { param: "data_de", column: "aberta_em", kind: "gte" },
@@ -74,8 +75,10 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "fechada_em", type: "timestamptz" },
       { name: "salario", type: "number" },
       { name: "tipo_contratacao", type: "text", values: ["clt", "pj"] },
-      { name: "filial_id", type: "text" },
-      { name: "estado_sigla", type: "text", stateRef: true }
+      // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/headcount.
+      { name: "filial", type: "text" },
+      { name: "estado_sigla", type: "text", stateRef: true },
+      { name: "recrutador", type: "text" }
     ]
   },
   headcount: {
@@ -128,7 +131,7 @@ export const ENTITIES: Record<string, EntityDef> = {
     orderBy: "data_demissao desc",
     search: ["colaborador"],
     filters: [
-      { param: "filial_id", column: "filial_id", kind: "eq" },
+      { param: "filial", column: "filial", kind: "eq" },
       { param: "data_de", column: "data_demissao", kind: "gte" },
       { param: "data_ate", column: "data_demissao", kind: "lte" }
     ],
@@ -137,7 +140,8 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "colaborador", type: "text", required: true },
       { name: "data_admissao", type: "date", required: true },
       { name: "data_demissao", type: "date", required: true },
-      { name: "filial_id", type: "text" },
+      // Sem FK pra Filiais: texto livre (nome abreviado), como vagas/turnover/headcount.
+      { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },

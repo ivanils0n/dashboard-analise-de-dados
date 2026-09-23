@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
 import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
@@ -19,10 +20,9 @@ const props = defineProps({
   estado: { type: String, default: "" }
 });
 
-/* "edit": pede ao pai para abrir o colaborador no Lançamento (Headcount),
-   que hospeda o formulário de edição — ver onHeadcountEdit em
-   DashboardView.vue. Exclusão é resolvida aqui mesmo, sem passar pelo pai. */
-const emit = defineEmits(["close", "edit"]);
+/* Edição e exclusão são resolvidas aqui mesmo, sem passar pelo pai — clicar
+   no nome do colaborador abre o HeadcountEditModal por cima deste. */
+const emit = defineEmits(["close"]);
 
 const { confirm } = useDialog();
 const { show: toast } = useToast();
@@ -64,12 +64,16 @@ const stateName = computed(() =>
   !props.estado || props.estado === "todos" ? "Todos os estados" : STATE_NAMES[props.estado] || props.estado
 );
 
+const editId = ref(null);
+const editOpen = ref(false);
+
 function editRow(h) {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
     return;
   }
-  emit("edit", h.id);
+  editId.value = h.id;
+  editOpen.value = true;
 }
 
 async function removeRow(h) {
@@ -84,7 +88,7 @@ async function removeRow(h) {
     danger: true
   });
   if (!ok) return;
-  deleteHeadcountRecord(h.id);
+  await deleteHeadcountRecord(h.id);
   toast("Colaborador excluído.");
 }
 </script>
@@ -160,7 +164,18 @@ async function removeRow(h) {
                 class="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
               >
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.codigo || "—" }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ h.colaborador }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">
+                  <button
+                    v-if="canEdit"
+                    type="button"
+                    class="text-left underline-offset-2 hover:text-accent-hover hover:underline dark:hover:text-accent-light"
+                    :title="`Editar ${h.colaborador}`"
+                    @click="editRow(h)"
+                  >
+                    {{ h.colaborador }}
+                  </button>
+                  <span v-else>{{ h.colaborador }}</span>
+                </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.empresa || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.funcao || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
@@ -170,10 +185,7 @@ async function removeRow(h) {
                   {{ h.dataAdmissao ? formatDate(h.dataAdmissao) : "—" }}
                 </td>
                 <td v-if="canEdit" class="normal-case whitespace-nowrap px-4 py-2.5 text-right">
-                  <div class="flex justify-end gap-2">
-                    <button type="button" class="btn-ghost-sm" aria-label="Editar colaborador" @click="editRow(h)">Editar</button>
-                    <button type="button" class="icon-btn-sm" aria-label="Excluir colaborador" @click="removeRow(h)">&times;</button>
-                  </div>
+                  <button type="button" class="icon-btn-sm" aria-label="Excluir colaborador" @click="removeRow(h)">&times;</button>
                 </td>
               </tr>
             </tbody>
@@ -198,6 +210,14 @@ async function removeRow(h) {
         text="Nenhum colaborador no Headcount deste estado no mês filtrado."
       />
     </div>
+
+    <HeadcountEditModal
+      v-if="editOpen"
+      :open="editOpen"
+      :record-id="editId"
+      @close="editOpen = false"
+      @saved="editOpen = false"
+    />
   </Modal>
 </template>
 
@@ -220,25 +240,6 @@ async function removeRow(h) {
   border-color: rgb(63 63 70);
   background-color: rgb(9 9 11);
   color: rgb(244 244 245);
-}
-.btn-ghost-sm {
-  border-radius: 0.5rem;
-  border: 1px solid rgb(212 212 216);
-  padding: 0.3rem 0.65rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: rgb(63 63 70);
-  transition: background-color 0.15s;
-}
-.btn-ghost-sm:hover {
-  background-color: rgb(244 244 245);
-}
-:global(.dark) .btn-ghost-sm {
-  border-color: rgb(63 63 70);
-  color: rgb(228 228 231);
-}
-:global(.dark) .btn-ghost-sm:hover {
-  background-color: rgb(39 39 42);
 }
 .icon-btn-sm {
   display: flex;

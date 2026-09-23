@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
-import { getPermanenciaById, getBranchById } from "@/lib/store";
+import { getPermanenciaById } from "@/lib/store";
 import { deletePermanenciaRecord } from "@/lib/employees";
 import { formatDate, daysBetween } from "@/lib/utils";
 import { canEditData } from "@/lib/auth";
@@ -24,13 +24,6 @@ const { confirm } = useDialog();
 const { show: toast } = useToast();
 
 const record = computed(() => (props.recordId ? getPermanenciaById(props.recordId) : null));
-
-const filialName = computed(() => {
-  const p = record.value;
-  if (!p || !p.filialId) return "—";
-  const b = getBranchById(p.filialId);
-  return b ? b.shortName || b.name : "—";
-});
 
 const days = computed(() => {
   const p = record.value;
@@ -57,7 +50,7 @@ async function remove() {
   });
   if (!ok) return;
   const id = record.value.id;
-  deletePermanenciaRecord(id);
+  await deletePermanenciaRecord(id);
   toast("Registro excluído.");
   emit("deleted", id);
   close();
@@ -80,7 +73,7 @@ async function remove() {
         </div>
         <div>
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Filial</dt>
-          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ filialName }}</dd>
+          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ record.filial || "—" }}</dd>
         </div>
         <div>
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Estado</dt>

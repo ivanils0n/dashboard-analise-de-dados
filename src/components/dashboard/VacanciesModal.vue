@@ -6,7 +6,6 @@ import Badge from "@/components/ui/Badge.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import { STATES, STATE_NAMES, getIndicatorById } from "@/lib/config";
 import { listVacancies, formatVacancyTempo, deleteVacancies } from "@/lib/employees";
-import { getBranchById } from "@/lib/store";
 import { hydrateState } from "@/lib/db";
 import { formatDate, formatCurrency, singleMonthOfRange, ymLabel, normalizeText } from "@/lib/utils";
 import { useFilters } from "@/composables/useFilters";
@@ -39,6 +38,7 @@ function editRow(v) {
 const form = reactive({
   estado: filters.current !== "todos" ? filters.current : "todos",
   filial: "todos",
+  recrutador: "todos",
   search: "",
   status: "todas"
 });
@@ -48,8 +48,8 @@ const periodTo = computed(() => dateFilter.end);
 
 /* `immediate: true`: sem isso, o estado inicial do formulário nunca disparava
    o hydrate (só uma troca depois de aberto) — se o filtro do dashboard não
-   tivesse carregado esse(s) estado(s) ainda, a coluna Filial abria em branco
-   até o usuário trocar o filtro de Estado manualmente. */
+   tivesse carregado esse(s) estado(s) ainda, a tabela abria vazia até o
+   usuário trocar o filtro de Estado manualmente. */
 watch(
   () => form.estado,
   async (state) => {
@@ -66,6 +66,7 @@ watch(
 function clearFilters() {
   form.estado = filters.current !== "todos" ? filters.current : "todos";
   form.filial = "todos";
+  form.recrutador = "todos";
   form.search = "";
   form.status = "todas";
 }
@@ -74,11 +75,6 @@ const selectedMonthLabel = computed(() => {
   const ym = singleMonthOfRange(periodFrom.value, periodTo.value);
   return ym ? ymLabel(ym) : "";
 });
-
-function vacancyFilial(v) {
-  const b = v && v.filialId ? getBranchById(v.filialId) : null;
-  return b ? b.shortName || b.name : "";
-}
 
 function tipoLabel(t) {
   return t ? String(t).toUpperCase() : "—";
@@ -106,7 +102,7 @@ const scopedList = computed(() => {
   if (q) {
     list = list.filter((v) =>
       normalizeText(
-        [v.name, tipoLabel(v.tipoContratacao), vacancyFilial(v), v.estado || ""].join(" ")
+        [v.name, tipoLabel(v.tipoContratacao), v.filial || "", v.estado || "", v.recrutador || ""].join(" ")
       ).includes(q)
     );
   }
@@ -114,16 +110,23 @@ const scopedList = computed(() => {
 });
 
 const SEM_FILIAL = "__sem_filial__";
+const SEM_RECRUTADOR = "__sem_recrutador__";
 
-/* + filtro de filial (mantém o mesmo escopo usado antes para os contadores
-   de abertas/fechadas, que não consideram o filtro de status). */
+/* + filtro de filial e de recrutador (mantém o mesmo escopo usado antes para
+   os contadores de abertas/fechadas, que não consideram o filtro de status). */
 const baseList = computed(() => {
   let list = scopedList.value;
   if (form.filial !== "todos") {
     list =
       form.filial === SEM_FILIAL
-        ? list.filter((v) => !v.filialId)
-        : list.filter((v) => v.filialId === form.filial);
+        ? list.filter((v) => !v.filial)
+        : list.filter((v) => v.filial === form.filial);
+  }
+  if (form.recrutador !== "todos") {
+    list =
+      form.recrutador === SEM_RECRUTADOR
+        ? list.filter((v) => !v.recrutador)
+        : list.filter((v) => v.recrutador === form.recrutador);
   }
   return list;
 });
@@ -135,37 +138,80 @@ const totalSalarios = computed(() => baseList.value.reduce((sum, v) => sum + (Nu
 const openCount = computed(() => baseList.value.filter((v) => !v.closeAt).length);
 const closedCount = computed(() => baseList.value.filter((v) => v.closeAt).length);
 
-/* Filiais que de fato aparecem na tabela (estado, período, busca e status —
-   mas não a própria filial, senão selecionar uma a faria sumir da lista),
-   em ordem alfabética pela sigla. Resolve a filial direto pelo filialId da
-   vaga (sem filtrar o cadastro por estado, que pode divergir). */
-const filialOptions = computed(() => {
+/* Base para as opções de filial/recrutador: escopo + status, sem aplicar o
+   próprio filtro de filial nem o de recrutador (senão escolher um valor
+   faria as opções dos dois dropdowns encolherem/sumirem). */
+const statusFilteredList = computed(() => {
   let list = scopedList.value;
   if (form.status === "abertas") list = list.filter((v) => !v.closeAt);
   else if (form.status === "fechadas") list = list.filter((v) => v.closeAt);
-  const map = new Map();
+  return list;
+});
+
+/* Filiais que de fato aparecem na tabela (estado, período, busca, status e
+   recrutador — mas não a própria filial, senão selecionar uma a faria sumir
+   da lista), em ordem alfabética. "Filial" é texto livre digitado na vaga
+   (sem FK pra Filiais, como recrutador). */
+const filialOptions = computed(() => {
+  let list = statusFilteredList.value;
+  if (form.recrutador !== "todos") {
+    list =
+      form.recrutador === SEM_RECRUTADOR
+        ? list.filter((v) => !v.recrutador)
+        : list.filter((v) => v.recrutador === form.recrutador);
+  }
+  const set = new Set();
   let hasSemFilial = false;
   list.forEach((v) => {
-    if (!v.filialId) {
+    if (!v.filial) {
       hasSemFilial = true;
       return;
     }
-    if (map.has(v.filialId)) return;
-    const b = getBranchById(v.filialId);
-    map.set(v.filialId, b ? b.shortName || b.name || v.filialId : v.filialId);
+    set.add(v.filial);
   });
-  const opts = Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) =>
-    a.label.localeCompare(b.label, "pt-BR")
-  );
+  const opts = Array.from(set)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((f) => ({ id: f, label: f }));
   if (hasSemFilial) opts.push({ id: SEM_FILIAL, label: "Sem filial" });
   return opts;
 });
 
-/* Se a filial selecionada deixar de aparecer nas opções (filtros mudaram),
-   volta para "Todas". */
+/* Recrutadores que de fato aparecem na tabela, mesma regra da filialOptions
+   acima (mas cruzando com o filtro de filial em vez do de recrutador). */
+const recrutadorOptions = computed(() => {
+  let list = statusFilteredList.value;
+  if (form.filial !== "todos") {
+    list =
+      form.filial === SEM_FILIAL
+        ? list.filter((v) => !v.filial)
+        : list.filter((v) => v.filial === form.filial);
+  }
+  const set = new Set();
+  let hasSemRecrutador = false;
+  list.forEach((v) => {
+    if (!v.recrutador) {
+      hasSemRecrutador = true;
+      return;
+    }
+    set.add(v.recrutador);
+  });
+  const opts = Array.from(set)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((r) => ({ id: r, label: r }));
+  if (hasSemRecrutador) opts.push({ id: SEM_RECRUTADOR, label: "Sem recrutador" });
+  return opts;
+});
+
+/* Se a filial/recrutador selecionado deixar de aparecer nas opções (filtros
+   mudaram), volta para "Todas". */
 watch(filialOptions, (opts) => {
   if (form.filial !== "todos" && !opts.some((b) => b.id === form.filial)) {
     form.filial = "todos";
+  }
+});
+watch(recrutadorOptions, (opts) => {
+  if (form.recrutador !== "todos" && !opts.some((r) => r.id === form.recrutador)) {
+    form.recrutador = "todos";
   }
 });
 
@@ -206,13 +252,13 @@ async function handleBulkDelete() {
     danger: true
   });
   if (!ok) return;
-  deleteVacancies(list.map((v) => v.id));
+  await deleteVacancies(list.map((v) => v.id));
   selectedIds.value = new Set();
 }
 
 /* Limpa a seleção quando os filtros mudam (evita IDs fora da visão). */
 watch(
-  () => [form.estado, periodFrom.value, periodTo.value, form.search, form.status],
+  () => [form.estado, periodFrom.value, periodTo.value, form.search, form.status, form.recrutador],
   () => {
     selectedIds.value = new Set();
   }
@@ -319,9 +365,16 @@ watch(rows, () => nextTick(updateTableWidths));
                 <option v-for="f in filialOptions" :key="f.id" :value="f.id">{{ f.label }}</option>
               </select>
             </div>
+            <div class="flex flex-col gap-1.5 sm:w-44">
+              <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Recrutador</label>
+              <select v-model="form.recrutador" class="input-field">
+                <option value="todos">Todos</option>
+                <option v-for="r in recrutadorOptions" :key="r.id" :value="r.id">{{ r.label }}</option>
+              </select>
+            </div>
             <div class="flex flex-1 flex-col gap-1.5">
               <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
-              <input v-model="form.search" type="search" class="input-field" placeholder="Vaga, tipo, filial..." />
+              <input v-model="form.search" type="search" class="input-field" placeholder="Vaga, tipo, filial, recrutador..." />
             </div>
             <div v-if="!isCost" class="flex flex-col gap-1.5 sm:w-44">
               <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Status</label>
@@ -384,6 +437,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Tipo</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Salário</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
+                  <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Recrutador</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Abertura</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Fechamento</th>
@@ -411,7 +465,8 @@ watch(rows, () => nextTick(updateTableWidths));
                   <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ v.name }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ tipoLabel(v.tipoContratacao) }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.salario != null ? formatCurrency(v.salario) : "—" }}</td>
-                  <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ vacancyFilial(v) || "—" }}</td>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.filial || "—" }}</td>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.recrutador || "—" }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.estado || "—" }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ formatDate(v.openAt) }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.closeAt ? formatDate(v.closeAt) : "—" }}</td>

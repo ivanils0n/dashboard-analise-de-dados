@@ -2,7 +2,7 @@
    lançamento de dados é feito à mão nos modais (ver LaunchModal.vue). */
 
 import * as XLSX from "xlsx";
-import { getEntriesFor, getBranches, getBranchById, getVacancies, getTurnovers, getPermanencias, getHeadcounts } from "./store";
+import { getEntriesFor, getBranches, getVacancies, getTurnovers, getPermanencias, getHeadcounts } from "./store";
 import { todayISO } from "./utils";
 
 /* Previne "formula injection": texto iniciado com = + - @ vira texto puro
@@ -23,13 +23,12 @@ function safeRows(rows) {
 
 const VAGA_HEADER = [
   "Nome da vaga", "Data de abertura", "Data de fechamento", "Tipo de contratação",
-  "Salário (R$)", "Estado", "Filial", "Status", "Tempo (dias)"
+  "Salário (R$)", "Estado", "Filial", "Recrutador", "Status", "Tempo (dias)"
 ];
 
 function vagasRows(list) {
   const rows = [VAGA_HEADER];
   (list || []).forEach((v) => {
-    const branch = v.filialId ? getBranchById(v.filialId) : null;
     const days = v.openAt && v.closeAt ? (new Date(v.closeAt) - new Date(v.openAt)) / 86400000 : null;
     rows.push([
       v.name || "",
@@ -38,7 +37,8 @@ function vagasRows(list) {
       v.tipoContratacao ? String(v.tipoContratacao).toUpperCase() : "",
       v.salario != null ? Number(v.salario) : null,
       v.estado || "",
-      branch ? branch.shortName || branch.name : "",
+      v.filial || "",
+      v.recrutador || "",
       v.closeAt ? "Fechada" : "Aberta",
       days === null || isNaN(days) ? null : Number(days.toFixed(1))
     ]);
@@ -63,7 +63,7 @@ function turnoverRows(list) {
   return rows;
 }
 
-const PERMANENCIA_HEADER = ["Colaborador", "Data de admissão", "Data de demissão", "Estado"];
+const PERMANENCIA_HEADER = ["Colaborador", "Data de admissão", "Data de demissão", "Filial", "Estado"];
 
 function permanenciaRows(list) {
   const rows = [PERMANENCIA_HEADER];
@@ -72,6 +72,7 @@ function permanenciaRows(list) {
       p.colaborador || "",
       p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : "",
       p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : "",
+      p.filial || "",
       p.estado || ""
     ]);
   });

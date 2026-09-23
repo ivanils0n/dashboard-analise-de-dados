@@ -170,16 +170,16 @@ export async function updateRecord(
   const table = tableName(entityKey);
   const payload = buildUpdatePayload(entity, body, estado, full);
 
-  const { rowNumberById, rowById } = await readTable(env, table, entity.columns);
-  const rowNumber = rowNumberById.get(id);
+  const { rowById } = await readTable(env, table, entity.columns);
   const current = rowById.get(id);
   // Isolamento entre estados (ver getRecord): não deixa editar um id de outro estado.
-  if (!rowNumber || !current || !matchesEstado(entity, current, estado)) return null;
+  if (!current || !matchesEstado(entity, current, estado)) return null;
 
   const merged: SheetRow = { ...current, ...payload, id };
   if (entity.hasUpdatedAt) merged.atualizado_em = new Date().toISOString();
 
-  await updateRows(env, table, entity.columns, [{ rowNumber, row: merged }]);
+  const updated = await updateRows(env, table, entity.columns, [merged]);
+  if (!updated) return null; // a linha sumiu entre a leitura acima e a gravação
   return merged;
 }
 
@@ -191,13 +191,12 @@ export async function deleteRecord(
 ) {
   const entity = ENTITIES[entityKey];
   const table = tableName(entityKey);
-  const { rowNumberById, rowById } = await readTable(env, table, entity.columns);
-  const rowNumber = rowNumberById.get(id);
+  const { rowById } = await readTable(env, table, entity.columns);
   const current = rowById.get(id);
-  if (!rowNumber || !current || !matchesEstado(entity, current, estado)) return false;
+  if (!current || !matchesEstado(entity, current, estado)) return false;
 
-  await deleteRows(env, table, [rowNumber]);
-  return true;
+  const deleted = await deleteRows(env, table, [id]);
+  return deleted > 0;
 }
 
 // Escrita em lote (upsert/delete) usada pela sincronização do frontend.
@@ -210,7 +209,7 @@ export async function bulkWrite(
 ) {
   const entity = ENTITIES[entityKey];
   const table = tableName(entityKey);
-  const { rowNumberById, rowById } = await readTable(env, table, entity.columns);
+  const { rowById } = await readTable(env, table, entity.columns);
 
   // Um upsert por id: o último enviado vence quando o mesmo id aparece mais de uma vez.
   const byId = new Map<string, Record<string, unknown>>();
@@ -222,18 +221,17 @@ export async function bulkWrite(
   }
 
   const toAppend: SheetRow[] = [];
-  const toUpdate: { rowNumber: number; row: SheetRow }[] = [];
+  const toUpdate: SheetRow[] = [];
   const now = entity.hasUpdatedAt ? new Date().toISOString() : null;
 
   byId.forEach((payload, id) => {
-    const rowNumber = rowNumberById.get(id);
     const current = rowById.get(id);
     // Isolamento entre estados (ver getRecord): um id que já existe em outro
     // estado não é sobrescrito — é tratado como criação de um registro novo.
-    if (rowNumber && current && matchesEstado(entity, current, estado)) {
+    if (current && matchesEstado(entity, current, estado)) {
       const merged: SheetRow = { ...current, ...payload, id };
       if (now) merged.atualizado_em = now;
-      toUpdate.push({ rowNumber, row: merged });
+      toUpdate.push(merged);
     } else {
       const created: SheetRow = { ...payload, id };
       if (now) created.criado_em = now;
@@ -241,7 +239,10 @@ export async function bulkWrite(
     }
   });
 
-  await Promise.all([appendRows(env, table, entity.columns, toAppend), updateRows(env, table, entity.columns, toUpdate)]);
+  const [, updatedCount] = await Promise.all([
+    appendRows(env, table, entity.columns, toAppend),
+    updateRows(env, table, entity.columns, toUpdate)
+  ]);
 
   // Deduplica ids marcados para exclusão mais de uma vez no mesmo lote.
   const deleteIds = [
@@ -251,15 +252,13 @@ export async function bulkWrite(
         .map((value) => String(value))
         .filter(Boolean)
     )
-  ];
-  const rowsToDelete = deleteIds
-    .filter((id) => {
-      const current = rowById.get(id);
-      return current && matchesEstado(entity, current, estado);
-    })
-    .map((id) => rowNumberById.get(id))
-    .filter((n): n is number => Boolean(n));
-  await deleteRows(env, table, rowsToDelete);
+  ].filter((id) => {
+    const current = rowById.get(id);
+    return current && matchesEstado(entity, current, estado);
+  });
+  const deletedCount = await deleteRows(env, table, deleteIds);
 
-  return { upserts: toAppend.length + toUpdate.length, deletes: rowsToDelete.length };
+  // Números REAIS devolvidos pelo Code.gs (quanto ele achou e alterou), não
+  // quanto foi pedido — se algum id não bater mais na planilha, aparece aqui.
+  return { upserts: toAppend.length + updatedCount, deletes: deletedCount };
 }

@@ -36,7 +36,7 @@ async function callAppsScriptOnce<T>(
     return { ok: false, retriable: true, message: `Apps Script HTTP ${res.status} na ação "${action}": ${text}` };
   }
 
-  let payload: { success: boolean; data?: T; error?: string };
+  let payload: { success: boolean; data?: T; error?: string; retriable?: boolean };
   try {
     payload = JSON.parse(text);
   } catch {
@@ -46,9 +46,12 @@ async function callAppsScriptOnce<T>(
 
   if (!payload.success) {
     // Erro de negócio (segredo errado, aba inexistente, ...) — não adianta repetir.
+    // Exceção: o Code.gs marca `retriable: true` quando o lock de escrita não
+    // conseguiu a vez a tempo (ver LockService em doPost) — é sobrecarga
+    // passageira, não um erro de negócio, então vale tentar de novo.
     return {
       ok: false,
-      retriable: false,
+      retriable: Boolean(payload.retriable),
       message: `Apps Script recusou a ação "${action}": ${payload.error ?? "erro desconhecido"}`
     };
   }
@@ -288,23 +291,36 @@ export async function appendRows(
   });
 }
 
+// A linha é resolvida pelo id DENTRO do Code.gs, sob o lock de escrita — não
+// aqui — porque um número de linha calculado antes desta chamada pode já
+// estar desatualizado por outra gravação concorrente na mesma aba.
+// Devolve quantas linhas o Code.gs realmente encontrou e alterou (pode ser
+// menos que `rows.length` se algum id já não existir mais na planilha) —
+// quem chama não deve assumir sucesso total só porque a chamada não lançou.
 export async function updateRows(
   env: Bindings,
   sheetName: string,
   columns: ColumnDef[],
-  updates: { rowNumber: number; row: SheetRow }[]
-): Promise<void> {
-  if (!updates.length) return;
-  await callAppsScript(env, "update", {
+  rows: SheetRow[]
+): Promise<number> {
+  if (!rows.length) return 0;
+  const result = await callAppsScript<{ updated: number }>(env, "update", {
     sheet: sheetName,
-    updates: updates.map(({ rowNumber, row }) => ({
-      rowNumber,
+    updates: rows.map((row) => ({
+      id: row.id,
       values: rowToValues(columns, row)
     }))
   });
+  return result.updated;
 }
 
-export async function deleteRows(env: Bindings, sheetName: string, rowNumbers: number[]): Promise<void> {
-  if (!rowNumbers.length) return;
-  await callAppsScript(env, "delete", { sheet: sheetName, rows: [...new Set(rowNumbers)] });
+// Mesma ideia de updateRows acima: devolve o total realmente apagado pelo
+// Code.gs, não a quantidade pedida.
+export async function deleteRows(env: Bindings, sheetName: string, ids: string[]): Promise<number> {
+  if (!ids.length) return 0;
+  const result = await callAppsScript<{ deleted: number }>(env, "delete", {
+    sheet: sheetName,
+    ids: [...new Set(ids)]
+  });
+  return result.deleted;
 }

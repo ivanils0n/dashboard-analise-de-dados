@@ -124,8 +124,9 @@ function vacancyToRow(vacancy) {
     fechada_em: envTimestamp(vacancy.closeAt),
     salario: vacancy.salario != null ? Number(vacancy.salario) : null,
     tipo_contratacao: vacancy.tipoContratacao || null,
-    filial_id: vacancy.filialId || null,
-    estado_sigla: vacancy.estado || null
+    filial: vacancy.filial || null,
+    estado_sigla: vacancy.estado || null,
+    recrutador: vacancy.recrutador || null
   };
 }
 
@@ -147,7 +148,7 @@ function permanenciaToRow(p) {
     colaborador: p.colaborador ?? "",
     data_admissao: p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : null,
     data_demissao: p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : null,
-    filial_id: p.filialId || null,
+    filial: p.filial || null,
     estado_sigla: p.estado || null
   };
 }
@@ -442,8 +443,9 @@ function mapRemoteVacancy(row, impliedState) {
     closeAt: row.fechada_em,
     salario: row.salario != null ? Number(row.salario) : null,
     tipoContratacao: row.tipo_contratacao || null,
-    filialId: row.filial_id || null,
-    estado: row.estado_sigla || impliedState || null
+    filial: row.filial || null,
+    estado: row.estado_sigla || impliedState || null,
+    recrutador: row.recrutador || null
   };
 }
 
@@ -465,7 +467,7 @@ function mapRemotePermanencia(row, impliedState) {
     colaborador: row.colaborador ?? "",
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     dataDemissao: row.data_demissao ? String(row.data_demissao).slice(0, 10) : null,
-    filialId: row.filial_id || null,
+    filial: row.filial || null,
     estado: row.estado_sigla || impliedState || null
   };
 }

@@ -54,14 +54,11 @@ export async function changeName(env: Bindings, userId: string, nome: unknown) {
   const value = String(nome ?? "").trim();
   if (!value) throw new ApiError(400, "Informe o nome.", "missing_field");
 
-  const { rowNumberById, rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
-  const rowNumber = rowNumberById.get(userId);
+  const { rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
   const current = rowById.get(userId);
-  if (!rowNumber || !current) throw new ApiError(401, "Perfil não encontrado.", "unauthorized");
+  if (!current) throw new ApiError(401, "Perfil não encontrado.", "unauthorized");
 
-  await updateRows(env, USERS_SHEET, USERS_COLUMNS, [
-    { rowNumber, row: { ...current, nome: value, id: userId } }
-  ]);
+  await updateRows(env, USERS_SHEET, USERS_COLUMNS, [{ ...current, nome: value, id: userId }]);
   return value;
 }
 
@@ -80,15 +77,12 @@ export async function changePassword(
     throw new ApiError(400, "A nova senha deve ter no mínimo 6 caracteres.", "invalid_field");
   }
 
-  const { rowNumberById, rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
-  const rowNumber = rowNumberById.get(userId);
+  const { rowById } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
   const current = rowById.get(userId);
-  if (!rowNumber || !current || !(await verifyPassword(atual, String(current.senha_hash)))) {
+  if (!current || !(await verifyPassword(atual, String(current.senha_hash)))) {
     throw new ApiError(400, "Senha atual incorreta.", "invalid_password");
   }
 
   const senha_hash = await hashPassword(nova);
-  await updateRows(env, USERS_SHEET, USERS_COLUMNS, [
-    { rowNumber, row: { ...current, senha_hash, id: userId } }
-  ]);
+  await updateRows(env, USERS_SHEET, USERS_COLUMNS, [{ ...current, senha_hash, id: userId }]);
 }

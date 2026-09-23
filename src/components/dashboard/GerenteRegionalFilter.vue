@@ -1,11 +1,15 @@
 <script setup>
-/* Filtro por Gerente regional do gráfico de Treinamento (Painel) — pill com
-   ícone, mesma linguagem visual dos demais controles do Painel (chip
-   arredondado, anel de foco na cor de destaque). `modelValue`: "" = todos os
-   gerentes. */
+/* Filtro genérico em formato de pill (Painel) — mesma linguagem visual dos
+   demais controles do Painel (chip arredondado, anel de foco na cor de
+   destaque). `modelValue`: "" = sem filtro (todas as opções). Usado tanto
+   pelo filtro de Gerente regional (Treinamento) quanto pelo de Recrutador
+   (Tempo médio de contratação). */
 defineProps({
   modelValue: { type: String, default: "" },
-  options: { type: Array, default: () => [] }
+  options: { type: Array, default: () => [] },
+  label: { type: String, default: "Gerente regional" },
+  allLabel: { type: String, default: "Todos os gerentes regionais" },
+  title: { type: String, default: "Filtrar Treinamento por gerente regional" }
 });
 
 defineEmits(["update:modelValue"]);
@@ -15,19 +19,19 @@ defineEmits(["update:modelValue"]);
   <label
     class="gr-filter"
     :class="modelValue ? 'gr-filter--active' : ''"
-    title="Filtrar Treinamento por gerente regional"
+    :title="title"
   >
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0">
       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
     </svg>
-    <span class="sr-only">Gerente regional</span>
+    <span class="sr-only">{{ label }}</span>
     <select
       class="gr-filter-select"
       :value="modelValue"
-      aria-label="Filtrar por gerente regional"
+      :aria-label="`Filtrar por ${label.toLowerCase()}`"
       @change="$emit('update:modelValue', $event.target.value)"
     >
-      <option value="">Todos os gerentes regionais</option>
+      <option value="">{{ allLabel }}</option>
       <option v-for="g in options" :key="g" :value="g">{{ g }}</option>
     </select>
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0 opacity-60">
