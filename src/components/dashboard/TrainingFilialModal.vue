@@ -12,6 +12,9 @@ import { formatHoursClock, normalizeText } from "@/lib/utils";
 const props = defineProps({
   open: { type: Boolean, default: false },
   filial: { type: String, default: "" },
+  /* Título alternativo (ex.: "Regional Treinamentos — NOME"); vazio = título
+     padrão da filial. */
+  title: { type: String, default: "" },
   entries: { type: Array, default: () => [] }
 });
 
@@ -22,6 +25,10 @@ const { show: toast } = useToast();
 const canEdit = canEditData();
 
 const search = ref("");
+
+/* Coluna Filial só no card da regional (várias filiais na mesma lista); no
+   card de uma filial específica seria repetição. */
+const showFilial = computed(() => !!props.title);
 
 /* `entries` é uma foto tirada ao abrir o modal: os lançamentos excluídos aqui
    saem da lista por este controle local (o store já os removeu, e os KPIs e
@@ -44,24 +51,25 @@ const rows = computed(() => {
     const meta = e.meta || {};
     const name = employeeName(e);
     if (!byEmployee.has(name)) {
-      byEmployee.set(name, { name, cargo: meta.cargo || "", gerenteRegional: meta.gerenteRegional || "", temas: new Set(), modalidades: new Set(), horas: 0, treinamentos: 0 });
+      byEmployee.set(name, { name, cargo: meta.cargo || "", gerenteRegional: meta.gerenteRegional || "", filiais: new Set(), temas: new Set(), modalidades: new Set(), horas: 0, treinamentos: 0 });
     }
     const row = byEmployee.get(name);
     row.horas += Number(e.value) || 0;
     row.treinamentos += 1;
+    if (meta.filial) row.filiais.add(String(meta.filial).trim().toUpperCase());
     if (meta.tema) row.temas.add(meta.tema);
     if (meta.modalidade) row.modalidades.add(meta.modalidade);
     if (!row.cargo && meta.cargo) row.cargo = meta.cargo;
     if (!row.gerenteRegional && meta.gerenteRegional) row.gerenteRegional = meta.gerenteRegional;
   });
-  return [...byEmployee.values()].map((r) => ({ ...r, tema: [...r.temas].join(", "), modalidade: [...r.modalidades].join(", ") })).sort((a, b) => b.horas - a.horas);
+  return [...byEmployee.values()].map((r) => ({ ...r, filial: [...r.filiais].join(", "), tema: [...r.temas].join(", "), modalidade: [...r.modalidades].join(", ") })).sort((a, b) => b.horas - a.horas);
 });
 
 /* Busca por nome/cargo/gerente regional (ignora maiúsculas/minúsculas e acentos). */
 const filteredRows = computed(() => {
   const q = normalizeText(search.value).trim();
   if (!q) return rows.value;
-  return rows.value.filter((r) => normalizeText(`${r.name} ${r.cargo || ""} ${r.gerenteRegional || ""} ${r.tema || ""} ${r.modalidade || ""}`).includes(q));
+  return rows.value.filter((r) => normalizeText(`${r.name} ${r.cargo || ""} ${r.gerenteRegional || ""} ${r.filial || ""} ${r.tema || ""} ${r.modalidade || ""}`).includes(q));
 });
 
 /* ---------- Seleção múltipla / exclusão em lote ----------
@@ -110,7 +118,7 @@ function close() {
 
 <template>
   <Modal
-    :title="`Treinamento — ${filial || 'Filial'}`"
+    :title="title || `Treinamento — ${filial || 'Filial'}`"
     :subtitle="getIndicatorById('treinamento')?.calc"
     :open="open"
     max-width="max-w-6xl"
@@ -141,7 +149,7 @@ function close() {
           v-model="search"
           type="search"
           class="input-field"
-          placeholder="Nome, cargo, tema ou modalidade..."
+          placeholder="Nome, cargo, filial, tema ou modalidade..."
         />
       </div>
 
@@ -182,6 +190,7 @@ function close() {
                 </th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Cargo</th>
+                <th v-if="showFilial" class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Gerente regional</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Tema</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Modalidade</th>
@@ -208,6 +217,9 @@ function close() {
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
                   {{ r.cargo || "—" }}
+                </td>
+                <td v-if="showFilial" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
+                  {{ r.filial || "—" }}
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
                   {{ r.gerenteRegional || "—" }}

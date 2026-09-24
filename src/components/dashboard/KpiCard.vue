@@ -133,6 +133,7 @@ function onKeydown(e) {
         'tempo_permanencia',
         'retencao',
         'ticket_medio',
+        'horas_regional',
         'turnover_experiencia'
       ].includes(kpi.id)"
       class="flex flex-1 flex-col items-center justify-center px-1 py-6"

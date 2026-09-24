@@ -4,7 +4,7 @@ import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
-import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord, normalizeBranchKey } from "@/lib/employees";
+import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord, branchKeyFor } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { formatCurrency, formatDate, normalizeText, ymLabel } from "@/lib/utils";
 import { useDialog } from "@/composables/useDialog";
@@ -46,7 +46,7 @@ const ym = computed(() =>
    correspondência, mostra o texto lançado mesmo. */
 const rows = computed(() =>
   listHeadcountRecords(props.estado, ym.value || undefined)
-    .filter((h) => !props.filial || normalizeBranchKey(h.filial) === normalizeBranchKey(props.filial))
+    .filter((h) => !props.filial || branchKeyFor(h.filial, h.estado) === branchKeyFor(props.filial))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
     .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;

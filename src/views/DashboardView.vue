@@ -23,6 +23,7 @@ import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
+import RegionalTreinamentosModal from "@/components/dashboard/RegionalTreinamentosModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
@@ -149,9 +150,20 @@ const permanenciaOpen = ref(false);
 const treinamentoFilialOpen = ref(false);
 const treinamentoFilialLabel = ref("");
 const treinamentoFilialRows = ref([]);
+const treinamentoModalTitle = ref("");
+
+/* Barra do gráfico Regional Treinamentos: mesmo card, com os treinamentos do
+   gerente regional (e a coluna Filial). */
+function onRegionalBarClick({ label }) {
+  if (!label) return;
+  treinamentoModalTitle.value = `Regional Treinamentos — ${label}`;
+  treinamentoFilialRows.value = dashboard.treinamentoRegionalEntries(label);
+  treinamentoFilialOpen.value = true;
+}
 
 function onTreinamentoBarClick({ label }) {
   if (!label) return;
+  treinamentoModalTitle.value = "";
   treinamentoFilialLabel.value = label;
   treinamentoFilialRows.value = dashboard.treinamentoFilialEntries(label);
   treinamentoFilialOpen.value = true;
@@ -290,6 +302,13 @@ const hiringChartRef = ref(null);
 const panoramaChartRef = ref(null);
 const custosBarChartRef = ref(null);
 const treinamentoBarChartRef = ref(null);
+const regionalBarChartRef = ref(null);
+const regionalChartRef = ref(null);
+
+/* Clique direito no KPI Regional Treinamentos: card com cada regional e seus
+   treinamentos (lista calculada ao abrir). */
+const regionalModalOpen = ref(false);
+const regionalGroups = ref([]);
 const hiringBarChartRef = ref(null);
 const permanenciaBarChartRef = ref(null);
 const editingRow = ref(null);
@@ -379,6 +398,9 @@ const custosBarData = computed(() => dashboard.custosBarByFilial());
 
 /* Dados do gráfico de barras de Treinamento (carga horária por filial). */
 const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
+
+/* Horas de treinamento por gerente regional (ao lado do gráfico por filial). */
+const regionalBarData = computed(() => dashboard.cockpitChartFor("horas_regional").data);
 
 /* Dados do gráfico de barras de Tempo médio de contratação (uma barra por
    vaga aberta no período) — mesmo gráfico que já existia na faixa "Evolução
@@ -603,6 +625,10 @@ function onSelectKpi(id) {
       ticketChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (id === "horas_regional") {
+      regionalChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (id === "treinamento") {
       treinamentoChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -633,7 +659,10 @@ function onKpiContext(id) {
     headcountEstadoOpen.value = true;
   } else if (id === "retencao") openLaunchView("headcount");
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
-  else if (id === "treinamento") treinamentoEntriesOpen.value = true;
+  else if (id === "horas_regional") {
+    regionalGroups.value = dashboard.treinamentoRegionalGroups();
+    regionalModalOpen.value = true;
+  } else if (id === "treinamento") treinamentoEntriesOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
   else if (id === "absenteismo") {
     mensalEntriesIndicatorId.value = id;
@@ -721,6 +750,14 @@ watch(activeTab, (tab) => {
           </svg>
         </button>
       </div>
+
+      <!-- Números-resumo do gráfico central do Painel (Teleport do CockpitPanel),
+           no meio da linha, entre o título e o filtro de mês. -->
+      <div
+        v-if="activeTab === 'cockpit'"
+        id="cockpit-kpi-slot"
+        class="flex min-w-0 flex-1 items-center justify-center"
+      ></div>
 
       <!-- Abas: em telas médias+ ficam na TopBar. -->
       <DashboardTabs class="md:hidden" />
@@ -1006,9 +1043,10 @@ watch(activeTab, (tab) => {
     </div>
 
     <!-- ===== TREINAMENTO — CARGA HORÁRIA POR FILIAL ===== -->
+    <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
     <section
       ref="treinamentoChartRef"
-      class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
         <div>
@@ -1056,10 +1094,57 @@ watch(activeTab, (tab) => {
       </div>
     </section>
 
+    <!-- ===== REGIONAL TREINAMENTOS (ao lado direito do gráfico por filial) ===== -->
+    <section ref="regionalChartRef" class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="mb-4 flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Regional Treinamentos</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">Horas de treinamento por gerente regional no período filtrado</span>
+        </div>
+        <button
+          v-if="regionalBarData.length"
+          type="button"
+          class="icon-btn-sm shrink-0"
+          title="Tela cheia"
+          aria-label="Ver gráfico Regional Treinamentos em tela cheia"
+          @click="regionalBarChartRef?.openFullscreen()"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+          </svg>
+        </button>
+      </div>
+      <BarChart
+        v-if="regionalBarData.length"
+        ref="regionalBarChartRef"
+        :data="regionalBarData"
+        :show-values="showValues"
+        value-format="hours"
+        :show-trend="false"
+        :height-px="520"
+        horizontal
+        bars-clickable
+        title="Regional Treinamentos"
+        subtitle="Horas de treinamento por gerente regional no período filtrado"
+        @bar-click="onRegionalBarClick"
+      />
+      <div v-else class="p-6">
+        <EmptyState
+          title="Sem treinamentos no período"
+          text="Nenhum treinamento com gerente regional no período filtrado."
+        />
+      </div>
+    </section>
+    </div>
+
     <!-- ===== TEMPO MÉDIO DE CONTRATAÇÃO ===== -->
+    <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
     <section
       ref="hiringChartRef"
-      class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
         <div>
@@ -1111,8 +1196,8 @@ watch(activeTab, (tab) => {
       <HiringGoalsLegend size="md" class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800" />
     </section>
 
-    <!-- ===== TEMPO MÉDIO DE PERMANÊNCIA ===== -->
-    <section class="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <!-- ===== TEMPO MÉDIO DE PERMANÊNCIA (ao lado direito do Tempo médio de contratação) ===== -->
+    <section class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
         <div>
           <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tempo médio de permanência</h2>
@@ -1158,6 +1243,7 @@ watch(activeTab, (tab) => {
         />
       </div>
     </section>
+    </div>
 
     </div>
     </transition>
@@ -1213,6 +1299,12 @@ watch(activeTab, (tab) => {
       :kind="turnoverDetailKind"
       @close="turnoverDetailOpen = false"
     />
+    <RegionalTreinamentosModal
+      v-if="regionalModalOpen"
+      :open="regionalModalOpen"
+      :groups="regionalGroups"
+      @close="regionalModalOpen = false"
+    />
     <HeadcountEstadoModal
       v-if="headcountEstadoOpen"
       :open="headcountEstadoOpen"
@@ -1224,6 +1316,7 @@ watch(activeTab, (tab) => {
       v-if="treinamentoFilialOpen"
       :open="treinamentoFilialOpen"
       :filial="treinamentoFilialLabel"
+      :title="treinamentoModalTitle"
       :entries="treinamentoFilialRows"
       @close="treinamentoFilialOpen = false"
     />

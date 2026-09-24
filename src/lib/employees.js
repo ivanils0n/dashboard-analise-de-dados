@@ -45,8 +45,64 @@ export function normalizeBranchKey(value) {
   return base.replace(/0+(\d)/g, "$1");
 }
 
+/* Distância de edição entre duas strings (Damerau-Levenshtein simplificada):
+   inserção, remoção, troca de uma letra e troca de duas letras vizinhas
+   contam 1 cada — "gm" → "gmi" = 1 (letra faltando), "phv" → "pvh" = 1
+   (letras trocadas), "pvx" → "pvh" = 1 (letra errada). */
+function editDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const d = Array.from({ length: rows }, (_, i) => {
+    const row = new Array(cols).fill(0);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j < cols; j++) d[0][j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[rows - 1][cols - 1];
+}
+
+/* Filial mais parecida quando não há correspondência exata: as letras podem
+   ter uma letra a mais/a menos, errada ou trocada de lugar, mas o NÚMERO é o
+   definidor — "pvh 1" nunca casa com "pvh 11". Sem número no texto, casa só
+   se uma única filial for a mais próxima. Empate entre filiais diferentes =
+   ambíguo (null), para não associar à filial errada. */
+function fuzzyBranch(key, list) {
+  const letters = key.replace(/\d/g, "");
+  const digits = key.replace(/\D/g, "");
+  if (!letters) return null;
+  const maxDist = letters.length >= 5 ? 2 : 1;
+  let best = null;
+  let bestDist = Infinity;
+  let tie = false;
+  list.forEach((b) => {
+    const bKey = normalizeBranchKey(b.shortName);
+    if (!bKey) return;
+    if (digits && bKey.replace(/\D/g, "") !== digits) return;
+    const dist = editDistance(letters, bKey.replace(/\d/g, ""));
+    if (dist > maxDist) return;
+    if (dist < bestDist) {
+      best = b;
+      bestDist = dist;
+      tie = false;
+    } else if (dist === bestDist && best && normalizeBranchKey(best.shortName) !== bKey) {
+      tie = true;
+    }
+  });
+  return best && !tie ? best : null;
+}
+
 /* Localiza a filial pelo nome abreviado (shortName), tolerando as variações
-   acima. Quando `estado` é informado, exige que a filial pertença a ele —
+   acima e, sem correspondência exata, letras faltando/erradas/trocadas (ver
+   fuzzyBranch). Quando `estado` é informado, exige que a filial pertença a ele —
    evita cruzar com uma filial de outro estado que reaproveite o mesmo nome
    abreviado. Devolve a filial ou null. */
 export function findBranchByShortName(text, estado) {
@@ -54,7 +110,17 @@ export function findBranchByShortName(text, estado) {
   if (!key) return null;
   let list = useData().branches;
   if (estado && estado !== "todos") list = list.filter((b) => sameState(b.estado, estado));
-  return list.find((b) => normalizeBranchKey(b.shortName) === key) || null;
+  return list.find((b) => normalizeBranchKey(b.shortName) === key) || fuzzyBranch(key, list);
+}
+
+/* Chave canônica da filial de um lançamento: a do cadastro quando a filial é
+   reconhecida (inclusive com erro de digitação), senão a do próprio texto.
+   Dois lançamentos "PVH1" e "phv 1" ficam com a mesma chave. */
+export function branchKeyFor(text, estado) {
+  const key = normalizeBranchKey(text);
+  if (!key) return "";
+  const b = findBranchByShortName(text, estado);
+  return b ? normalizeBranchKey(b.shortName) : key;
 }
 
 /* Converte valor monetário opcional em número (null quando vazio). */
@@ -442,8 +508,10 @@ export function headcountCountInRange(state, range) {
 export function headcountFilialOptions(state) {
   const seen = new Map();
   filterByState(getHeadcounts(), state).forEach((h) => {
-    const key = normalizeBranchKey(h.filial);
-    if (key && !seen.has(key)) seen.set(key, String(h.filial).trim().toUpperCase());
+    const key = branchKeyFor(h.filial, h.estado);
+    if (!key || seen.has(key)) return;
+    const b = findBranchByShortName(h.filial, h.estado);
+    seen.set(key, String((b && b.shortName) || h.filial).trim().toUpperCase());
   });
   return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
@@ -453,8 +521,8 @@ export function headcountFilialOptions(state) {
 export function headcountGenderCountInRange(state, range, filial = "") {
   let list = filterByState(getHeadcounts(), state);
   if (filial) {
-    const key = normalizeBranchKey(filial);
-    list = list.filter((h) => normalizeBranchKey(h.filial) === key);
+    const key = branchKeyFor(filial);
+    list = list.filter((h) => branchKeyFor(h.filial, h.estado) === key);
   }
   const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
   if (ym) list = list.filter((h) => activeInMonth(h, ym));

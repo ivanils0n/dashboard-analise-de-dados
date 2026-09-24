@@ -42,7 +42,7 @@ import {
   deleteHeadcountRecord,
   deleteHeadcountRecords,
   findBranchByShortName,
-  normalizeBranchKey
+  branchKeyFor
 } from "@/lib/employees";
 import { exportVagas, exportTurnover, exportHeadcount } from "@/lib/export";
 import {
@@ -884,7 +884,7 @@ const headcountBranches = computed(() =>
 const headcountFilterBranches = computed(() => {
   const seen = new Map();
   headcountList.value.forEach((h) => {
-    const key = normalizeBranchKey(h.filial);
+    const key = branchKeyFor(h.filial, h.estado);
     if (!key || seen.has(key)) return;
     const b = findBranchByShortName(h.filial, h.estado);
     if (b) seen.set(key, b);
@@ -998,8 +998,8 @@ function headcountBranchName(h) {
 const filteredHeadcount = computed(() => {
   let list = headcountList.value;
   if (headcountFilterFilial.value) {
-    const key = normalizeBranchKey(headcountFilterFilial.value);
-    list = list.filter((h) => normalizeBranchKey(h.filial) === key);
+    const key = branchKeyFor(headcountFilterFilial.value);
+    list = list.filter((h) => branchKeyFor(h.filial, h.estado) === key);
   }
   if (headcountAdmissaoStart.value) {
     list = list.filter((h) => h.dataAdmissao && String(h.dataAdmissao).slice(0, 10) >= headcountAdmissaoStart.value);

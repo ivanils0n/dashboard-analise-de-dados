@@ -1,11 +1,12 @@
 <script setup>
 import { ref, reactive, computed, onActivated } from "vue";
 import Badge from "@/components/ui/Badge.vue";
+import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
-import { STATES, DEFAULT_STATE } from "@/lib/config";
+import { STATES } from "@/lib/config";
 import { getBranches } from "@/lib/store";
 import { listBranches, saveBranch, deleteBranchRecord } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
@@ -54,13 +55,22 @@ const summaryText = computed(() =>
     : `${total.value} filial(ais) · ${filters.current === "todos" ? "todos os estados" : "estado " + filters.current}`
 );
 
+/* Novas filiais não são mais cadastradas por aqui: a edição de uma filial
+   existente abre neste modal (editar e salvar). */
+const editOpen = ref(false);
+
 function resetForm() {
   form.id = null;
   form.cnpj = "";
   form.name = "";
   form.shortName = "";
   form.manager = "";
-  form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
+  form.estado = "";
+}
+
+function closeEdit() {
+  editOpen.value = false;
+  resetForm();
 }
 
 function fillForm(branch) {
@@ -73,6 +83,7 @@ function fillForm(branch) {
 }
 
 function handleSubmit() {
+  if (!form.id) return;
   const up = (v) => String(v == null ? "" : v).trim().toUpperCase();
   const data = {
     id: form.id || undefined,
@@ -89,8 +100,8 @@ function handleSubmit() {
   if (!data.estado) return toast("Selecione o estado da filial.");
 
   saveBranch(data);
-  resetForm();
-  toast(data.id ? "Filial atualizada." : "Filial cadastrada.");
+  closeEdit();
+  toast("Filial atualizada.");
 }
 
 async function handleDelete(id) {
@@ -149,7 +160,10 @@ async function handleBulkDelete() {
 
 function edit(id) {
   const branch = getBranches().find((b) => b.id === id);
-  if (branch) fillForm(branch);
+  if (branch) {
+    fillForm(branch);
+    editOpen.value = true;
+  }
 }
 </script>
 
@@ -160,48 +174,6 @@ function edit(id) {
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Filiais</h1>
       <Badge tone="accent">{{ total === 1 ? "1 filial" : `${total} filiais` }}</Badge>
     </div>
-
-    <!-- ===== CADASTRO ===== -->
-    <section class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div class="border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          {{ form.id ? "Editar filial" : "Nova filial" }}
-        </h2>
-        <p class="mt-0.5 text-xs text-zinc-400 dark:text-zinc-400">
-          Cadastre as filiais e associe cada uma ao estado correspondente.
-        </p>
-      </div>
-      <form class="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3" novalidate @submit.prevent="handleSubmit">
-        <div class="flex flex-col gap-1.5">
-          <label for="branchCnpj" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">CNPJ Filial</label>
-          <input id="branchCnpj" v-model="form.cnpj" v-upper type="text" class="input-field" required placeholder="00.000.000/0000-00" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="branchName" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Nome Filial</label>
-          <input id="branchName" v-model="form.name" v-upper type="text" class="input-field uppercase" required placeholder="Ex.: DROGARIA ULTRA POPULAR PVH1" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="branchShort" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial Abreviado</label>
-          <input id="branchShort" v-model="form.shortName" v-upper type="text" class="input-field uppercase" required placeholder="Ex.: PVH 1" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="branchManager" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente</label>
-          <input id="branchManager" v-model="form.manager" v-upper type="text" class="input-field" placeholder="Opcional" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="branchEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
-          <select id="branchEstado" v-model="form.estado" class="input-field">
-            <option value="">—</option>
-            <option v-for="s in STATES" :key="s" :value="s">{{ s }}</option>
-          </select>
-        </div>
-
-        <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-3">
-          <button type="button" class="btn-ghost" @click="resetForm">Limpar</button>
-          <button type="submit" class="btn-primary">Salvar filial</button>
-        </div>
-      </form>
-    </section>
 
     <!-- ===== LISTA ===== -->
     <section class="mt-8 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -226,7 +198,7 @@ function edit(id) {
         </button>
       </div>
 
-      <div v-if="tableList.length" class="max-h-[420px] overflow-auto">
+      <div v-if="tableList.length" class="max-h-[max(18rem,calc(100vh-20rem))] overflow-auto">
         <table class="w-full text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
@@ -284,11 +256,44 @@ function edit(id) {
 
       <div v-else class="p-5">
         <EmptyState
-          title="Nenhuma filial cadastrada"
-          text="Preencha o formulário acima para cadastrar sua primeira filial."
+          title="Nenhuma filial encontrada"
+          text="Nenhuma filial encontrada para o estado ou a busca selecionados."
         />
       </div>
     </section>
+    <!-- ===== EDIÇÃO DA FILIAL (modal) ===== -->
+    <Modal v-if="editOpen" title="Editar filial" :open="editOpen" max-width="max-w-2xl" @close="closeEdit">
+    <form class="grid gap-4 sm:grid-cols-2" novalidate @submit.prevent="handleSubmit">
+      <div class="flex flex-col gap-1.5">
+        <label for="branchCnpj" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">CNPJ Filial</label>
+        <input id="branchCnpj" v-model="form.cnpj" v-upper type="text" class="input-field" required placeholder="00.000.000/0000-00" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="branchName" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Nome Filial</label>
+        <input id="branchName" v-model="form.name" v-upper type="text" class="input-field uppercase" required placeholder="Ex.: DROGARIA ULTRA POPULAR PVH1" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="branchShort" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial Abreviado</label>
+        <input id="branchShort" v-model="form.shortName" v-upper type="text" class="input-field uppercase" required placeholder="Ex.: PVH 1" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="branchManager" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente</label>
+        <input id="branchManager" v-model="form.manager" v-upper type="text" class="input-field" placeholder="Opcional" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="branchEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
+        <select id="branchEstado" v-model="form.estado" class="input-field">
+          <option value="">—</option>
+          <option v-for="s in STATES" :key="s" :value="s">{{ s }}</option>
+        </select>
+      </div>
+
+      <div class="flex items-end justify-end gap-2 sm:col-span-2">
+        <button type="button" class="btn-ghost" @click="closeEdit">Cancelar</button>
+        <button type="submit" class="btn-primary">Salvar alterações</button>
+      </div>
+    </form>
+    </Modal>
   </div>
 </template>
 

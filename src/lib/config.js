@@ -192,6 +192,20 @@ export const INDICATORS = [
        LaunchModal (ver ticketMedioFor em composables/useDashboardData.js). */
     computed: true,
     manual: false
+  },
+  {
+    id: "horas_regional",
+    name: "Regional Treinamentos",
+    desc: "Quantidade de gerentes regionais com treinamento no período; as horas de cada um aparecem no gráfico",
+    calc: "Quantidade de gerentes regionais distintos nos treinamentos do período",
+    type: "number",
+    unit: "regionais",
+    decimals: 0,
+    higherIsBetter: true,
+    /* Derivado dos lançamentos de Treinamento (gerente regional de cada um),
+       sem lançamento próprio: `manual: false` tira do seletor do LaunchModal. */
+    computed: true,
+    manual: false
   }
 ];
 

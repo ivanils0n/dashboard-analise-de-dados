@@ -134,6 +134,8 @@ export function useDashboardData(filter, options = {}) {
         return retentionRate(st, range, monthBefore(range)).retencaoPct;
       case "ticket_medio":
         return ticketMedioFor(st, range);
+      case "horas_regional":
+        return treinamentoRegionaisCount(st, range);
       default:
         return computedSnapshot(ind.id, st);
     }
@@ -405,6 +407,36 @@ export function useDashboardData(filter, options = {}) {
       .sort((a, b) => b.value - a.value);
   }
 
+  /* Quantidade de gerentes regionais distintos nos lançamentos de Treinamento
+     do estado e período (valor do KPI "Regional Treinamentos"; as horas de cada
+     um ficam só no gráfico). `range` null = sem filtro de período. */
+  function treinamentoRegionaisCount(st, range) {
+    const start = range && range.start;
+    const end = range && range.end;
+    const set = new Set();
+    stateEntries("treinamento", st).forEach((e) => {
+      if ((start && e.date < start) || (end && e.date > end)) return;
+      const gr = upperText((e.meta && e.meta.gerenteRegional) || "");
+      if (gr) set.add(gr);
+    });
+    return set.size;
+  }
+
+  /* Horas de Treinamento por gerente regional no período filtrado (uma barra
+     por regional; lançamentos sem gerente ficam em "SEM REGIONAL"). */
+  function horasPorRegional() {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    const byRegional = new Map();
+    filteredEntries(ind).forEach((e) => {
+      const gr = upperText((e.meta && e.meta.gerenteRegional) || "") || "SEM REGIONAL";
+      byRegional.set(gr, (byRegional.get(gr) || 0) + (Number(e.value) || 0));
+    });
+    return [...byRegional.entries()]
+      .map(([label, value]) => ({ label, value, tooltipValue: formatValue(ind, value) }))
+      .sort((a, b) => b.value - a.value);
+  }
+
   /* Gerentes regionais que aparecem nos lançamentos de Treinamento do período
      filtrado (para o filtro do gráfico no Painel), em ordem alfabética. */
   function treinamentoGerentesRegionais() {
@@ -430,6 +462,53 @@ export function useDashboardData(filter, options = {}) {
       entries = entries.filter((e) => (e.meta && e.meta.gerenteRegional) === gerenteRegional);
     }
     return entries.filter((e) => treinamentoFilialLabel(e.meta) === label);
+  }
+
+  /* Lançamentos de treinamento de um gerente regional (barra clicada no gráfico
+     Regional Treinamentos); "SEM REGIONAL" = lançamentos sem gerente. */
+  function treinamentoRegionalEntries(label) {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    return filteredEntries(ind).filter(
+      (e) => (upperText((e.meta && e.meta.gerenteRegional) || "") || "SEM REGIONAL") === label
+    );
+  }
+
+  /* Treinamentos agrupados por gerente regional no período filtrado (card do
+     KPI "Regional Treinamentos"): por regional, o total de horas, a
+     quantidade de colaboradores e a lista dos treinamentos. Mais horas
+     primeiro. */
+  function treinamentoRegionalGroups() {
+    const ind = getIndicatorById("treinamento");
+    if (!ind) return [];
+    const groups = new Map();
+    filteredEntries(ind).forEach((e) => {
+      const meta = e.meta || {};
+      const regional = upperText(meta.gerenteRegional || "") || "SEM REGIONAL";
+      if (!groups.has(regional)) groups.set(regional, { regional, horas: 0, nomes: new Set(), treinamentos: [] });
+      const g = groups.get(regional);
+      const horas = Number(e.value) || 0;
+      const colaborador = upperText(meta.employeeName || "") || "SEM COLABORADOR";
+      g.horas += horas;
+      g.nomes.add(colaborador);
+      g.treinamentos.push({
+        id: e.id,
+        data: e.date,
+        colaborador,
+        cargo: meta.cargo || "",
+        filial: treinamentoFilialLabel(meta),
+        tema: meta.tema || "",
+        modalidade: meta.modalidade || "",
+        horas
+      });
+    });
+    return [...groups.values()]
+      .map(({ nomes, treinamentos, ...g }) => ({
+        ...g,
+        colaboradores: nomes.size,
+        treinamentos: treinamentos.sort((a, b) => String(b.data).localeCompare(String(a.data)))
+      }))
+      .sort((a, b) => b.horas - a.horas);
   }
 
   /* Agregação para o gráfico de barras dos Custos Totais: soma os custos
@@ -787,7 +866,8 @@ export function useDashboardData(filter, options = {}) {
         ind.id !== "custo_total" &&
         ind.id !== "treinamento" &&
         ind.id !== "tempo_contratacao" &&
-        ind.id !== "tempo_permanencia"
+        ind.id !== "tempo_permanencia" &&
+        ind.id !== "horas_regional"
     );
     return visible.map((ind) => {
       if (ind.id === "turnover") {
@@ -921,7 +1001,8 @@ export function useDashboardData(filter, options = {}) {
         ind.id !== "custo_total" &&
         ind.id !== "retencao" &&
         ind.id !== "treinamento" &&
-        ind.id !== "ticket_medio"
+        ind.id !== "ticket_medio" &&
+        ind.id !== "horas_regional"
     )
       .map((ind) => {
         const value = indicatorCurrentValue(ind);
@@ -1130,6 +1211,16 @@ export function useDashboardData(filter, options = {}) {
         faturamentoEnabled: true
       };
     }
+    if (kpiId === "horas_regional") {
+      return {
+        id: "horas_regional",
+        kind: "bar",
+        title: "Regional Treinamentos",
+        sub: "Carga horária de treinamento por gerente regional no período filtrado",
+        data: horasPorRegional(),
+        valueFormat: "hours"
+      };
+    }
     if (kpiId === "treinamento") {
       return {
         id: "treinamento",
@@ -1224,6 +1315,8 @@ export function useDashboardData(filter, options = {}) {
     treinamentoBarByFilial,
     treinamentoGerentesRegionais,
     treinamentoFilialEntries,
+    treinamentoRegionalEntries,
+    treinamentoRegionalGroups,
     vagasRecrutadores,
     headcountFiliais,
     headcountBarByState,

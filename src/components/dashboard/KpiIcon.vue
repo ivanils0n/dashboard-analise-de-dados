@@ -40,6 +40,9 @@ const ICONS = {
   faturamento_pct:
     '<line x1="19" x2="5" y1="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
   /* Custo médio por colaborador: pessoa com uma moeda ($) no canto. */
+  /* Regional Treinamentos: grupo de pessoas. */
+  horas_regional:
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   ticket_medio:
     '<circle cx="8.5" cy="7" r="3.5"/><path d="M2 20v-1a5 5 0 0 1 5-5h2"/><circle cx="16.5" cy="16.5" r="5.5"/><path stroke-width="1.6" d="M18.5 14.25h-3a1.25 1.25 0 0 0 0 2.5h2a1.25 1.25 0 0 1 0 2.5h-3"/><path stroke-width="1.6" d="M16.5 12.75v1.5M16.5 19.25v1.5"/>'
 };
