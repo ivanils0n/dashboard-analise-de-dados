@@ -85,20 +85,21 @@ export const ENTITIES: Record<string, EntityDef> = {
     key: "headcount",
     label: "Headcount",
     orderBy: "mes_referencia desc",
-    search: ["colaborador", "funcao"],
+    search: ["codigo", "colaborador", "funcao"],
     filters: [
       { param: "data_de", column: "mes_referencia", kind: "gte" },
       { param: "data_ate", column: "mes_referencia", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
+      { name: "codigo", type: "text" },
       { name: "colaborador", type: "text", required: true },
       { name: "funcao", type: "text" },
       { name: "remuneracao", type: "number" },
       { name: "data_admissao", type: "date" },
       { name: "mes_referencia", type: "date", required: true },
-      { name: "status", type: "text", values: ["ativo", "demitido"], notNull: true },
-      { name: "demitido_mes", type: "date" },
+      { name: "genero", type: "text", values: ["masculino", "feminino"] },
+      { name: "tipo_contrato", type: "text", values: ["indeterminado", "determinado"] },
       // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/diarias/treinamentos.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }

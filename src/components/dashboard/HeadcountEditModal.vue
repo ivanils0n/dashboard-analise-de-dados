@@ -25,6 +25,9 @@ const emit = defineEmits(["close", "saved"]);
 const { show: toast } = useToast();
 
 const form = reactive({
+  codigo: "",
+  genero: "",
+  tipoContrato: "",
   colaborador: "",
   funcao: "",
   remuneracao: "",
@@ -36,6 +39,9 @@ const form = reactive({
 function loadRecord(id) {
   const h = id ? getHeadcountById(id) : null;
   if (!h) return;
+  form.codigo = h.codigo || "";
+  form.genero = h.genero || "";
+  form.tipoContrato = h.tipoContrato || "";
   form.colaborador = h.colaborador || "";
   form.funcao = h.funcao || "";
   form.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
@@ -92,6 +98,9 @@ async function submit() {
   saving.value = true;
   try {
     updateHeadcountRecord(props.recordId, {
+      codigo: form.codigo.trim(),
+      genero: form.genero,
+      tipoContrato: form.tipoContrato,
       colaborador: nome,
       funcao: form.funcao,
       remuneracao,
@@ -112,6 +121,29 @@ async function submit() {
 <template>
   <Modal title="Editar colaborador" :open="open" max-width="max-w-2xl" @close="emit('close')">
     <div class="flex flex-col gap-4">
+      <div class="grid gap-4 sm:grid-cols-3">
+      <div class="flex flex-col gap-1.5">
+        <label for="hcEditCodigo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Código</label>
+        <input id="hcEditCodigo" v-model="form.codigo" type="text" class="input-field" />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="hcEditGenero" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gênero</label>
+        <select id="hcEditGenero" v-model="form.genero" class="input-field">
+          <option value="">— Não informado —</option>
+          <option value="masculino">Masculino</option>
+          <option value="feminino">Feminino</option>
+        </select>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="hcEditContrato" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de contrato</label>
+        <select id="hcEditContrato" v-model="form.tipoContrato" class="input-field">
+          <option value="">— Não informado —</option>
+          <option value="indeterminado">Indeterminado (efetivado)</option>
+          <option value="determinado">Determinado (experiência)</option>
+        </select>
+      </div>
+    </div>
+
       <div class="flex flex-col gap-1.5">
         <label for="hcEditColaborador" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Colaborador</label>
         <input id="hcEditColaborador" v-model="form.colaborador" type="text" class="input-field uppercase" placeholder="Nome do colaborador" />

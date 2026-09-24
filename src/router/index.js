@@ -34,7 +34,7 @@ const routes = [
         path: "filiais",
         name: "filiais",
         component: views.filiais,
-        meta: { requiresAuth: true, editOnly: true }
+        meta: { requiresAuth: true }
       },
       {
         path: "usuarios",

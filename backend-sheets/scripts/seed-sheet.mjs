@@ -65,8 +65,8 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
 const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial", "estado_sigla", "recrutador"],
   headcount: [
-    "id", "colaborador", "funcao", "remuneracao", "data_admissao", "mes_referencia",
-    "status", "demitido_mes", "filial", "estado_sigla"
+    "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao", "mes_referencia",
+    "genero", "tipo_contrato", "filial", "estado_sigla"
   ],
   turnover: ["id", "filial", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
   permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial", "estado_sigla"],

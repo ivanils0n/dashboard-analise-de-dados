@@ -156,13 +156,14 @@ function permanenciaToRow(p) {
 function headcountToRow(h) {
   return {
     id: h.id,
+    codigo: h.codigo != null ? String(h.codigo) : null,
     colaborador: h.colaborador ?? "",
     funcao: h.funcao != null ? String(h.funcao) : null,
     remuneracao: h.remuneracao != null ? Number(h.remuneracao) : null,
     data_admissao: h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : null,
     mes_referencia: h.mesReferencia ? `${String(h.mesReferencia).slice(0, 7)}-01` : null,
-    status: h.status === "demitido" ? "demitido" : "ativo",
-    demitido_mes: h.demitidoMes ? `${String(h.demitidoMes).slice(0, 7)}-01` : null,
+    genero: h.genero || null,
+    tipo_contrato: h.tipoContrato || null,
     filial: h.filial || null,
     estado_sigla: h.estado || null
   };
@@ -447,7 +448,7 @@ function mapRemoteVacancy(row, impliedState) {
     openAt: row.aberta_em,
     closeAt: row.fechada_em,
     salario: row.salario != null ? Number(row.salario) : null,
-    tipoContratacao: row.tipo_contratacao || null,
+    tipoContratacao: row.tipo_contratacao ? String(row.tipo_contratacao).trim().toLowerCase() : null,
     filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null,
     recrutador: up(row.recrutador) || null
@@ -469,6 +470,7 @@ function mapRemoteTurnover(row, impliedState) {
 function mapRemotePermanencia(row, impliedState) {
   return {
     id: row.id,
+    codigo: row.codigo != null ? String(row.codigo) : null,
     colaborador: up(row.colaborador) ?? "",
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     dataDemissao: row.data_demissao ? String(row.data_demissao).slice(0, 10) : null,
@@ -485,8 +487,8 @@ function mapRemoteHeadcount(row, impliedState) {
     remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
-    status: row.status === "demitido" ? "demitido" : "ativo",
-    demitidoMes: row.demitido_mes ? String(row.demitido_mes).slice(0, 7) : null,
+    genero: row.genero || null,
+    tipoContrato: row.tipo_contrato || null,
     filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null
   };

@@ -349,6 +349,7 @@ export function turnoverAvgTenureDays(state, range) {
 export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filial = null, estado }) {
   const record = {
     id: createId(),
+    codigo: codigo != null && codigo !== "" ? String(codigo) : null,
     colaborador: String(colaborador || "").toUpperCase(),
     dataAdmissao: dataAdmissao || null,
     dataDemissao: dataDemissao || null,
@@ -407,7 +408,6 @@ function activeInMonth(h, ym) {
       ? String(h.mesReferencia).slice(0, 7)
       : null;
   if (admissaoYm && admissaoYm > ym) return false; // ainda não tinha sido admitido
-  if (h.status === "demitido" && h.demitidoMes && h.demitidoMes <= ym) return false; // já desligado
   return true;
 }
 
@@ -436,12 +436,46 @@ export function headcountCountInRange(state, range) {
   return list.filter((h) => activeInMonth(h, ym)).length;
 }
 
+/* Filiais (nome abreviado lançado) que têm colaborador no estado, sem
+   repetição (mesma chave normalizada) e em ordem alfabética — opções do
+   filtro de filial do gráfico de Headcount. */
+export function headcountFilialOptions(state) {
+  const seen = new Map();
+  filterByState(getHeadcounts(), state).forEach((h) => {
+    const key = normalizeBranchKey(h.filial);
+    if (key && !seen.has(key)) seen.set(key, String(h.filial).trim().toUpperCase());
+  });
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+/* Quadro do período por gênero — mesma reconstrução de headcountCountInRange.
+   "total" conta todos os colaboradores (inclusive sem gênero informado). */
+export function headcountGenderCountInRange(state, range, filial = "") {
+  let list = filterByState(getHeadcounts(), state);
+  if (filial) {
+    const key = normalizeBranchKey(filial);
+    list = list.filter((h) => normalizeBranchKey(h.filial) === key);
+  }
+  const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
+  if (ym) list = list.filter((h) => activeInMonth(h, ym));
+  /* Aceita maiúsculas/minúsculas (dados vindos da planilha). */
+  const is = (h, g) => String(h.genero || "").trim().toLowerCase() === g;
+  return {
+    masculino: list.filter((h) => is(h, "masculino")).length,
+    feminino: list.filter((h) => is(h, "feminino")).length,
+    total: list.length
+  };
+}
+
 export function addHeadcountRecord({
+  codigo = null,
   colaborador,
   funcao = null,
   remuneracao = null,
   dataAdmissao = null,
   mesReferencia,
+  genero = null,
+  tipoContrato = null,
   filial = null,
   estado
 }) {
@@ -452,8 +486,8 @@ export function addHeadcountRecord({
     remuneracao: moneyOrNull(remuneracao),
     dataAdmissao: dataAdmissao || null,
     mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
-    status: "ativo",
-    demitidoMes: null,
+    genero: genero || null,
+    tipoContrato: tipoContrato || null,
     filial: filial || null,
     estado: estado || null
   };
@@ -463,32 +497,26 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, status, demitidoMes, filial, estado }
+  { codigo, colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, genero, tipoContrato, filial, estado }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
   const updated = {
     ...record,
+    codigo: codigo !== undefined ? (codigo != null && codigo !== "" ? String(codigo) : null) : record.codigo,
     colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
     funcao: funcao !== undefined ? (funcao != null ? String(funcao).toUpperCase() : null) : record.funcao,
     remuneracao: remuneracao !== undefined ? moneyOrNull(remuneracao) : record.remuneracao,
     dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
     mesReferencia:
       mesReferencia !== undefined ? (mesReferencia ? String(mesReferencia).slice(0, 7) : null) : record.mesReferencia,
-    status: status !== undefined ? (status === "demitido" ? "demitido" : "ativo") : record.status,
-    demitidoMes:
-      demitidoMes !== undefined ? (demitidoMes ? String(demitidoMes).slice(0, 7) : null) : record.demitidoMes,
+    genero: genero !== undefined ? genero || null : record.genero,
+    tipoContrato: tipoContrato !== undefined ? tipoContrato || null : record.tipoContrato,
     filial: filial !== undefined ? filial || null : record.filial,
     estado: estado !== undefined ? estado || null : record.estado
   };
   upsertHeadcount(updated);
   return updated;
-}
-
-/* Marca o colaborador como demitido a partir do mês informado (importação
-   de "demitidos") — só altera o status, não cria um registro novo. */
-export function markHeadcountDemitido(id, demitidoMes) {
-  return updateHeadcountRecord(id, { status: "demitido", demitidoMes });
 }
 
 /* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
@@ -553,15 +581,7 @@ export function retentionRate(state, range, prevRange) {
   const { admitidos: novasContratacoes, demitidos: demitidosNoPeriodo } = turnoverQuantitiesInRange(state, range);
   /* Desligados do mês filtrado já marcados no Headcount e que estavam no
      quadro do início do mês (já contados em headcountCountInRange(prevRange)). */
-  const prevYm = prevRange ? String(prevRange.end || prevRange.start || "").slice(0, 7) : "";
-  const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
-  const jaMarcados =
-    prevYm && ym
-      ? filterByState(getHeadcounts(), state).filter(
-          (h) => h.status === "demitido" && h.demitidoMes === ym && activeInMonth(h, prevYm)
-        ).length
-      : 0;
-  const demitidosAindaFora = Math.max(0, demitidosNoPeriodo - jaMarcados);
+  const demitidosAindaFora = demitidosNoPeriodo;
   const headcountInicial = headcountCountInRange(state, prevRange) + demitidosAindaFora;
   const retencaoPct = headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
   return {

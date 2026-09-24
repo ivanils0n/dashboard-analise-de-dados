@@ -4,7 +4,7 @@ import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
-import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord } from "@/lib/employees";
+import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord, normalizeBranchKey } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { formatCurrency, formatDate, normalizeText, ymLabel } from "@/lib/utils";
 import { useDialog } from "@/composables/useDialog";
@@ -17,7 +17,12 @@ import { canEditData } from "@/lib/auth";
    então o total aqui é sempre o número da barra. */
 const props = defineProps({
   open: { type: Boolean, default: false },
-  estado: { type: String, default: "" }
+  estado: { type: String, default: "" },
+  /* "masculino" | "feminino": só colaboradores desse gênero (barra de gênero
+     clicada). Vazio = quadro geral (barra Total ou clique no KPI). */
+  genero: { type: String, default: "" },
+  /* Só colaboradores dessa filial (filtro do gráfico). Vazio = todas. */
+  filial: { type: String, default: "" }
 });
 
 /* Edição e exclusão são resolvidas aqui mesmo, sem passar pelo pai — clicar
@@ -40,7 +45,10 @@ const ym = computed(() =>
    busca o cadastro em Filiais para exibir o nome completo; sem
    correspondência, mostra o texto lançado mesmo. */
 const rows = computed(() =>
-  listHeadcountRecords(props.estado, ym.value || undefined).map((h) => {
+  listHeadcountRecords(props.estado, ym.value || undefined)
+    .filter((h) => !props.filial || normalizeBranchKey(h.filial) === normalizeBranchKey(props.filial))
+    .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
+    .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
     return { ...h, empresa: branch ? branch.name : h.filial || "" };
   })
@@ -62,6 +70,9 @@ const totalRemuneracao = computed(() =>
    segue o filtro de estado do dashboard em vez de uma barra específica. */
 const stateName = computed(() =>
   !props.estado || props.estado === "todos" ? "Todos os estados" : STATE_NAMES[props.estado] || props.estado
+);
+const generoLabel = computed(() =>
+  props.genero === "masculino" ? "Masculino" : props.genero === "feminino" ? "Feminino" : "Geral"
 );
 
 const editId = ref(null);
@@ -95,7 +106,7 @@ async function removeRow(h) {
 
 <template>
   <Modal
-    :title="`Headcount — ${stateName}`"
+    :title="`Headcount ${generoLabel} — ${stateName}`"
     :subtitle="getIndicatorById('headcount')?.calc || ''"
     :open="open"
     max-width="max-w-5xl"
@@ -151,6 +162,8 @@ async function removeRow(h) {
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Função</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Gênero</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Contrato</th>
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Remuneração</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Admissão</th>
                 <th v-if="canEdit" class="px-4 py-2.5"></th>
@@ -176,6 +189,8 @@ async function removeRow(h) {
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.empresa || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.funcao || "—" }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.genero || "—" }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.tipoContrato || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                   {{ h.remuneracao != null ? formatCurrency(h.remuneracao) : "—" }}
                 </td>

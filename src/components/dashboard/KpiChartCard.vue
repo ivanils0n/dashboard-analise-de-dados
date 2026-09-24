@@ -66,6 +66,11 @@ function onPieClick(sliceIndex) {
     fullscreenOpen.value = false;
     emit("bar-click", { index: sliceIndex });
   }
+  /* Headcount por gênero: fatia 0 = Masculino, 1 = Feminino, fora = geral. */
+  if (props.card.id === "headcount_genero") {
+    fullscreenOpen.value = false;
+    emit("bar-click", { index: sliceIndex });
+  }
 }
 
 /* Altura do gráfico nos cards empilhados (padrão do BarChart: 288px). */
@@ -166,7 +171,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
         :center-value="centerInfo.value"
         :center-caption="centerInfo.caption"
         :value-format="card.valueFormat || 'percent'"
-        :clickable="!!turnoverSummary || card.id === 'custo_contratacao'"
+        :clickable="!!turnoverSummary || card.id === 'custo_contratacao' || card.id === 'headcount_genero'"
         @chart-click="onPieClick"
         @chart-contextmenu="onPieClick"
       />
@@ -211,7 +216,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
             :center-value="centerInfo.value"
             :center-caption="centerInfo.caption"
             :value-format="card.valueFormat || 'percent'"
-            :clickable="!!turnoverSummary || card.id === 'custo_contratacao'"
+            :clickable="!!turnoverSummary || card.id === 'custo_contratacao' || card.id === 'headcount_genero'"
             @chart-click="onPieClick"
             @chart-contextmenu="onPieClick"
           />

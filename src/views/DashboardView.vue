@@ -170,9 +170,12 @@ function openTurnoverDetail(kind) {
 
 const headcountEstadoOpen = ref(false);
 const headcountEstadoSigla = ref("");
+const headcountGenero = ref("");
 
-function onHeadcountBarClick({ label }) {
+function onHeadcountBarClick({ label, datasetIndex }) {
   if (!label) return;
+  /* Séries do gráfico: 0 = Masculino, 1 = Feminino, 2 = Total (geral). */
+  headcountGenero.value = ["masculino", "feminino"][datasetIndex] || "";
   headcountEstadoSigla.value = label;
   headcountEstadoOpen.value = true;
 }
@@ -214,9 +217,15 @@ function onHiringBarContext({ index }) {
 
 /* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
    vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
-function onKpiCardBarClick({ card, pieData }, { index, label }) {
+function onKpiCardBarClick({ card, pieData }, { index, label, datasetIndex }) {
+  if (card.id === "headcount_genero") {
+    headcountGenero.value = ["masculino", "feminino"][index] || "";
+    headcountEstadoSigla.value = filters.current;
+    headcountEstadoOpen.value = true;
+    return;
+  }
   if (card.id === "custo_diaria") return onDiariaBarClick({ label });
-  if (card.id === "headcount") return onHeadcountBarClick({ label });
+  if (card.id === "headcount") return onHeadcountBarClick({ label, datasetIndex });
   if (card.id !== "custo_contratacao") return;
   const row = (pieData || [])[index];
   if (row && row.key) onCustoFilial(row.key);
@@ -343,8 +352,9 @@ const CHART_ORDER = ["headcount", "turnover", "absenteismo", "custo_contratacao"
 /* Grade de 12 colunas: Turnover e Custo de contratação mais largos (5), e o
    mapa-filtro e a Retenção estreitos (3). */
 function chartSpan(id) {
-  if (id === "turnover" || id === "custo_contratacao") return "lg:col-span-5";
-  if (id === "retencao") return "lg:col-span-3";
+  if (id === "turnover") return "lg:col-span-5";
+  /* Linha 2: Headcount Gênero, Custo médio de contratação e Retenção, do mesmo tamanho. */
+  if (id === "headcount_genero" || id === "custo_contratacao" || id === "retencao") return "lg:col-span-4";
   return CHART_ORDER.includes(id) ? "lg:col-span-4" : "lg:col-span-12";
 }
 const orderedKpiChartCards = computed(() => {
@@ -434,7 +444,32 @@ const kpiChartViews = computed(() =>
 
 /* Custo médio por colaborador não entra na grade "por indicador": fica ao lado
    do gráfico de Custo de folha de salário (mesma linha, mais abaixo). */
-const gridChartViews = computed(() => kpiChartViews.value.filter((v) => v.card.id !== "ticket_medio"));
+/* Headcount por gênero (pizza Masculino x Feminino, nos filtros atuais): ocupa
+   na grade o lugar do Absenteísmo, que foi para a linha do Custo de folha. */
+const generoChartView = computed(() => {
+  const chart = dashboard.cockpitChartFor("headcount", undefined, undefined, undefined, "", "pie");
+  return {
+    card: {
+      id: "headcount_genero",
+      kind: "pie",
+      title: "Headcount — Gênero",
+      sub: "Masculino x Feminino",
+      valueFormat: "count"
+    },
+    entries: [],
+    pieData: chart.data,
+    pieCenter: chart.center,
+    turnoverSummary: null,
+    barData: [],
+    tableData: null
+  };
+});
+const gridChartViews = computed(() =>
+  kpiChartViews.value
+    .filter((v) => v.card.id !== "ticket_medio")
+    .map((v) => (v.card.id === "absenteismo" ? generoChartView.value : v))
+);
+const absenteismoChartView = computed(() => kpiChartViews.value.find((v) => v.card.id === "absenteismo") || null);
 const ticketChartView = computed(() => kpiChartViews.value.find((v) => v.card.id === "ticket_medio") || null);
 const ticketChartRef = ref(null);
 
@@ -594,6 +629,7 @@ function onSelectKpi(id) {
 function onKpiContext(id) {
   if (id === "headcount") {
     headcountEstadoSigla.value = filters.current;
+    headcountGenero.value = "";
     headcountEstadoOpen.value = true;
   } else if (id === "retencao") openLaunchView("headcount");
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
@@ -860,7 +896,7 @@ watch(activeTab, (tab) => {
     </div>
 
     <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->
-    <div class="mt-8 grid gap-4 lg:grid-cols-2">
+    <div class="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,0.75fr)]">
       <!-- ===== PANORAMA ATUAL (desativado) =====
       <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div class="mb-4 flex items-start justify-between gap-2">
@@ -897,7 +933,7 @@ watch(activeTab, (tab) => {
       <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
       <section
         ref="custosChartRef"
-        class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+        class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
         <div class="mb-4 flex items-start justify-between gap-2">
           <div class="min-w-0">
@@ -952,6 +988,19 @@ watch(activeTab, (tab) => {
           :pie-center="ticketChartView.pieCenter"
           :show-values="showValues"
           :data-indicator-card="ticketChartView.card.id"
+        />
+      </div>
+
+      <!-- ===== ABSENTEÍSMO (ao lado do Custo médio por colaborador) ===== -->
+      <div v-if="absenteismoChartView" class="min-w-0">
+        <KpiChartCard
+          stacked
+          class="h-full"
+          :card="absenteismoChartView.card"
+          :entries="absenteismoChartView.entries"
+          :bar-data="absenteismoChartView.barData"
+          :show-values="showValues"
+          :data-indicator-card="absenteismoChartView.card.id"
         />
       </div>
     </div>
@@ -1168,6 +1217,7 @@ watch(activeTab, (tab) => {
       v-if="headcountEstadoOpen"
       :open="headcountEstadoOpen"
       :estado="headcountEstadoSigla"
+      :genero="headcountGenero"
       @close="headcountEstadoOpen = false"
     />
     <TrainingFilialModal

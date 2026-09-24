@@ -346,7 +346,7 @@ watch(rows, () => nextTick(updateTableWidths));
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas abertas</span>
           <p class="text-2xl font-bold text-accent-hover dark:text-accent-light">{{ openCount }}</p>
         </div>
-        <div class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div v-if="!isCost" class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas fechadas</span>
           <p class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ closedCount }}</p>
         </div>

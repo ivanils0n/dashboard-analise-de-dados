@@ -227,6 +227,22 @@ function parseFlexibleDate(raw: string): string | null {
   return null;
 }
 
+// Colunas timestamptz (aberta_em/fechada_em das vagas) digitadas à mão chegam
+// como "dd/mm/aaaa" ou "dd/mm/aaaa hh:mm[:ss]" — o dashboard usa
+// slice(0, 10) e new Date() sobre o texto, então fora do ISO a vaga sai do
+// filtro de período e os dias viram NaN (Tempo/Custo de contratação somem).
+// Converte para ISO local; formatos já ISO (ou desconhecidos) passam direto.
+function parseFlexibleTimestamp(raw: string): string | null {
+  const m = raw
+    .trim()
+    .match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2}|\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!m) return null;
+  const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+  const date = `${year}-${pad2(Number(m[2]))}-${pad2(Number(m[1]))}`;
+  if (m[4] === undefined) return date;
+  return `${date}T${pad2(Number(m[4]))}:${m[5]}:${m[6] ?? "00"}`;
+}
+
 function fromCellValue(column: ColumnDef | undefined, raw: unknown): unknown {
   if (raw === undefined || raw === null || raw === "") return null;
   if (column?.type === "json") {
@@ -244,6 +260,10 @@ function fromCellValue(column: ColumnDef | undefined, raw: unknown): unknown {
   if (column?.type === "boolean") {
     if (typeof raw === "boolean") return raw;
     return String(raw).toLowerCase() === "true";
+  }
+  if (column?.type === "timestamptz") {
+    const parsed = parseFlexibleTimestamp(String(raw));
+    if (parsed) return parsed;
   }
   if (column?.type === "date") {
     const parsed = parseFlexibleDate(String(raw));

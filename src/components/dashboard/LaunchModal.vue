@@ -853,6 +853,9 @@ function handleExportTurnover() {
 
 /* ---------- Headcount (quadro de colaboradores lançado por mês) ---------- */
 const headcount = reactive({
+  codigo: "",
+  genero: "",
+  tipoContrato: "",
   colaborador: "",
   funcao: "",
   remuneracao: "",
@@ -892,6 +895,9 @@ const headcountFilterBranches = computed(() => {
 });
 
 function resetHeadcountForm() {
+  headcount.codigo = "";
+  headcount.genero = "";
+  headcount.tipoContrato = "";
   headcount.colaborador = "";
   headcount.funcao = "";
   headcount.remuneracao = "";
@@ -916,6 +922,9 @@ function submitHeadcount() {
   if (remuneracao !== null && isNaN(remuneracao)) return toast("Informe uma remuneração válida (R$).");
 
   const payload = {
+    codigo: headcount.codigo.trim(),
+    genero: headcount.genero,
+    tipoContrato: headcount.tipoContrato,
     colaborador: nome,
     funcao: headcount.funcao,
     remuneracao,
@@ -1990,6 +1999,29 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div class="flex flex-col gap-1.5">
+              <label for="hcCodigo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Código</label>
+              <input id="hcCodigo" v-model="headcount.codigo" type="text" class="input-field" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcGenero" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gênero</label>
+              <select id="hcGenero" v-model="headcount.genero" class="input-field">
+                <option value="">— Não informado —</option>
+                <option value="masculino">Masculino</option>
+                <option value="feminino">Feminino</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcContrato" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de contrato</label>
+              <select id="hcContrato" v-model="headcount.tipoContrato" class="input-field">
+                <option value="">— Não informado —</option>
+                <option value="indeterminado">Indeterminado (efetivado)</option>
+                <option value="determinado">Determinado (experiência)</option>
+              </select>
+            </div>
+          </div>
+
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="flex flex-col gap-1.5">
               <label for="hcEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
@@ -2131,7 +2163,7 @@ onUnmounted(() => {
                   >
                     {{ h.colaborador }}
                   </button>
-                  <Badge v-if="h.status === 'demitido'" tone="dark">Demitido em {{ ymLabel(h.demitidoMes) }}</Badge>
+                  <Badge v-if="h.codigo" tone="dark">{{ h.codigo }}</Badge>
                 </div>
                 <span v-if="h.funcao || h.estado || headcountBranchName(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
                   {{ [headcountBranchName(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}

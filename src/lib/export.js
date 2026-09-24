@@ -79,19 +79,21 @@ function permanenciaRows(list) {
   return rows;
 }
 
-const HEADCOUNT_HEADER = ["Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Status"];
+const HEADCOUNT_HEADER = ["Código", "Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Gênero", "Tipo de contrato"];
 
 function headcountRows(list) {
   const rows = [HEADCOUNT_HEADER];
   (list || []).forEach((h) => {
     rows.push([
+      h.codigo || "",
       h.colaborador || "",
       h.filial || "",
       h.funcao || "",
       h.remuneracao != null ? Number(h.remuneracao) : null,
       h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "",
       h.estado || "",
-      h.status === "demitido" ? "Demitido" : "Ativo"
+      h.genero ? (String(h.genero).toLowerCase() === "feminino" ? "Feminino" : "Masculino") : "",
+      h.tipoContrato === "determinado" ? "Determinado" : h.tipoContrato === "indeterminado" ? "Indeterminado" : ""
     ]);
   });
   return rows;

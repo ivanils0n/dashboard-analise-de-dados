@@ -61,6 +61,18 @@ watch(hiringRecrutadorOptions, (opts) => {
   }
 });
 
+/* Filtro por Filial do gráfico de Headcount — "" = todas as filiais. */
+const headcountFilialFilter = ref("");
+const headcountFilialOptions = computed(() => props.dashboard.headcountFiliais());
+watch(headcountFilialOptions, (opts) => {
+  if (headcountFilialFilter.value && !opts.includes(headcountFilialFilter.value)) {
+    headcountFilialFilter.value = "";
+  }
+});
+
+/* Headcount: "bar" (barras por estado) ou "pie" (pizza Masculino x Feminino). */
+const headcountView = ref("bar");
+
 /* Painel central: Custo de folha de salário (padrão) quando nada está
    selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
    (linha mensal, barras por filial/estado ou pizza de turnover — ver
@@ -70,7 +82,9 @@ const centerChart = computed(() =>
     selectedKpiId.value,
     hiringStatusFilter.value,
     treinamentoGerenteFilter.value,
-    hiringRecrutadorFilter.value
+    hiringRecrutadorFilter.value,
+    headcountFilialFilter.value,
+    headcountView.value
   )
 );
 
@@ -82,6 +96,19 @@ const treinamentoSummaryItems = computed(() => {
   if (centerChart.value.id !== "treinamento" || !treinamentoGerenteFilter.value) return [];
   const total = centerChart.value.data.reduce((sum, row) => sum + (Number(row.value) || 0), 0);
   return [{ label: "Total de horas", value: formatHoursClock(total), accent: true }];
+});
+
+/* Tempo médio de contratação: com um recrutador filtrado, mostra as vagas dele
+   no período (total, abertas e fechadas — independente do filtro de status). */
+const hiringSummaryItems = computed(() => {
+  if (centerChart.value.id !== "tempo_contratacao") return [];
+  const rows = props.dashboard.vacanciesBarByOpen("todas", hiringRecrutadorFilter.value);
+  const abertas = rows.filter((r) => String(r.tooltipValue).includes("(em aberto)")).length;
+  return [
+    { label: hiringRecrutadorFilter.value ? "Vagas do recrutador" : "Total de vagas", value: String(rows.length), accent: true },
+    { label: "Abertas", value: String(abertas) },
+    { label: "Fechadas", value: String(rows.length - abertas) }
+  ];
 });
 
 /* Custo médio da diária: Total, Colaboradores e Média do período filtrado,
@@ -111,7 +138,7 @@ const bottomKpis = computed(() => [
    folha de salário) em cada estado — RO, AM e PA com o filtro em "todos", só o
    estado escolhido nos demais casos. Clicar num estado filtra por ele; clicar
    de novo volta para "todos". */
-const { setState } = useFilters();
+const { setState, state: filters } = useFilters();
 const mapStates = computed(() => props.dashboard.kpiValueByEstado(selectedKpiId.value));
 
 /* Taxa total de Turnover no centro da pizza (Painel e tela cheia). */
@@ -181,10 +208,13 @@ const diariaColabRows = ref([]);
    com os colaboradores do estado da barra no mês filtrado. */
 const headcountEstadoOpen = ref(false);
 const headcountEstadoSigla = ref("");
+const headcountGenero = ref("");
 
-function onCenterBarClick({ index, label }) {
+function onCenterBarClick({ index, label, datasetIndex }) {
   if (centerChart.value.id === "headcount") {
     if (!label) return;
+    /* Séries do gráfico: 0 = Masculino, 1 = Feminino, 2 = Total (geral). */
+    headcountGenero.value = ["masculino", "feminino"][datasetIndex] || "";
     headcountEstadoSigla.value = label;
     headcountEstadoOpen.value = true;
     return;
@@ -286,6 +316,13 @@ const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.
    Admissões. Mesmo comportamento da pizza na Visão geral (ver
    onTurnoverChartInfo em KpiChartCard.vue). */
 function onPieClick(sliceIndex) {
+  if (centerChart.value.id === "headcount") {
+    /* Fatia 0 = Masculino, 1 = Feminino; fora de uma fatia (centro) = geral. */
+    headcountGenero.value = ["masculino", "feminino"][sliceIndex] || "";
+    headcountEstadoSigla.value = filters.current;
+    headcountEstadoOpen.value = true;
+    return;
+  }
   if (centerChart.value.id === "custo_contratacao") {
     const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
     if (row && row.key) emit("custo-filial", row.key);
@@ -350,16 +387,28 @@ function goNextKpi() {
               :class="diariaSummaryItems.length || treinamentoSummaryItems.length ? 'sm:grid-cols-[1fr_auto_1fr]' : centerChart.faturamentoEnabled ? 'sm:grid-cols-[1fr_auto_auto]' : 'sm:grid-cols-3'"
             >
               <div>
-                <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
+                  <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+                </div>
                 <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ centerChart.sub }}</span>
               </div>
-              <div v-if="centerChart.id === 'tempo_contratacao'" class="flex justify-start sm:justify-center">
+              <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center justify-start gap-2 sm:justify-center">
                 <HiringStatusPills v-model="hiringStatusFilter" />
+                <SummaryTiles v-if="hiringSummaryItems.length" :items="hiringSummaryItems" compact />
               </div>
               <SummaryTiles v-else-if="treinamentoSummaryItems.length" :items="treinamentoSummaryItems" compact />
               <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
               <div v-else></div>
               <div class="flex flex-wrap items-center justify-start gap-2 sm:justify-end" :class="centerChart.faturamentoEnabled ? 'sm:flex-nowrap' : ''">
+                <GerenteRegionalFilter
+                  v-if="centerChart.id === 'headcount'"
+                  v-model="headcountFilialFilter"
+                  :options="headcountFilialOptions"
+                  label="Filial"
+                  all-label="Todas as filiais"
+                  title="Filtrar Headcount por filial"
+                />
                 <GerenteRegionalFilter
                   v-if="centerChart.id === 'treinamento'"
                   v-model="treinamentoGerenteFilter"
@@ -413,7 +462,7 @@ function goNextKpi() {
                 :center-value="pieCenter.value"
                 :center-caption="pieCenter.caption"
                 :value-format="centerChart.valueFormat || 'percent'"
-                :clickable="centerChart.id === 'turnover' || centerChart.id === 'custo_contratacao'"
+                :clickable="['turnover', 'custo_contratacao', 'headcount'].includes(centerChart.id)"
                 @chart-click="onPieClick"
                 @chart-contextmenu="onPieClick"
               />
@@ -552,6 +601,8 @@ function goNextKpi() {
       v-if="headcountEstadoOpen"
       :open="headcountEstadoOpen"
       :estado="headcountEstadoSigla"
+      :genero="headcountGenero"
+      :filial="headcountFilialFilter"
       @close="headcountEstadoOpen = false"
     />
 
@@ -600,12 +651,24 @@ function goNextKpi() {
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-          <HiringStatusPills v-if="centerChart.id === 'tempo_contratacao'" v-model="hiringStatusFilter" />
+          <template v-if="centerChart.id === 'tempo_contratacao'">
+            <HiringStatusPills v-model="hiringStatusFilter" />
+            <SummaryTiles v-if="hiringSummaryItems.length" :items="hiringSummaryItems" compact />
+          </template>
           <SummaryTiles v-else-if="treinamentoSummaryItems.length" :items="treinamentoSummaryItems" compact />
           <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
-          <span v-else class="min-w-[10rem] text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">
-            {{ centerChart.title }}
-          </span>
+          <div v-else class="flex min-w-[10rem] items-center justify-center gap-2">
+            <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
+            <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+          </div>
+          <GerenteRegionalFilter
+            v-if="centerChart.id === 'headcount'"
+            v-model="headcountFilialFilter"
+            :options="headcountFilialOptions"
+            label="Filial"
+            all-label="Todas as filiais"
+            title="Filtrar Headcount por filial"
+          />
           <GerenteRegionalFilter
             v-if="centerChart.id === 'treinamento'"
             v-model="treinamentoGerenteFilter"
@@ -642,7 +705,7 @@ function goNextKpi() {
               :center-value="pieCenter.value"
               :center-caption="pieCenter.caption"
               :value-format="centerChart.valueFormat || 'percent'"
-              :clickable="centerChart.id === 'turnover' || centerChart.id === 'custo_contratacao'"
+              :clickable="['turnover', 'custo_contratacao', 'headcount'].includes(centerChart.id)"
               @chart-click="onPieClick"
               @chart-contextmenu="onPieClick"
             />

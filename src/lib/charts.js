@@ -427,6 +427,12 @@ export function formatPiePercent(value) {
   return num.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 }
 
+/* Contagem inteira (ex.: colaboradores por gênero). */
+export function formatPieCount(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "—";
+}
+
 export function formatPieCurrency(value) {
   const num = Number(value);
   return Number.isFinite(num) ? formatCurrency(num) : "—";
@@ -435,6 +441,7 @@ export function formatPieCurrency(value) {
 /* Formato dos valores da pizza (tooltip e rótulos): "percent" (padrão) ou
    "currency". Os rótulos usam o formatter passado em setShowValues. */
 export function pieFormatter(format) {
+  if (format === "count") return formatPieCount;
   return format === "currency" ? formatPieCurrency : formatPiePercent;
 }
 
@@ -443,13 +450,14 @@ export function setPieFormat(chart, format) {
   chart.__pieFormatter = pieFormatter(format);
 }
 
-/* data: [{ label, value }] */
+/* data: [{ label, value, color? }] */
 export function updatePieChart(chart, data) {
   if (!chart || !data) return;
   chart.data.labels = data.map((d) => d.label);
   const ds = chart.data.datasets[0];
   ds.data = data.map((d) => d.value);
-  ds.backgroundColor = data.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
+  /* `color` opcional por fatia (ex.: gênero); senão a paleta padrão. */
+  ds.backgroundColor = data.map((d, i) => d.color || PIE_COLORS[i % PIE_COLORS.length]);
   chart.update();
 }
 
@@ -768,8 +776,47 @@ export function createBarChart(canvas, options = {}) {
    options: { trend?: boolean } — desenha (padrão) ou não a linha de tendência.
    A formatação global dos rótulos vem de chart.__valueLabels.formatter,
    definido pelo componente (ver BarChart.vue). */
+const BAR_SERIES_COLORS = ["#0284c7", "#db2777", ACCENT];
+
+/* Barras agrupadas: cada item traz `series: [{ label, value }]` (uma barra por
+   série dentro de cada categoria, com legenda). Valores reais, sem a
+   transformação de escala nem linha de tendência. */
+function updateGroupedBarChart(chart, panorama) {
+  const p = chartPalette();
+  const names = panorama[0].series.map((s) => s.label);
+  chart.__valueFormats = [];
+  chart.__realBarValues = null;
+  chart.__trendLine = null;
+  chart.__meanLine = null;
+  chart.data = {
+    labels: panorama.map((row) => row.label),
+    datasets: names.map((name, si) => ({
+      label: name,
+      data: panorama.map((row) => (row.series[si] && row.series[si].value) || 0),
+      backgroundColor: BAR_SERIES_COLORS[si % BAR_SERIES_COLORS.length],
+      borderRadius: 4,
+      barPercentage: 0.9,
+      categoryPercentage: 0.8
+    }))
+  };
+  chart.options.plugins.legend = {
+    display: true,
+    position: "bottom",
+    labels: { color: p.tick, boxWidth: 12, boxHeight: 12, font: { size: 11 } }
+  };
+  chart.options.plugins.tooltip.displayColors = true;
+  chart.options.plugins.tooltip.callbacks = {
+    label: (context) => `${context.dataset.label}: ${context.parsed.y ?? context.parsed.x}`
+  };
+  chart.update();
+}
+
 export function updateBarChart(chart, panorama, options = {}) {
   if (!chart || !panorama) return;
+  const grouped = panorama.length > 0 && Array.isArray(panorama[0].series);
+  chart.options.plugins.legend = { display: false };
+  chart.options.plugins.tooltip.displayColors = false;
+  if (grouped) return updateGroupedBarChart(chart, panorama);
   const labels = panorama.map((p) => p.label);
   const values = panorama.map((p) => (p.value === null ? 0 : p.value));
   const tooltips = panorama.map((p) =>

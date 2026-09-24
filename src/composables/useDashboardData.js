@@ -8,6 +8,8 @@ import {
   averageHiringDays,
   turnoverAvgTenureDays,
   headcountCountInRange,
+  headcountGenderCountInRange,
+  headcountFilialOptions,
   turnoverRateStats,
   retentionRate,
   findBranchByShortName,
@@ -250,14 +252,27 @@ export function useDashboardData(filter, options = {}) {
     return aggregateEntries(ind, list);
   }
 
-  /* Headcount por estado (uma barra por estado) para o card de barras.
-     Headcount é lançamento manual mensal (um registro por colaborador,
-     como Turnover) — conta os registros do mês filtrado em cada estado. */
-  function headcountBarByState() {
+  /* Headcount por estado para o card de barras: três barras por estado —
+     Masculino, Feminino e o total (soma de todos os colaboradores do mês
+     filtrado, inclusive sem gênero informado). `value` é o total. */
+  function headcountBarByState(filial = "") {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
-    return STATES.map((s) => {
-      const value = headcountCountInRange(s, range) || 0;
-      return { label: s, value, tooltipValue: String(value) };
+    /* Respeita o filtro de estado: com um estado selecionado, só a barra dele. */
+    const st = currentState();
+    let states = st && st !== "todos" ? [st] : STATES;
+    /* Com uma filial escolhida, só os estados onde ela tem colaborador. */
+    if (filial) states = states.filter((s) => headcountFilialOptions(s).includes(filial));
+    return states.map((s) => {
+      const g = headcountGenderCountInRange(s, range, filial);
+      return {
+        label: s,
+        value: g.total,
+        series: [
+          { label: "Masculino", value: g.masculino },
+          { label: "Feminino", value: g.feminino },
+          { label: "Total", value: g.total }
+        ]
+      };
     }).sort((a, b) => b.value - a.value);
   }
 
@@ -333,6 +348,10 @@ export function useDashboardData(filter, options = {}) {
   /* Recrutadores que aparecem nas vagas abertas no período filtrado (para o
      filtro do gráfico de Tempo médio de contratação no Painel), em ordem
      alfabética — mesma ideia de treinamentoGerentesRegionais, abaixo. */
+  function headcountFiliais() {
+    return headcountFilialOptions(currentState());
+  }
+
   function vagasRecrutadores() {
     const vacs = listVacancies(currentState()).filter((v) => v.openAt);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
@@ -1009,7 +1028,7 @@ export function useDashboardData(filter, options = {}) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountView) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1061,13 +1080,30 @@ export function useDashboardData(filter, options = {}) {
         valueFormat: ""
       };
     }
+    if (kpiId === "headcount" && headcountView === "pie") {
+      /* Pizza: total de Masculino x Feminino nos estados/filial/mês filtrados. */
+      const rows = headcountBarByState(headcountFilial);
+      const sum = (i) => rows.reduce((acc, r) => acc + (r.series[i].value || 0), 0);
+      return {
+        id: "headcount",
+        kind: "pie",
+        title: "Headcount",
+        sub: "Masculino x Feminino",
+        data: [
+          { label: "Masculino", value: sum(0), color: "#0284c7" },
+          { label: "Feminino", value: sum(1), color: "#db2777" }
+        ],
+        center: { value: String(sum(2)), caption: "Colaboradores" },
+        valueFormat: "count"
+      };
+    }
     if (kpiId === "headcount") {
       return {
         id: "headcount",
         kind: "bar",
         title: "Headcount",
         sub: "Por estado",
-        data: headcountBarByState(),
+        data: headcountBarByState(headcountFilial),
         valueFormat: ""
       };
     }
@@ -1189,6 +1225,7 @@ export function useDashboardData(filter, options = {}) {
     treinamentoGerentesRegionais,
     treinamentoFilialEntries,
     vagasRecrutadores,
+    headcountFiliais,
     headcountBarByState,
     ticketMedioBarByState,
     ticketMedioPieCenter,

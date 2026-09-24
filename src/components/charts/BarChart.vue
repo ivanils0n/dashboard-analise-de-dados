@@ -65,6 +65,7 @@ function onCanvasClick(evt) {
   const realValues = chart.__realBarValues;
   emit("bar-click", {
     index,
+    datasetIndex: points[0].datasetIndex,
     label: chart.data.labels[index],
     value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
   });
@@ -82,6 +83,7 @@ function onCanvasContextmenu(evt) {
   const realValues = chart.__realBarValues;
   emit("bar-contextmenu", {
     index,
+    datasetIndex: points[0].datasetIndex,
     label: chart.data.labels[index],
     value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
   });
