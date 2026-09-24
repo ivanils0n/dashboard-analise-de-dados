@@ -769,7 +769,7 @@ export function useDashboardData(filter, options = {}) {
     });
   });
 
-  const selectedId = ref(null);
+  const selectedId = ref("headcount");
 
   const selectedKpiId = computed(() => selectedId.value);
 

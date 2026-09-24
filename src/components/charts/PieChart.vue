@@ -57,12 +57,18 @@ function onCanvasMove(evt) {
   overPlot.value = props.clickable && insidePlot(evt);
 }
 
+/* Pizza de contagem (Headcount por gênero) sempre mostra quantidade e % nas
+   fatias, sem depender do botão "Mostrar valores". */
+function effectiveShow() {
+  return props.showValues || props.valueFormat === "count";
+}
+
 function mountChart() {
   if (!canvas.value) return;
   chart = createPieChart(canvas.value);
   setPieFormat(chart, props.valueFormat);
   updatePieChart(chart, props.data);
-  setShowValues(chart, props.showValues, { formatter: pieFormatter(props.valueFormat) });
+  setShowValues(chart, effectiveShow(), { formatter: pieFormatter(props.valueFormat) });
   applyCenterText();
 }
 
@@ -108,14 +114,14 @@ watch(
   (format) => {
     if (!chart) return;
     setPieFormat(chart, format);
-    setShowValues(chart, props.showValues, { formatter: pieFormatter(format) });
+    setShowValues(chart, effectiveShow(), { formatter: pieFormatter(format) });
   }
 );
 
 watch(
   () => props.showValues,
   (show) => {
-    if (chart) setShowValues(chart, show, { formatter: pieFormatter(props.valueFormat) });
+    if (chart) setShowValues(chart, effectiveShow(), { formatter: pieFormatter(props.valueFormat) });
   }
 );
 </script>

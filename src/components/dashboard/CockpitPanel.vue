@@ -425,14 +425,6 @@ function goNextKpi() {
                 <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
                 <FaturamentoButton v-if="centerChart.faturamentoEnabled" />
                 <button
-                  v-if="selectedKpiId"
-                  type="button"
-                  class="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  @click="select(selectedKpiId)"
-                >
-                  Voltar ao padrão
-                </button>
-                <button
                   type="button"
                   class="icon-btn-sm"
                   title="Tela cheia"

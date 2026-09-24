@@ -138,6 +138,11 @@ function drawValueLabels(chart) {
   /* Checa antes de `ctx.save()`: o retorno antecipado abaixo deixava o
      contexto salvo sem restaurar. */
   if (isPie && (!chart.getDatasetMeta(0) || !chart.data.datasets[0])) return;
+  /* Pizza de contagem (ex.: Headcount por gênero): 2ª linha com a porcentagem
+     da fatia sobre o total, abaixo da quantidade. */
+  const pieTotal = isPie ? (chart.data.datasets[0].data || []).reduce((a, b) => a + (Number(b) || 0), 0) : 0;
+  const pieSub = (val) =>
+    chart.__pieShowPercent && pieTotal > 0 ? formatPiePercent((Number(val) / pieTotal) * 100) : "";
   const rawFormatter = local.formatter !== undefined ? local.formatter : opts.formatter;
   const formatter = typeof rawFormatter === "function" ? rawFormatter : null;
   const label = (val) => (formatter ? formatter(val) : String(val));
@@ -164,7 +169,16 @@ function drawValueLabels(chart) {
         const r = (prop.outerRadius + prop.innerRadius) / 2;
         ctx.fillStyle = ds.backgroundColor[i] === PIE_SECONDARY ? "#1f2937" : "#ffffff";
         ctx.textBaseline = "middle";
-        ctx.fillText(label(val), prop.x + cos * r, prop.y + sin * r);
+        const sub = pieSub(val);
+        if (sub) {
+          /* Quantidade em cima, porcentagem (menor) logo abaixo. */
+          ctx.fillText(label(val), prop.x + cos * r, prop.y + sin * r - 7);
+          ctx.font = "600 10px Inter, sans-serif";
+          ctx.fillText(sub, prop.x + cos * r, prop.y + sin * r + 7);
+          ctx.font = compact ? "700 9px Inter, sans-serif" : "700 12px Inter, sans-serif";
+        } else {
+          ctx.fillText(label(val), prop.x + cos * r, prop.y + sin * r);
+        }
         return;
       }
 
@@ -197,7 +211,16 @@ function drawValueLabels(chart) {
       ctx.fillStyle = p.text;
       ctx.textAlign = right ? "left" : "right";
       ctx.textBaseline = "middle";
-      ctx.fillText(label(val), tx + (right ? 6 : -6), ey);
+      const subOut = pieSub(val);
+      if (subOut) {
+        ctx.fillText(label(val), tx + (right ? 6 : -6), ey - fs * 0.6);
+        ctx.font = `600 ${Math.max(10, fs - 2)}px Inter, sans-serif`;
+        ctx.fillStyle = p.tick;
+        ctx.fillText(subOut, tx + (right ? 6 : -6), ey + fs * 0.6);
+        ctx.font = `700 ${fs}px Inter, sans-serif`;
+      } else {
+        ctx.fillText(label(val), tx + (right ? 6 : -6), ey);
+      }
     });
   } else {
     ctx.fillStyle = p.text;
@@ -413,7 +436,12 @@ export function createPieChart(canvas) {
             /* Turnover: cada fatia já é uma taxa (%), não uma contagem —
                formata com 1 casa decimal e o sufixo "%". Outras pizzas trocam
                o formato via setPieFormat (ex.: moeda). */
-            label: (context) => ` ${context.label}: ${(context.chart.__pieFormatter || formatPiePercent)(context.raw)}`
+            label: (context) => {
+              const base = ` ${context.label}: ${(context.chart.__pieFormatter || formatPiePercent)(context.raw)}`;
+              if (!context.chart.__pieShowPercent) return base;
+              const total = context.dataset.data.reduce((a, b) => a + (Number(b) || 0), 0);
+              return total > 0 ? `${base} (${formatPiePercent((Number(context.raw) / total) * 100)})` : base;
+            }
           }
         }
       }
@@ -448,6 +476,7 @@ export function pieFormatter(format) {
 export function setPieFormat(chart, format) {
   if (!chart) return;
   chart.__pieFormatter = pieFormatter(format);
+  chart.__pieShowPercent = format === "count";
 }
 
 /* data: [{ label, value, color? }] */
