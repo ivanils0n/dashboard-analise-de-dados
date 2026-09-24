@@ -20,10 +20,10 @@ function sleep(ms: number): Promise<void> {
 // erro em vez do JSON esperado. O boot do front dispara várias tabelas em
 // paralelo, então isso acontece na prática — repete com backoff (+jitter)
 // antes de desistir, em vez de propagar um 500 por uma sobrecarga passageira.
-// Leitura que passa de 6 s na 1ª tentativa (Apps Script "frio") é cancelada e
-// refeita na hora, sem limite — a 2ª pega o script já quente. Só vale pra
-// "read": cancelar uma gravação no meio poderia duplicar/perder linhas.
-const FIRST_READ_TIMEOUT_MS = 8000;
+// Sem limite de tempo por tentativa: a leitura espera o Apps Script responder
+// (antes, a 1ª leitura era cancelada em 8 s e refeita, o que na prática
+// recomeçava uma leitura já em andamento). O cliente (navegador) ainda pode
+// cancelar — recarregar/fechar a página aborta a chamada (clientSignal).
 
 async function callAppsScriptOnce<T>(
   env: Bindings,
@@ -92,8 +92,7 @@ async function callAppsScript<T>(
   let lastMessage = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (clientSignal?.aborted) throw new Error("Requisição cancelada pelo cliente.");
-    const timeoutMs = action === "read" && attempt === 1 ? FIRST_READ_TIMEOUT_MS : undefined;
-    const result = await callAppsScriptOnce<T>(env, action, params, timeoutMs, clientSignal);
+    const result = await callAppsScriptOnce<T>(env, action, params, undefined, clientSignal);
     if (result.ok) return result.data;
     if (!result.retriable || attempt === MAX_ATTEMPTS) throw new Error(result.message);
 
@@ -186,10 +185,11 @@ function parseFlexibleDate(raw: string): string | null {
   if (!s) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
-  let m = s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  m = s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{2})$/);
-  if (m) return `20${m[3]}-${m[2]}-${m[1]}`;
+  // dia e mês com 1 ou 2 dígitos ("1/9/2026" também vale).
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return `${m[3]}-${pad2(Number(m[2]))}-${pad2(Number(m[1]))}`;
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  if (m) return `20${m[3]}-${pad2(Number(m[2]))}-${pad2(Number(m[1]))}`;
 
   const text = s
     .toLowerCase()
@@ -309,7 +309,31 @@ export async function readTable(
   clientSignal?: AbortSignal
 ): Promise<IndexedTable> {
   const rawRows = await callAppsScript<unknown[][]>(env, "read", { sheet: sheetName }, clientSignal);
+  return indexRawRows(rawRows, columns);
+}
 
+// Lê várias abas numa única chamada ao Apps Script (ação "readMany"). Devolve,
+// por nome de aba, a tabela indexada — ou null quando a aba não existe.
+export async function readTables(
+  env: Bindings,
+  requests: { sheetName: string; columns: ColumnDef[] }[],
+  clientSignal?: AbortSignal
+): Promise<Record<string, IndexedTable | null>> {
+  const raw = await callAppsScript<Record<string, unknown[][] | null>>(
+    env,
+    "readMany",
+    { sheets: requests.map((r) => r.sheetName) },
+    clientSignal
+  );
+  const out: Record<string, IndexedTable | null> = {};
+  requests.forEach(({ sheetName, columns }) => {
+    const rows = raw?.[sheetName];
+    out[sheetName] = rows == null ? null : indexRawRows(rows, columns);
+  });
+  return out;
+}
+
+function indexRawRows(rawRows: unknown[][] | null | undefined, columns: ColumnDef[]): IndexedTable {
   const rows: SheetRow[] = [];
   const rowNumberById = new Map<string, number>();
   const rowById = new Map<string, SheetRow>();

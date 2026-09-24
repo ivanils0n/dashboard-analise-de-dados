@@ -12,6 +12,7 @@ import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
+import RetentionPanel from "@/components/dashboard/RetentionPanel.vue";
 import CockpitKpiButton from "@/components/dashboard/CockpitKpiButton.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
 import TurnoverSummaryCards from "@/components/dashboard/TurnoverSummaryCards.vue";
@@ -211,16 +212,6 @@ watch(selectedKpiId, async (id) => {
   const top = item ? item.offsetTop - (list.clientHeight - item.offsetHeight) / 2 : 0;
   list.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 });
-
-/* Card "table" da Retenção: cada valor cai em "—" quando ainda não há dado
-   suficiente (ex.: sem headcount inicial cadastrado). */
-function retencaoNum(v) {
-  return v === null || v === undefined ? "—" : v;
-}
-function retencaoPctText(data) {
-  const v = data && data.retencaoPct;
-  return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
-}
 
 /* Turnover (pizza): mostra a taxa total em %. */
 function indicatorValueText(kpi) {
@@ -505,38 +496,7 @@ function goNextKpi() {
               />
               <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
             </div>
-            <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4 overflow-y-auto py-2">
-              <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
-                  <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountFinal) }}</p>
-                </div>
-                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Novas contratações</span>
-                  <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.novasContratacoes) }}</p>
-                </div>
-                <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount inicial</span>
-                  <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountInicial) }}</p>
-                </div>
-              </div>
-              <div
-                v-if="centerChart.data?.missing?.length"
-                class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
-              >
-                Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
-              </div>
-              <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-accent/25 dark:bg-accent/10">
-                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
-                <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
-                  ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
-                </p>
-              </div>
-              <div class="flex flex-col items-center text-center">
-                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retenção</span>
-                <strong class="text-7xl font-bold tabular-nums text-accent dark:text-accent-light">{{ retencaoPctText(centerChart.data) }}</strong>
-              </div>
-            </div>
+            <RetentionPanel v-else-if="centerChart.kind === 'table'" :data="centerChart.data" />
             <BarChart
               v-else
               :data="centerChart.data"
@@ -750,38 +710,7 @@ function goNextKpi() {
             />
             <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
           </div>
-          <div v-else-if="centerChart.kind === 'table'" class="flex h-full flex-col justify-center gap-4">
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount final</span>
-                <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountFinal) }}</p>
-              </div>
-              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Novas contratações</span>
-                <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.novasContratacoes) }}</p>
-              </div>
-              <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Headcount inicial</span>
-                <p class="mt-1 text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ retencaoNum(centerChart.data?.headcountInicial) }}</p>
-              </div>
-            </div>
-            <div
-              v-if="centerChart.data?.missing?.length"
-              class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
-            >
-              Sem dado suficiente para calcular: {{ centerChart.data.missing.join(", ") }}.
-            </div>
-            <div class="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-center dark:border-accent/25 dark:bg-accent/10">
-              <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cálculo</span>
-              <p class="mt-1 text-lg font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
-                ({{ retencaoNum(centerChart.data?.headcountFinal) }} − {{ retencaoNum(centerChart.data?.novasContratacoes) }}) / {{ retencaoNum(centerChart.data?.headcountInicial) }}
-              </p>
-            </div>
-            <div class="flex flex-col items-center text-center">
-              <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retenção</span>
-              <strong class="text-7xl font-bold tabular-nums text-accent dark:text-accent-light">{{ retencaoPctText(centerChart.data) }}</strong>
-            </div>
-          </div>
+          <RetentionPanel v-else-if="centerChart.kind === 'table'" :data="centerChart.data" large />
           <BarChart
             v-else
             :data="centerChart.data"

@@ -618,6 +618,27 @@ const _tablesLoaded = new Set();
    certas não são rebaixadas junto. */
 const MAX_TABLE_RETRIES = 2;
 
+/* Uma única chamada para todas as tabelas (/api/data/_batch): o Worker lê as
+   abas numa execução só do Apps Script, em vez de uma execução (com partida a
+   frio) por tabela. Devolve o mesmo formato de fetchOneTable, uma entrada por
+   base; se o lote inteiro falhar (ex.: Worker ainda sem a rota), devolve null
+   e quem chama cai no download tabela a tabela. */
+async function fetchTablesBatch(bases) {
+  try {
+    const res = await apiFetch(`/api/data/_batch?tables=${encodeURIComponent(bases.join(","))}`);
+    const payload = res && res.data;
+    if (!payload || typeof payload.tables !== "object") return null;
+    return bases.map((base) =>
+      payload.tables && Array.isArray(payload.tables[base])
+        ? { base, data: payload.tables[base] }
+        : { base, error: new Error((payload.errors && payload.errors[base]) || `Tabela ${base} ausente no lote.`) }
+    );
+  } catch (err) {
+    console.warn("[API] Carga em lote indisponível — baixando tabela a tabela:", err);
+    return null;
+  }
+}
+
 async function fetchOneTable(base) {
   try {
     const res = await apiFetch(`/api/data/${base}`);
@@ -634,7 +655,8 @@ async function fetchOneTable(base) {
    descartar o que já deu certo nesta rodada. */
 async function fetchTablesOnce(bases) {
   const epoch = _epoch;
-  const results = await mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable);
+  const results =
+    (await fetchTablesBatch(bases)) || (await mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable));
   if (epoch !== _epoch) return { failed: bases }; // logout/login no meio do download
 
   const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };

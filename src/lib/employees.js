@@ -464,15 +464,34 @@ export async function deletePermanenciaRecords(ids) {
    desligamento (importação de "demitidos", que só altera o status — não
    cria registro novo). */
 
+/* Mês ("YYYY-MM") de uma data em ISO (2026-09-01, com ou sem hora) ou em
+   formato brasileiro (1/9/2026, 01-09-26, 09/2026); "" se ilegível. Antes o
+   mês era só `slice(0, 7)` do texto: uma data digitada como "1/9/2026" virava
+   "1/9/202", que no comparador de texto fica ANTES de qualquer "2026-.." e
+   fazia o colaborador contar em todos os meses, inclusive antes da admissão. */
+function toYm(value) {
+  const s = String(value ?? "").trim();
+  let m = s.match(/^(\d{4})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}`;
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})(?!\d)/);
+  if (m) {
+    const month = Number(m[2]);
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return month >= 1 && month <= 12 ? `${year}-${String(month).padStart(2, "0")}` : "";
+  }
+  m = s.match(/^(\d{1,2})[\/.\-](\d{4})$/);
+  if (m) {
+    const month = Number(m[1]);
+    return month >= 1 && month <= 12 ? `${m[2]}-${String(month).padStart(2, "0")}` : "";
+  }
+  return "";
+}
+
 function activeInMonth(h, ym) {
-  /* Sem Data de admissão (registro antigo ou importado sem ela), vale o mês de
-     referência gravado: o colaborador conta a partir dele, e não em todos os
-     meses — inclusive nos anteriores à sua entrada. */
-  const admissaoYm = h.dataAdmissao
-    ? String(h.dataAdmissao).slice(0, 7)
-    : h.mesReferencia
-      ? String(h.mesReferencia).slice(0, 7)
-      : null;
+  /* Conta a partir do mês da Data de admissão; sem ela (ou ilegível), vale o
+     mês de referência gravado — o colaborador conta a partir dele, e não em
+     todos os meses, inclusive nos anteriores à sua entrada. */
+  const admissaoYm = toYm(h.dataAdmissao) || toYm(h.mesReferencia);
   if (admissaoYm && admissaoYm > ym) return false; // ainda não tinha sido admitido
   return true;
 }
@@ -656,6 +675,8 @@ export function retentionRate(state, range, prevRange) {
     headcountInicial,
     headcountFinal,
     novasContratacoes,
+    /* Demissões lançadas no Turnover no período (informativo — não entra na fórmula). */
+    demissoes: demitidosNoPeriodo,
     retencaoPct
   };
 }

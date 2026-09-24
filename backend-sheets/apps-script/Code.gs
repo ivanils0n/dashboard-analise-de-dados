@@ -26,7 +26,7 @@
 // Sobe junto em toda resposta — dá pra confirmar pela própria API se a
 // implantação no ar já é esta versão do arquivo, sem precisar abrir o editor
 // do Apps Script. Troque essa string sempre que reimplantar.
-var CODE_VERSION = "2026-09-23-id-lookup-3";
+var CODE_VERSION = "2026-09-24-read-many-1";
 
 // Ações que gravam na planilha — cada uma roda sob o lock (ver doPost). "read"
 // fica de fora de propósito: travar leituras também derrubaria a velocidade
@@ -87,6 +87,9 @@ function doPost(e) {
       case "read":
         data = readRows(body.sheet);
         break;
+      case "readMany":
+        data = readMany_(body.sheets);
+        break;
       case "append":
         data = appendRows(body.sheet, body.values);
         break;
@@ -143,6 +146,25 @@ function readRows(sheetName) {
   if (lastRow < 2) return [];
   var lastCol = sheet.getLastColumn();
   return sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+}
+
+// Várias abas numa execução só: abre a planilha uma vez e devolve
+// { nomeDaAba: linhas | null }. Aba inexistente vira null (o Worker trata como
+// erro só daquela tabela). Evita pagar a partida do script e a abertura da
+// planilha uma vez por aba, que era o grosso da demora no carregamento.
+function readMany_(names) {
+  var ss = spreadsheet_();
+  var out = {};
+  (names || []).forEach(function (name) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) {
+      out[name] = null;
+      return;
+    }
+    var lastRow = sheet.getLastRow();
+    out[name] = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  });
+  return out;
 }
 
 function appendRows(sheetName, values) {

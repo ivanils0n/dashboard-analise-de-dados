@@ -1,4 +1,4 @@
-import { appendRows, deleteRows, readTable, updateRows } from "../db/sheets";
+import { appendRows, deleteRows, readTable, readTables, updateRows } from "../db/sheets";
 import type { SheetRow } from "../db/sheets";
 import { ENTITIES, ESTADO_TODOS, tableName } from "../db/tables";
 import type { ColumnDef, Estado, EstadoFiltro, EntityDef } from "../db/tables";
@@ -134,6 +134,25 @@ export async function listAllRecords(
   const table = tableName(entityKey);
   const { rows } = await readTable(env, table, entity.columns, clientSignal);
   return rows.filter((row) => matchesEstado(entity, row, estado));
+}
+
+// Várias entidades (todos os estados) numa única ida ao Apps Script — usado
+// pela carga inicial do frontend. Entidade cuja aba não existe vai em `errors`.
+export async function listManyTables(env: Bindings, entityKeys: string[], clientSignal?: AbortSignal) {
+  const keys = entityKeys.filter((key) => key in ENTITIES);
+  const read = await readTables(
+    env,
+    keys.map((key) => ({ sheetName: tableName(key), columns: ENTITIES[key].columns })),
+    clientSignal
+  );
+  const tables: Record<string, SheetRow[]> = {};
+  const errors: Record<string, string> = {};
+  keys.forEach((key) => {
+    const table = read[tableName(key)];
+    if (table) tables[key] = table.rows;
+    else errors[key] = `Aba "${tableName(key)}" não existe.`;
+  });
+  return { tables, errors };
 }
 
 export async function getRecord(env: Bindings, entityKey: string, estado: Estado, id: string) {
