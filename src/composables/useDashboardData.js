@@ -597,6 +597,15 @@ export function useDashboardData(filter, options = {}) {
     return [...rows.slice(0, PIE_MAX_FILIAIS), { key: "__outras__", label: "OUTRAS", value: sum / count, count, sum, items: rest }];
   }
 
+  /* Custo mensal de admissões = custo médio de contratação × admissões; sem
+     vagas fechadas no período não há média (null). */
+  function custoAdmissaoMensal(admissoes) {
+    const list = filterByRange(costVacancyEntries());
+    if (!list.length) return null;
+    const avg = list.reduce((sum, e) => sum + (Number(e.value) || 0), 0) / list.length;
+    return avg * (Number(admissoes) || 0);
+  }
+
   /* Centro da pizza: custo médio geral (todas as vagas fechadas do período). */
   function custoContratacaoPieCenter() {
     const list = filterByRange(costVacancyEntries());
@@ -1184,12 +1193,9 @@ export function useDashboardData(filter, options = {}) {
           totalPct: stats.turnoverPct,
           entradaPct: stats.turnoverEntradaPct,
           saidaPct: stats.turnoverSaidaPct,
-          /* Custo de admissões: soma dos salários das vagas fechadas no mês e
-             estado filtrados (mesma base do Custo de contratação). */
-          custoAdmissaoMensal: filterByRange(costVacancyEntries()).reduce(
-            (sum, e) => sum + (Number(e.value) || 0),
-            0
-          )
+          /* Custo de admissões: custo médio de contratação (média dos salários
+             das vagas fechadas no período/estado) × admissões do Headcount. */
+          custoAdmissaoMensal: custoAdmissaoMensal(stats.admissoes)
         },
         valueFormat: ""
       };
