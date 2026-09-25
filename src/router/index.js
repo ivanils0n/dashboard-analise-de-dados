@@ -9,7 +9,10 @@ const views = {
   login: () => import("@/views/LoginView.vue"),
   dashboard: () => import("@/views/DashboardView.vue"),
   filiais: () => import("@/views/FiliaisView.vue"),
-  usuarios: () => import("@/views/UsuariosView.vue")
+  usuarios: () => import("@/views/UsuariosView.vue"),
+  rescisoes: () => import("@/views/RescisoesView.vue"),
+  treinamentos: () => import("@/views/TreinamentosView.vue"),
+  vagas: () => import("@/views/VagasView.vue")
 };
 
 const routes = [
@@ -34,6 +37,24 @@ const routes = [
         path: "filiais",
         name: "filiais",
         component: views.filiais,
+        meta: { requiresAuth: true }
+      },
+      {
+        path: "rescisoes",
+        name: "rescisoes",
+        component: views.rescisoes,
+        meta: { requiresAuth: true }
+      },
+      {
+        path: "treinamentos",
+        name: "treinamentos",
+        component: views.treinamentos,
+        meta: { requiresAuth: true }
+      },
+      {
+        path: "vagas",
+        name: "vagas",
+        component: views.vagas,
         meta: { requiresAuth: true }
       },
       {

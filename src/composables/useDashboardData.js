@@ -10,6 +10,11 @@ import {
   headcountCountInRange,
   headcountGenderCountInRange,
   headcountFilialOptions,
+  listRescisoes,
+  rescisaoFilterOptions,
+  rescisoesTotal,
+  rescisoesByFuncao,
+  rescisaoFuncaoLabel,
   turnoverRateStats,
   retentionRate,
   findBranchByShortName,
@@ -136,6 +141,10 @@ export function useDashboardData(filter, options = {}) {
         return ticketMedioFor(st, range);
       case "horas_regional":
         return treinamentoRegionaisCount(st, range);
+      /* Card de Rescisões: total (rescisão + GRRF/consig + 40%); sem nenhuma
+         rescisão no período fica "—" em vez de R$ 0. */
+      case "rescisoes":
+        return listRescisoes(st, range).length ? rescisoesTotal(st, range, "total") : null;
       default:
         return computedSnapshot(ind.id, st);
     }
@@ -867,7 +876,8 @@ export function useDashboardData(filter, options = {}) {
         ind.id !== "treinamento" &&
         ind.id !== "tempo_contratacao" &&
         ind.id !== "tempo_permanencia" &&
-        ind.id !== "horas_regional"
+        ind.id !== "horas_regional" &&
+        ind.id !== "rescisoes"
     );
     return visible.map((ind) => {
       if (ind.id === "turnover") {
@@ -969,6 +979,31 @@ export function useDashboardData(filter, options = {}) {
         permanenciaId: p.permanenciaId
       }))
       .sort((a, b) => b.value - a.value);
+  }
+
+  /* Rescisões por função no período filtrado (mês de referência). `mode`:
+     "liquido" = só o valor da rescisão; "total" = valor da rescisão + GRRF/
+     consignado + 40%. */
+  function rescisoesBarByFuncao(mode = "total", filters) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return rescisoesByFuncao(currentState(), range, mode, filters).map((r) => ({
+      label: r.label,
+      value: r.value,
+      tooltipValue: `${formatCurrency(r.value)} · ${r.count} ${r.count === 1 ? "rescisão" : "rescisões"}`
+    }));
+  }
+
+  /* Opções dos filtros de filial e gerente imediato do gráfico de Rescisões. */
+  function rescisoesFilterOptions() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return rescisaoFilterOptions(currentState(), range);
+  }
+
+  /* Rescisões da função (barra clicada) no estado e período filtrados — as
+     mesmas somadas na barra. */
+  function rescisoesEntriesByFuncao(label, filters) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return listRescisoes(currentState(), range, filters).filter((r) => rescisaoFuncaoLabel(r) === label);
   }
 
   /* Detalhamento da Retenção no período filtrado — mesmos números usados
@@ -1109,7 +1144,7 @@ export function useDashboardData(filter, options = {}) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountView) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountView, rescisaoMode, rescisaoFilters) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1251,6 +1286,19 @@ export function useDashboardData(filter, options = {}) {
         valueFormat: ""
       };
     }
+    if (kpiId === "rescisoes") {
+      const liquido = rescisaoMode === "liquido";
+      return {
+        id: "rescisoes",
+        kind: "bar",
+        title: "Rescisões",
+        sub: liquido
+          ? "Valor líquido (só a rescisão) por função no período filtrado"
+          : "Rescisão + GRRF/consig + 40% por função no período filtrado",
+        data: rescisoesBarByFuncao(rescisaoMode, rescisaoFilters),
+        valueFormat: "currency"
+      };
+    }
     if (kpiId === "retencao") {
       return {
         id: "retencao",
@@ -1337,6 +1385,9 @@ export function useDashboardData(filter, options = {}) {
     kpiChartCards,
     chartPieData,
     turnoverTenureBarByEmployee,
+    rescisoesBarByFuncao,
+    rescisoesEntriesByFuncao,
+    rescisoesFilterOptions,
     retentionBreakdown,
     vacanciesBarByOpen,
     cockpitChartFor,

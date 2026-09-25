@@ -62,10 +62,6 @@ const filteredRows = computed(() => {
   );
 });
 
-const totalRemuneracao = computed(() =>
-  rows.value.reduce((sum, h) => sum + (Number(h.remuneracao) || 0), 0)
-);
-
 /* Sem estado (ou "todos"): abre pelo botão direito no KPI de Headcount, que
    segue o filtro de estado do dashboard em vez de uma barra específica. */
 const stateName = computed(() =>
@@ -121,20 +117,6 @@ async function removeRow(h) {
             Colaboradores{{ ym ? ` em ${ymLabel(ym)}` : "" }}
           </p>
           <p class="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ rows.length }}</p>
-        </div>
-        <div v-if="totalRemuneracao" class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-right">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Remuneração total
-            </p>
-            <p class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-              {{ formatCurrency(totalRemuneracao) }}
-            </p>
-          </div>
-          <p class="max-w-[16rem] text-left text-xs text-zinc-500 dark:text-zinc-400">
-            <strong class="font-semibold text-zinc-600 dark:text-zinc-300">Observação:</strong>
-            salário base, sem acréscimos de bonificação, entre outros benefícios.
-          </p>
         </div>
       </div>
 

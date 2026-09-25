@@ -929,9 +929,6 @@ function submitHeadcount() {
     funcao: headcount.funcao,
     remuneracao,
     dataAdmissao: headcount.dataAdmissao,
-    /* O quadro não tem mais "mês de lançamento" próprio — o filtro por mês
-       usa a Data de admissão como base (ver activeInMonth em employees.js). */
-    mesReferencia: String(headcount.dataAdmissao).slice(0, 7),
     filial: headcount.filial,
     estado: st
   };

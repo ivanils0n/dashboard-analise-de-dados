@@ -105,7 +105,6 @@ async function submit() {
       funcao: form.funcao,
       remuneracao,
       dataAdmissao: form.dataAdmissao,
-      mesReferencia: String(form.dataAdmissao).slice(0, 7),
       filial: form.filial,
       estado: form.estado
     });

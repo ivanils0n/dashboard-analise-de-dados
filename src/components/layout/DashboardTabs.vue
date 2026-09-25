@@ -6,7 +6,10 @@ import { activeTab, switchTab } from "@/composables/useDashboardTab";
    superior (sempre escura); `page`: versão para o corpo da página (segue o
    tema). O "indicador" desliza entre as abas; setas ←/→ trocam de aba. */
 defineProps({
-  variant: { type: String, default: "page" }
+  variant: { type: String, default: "page" },
+  vertical: { type: Boolean, default: false },
+  /* Só ícones (sidebar recolhida); vale junto com `vertical`. */
+  compact: { type: Boolean, default: false }
 });
 
 const TABS = [
@@ -28,20 +31,29 @@ function onKeydown(e) {
 
 <template>
   <div
-    class="relative grid h-10 grid-cols-2 items-stretch rounded-xl p-1 ring-1 ring-inset"
-    :class="variant === 'topbar'
-      ? 'bg-white/[0.04] ring-white/10'
-      : 'bg-zinc-100 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800'"
+    class="relative grid items-stretch"
+    :class="[
+      vertical ? 'grid-rows-2' : 'h-10 grid-cols-2',
+      !(vertical && compact) && 'rounded-xl p-1 ring-1 ring-inset',
+      vertical && compact && 'gap-2',
+      !(vertical && compact) && (variant === 'topbar'
+        ? 'bg-white/[0.04] ring-white/10'
+        : 'bg-zinc-100 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800')
+    ]"
     role="tablist"
     aria-label="Modo de visualização"
   >
     <!-- Indicador deslizante -->
     <span
-      class="tabs-thumb pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-lg shadow-sm ring-1 ring-inset"
-      :class="variant === 'topbar'
-        ? 'bg-zinc-700/80 ring-white/10'
-        : 'bg-white ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700'"
-      :style="{ transform: `translateX(${activeIndex * 100}%)` }"
+      v-if="!(vertical && compact)"
+      class="tabs-thumb pointer-events-none absolute rounded-lg shadow-sm ring-1 ring-inset"
+      :class="[
+        vertical ? 'inset-x-1 top-1 h-[calc(50%-0.25rem)]' : 'inset-y-1 left-1 w-[calc(50%-0.25rem)]',
+        variant === 'topbar'
+          ? 'bg-zinc-700/80 ring-white/10'
+          : 'bg-white ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700'
+      ]"
+      :style="{ transform: `${vertical ? 'translateY' : 'translateX'}(${activeIndex * 100}%)` }"
       aria-hidden="true"
     ></span>
 
@@ -51,14 +63,19 @@ function onKeydown(e) {
       type="button"
       role="tab"
       :data-tab="tab.id"
+      :title="tab.label"
+      :aria-label="tab.label"
       :aria-selected="activeTab === tab.id"
       :tabindex="activeTab === tab.id ? 0 : -1"
-      class="relative z-10 flex min-w-[7.5rem] items-center justify-center gap-2 rounded-lg px-4 text-[13px] font-semibold tracking-tight outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent/70"
-      :class="variant === 'topbar'
-        ? (activeTab === tab.id ? 'text-white' : 'text-zinc-400 hover:text-zinc-200')
-        : (activeTab === tab.id
-          ? 'text-zinc-900 dark:text-zinc-100'
-          : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200')"
+      class="relative z-10 flex items-center gap-2 rounded-lg px-4 text-[13px] font-semibold tracking-tight outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent/70"
+      :class="[
+        vertical ? (compact ? 'h-10 justify-center !px-0 ring-1 ring-inset ' + (activeTab === tab.id ? (variant === 'topbar' ? 'bg-zinc-700/80 ring-white/10' : 'bg-white ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700') : 'ring-white/10 hover:bg-white/5') : 'justify-start') : 'min-w-[7.5rem] justify-center',
+        variant === 'topbar'
+          ? (activeTab === tab.id ? 'text-white' : 'text-zinc-400 hover:text-zinc-200')
+          : (activeTab === tab.id
+            ? 'text-zinc-900 dark:text-zinc-100'
+            : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200')
+      ]"
       @click="switchTab(tab.id)"
       @keydown="onKeydown"
     >
@@ -80,7 +97,7 @@ function onKeydown(e) {
         <path d="M3 3v18h18" />
         <path d="M7 15l4-4 3 3 5-6" />
       </svg>
-      {{ tab.label }}
+      <span v-if="!(vertical && compact)">{{ tab.label }}</span>
     </button>
   </div>
 </template>

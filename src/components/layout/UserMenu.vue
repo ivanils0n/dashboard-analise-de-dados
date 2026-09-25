@@ -5,6 +5,9 @@ import Modal from "@/components/ui/Modal.vue";
 import { authState, getProfile, logout, changeName, changePassword, PERFIL_LABELS } from "@/lib/auth";
 import { useToast } from "@/composables/useToast";
 
+/* `compact`: só o avatar (sidebar recolhida). */
+defineProps({ compact: { type: Boolean, default: false } });
+
 const router = useRouter();
 const { show: toast } = useToast();
 
@@ -103,7 +106,7 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
   <div class="relative" @click.stop>
     <button
       type="button"
-      class="flex items-center gap-2 rounded-lg p-1 transition hover:bg-zinc-800"
+      class="flex w-full items-center gap-2 rounded-lg p-1 transition hover:bg-zinc-800"
       :aria-expanded="open"
       :title="displayName"
       aria-label="Minha conta"
@@ -114,14 +117,14 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
       >
         {{ initial }}
       </span>
-      <span class="hidden text-[15px] font-medium text-zinc-200 sm:inline">
+      <span v-if="!compact" class="hidden min-w-0 flex-1 truncate text-left text-[15px] font-medium text-zinc-200 sm:inline">
         {{ displayName.split(" ")[0] }}
       </span>
     </button>
 
     <div
       v-if="open"
-      class="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
+      class="absolute right-0 z-40 mt-2 w-56 md:bottom-full md:left-0 md:right-auto md:mt-0 md:mb-2 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div class="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
         <p class="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ displayName }}</p>

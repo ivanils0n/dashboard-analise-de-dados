@@ -206,6 +206,21 @@ export const INDICATORS = [
        sem lançamento próprio: `manual: false` tira do seletor do LaunchModal. */
     computed: true,
     manual: false
+  },
+  {
+    id: "rescisoes",
+    name: "Rescisões",
+    desc: "Valores de rescisão por função (valor da rescisão, GRRF/consignado e multa de 40%), lidos da aba \"rescisoes\" da planilha",
+    calc: "Valor da rescisão + GRRF/consignado + multa de 40% das rescisões no período (o gráfico também mostra só o valor líquido, sem GRRF/consignado e 40%)",
+    type: "currency",
+    unit: "R$",
+    decimals: 2,
+    higherIsBetter: false,
+    /* Alimentado direto na aba "rescisoes" (sem lançamento no app): `manual:
+       false` tira do seletor do LaunchModal. O card mostra o total; o gráfico
+       alterna entre líquido e total (ver rescisoesByFuncao em lib/employees.js). */
+    computed: true,
+    manual: false
   }
 ];
 

@@ -3,13 +3,22 @@
    Estado da TopBar (StateFilter.vue). `modelValue`: "" = sem filtro. Usado
    pelo filtro de Gerente regional (Treinamento) e de Recrutador (Tempo médio
    de contratação). */
-defineProps({
+const props = defineProps({
   modelValue: { type: String, default: "" },
   options: { type: Array, default: () => [] },
   label: { type: String, default: "Gerente regional" },
   allLabel: { type: String, default: "Todos os gerentes regionais" },
-  title: { type: String, default: "Filtrar Treinamento por gerente regional" }
+  title: { type: String, default: "Filtrar Treinamento por gerente regional" },
+  /* Rótulos das opções acima deste tamanho são cortados com "..." (o texto
+     completo fica no tooltip) — evita que a lista fique enorme com textos
+     longos. 0 = sem corte. */
+  maxLabel: { type: Number, default: 0 }
 });
+
+function shortLabel(text) {
+  const t = String(text);
+  return props.maxLabel && t.length > props.maxLabel ? t.slice(0, props.maxLabel).trimEnd() + "..." : t;
+}
 
 defineEmits(["update:modelValue"]);
 </script>
@@ -24,6 +33,6 @@ defineEmits(["update:modelValue"]);
     @change="$emit('update:modelValue', $event.target.value)"
   >
     <option value="">{{ allLabel }}</option>
-    <option v-for="g in options" :key="g" :value="g">{{ g }}</option>
+    <option v-for="g in options" :key="g" :value="g" :title="g">{{ shortLabel(g) }}</option>
   </select>
 </template>

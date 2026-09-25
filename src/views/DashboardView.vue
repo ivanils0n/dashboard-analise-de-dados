@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from "vue";
 import { sidebarHidden } from "@/composables/useSidebar";
 import { activeTab, tabDirection } from "@/composables/useDashboardTab";
-import DashboardTabs from "@/components/layout/DashboardTabs.vue";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
@@ -23,8 +22,12 @@ import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
+import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
+import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
+import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import RegionalTreinamentosModal from "@/components/dashboard/RegionalTreinamentosModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
+import StateFilter from "@/components/layout/StateFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
@@ -408,6 +411,36 @@ const regionalBarData = computed(() => dashboard.cockpitChartFor("horas_regional
 const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStatusFilter.value));
 const permanenciaBarData = computed(() => dashboard.turnoverTenureBarByEmployee());
 
+/* Rescisões por função: "total" (rescisão + GRRF/consig + 40%) ou "liquido"
+   (só o valor da rescisão). */
+const rescisaoMode = ref("total");
+/* Filtros de filial e gerente imediato ("" = todos). */
+const rescisaoFilial = ref("");
+const rescisaoGerente = ref("");
+const rescisaoOptions = computed(() => dashboard.rescisoesFilterOptions());
+const rescisaoFilters = computed(() => ({ filial: rescisaoFilial.value, gerente: rescisaoGerente.value }));
+watch(rescisaoOptions, (opts) => {
+  if (rescisaoFilial.value && !opts.filiais.includes(rescisaoFilial.value)) rescisaoFilial.value = "";
+  if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
+});
+const rescisoesBarData = computed(() => dashboard.rescisoesBarByFuncao(rescisaoMode.value, rescisaoFilters.value));
+const rescisoesSub = computed(() =>
+  rescisaoMode.value === "liquido"
+    ? "Valor líquido (só a rescisão) por função no período filtrado"
+    : "Rescisão + GRRF/consig + 40% por função no período filtrado"
+);
+const rescisaoFuncaoOpen = ref(false);
+const rescisaoFuncaoName = ref("");
+const rescisaoFuncaoRows = ref([]);
+function onRescisaoBarClick({ label }) {
+  if (!label) return;
+  rescisaoFuncaoName.value = label;
+  rescisaoFuncaoRows.value = dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
+  rescisaoFuncaoOpen.value = true;
+}
+const rescisoesChartRef = ref(null);
+const rescisoesBarChartRef = ref(null);
+
 const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
 
 /* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
@@ -637,6 +670,10 @@ function onSelectKpi(id) {
       hiringChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (id === "rescisoes") {
+      rescisoesChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     scrollToKpiChart(id);
   });
 }
@@ -759,8 +796,6 @@ watch(activeTab, (tab) => {
         class="flex min-w-0 flex-1 items-center justify-center"
       ></div>
 
-      <!-- Abas: em telas médias+ ficam na TopBar. -->
-      <DashboardTabs class="md:hidden" />
 
       <div class="flex items-center justify-start gap-2 sm:ml-auto sm:justify-end">
         <span
@@ -779,6 +814,7 @@ watch(activeTab, (tab) => {
           {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
         </button>
         <DateRangeFilter :range="df" title="Período" @apply="showIncompleteNotice" />
+        <StateFilter variant="page" />
 
         <div v-if="canEdit" class="relative" @click.stop>
         <button
@@ -1245,6 +1281,75 @@ watch(activeTab, (tab) => {
     </section>
     </div>
 
+    <!-- ===== RESCISÕES (por função; alterna entre líquido e total) ===== -->
+    <div class="mt-8">
+    <section
+      ref="rescisoesChartRef"
+      class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Rescisões</h2>
+          <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ rescisoesSub }}</span>
+        </div>
+        <div class="flex flex-wrap items-center justify-start gap-2 sm:justify-center">
+          <RescisaoModeToggle v-model="rescisaoMode" />
+          <GerenteRegionalFilter
+            v-model="rescisaoFilial"
+            :options="rescisaoOptions.filiais"
+            label="Filial"
+            all-label="Todas as filiais"
+            title="Filtrar Rescisões por filial"
+          />
+          <GerenteRegionalFilter
+            v-model="rescisaoGerente"
+            :options="rescisaoOptions.gerentes"
+            label="Gerente imediato"
+            all-label="Todos os gerentes imediatos"
+            title="Filtrar Rescisões por gerente imediato"
+          />
+        </div>
+        <div class="flex justify-start sm:justify-end">
+          <button
+            v-if="rescisoesBarData.length"
+            type="button"
+            class="icon-btn-sm"
+            title="Tela cheia"
+            aria-label="Ver gráfico de Rescisões em tela cheia"
+            @click="rescisoesBarChartRef?.openFullscreen()"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <BarChart
+        v-if="rescisoesBarData.length"
+        ref="rescisoesBarChartRef"
+        :data="rescisoesBarData"
+        :show-values="showValues"
+        value-format="currency"
+        :show-trend="false"
+        :height-px="520"
+        horizontal
+        bars-clickable
+        title="Rescisões"
+        :subtitle="rescisoesSub"
+        @bar-click="onRescisaoBarClick"
+      />
+      <div v-else class="p-6">
+        <EmptyState
+          title="Sem rescisões no período"
+          text="Nenhuma rescisão na aba “rescisoes” para o período e estado filtrados."
+        />
+      </div>
+    </section>
+    </div>
+
     </div>
     </transition>
 
@@ -1279,6 +1384,13 @@ watch(activeTab, (tab) => {
       :fallback="vacancyDetailFallback"
       @close="vacancyDetailOpen = false"
       @edit="onVacancyDetailEdit"
+    />
+    <RescisaoFuncaoModal
+      v-if="rescisaoFuncaoOpen"
+      :open="rescisaoFuncaoOpen"
+      :funcao="rescisaoFuncaoName"
+      :records="rescisaoFuncaoRows"
+      @close="rescisaoFuncaoOpen = false"
     />
     <PermanenciaModal
       v-if="permanenciaOpen"

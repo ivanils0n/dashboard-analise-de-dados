@@ -65,11 +65,15 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
 const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial", "estado_sigla", "recrutador"],
   headcount: [
-    "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao", "mes_referencia",
+    "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao",
     "genero", "tipo_contrato", "filial", "estado_sigla"
   ],
   turnover: ["id", "filial", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
   permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial", "estado_sigla"],
+  rescisoes: [
+    "id", "empresa", "estado", "colaborador", "filial", "funcao", "admissao", "gerente_imediato",
+    "motivo", "justificativa_apurada", "ponderacoes", "ult_dia_aviso", "valor_rescisao", "grrf_consig", "multa_40", "mes_referencia"
+  ],
   filiais: ["id", "cnpj", "nome", "abreviado", "gerente", "estado_sigla"],
   // Substituem a antiga "lancamentos" genérica (ver migrate-restructure.mjs
   // para migrar dados de uma planilha antiga). Colaboradores/Departamentos

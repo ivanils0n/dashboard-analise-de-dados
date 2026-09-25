@@ -43,6 +43,9 @@ const ICONS = {
   /* Regional Treinamentos: grupo de pessoas. */
   horas_regional:
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  /* Rescisões: documento com uma linha riscada (desligamento). */
+  rescisoes:
+    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/>',
   ticket_medio:
     '<circle cx="8.5" cy="7" r="3.5"/><path d="M2 20v-1a5 5 0 0 1 5-5h2"/><circle cx="16.5" cy="16.5" r="5.5"/><path stroke-width="1.6" d="M18.5 14.25h-3a1.25 1.25 0 0 0 0 2.5h2a1.25 1.25 0 0 1 0 2.5h-3"/><path stroke-width="1.6" d="M16.5 12.75v1.5M16.5 19.25v1.5"/>'
 };

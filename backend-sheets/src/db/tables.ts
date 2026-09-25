@@ -84,11 +84,11 @@ export const ENTITIES: Record<string, EntityDef> = {
   headcount: {
     key: "headcount",
     label: "Headcount",
-    orderBy: "mes_referencia desc",
+    orderBy: "data_admissao desc",
     search: ["codigo", "colaborador", "funcao"],
     filters: [
-      { param: "data_de", column: "mes_referencia", kind: "gte" },
-      { param: "data_ate", column: "mes_referencia", kind: "lte" }
+      { param: "data_de", column: "data_admissao", kind: "gte" },
+      { param: "data_ate", column: "data_admissao", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
@@ -96,8 +96,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "colaborador", type: "text", required: true },
       { name: "funcao", type: "text" },
       { name: "remuneracao", type: "number" },
-      { name: "data_admissao", type: "date" },
-      { name: "mes_referencia", type: "date", required: true },
+      { name: "data_admissao", type: "date", required: true },
       { name: "genero", type: "text", values: ["masculino", "feminino"] },
       { name: "tipo_contrato", type: "text", values: ["indeterminado", "determinado"] },
       // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/diarias/treinamentos.
@@ -143,6 +142,40 @@ export const ENTITIES: Record<string, EntityDef> = {
       // Sem FK pra Filiais: texto livre (nome abreviado), como vagas/turnover/headcount.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  // Aba alimentada direto na planilha (somente leitura no app). A ordem das
+  // colunas abaixo É a ordem das colunas da aba (o Apps Script lê por posição,
+  // não pelo nome do cabeçalho): id, empresa, estado, colaborador, filial,
+  // função, admissão, gerente imediato, motivo, justificativa apurada,
+  // ponderações, último dia do aviso, valor da rescisão, GRRF/consignado e 40%.
+  rescisoes: {
+    key: "rescisoes",
+    label: "Rescisões",
+    orderBy: "mes_referencia desc",
+    search: ["colaborador"],
+    filters: [
+      { param: "data_de", column: "mes_referencia", kind: "gte" },
+      { param: "data_ate", column: "mes_referencia", kind: "lte" }
+    ],
+    columns: [
+      { name: "id", type: "text" },
+      { name: "empresa", type: "text" },
+      { name: "estado", type: "text", stateRef: true },
+      { name: "colaborador", type: "text", required: true },
+      { name: "filial", type: "text" },
+      { name: "funcao", type: "text" },
+      { name: "admissao", type: "date" },
+      { name: "gerente_imediato", type: "text" },
+      { name: "motivo", type: "text" },
+      { name: "justificativa_apurada", type: "text" },
+      { name: "ponderacoes", type: "text" },
+      { name: "ult_dia_aviso", type: "date" },
+      { name: "valor_rescisao", type: "number" },
+      { name: "grrf_consig", type: "number" },
+      { name: "multa_40", type: "number" },
+      // Coluna P: mês a que as informações se referem (base do filtro de período).
+      { name: "mes_referencia", type: "date" }
     ]
   },
   filiais: {

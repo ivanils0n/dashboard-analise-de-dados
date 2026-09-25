@@ -161,7 +161,6 @@ function headcountToRow(h) {
     funcao: h.funcao != null ? String(h.funcao) : null,
     remuneracao: h.remuneracao != null ? Number(h.remuneracao) : null,
     data_admissao: h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : null,
-    mes_referencia: h.mesReferencia ? `${String(h.mesReferencia).slice(0, 7)}-01` : null,
     genero: h.genero || null,
     tipo_contrato: h.tipoContrato || null,
     filial: h.filial || null,
@@ -382,7 +381,7 @@ function mapRemoteDiaria(row, impliedState) {
       liderImediato: up(row.lider_imediato) || null,
       gerenteRegional: up(row.gerente_regional) || null,
       regional: up(row.regional) || null,
-      motivo: up(row.motivo) || null,
+      motivo: motivoKey(row.motivo),
       semPeriodo: Boolean(row.sem_periodo),
       estado: row.estado_sigla || impliedState || null
     }
@@ -479,6 +478,38 @@ function mapRemotePermanencia(row, impliedState) {
   };
 }
 
+/* Motivo da rescisão: maiúsculo, sem acento e com espaços normalizados, para que
+   "DEMISSÃO" e "DEMISSAO" (ou espaços a mais) virem o mesmo motivo. */
+function motivoKey(v) {
+  if (v == null) return null;
+  const t = String(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+  return t || null;
+}
+
+/* Aba "rescisoes" (somente leitura). Os três valores são números; célula vazia
+   vira 0 para que a soma do gráfico nunca vire NaN. */
+function mapRemoteRescisao(row, impliedState) {
+  const num = (v) => (v != null && Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    id: row.id,
+    empresa: up(row.empresa) || null,
+    estado: row.estado || impliedState || null,
+    colaborador: up(row.colaborador) ?? "",
+    filial: up(row.filial) || null,
+    funcao: up(row.funcao) || null,
+    admissao: row.admissao ? String(row.admissao).slice(0, 10) : null,
+    gerenteImediato: up(row.gerente_imediato) || null,
+    motivo: up(row.motivo) || null,
+    justificativaApurada: up(row.justificativa_apurada) || null,
+    ponderacoes: up(row.ponderacoes) || null,
+    ultDiaAviso: row.ult_dia_aviso ? String(row.ult_dia_aviso).slice(0, 10) : null,
+    valorRescisao: num(row.valor_rescisao),
+    grrfConsig: num(row.grrf_consig),
+    multa40: num(row.multa_40),
+    mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 10) : null
+  };
+}
+
 function mapRemoteHeadcount(row, impliedState) {
   return {
     id: row.id,
@@ -486,7 +517,6 @@ function mapRemoteHeadcount(row, impliedState) {
     funcao: row.funcao != null ? up(row.funcao) : null,
     remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
-    mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
     genero: row.genero || null,
     tipoContrato: row.tipo_contrato || null,
     filial: up(row.filial) || null,
@@ -515,6 +545,7 @@ const TABLE_KINDS = {
   vagas: { key: "vacancies", map: mapRemoteVacancy },
   turnover: { key: "turnovers", map: mapRemoteTurnover },
   permanencia: { key: "permanencias", map: mapRemotePermanencia },
+  rescisoes: { key: "rescisoes", map: mapRemoteRescisao },
   headcount: { key: "headcounts", map: mapRemoteHeadcount },
   filiais: { key: "branches", map: mapRemoteBranch },
   diarias: { key: "diarias", map: mapRemoteDiaria },
@@ -540,6 +571,7 @@ function emptyPayload() {
     vacancies: [],
     turnovers: [],
     permanencias: [],
+    rescisoes: [],
     headcounts: [],
     branches: [],
     diarias: [],

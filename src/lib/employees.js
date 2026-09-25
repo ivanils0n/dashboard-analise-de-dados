@@ -18,6 +18,7 @@ import {
   upsertPermanencia,
   deletePermanencia,
   getPermanenciaById,
+  getRescisoes,
   getHeadcounts,
   upsertHeadcount,
   deleteHeadcount,
@@ -294,6 +295,61 @@ function dateWithinRange(dateVal, range) {
   return true;
 }
 
+/* ---------- Rescisões (aba "rescisoes", só leitura) ----------
+   Valor de uma rescisão: "liquido" = só o valor da rescisão; "total" = valor
+   da rescisão + GRRF/consignado + multa de 40%. */
+export function rescisaoAmount(r, mode) {
+  const base = Number(r.valorRescisao) || 0;
+  if (mode !== "total") return base;
+  return base + (Number(r.grrfConsig) || 0) + (Number(r.multa40) || 0);
+}
+
+/* Rescisões do estado, no período (pelo mês de referência, coluna P). Sem
+   período = todas; com período, rescisão sem mês fica de fora. */
+export function listRescisoes(state, range, filters) {
+  let list = filterByState(getRescisoes(), state);
+  if (range) list = list.filter((r) => dateWithinRange(r.mesReferencia, range));
+  /* `filters` { filial, gerente }: "" / ausente = sem filtro. */
+  if (filters && filters.filial) list = list.filter((r) => r.filial === filters.filial);
+  if (filters && filters.gerente) list = list.filter((r) => r.gerenteImediato === filters.gerente);
+  return list;
+}
+
+/* Filiais e gerentes imediatos das rescisões do estado/período, em ordem
+   alfabética (opções dos filtros do gráfico). */
+export function rescisaoFilterOptions(state, range) {
+  const filiais = new Set();
+  const gerentes = new Set();
+  listRescisoes(state, range).forEach((r) => {
+    if (r.filial) filiais.add(r.filial);
+    if (r.gerenteImediato) gerentes.add(r.gerenteImediato);
+  });
+  const sort = (set) => [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return { filiais: sort(filiais), gerentes: sort(gerentes) };
+}
+
+export function rescisaoFuncaoLabel(r) {
+  return String(r.funcao || "").trim().toUpperCase() || "SEM FUNÇÃO";
+}
+
+export function rescisoesTotal(state, range, mode, filters) {
+  return listRescisoes(state, range, filters).reduce((sum, r) => sum + rescisaoAmount(r, mode), 0);
+}
+
+/* Uma linha por função (maior valor primeiro): valor no modo escolhido e
+   quantidade de rescisões. */
+export function rescisoesByFuncao(state, range, mode, filters) {
+  const groups = new Map();
+  listRescisoes(state, range, filters).forEach((r) => {
+    const label = rescisaoFuncaoLabel(r);
+    const g = groups.get(label) || { label, value: 0, count: 0 };
+    g.value += rescisaoAmount(r, mode);
+    g.count += 1;
+    groups.set(label, g);
+  });
+  return [...groups.values()].sort((a, b) => b.value - a.value);
+}
+
 /* ---------- Turnover (lançamento manual por quantidade) ----------
    Não depende mais de colaboradores individuais: cada lançamento é só uma
    quantidade de admitidos e demitidos por filial num mês de referência
@@ -488,10 +544,9 @@ function toYm(value) {
 }
 
 function activeInMonth(h, ym) {
-  /* Conta a partir do mês da Data de admissão; sem ela (ou ilegível), vale o
-     mês de referência gravado — o colaborador conta a partir dele, e não em
-     todos os meses, inclusive nos anteriores à sua entrada. */
-  const admissaoYm = toYm(h.dataAdmissao) || toYm(h.mesReferencia);
+  /* Conta a partir do mês da Data de admissão; sem ela (ou ilegível), o
+     colaborador conta em todos os meses. */
+  const admissaoYm = toYm(h.dataAdmissao);
   if (admissaoYm && admissaoYm > ym) return false; // ainda não tinha sido admitido
   return true;
 }
@@ -560,7 +615,6 @@ export function addHeadcountRecord({
   funcao = null,
   remuneracao = null,
   dataAdmissao = null,
-  mesReferencia,
   genero = null,
   tipoContrato = null,
   filial = null,
@@ -572,7 +626,6 @@ export function addHeadcountRecord({
     funcao: funcao != null ? String(funcao).toUpperCase() : null,
     remuneracao: moneyOrNull(remuneracao),
     dataAdmissao: dataAdmissao || null,
-    mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
     genero: genero || null,
     tipoContrato: tipoContrato || null,
     filial: filial || null,
@@ -584,7 +637,7 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { codigo, colaborador, funcao, remuneracao, dataAdmissao, mesReferencia, genero, tipoContrato, filial, estado }
+  { codigo, colaborador, funcao, remuneracao, dataAdmissao, genero, tipoContrato, filial, estado }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
@@ -595,8 +648,6 @@ export function updateHeadcountRecord(
     funcao: funcao !== undefined ? (funcao != null ? String(funcao).toUpperCase() : null) : record.funcao,
     remuneracao: remuneracao !== undefined ? moneyOrNull(remuneracao) : record.remuneracao,
     dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
-    mesReferencia:
-      mesReferencia !== undefined ? (mesReferencia ? String(mesReferencia).slice(0, 7) : null) : record.mesReferencia,
     genero: genero !== undefined ? genero || null : record.genero,
     tipoContrato: tipoContrato !== undefined ? tipoContrato || null : record.tipoContrato,
     filial: filial !== undefined ? filial || null : record.filial,

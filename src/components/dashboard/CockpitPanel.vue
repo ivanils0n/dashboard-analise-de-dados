@@ -9,6 +9,8 @@ import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModa
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
+import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
+import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
@@ -74,6 +76,24 @@ watch(headcountFilialOptions, (opts) => {
 /* Headcount: "bar" (barras por estado) ou "pie" (pizza Masculino x Feminino). */
 const headcountView = ref("bar");
 
+/* Rescisões: "total" (rescisão + GRRF/consig + 40%) ou "liquido" (só a rescisão). */
+const rescisaoMode = ref("total");
+
+/* Filtros de filial e gerente imediato do gráfico de Rescisões ("" = todos). */
+const rescisaoFilial = ref("");
+const rescisaoGerente = ref("");
+const rescisaoOptions = computed(() => props.dashboard.rescisoesFilterOptions());
+const rescisaoFilters = computed(() => ({ filial: rescisaoFilial.value, gerente: rescisaoGerente.value }));
+watch(rescisaoOptions, (opts) => {
+  if (rescisaoFilial.value && !opts.filiais.includes(rescisaoFilial.value)) rescisaoFilial.value = "";
+  if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
+});
+
+/* Clique numa barra do gráfico de Rescisões: card com as rescisões da função. */
+const rescisaoFuncaoOpen = ref(false);
+const rescisaoFuncaoName = ref("");
+const rescisaoFuncaoRows = ref([]);
+
 /* Painel central: Custo de folha de salário (padrão) quando nada está
    selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
    (linha mensal, barras por filial/estado ou pizza de turnover — ver
@@ -85,7 +105,9 @@ const centerChart = computed(() =>
     treinamentoGerenteFilter.value,
     hiringRecrutadorFilter.value,
     headcountFilialFilter.value,
-    headcountView.value
+    headcountView.value,
+    rescisaoMode.value,
+    rescisaoFilters.value
   )
 );
 
@@ -141,37 +163,16 @@ onMounted(() => {
   slotReady.value = !!document.getElementById("cockpit-kpi-slot");
 });
 
-/* Divide os KPIs em duas faixas (esquerda e abaixo) para que fiquem ao
-   redor do gráfico central, com o painel Indicadores fixo à direita. */
-const BOTTOM_ONLY_KPIS = ["ticket_medio", "horas_regional"];
-const splitKpis = computed(() => kpis.value.filter((k) => !BOTTOM_ONLY_KPIS.includes(k.id)));
-/* Custo médio de contratação e Regional Treinamentos trocam de lugar: o
-   primeiro vai para a faixa abaixo do gráfico e o segundo para a coluna
-   lateral, onde ficava o Custo médio de contratação. */
-const SWAPPED_KPIS = ["custo_contratacao", "horas_regional"];
-function swapKpi(k) {
-  if (!SWAPPED_KPIS.includes(k.id)) return k;
-  const otherId = SWAPPED_KPIS.find((id) => id !== k.id);
-  return kpis.value.find((x) => x.id === otherId) || k;
-}
-/* Na coluna lateral, Retenção e Regional Treinamentos também trocam de posição. */
+/* KPIs distribuídos em "C" ao redor do gráfico central: faixa superior,
+   coluna à esquerda e faixa inferior (o lado direito fica aberto para o mapa e
+   os Indicadores). A divisão é uniforme entre as três partes. */
+const topKpis = computed(() => kpis.value.slice(0, Math.ceil(kpis.value.length / 3)));
 const leftKpis = computed(() => {
-  const list = splitKpis.value.filter((_, i) => i % 2 === 0).map(swapKpi);
-  const a = list.findIndex((k) => k.id === "retencao");
-  const b = list.findIndex((k) => k.id === "horas_regional");
-  if (a >= 0 && b >= 0) [list[a], list[b]] = [list[b], list[a]];
-  return list;
+  const rest = kpis.value.length - topKpis.value.length;
+  const start = topKpis.value.length;
+  return kpis.value.slice(start, start + Math.ceil(rest / 2));
 });
-/* Faixa abaixo do gráfico: começa pelo KPI que era o primeiro dela (Regional
-   Treinamentos, hoje trocado pelo Custo médio de contratação) e termina com o
-   Custo médio por colaborador. */
-const bottomKpis = computed(() =>
-  [
-    ...kpis.value.filter((k) => k.id === "horas_regional"),
-    ...splitKpis.value.filter((_, i) => i % 2 === 1),
-    ...kpis.value.filter((k) => BOTTOM_ONLY_KPIS.includes(k.id) && k.id !== "horas_regional")
-  ].map(swapKpi)
-);
+const bottomKpis = computed(() => kpis.value.slice(topKpis.value.length + leftKpis.value.length));
 
 /* Mapa abaixo dos Indicadores: mostra o KPI selecionado (ou o padrão, Custo de
    folha de salário) em cada estado — RO, AM e PA com o filtro em "todos", só o
@@ -254,6 +255,13 @@ function onCenterBarClick({ index, label, datasetIndex }) {
     diariaColabName.value = label;
     diariaColabRows.value = props.dashboard.custoDiariaEntriesByColaborador(label);
     diariaColabOpen.value = true;
+    return;
+  }
+  if (centerChart.value.id === "rescisoes") {
+    if (!label) return;
+    rescisaoFuncaoName.value = label;
+    rescisaoFuncaoRows.value = props.dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
+    rescisaoFuncaoOpen.value = true;
     return;
   }
   if (centerChart.value.id === "horas_regional") {
@@ -339,12 +347,12 @@ function onPermanenciaDetailEdit(recordId) {
 /* Linha de tendência (MM2): fica de fora dos gráficos de barras deitadas
    (Treinamento, Tempo médio de contratação, Tempo médio de permanência e
    Custo médio da diária). */
-const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio", "horas_regional"];
+const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio", "horas_regional", "rescisoes"];
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
 /* Gráficos de barras deitadas (uma linha por filial/vaga/colaborador, com
    rolagem). */
-const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria"];
+const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "rescisoes"];
 const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.value.id));
 
 /* Clique na pizza do Turnover: mesmo modal de Admissões/Demissões dos cards
@@ -409,11 +417,25 @@ function goNextKpi() {
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
       <div>
         <div class="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)]">
+          <!-- KPIs acima do gráfico (parte superior do "C"). -->
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 lg:col-span-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': topKpis.length }">
+            <CockpitKpiButton
+              v-for="kpi in topKpis"
+              :key="kpi.id"
+              class="!w-full"
+              :kpi="kpi"
+              :selected="selectedKpiId === kpi.id"
+              @select="select"
+              @context="onKpiContext"
+            />
+          </div>
+
           <!-- KPIs à esquerda do gráfico (mesmo estilo dos cards da Visão geral). -->
           <div class="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
             <CockpitKpiButton
               v-for="kpi in leftKpis"
               :key="kpi.id"
+              class="!w-full lg:flex-1"
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
               @select="select"
@@ -437,6 +459,23 @@ function goNextKpi() {
                 <HiringStatusPills v-model="hiringStatusFilter" />
               </div>
               <div class="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:ml-auto sm:justify-end">
+                <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
+                <GerenteRegionalFilter
+                  v-if="centerChart.id === 'rescisoes'"
+                  v-model="rescisaoFilial"
+                  :options="rescisaoOptions.filiais"
+                  label="Filial"
+                  all-label="Todas as filiais"
+                  title="Filtrar Rescisões por filial"
+                />
+                <GerenteRegionalFilter
+                  v-if="centerChart.id === 'rescisoes'"
+                  v-model="rescisaoGerente"
+                  :options="rescisaoOptions.gerentes"
+                  label="Gerente imediato"
+                  all-label="Todos os gerentes imediatos"
+                  title="Filtrar Rescisões por gerente imediato"
+                />
                 <GerenteRegionalFilter
                   v-if="centerChart.id === 'headcount'"
                   v-model="headcountFilialFilter"
@@ -524,7 +563,7 @@ function goNextKpi() {
                na mesma borda esquerda dos KPIs laterais (colunas de no mínimo
                200px, mesmo espaçamento) e se esticam até a borda direita do
                gráfico central. -->
-          <div class="mt-4 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 lg:col-span-2">
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 lg:col-span-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
             <CockpitKpiButton
               v-for="kpi in bottomKpis"
               :key="kpi.id"
@@ -586,6 +625,14 @@ function goNextKpi() {
       :colaborador="diariaColabName"
       :entries="diariaColabRows"
       @close="diariaColabOpen = false"
+    />
+
+    <RescisaoFuncaoModal
+      v-if="rescisaoFuncaoOpen"
+      :open="rescisaoFuncaoOpen"
+      :funcao="rescisaoFuncaoName"
+      :records="rescisaoFuncaoRows"
+      @close="rescisaoFuncaoOpen = false"
     />
 
     <TurnoverDetailModal
@@ -660,6 +707,23 @@ function goNextKpi() {
             <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
             <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
           </div>
+          <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
+          <GerenteRegionalFilter
+            v-if="centerChart.id === 'rescisoes'"
+            v-model="rescisaoFilial"
+            :options="rescisaoOptions.filiais"
+            label="Filial"
+            all-label="Todas as filiais"
+            title="Filtrar Rescisões por filial"
+          />
+          <GerenteRegionalFilter
+            v-if="centerChart.id === 'rescisoes'"
+            v-model="rescisaoGerente"
+            :options="rescisaoOptions.gerentes"
+            label="Gerente imediato"
+            all-label="Todos os gerentes imediatos"
+            title="Filtrar Rescisões por gerente imediato"
+          />
           <GerenteRegionalFilter
             v-if="centerChart.id === 'headcount'"
             v-model="headcountFilialFilter"

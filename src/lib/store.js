@@ -9,6 +9,8 @@ export function emptyData() {
     vacancies: [],
     turnovers: [],
     permanencias: [],
+    // Aba "rescisoes": alimentada direto na planilha, só leitura no app.
+    rescisoes: [],
     headcounts: [],
     branches: [],
     // Substituem a antiga tabela genérica "lancamentos" (indicador_id + meta
@@ -276,6 +278,10 @@ export function getPermanenciaById(id) {
   return getPermanencias().find((p) => p.id === id) || null;
 }
 
+export function getRescisoes() {
+  return data.rescisoes;
+}
+
 export function getHeadcounts() {
   return data.headcounts;
 }
@@ -328,6 +334,7 @@ export function replaceFromCache(cached) {
     d.vacancies = Array.isArray(cached.vacancies) ? cached.vacancies : [];
     d.turnovers = Array.isArray(cached.turnovers) ? cached.turnovers : [];
     d.permanencias = Array.isArray(cached.permanencias) ? cached.permanencias : [];
+    d.rescisoes = Array.isArray(cached.rescisoes) ? cached.rescisoes : [];
     d.headcounts = Array.isArray(cached.headcounts) ? cached.headcounts : [];
     d.branches = Array.isArray(cached.branches) ? cached.branches : [];
     d.diarias = Array.isArray(cached.diarias) ? cached.diarias : [];
@@ -359,6 +366,7 @@ const MERGE_LIST_KEYS = [
   "vacancies",
   "turnovers",
   "permanencias",
+  "rescisoes",
   "headcounts",
   "branches",
   "diarias",
