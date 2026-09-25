@@ -28,6 +28,7 @@ const meses = ref([]);
 const empresas = ref([]);
 const filiais = ref([]);
 const gerentes = ref([]);
+const regionais = ref([]);
 const motivos = ref([]);
 
 /* Rescisões do estado escolhido, base das opções dos filtros. */
@@ -50,6 +51,7 @@ function uniqueSorted(key) {
 const empresaOptions = computed(() => uniqueSorted("empresa"));
 const filialOptions = computed(() => uniqueSorted("filial"));
 const gerenteOptions = computed(() => uniqueSorted("gerenteImediato"));
+const regionalOptions = computed(() => uniqueSorted("regional"));
 const motivoOptions = computed(() => uniqueSorted("motivo"));
 
 /* Valor marcado que deixou de existir (troca de estado) sai da seleção. */
@@ -58,11 +60,12 @@ function prune(selected, options) {
     selected.value = selected.value.filter((v) => options.includes(v));
   }
 }
-watch([mesOptions, empresaOptions, filialOptions, gerenteOptions, motivoOptions], () => {
+watch([mesOptions, empresaOptions, filialOptions, gerenteOptions, regionalOptions, motivoOptions], () => {
   prune(meses, mesOptions.value);
   prune(empresas, empresaOptions.value);
   prune(filiais, filialOptions.value);
   prune(gerentes, gerenteOptions.value);
+  prune(regionais, regionalOptions.value);
   prune(motivos, motivoOptions.value);
 });
 
@@ -95,12 +98,13 @@ const rows = computed(() => {
       if (empresas.value.length && !empresas.value.includes(r.empresa)) return false;
       if (filiais.value.length && !filiais.value.includes(r.filial)) return false;
       if (gerentes.value.length && !gerentes.value.includes(r.gerenteImediato)) return false;
+      if (regionais.value.length && !regionais.value.includes(r.regional)) return false;
       if (motivos.value.length && !motivos.value.includes(r.motivo)) return false;
       if (!q) return true;
       return normalizeText(
         [
           r.empresa, r.estado, r.colaborador, r.filial, r.funcao, r.gerenteImediato,
-          r.motivo, r.justificativaApurada, r.ponderacoes
+          r.regional, r.motivo, r.justificativaApurada, r.ponderacoes
         ].join(" ")
       ).includes(q);
     })
@@ -128,6 +132,7 @@ const hasFilter = computed(
     empresas.value.length ||
     filiais.value.length ||
     gerentes.value.length ||
+    regionais.value.length ||
     motivos.value.length
 );
 function clearFilters() {
@@ -136,6 +141,7 @@ function clearFilters() {
   empresas.value = [];
   filiais.value = [];
   gerentes.value = [];
+  regionais.value = [];
   motivos.value = [];
 }
 
@@ -154,6 +160,7 @@ const columns = [
   { label: "Função", get: (r) => text(r.funcao) },
   { label: "Admissão", get: (r) => date(r.admissao) },
   { label: "Gerente imediato", get: (r) => text(r.gerenteImediato) },
+  { label: "Regional", get: (r) => text(r.regional) },
   { label: "Motivo", get: (r) => text(r.motivo), clamp: true, width: "min-w-[12rem] max-w-[16rem]" },
   { label: "Justificativa apurada", get: (r) => text(r.justificativaApurada), clamp: true, width: "min-w-[16rem] max-w-[22rem]" },
   { label: "Ponderações", get: (r) => text(r.ponderacoes), clamp: true, width: "min-w-[16rem] max-w-[22rem]" },
@@ -229,6 +236,14 @@ const columns = [
           all-label="Todos os gerentes imediatos"
           plural-label="gerentes"
           title="Filtrar por um ou mais gerentes imediatos"
+        />
+        <MultiSelectFilter
+          v-model="regionais"
+          :options="regionalOptions"
+          label="Regional"
+          all-label="Todas as regionais"
+          plural-label="regionais"
+          title="Filtrar por uma ou mais regionais"
         />
         <MultiSelectFilter
           v-model="motivos"

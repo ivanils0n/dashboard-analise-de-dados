@@ -84,11 +84,11 @@ export const ENTITIES: Record<string, EntityDef> = {
   headcount: {
     key: "headcount",
     label: "Headcount",
-    orderBy: "data_admissao desc",
+    orderBy: "mes_referente desc",
     search: ["codigo", "colaborador", "funcao"],
     filters: [
-      { param: "data_de", column: "data_admissao", kind: "gte" },
-      { param: "data_ate", column: "data_admissao", kind: "lte" }
+      { param: "data_de", column: "mes_referente", kind: "gte" },
+      { param: "data_ate", column: "mes_referente", kind: "lte" }
     ],
     columns: [
       { name: "id", type: "text" },
@@ -98,7 +98,8 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "remuneracao", type: "number" },
       { name: "data_admissao", type: "date", required: true },
       { name: "genero", type: "text", values: ["masculino", "feminino"] },
-      { name: "tipo_contrato", type: "text", values: ["indeterminado", "determinado"] },
+      { name: "data_desligamento", type: "date" },
+      { name: "mes_referente", type: "date", required: true },
       // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/diarias/treinamentos.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
@@ -147,7 +148,7 @@ export const ENTITIES: Record<string, EntityDef> = {
   // Aba alimentada direto na planilha (somente leitura no app). A ordem das
   // colunas abaixo É a ordem das colunas da aba (o Apps Script lê por posição,
   // não pelo nome do cabeçalho): id, empresa, estado, colaborador, filial,
-  // função, admissão, gerente imediato, motivo, justificativa apurada,
+  // função, admissão, gerente imediato, regional (coluna I), motivo, justificativa apurada,
   // ponderações, último dia do aviso, valor da rescisão, GRRF/consignado e 40%.
   rescisoes: {
     key: "rescisoes",
@@ -167,6 +168,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "funcao", type: "text" },
       { name: "admissao", type: "date" },
       { name: "gerente_imediato", type: "text" },
+      { name: "regional", type: "text" },
       { name: "motivo", type: "text" },
       { name: "justificativa_apurada", type: "text" },
       { name: "ponderacoes", type: "text" },
@@ -174,7 +176,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "valor_rescisao", type: "number" },
       { name: "grrf_consig", type: "number" },
       { name: "multa_40", type: "number" },
-      // Coluna P: mês a que as informações se referem (base do filtro de período).
+      // Coluna Q: mês a que as informações se referem (base do filtro de período).
       { name: "mes_referencia", type: "date" }
     ]
   },

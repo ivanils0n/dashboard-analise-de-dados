@@ -672,9 +672,8 @@ export function useDashboardData(filter, options = {}) {
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
       /* Todos os "computed" seguem o filtro de período (mês) ativo — ver
-         computedValue. Headcount reconstrói "como estava" no mês filtrado
-         usando a Data de admissão de cada colaborador (activeInMonth em
-         lib/employees.js); Tempo médio de contratação usa as vagas abertas no
+         computedValue. Headcount conta os ativos do mês referente filtrado
+         (inMonth em lib/employees.js); Tempo médio de contratação usa as vagas abertas no
          período. */
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       return computedValue(ind, range);
@@ -1010,10 +1009,9 @@ export function useDashboardData(filter, options = {}) {
      pelo KPI (ver indicatorCurrentValue), só que aqui expostos individual-
      mente (headcount inicial/final e novas contratações) para a tabela do
      gráfico, em vez de só a taxa final. Headcount inicial/final vêm de
-     `headcountCountInRange` (quadro reconstruído pela Data de admissão, ver
-     activeInMonth em employees.js) no fim do mês anterior e no fim do mês
-     filtrado, respectivamente; novas contratações somam o "Admitidos"
-     lançado no Turnover dentro do mês filtrado. */
+     `headcountCountInRange` (ativos do mês referente) no mês anterior e no
+     mês filtrado, respectivamente; novas contratações são as admissões do
+     Headcount no mês filtrado. */
   function retentionBreakdown() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const stats = retentionRate(currentState(), range, previousMonthRange());

@@ -37,10 +37,6 @@ export function incompleteStates(ym, state) {
   return [...marksOf(ym, targetStates(state)).keys()];
 }
 
-export function isMonthIncomplete(ym, state) {
-  return incompleteStates(ym, state).length > 0;
-}
-
 export function setMonthIncomplete(ym, state, incomplete) {
   if (!ym) return;
   const states = targetStates(state);

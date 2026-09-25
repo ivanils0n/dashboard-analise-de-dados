@@ -162,7 +162,8 @@ function headcountToRow(h) {
     remuneracao: h.remuneracao != null ? Number(h.remuneracao) : null,
     data_admissao: h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : null,
     genero: h.genero || null,
-    tipo_contrato: h.tipoContrato || null,
+    data_desligamento: h.dataDesligamento ? String(h.dataDesligamento).slice(0, 10) : null,
+    mes_referente: h.mesReferente ? `${String(h.mesReferente).slice(0, 7)}-01` : null,
     filial: h.filial || null,
     estado_sigla: h.estado || null
   };
@@ -499,6 +500,7 @@ function mapRemoteRescisao(row, impliedState) {
     funcao: up(row.funcao) || null,
     admissao: row.admissao ? String(row.admissao).slice(0, 10) : null,
     gerenteImediato: up(row.gerente_imediato) || null,
+    regional: up(row.regional) || null,
     motivo: up(row.motivo) || null,
     justificativaApurada: up(row.justificativa_apurada) || null,
     ponderacoes: up(row.ponderacoes) || null,
@@ -518,7 +520,8 @@ function mapRemoteHeadcount(row, impliedState) {
     remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     genero: row.genero || null,
-    tipoContrato: row.tipo_contrato || null,
+    dataDesligamento: row.data_desligamento ? String(row.data_desligamento).slice(0, 10) : null,
+    mesReferente: row.mes_referente ? String(row.mes_referente).slice(0, 10) : null,
     filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null
   };
@@ -594,10 +597,6 @@ function addRowToPayload(payload, tabela, row, estado) {
 }
 
 const _loadedStates = {};
-
-export function loadedStates() {
-  return _loadedStates;
-}
 
 /* Marcado quando o navegador recusa uma gravação do cache local (cota cheia):
    o cache fica incompleto e não pode receber a versão do delta. */

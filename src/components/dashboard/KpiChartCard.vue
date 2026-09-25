@@ -55,7 +55,7 @@ function onTurnoverDetail(kind) {
    useDashboardData.js); fora de uma fatia (ex.: buraco central), cai em
    Admissões. */
 function onTurnoverChartInfo(sliceIndex) {
-  onTurnoverDetail(sliceIndex === 1 ? "demissoes" : "admissoes");
+  onTurnoverDetail(sliceIndex === 1 ? "demissoes-empresas" : "admissoes-empresas");
 }
 
 /* Clique numa fatia: Turnover abre o detalhe; Custo de contratação abre as vagas

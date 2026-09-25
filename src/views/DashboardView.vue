@@ -19,7 +19,6 @@ import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue"
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
-import EditEntryModal from "@/components/dashboard/EditEntryModal.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
@@ -38,7 +37,7 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData } from "@/lib/auth";
 import { getIndicatorById, STATES } from "@/lib/config";
-import { singleMonthOfRange, ymLabel, safeSetItem, localStore, normalizeText, formatCurrency } from "@/lib/utils";
+import { singleMonthOfRange, ymLabel, safeSetItem, localStore, normalizeText } from "@/lib/utils";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
 import Modal from "@/components/ui/Modal.vue";
 import { toXLSX, toCSV } from "@/lib/export";
@@ -314,7 +313,6 @@ const regionalModalOpen = ref(false);
 const regionalGroups = ref([]);
 const hiringBarChartRef = ref(null);
 const permanenciaBarChartRef = ref(null);
-const editingRow = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
 const viewIndicatorTarget = ref(null);
@@ -639,14 +637,6 @@ function onMenuClick(action) {
   else if (action === "launch") openLaunch();
 }
 
-function openEditEntry(row) {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  editingRow.value = row;
-}
-
 function onSelectKpi(id) {
   selectKpi(id);
   nextTick(() => {
@@ -795,7 +785,6 @@ watch(activeTab, (tab) => {
         id="cockpit-kpi-slot"
         class="flex min-w-0 flex-1 items-center justify-center"
       ></div>
-
 
       <div class="flex items-center justify-start gap-2 sm:ml-auto sm:justify-end">
         <span
@@ -1474,14 +1463,6 @@ watch(activeTab, (tab) => {
       :columns="mensalColumns"
       @close="mensalEntriesOpen = false"
       @edit="onEntriesEdit"
-    />
-    <EditEntryModal
-      v-if="editingRow"
-      :open="!!editingRow"
-      :indicator-id="editingRow.ind.id"
-      :entry="editingRow.entry"
-      @close="editingRow = null"
-      @saved="editingRow = null"
     />
 
     <Modal

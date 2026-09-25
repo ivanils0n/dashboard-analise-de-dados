@@ -4,17 +4,15 @@ export const INDICATORS = [
   {
     id: "headcount",
     name: "Headcount",
-    desc: "Quadro de colaboradores (código, colaborador, função, remuneração, admissão) — o filtro por mês reconstrói quem já tinha sido admitido até aquele mês e ainda não foi desligado",
-    calc: "Colaboradores admitidos até o mês filtrado e ainda não desligados",
+    desc: "Quadro de colaboradores (código, colaborador, função, remuneração, admissão, desligamento, mês referente) — o filtro por mês usa o mês referente de cada linha",
+    calc: "Colaboradores do quadro cujo mês referente é o mês filtrado",
     type: "number",
     unit: "colaboradores",
     decimals: 0,
     higherIsBetter: true,
-    /* Quadro persistente (todos os colaboradores já lançados). O filtro por
-       mês do dashboard não restringe a importação — ele reconstrói "como
-       estava" naquele mês usando a Data de admissão como base (ver
-       activeInMonth em lib/employees.js): conta quem já tinha sido admitido
-       até o mês filtrado e exclui quem já havia sido desligado até ele. */
+    /* Quadro mensal: o filtro por mês do dashboard conta as linhas cujo
+       "mes_referente" é o mês filtrado (ver inMonth em lib/employees.js);
+       a Data de admissão não filtra mais. */
     computed: true,
     manual: true,
     form: "headcount"
@@ -125,15 +123,15 @@ export const INDICATORS = [
   {
     id: "retencao",
     name: "Retenção",
-    desc: "((Headcount final − Novas contratações) / Headcount inicial) × 100 — Headcount final: quadro no último dia do mês; Novas contratações: admissões no mês; Headcount inicial: quadro no primeiro dia do mês",
+    desc: "((Headcount final − Novas contratações) / Headcount inicial) × 100 — Headcount final: quadro do mês filtrado; Novas contratações: admissões do Headcount no mês; Headcount inicial: quadro do mês anterior",
     calc: "((Headcount final − Novas contratações) ÷ Headcount inicial) × 100",
     type: "percent",
     unit: "%",
     decimals: 1,
     higherIsBetter: true,
     /* Deixou de ser lançamento manual mensal: agora vem direto do quadro do
-       Headcount (Headcount inicial/final reconstruídos pela Data de
-       admissão, ver activeInMonth) e das admissões do mês (ver
+       Headcount (Headcount inicial/final pelo mês referente) e das
+       admissões do mês pela Data de admissão (ver
        retentionRate em lib/employees.js). `manual: false` tira o indicador
        do seletor do LaunchModal — não existe mais formulário próprio. */
     computed: true,
@@ -225,7 +223,6 @@ export const INDICATORS = [
 ];
 
 export const MANUAL_INDICATORS = INDICATORS.filter((i) => i.manual);
-export const COMPUTED_INDICATORS = INDICATORS.filter((i) => i.computed);
 
 export const STATES = ["RO", "AM", "PA"];
 export const DEFAULT_STATE = "RO";
@@ -237,34 +234,9 @@ export const DEFAULT_FILTER_STATE = "todos";
 
 export const STATE_NAMES = { RO: "Rondônia", AM: "Amazonas", PA: "Pará" };
 
-// Login: o usuário digita o nome e o domínio completa o e-mail.
-export const AUTH_EMAIL_DOMAIN = "gente.gestao";
-
-export const STATUS_LABELS = { ativo: "Ativo", afastado: "Afastado", desligado: "Desligado" };
-export const TYPE_LABELS = { efetivado: "Efetivado", experiencia: "Em experiência" };
-export const ABSENTEEISM_TYPES = {
-  falta: "Falta",
-  atraso: "Atestado",
-  afastamento: "Acidente"
-};
-export const ABSENTEEISM_OPTIONS = ["falta", "atraso", "afastamento"];
-
 export function getIndicatorById(id) {
   return INDICATORS.find((ind) => ind.id === id) || null;
 }
-
-/* Custos de pessoal mensais registrados por colaborador (salário é a base e
-   fica no próprio colaborador). Usados no detalhe do funcionário no Headcount. */
-export const PERSONNEL_COST_FIELDS = [
-  { key: "valeTransporte", label: "Vale-transporte" },
-  { key: "valeAlimentacao", label: "Vale-alimentação" },
-  { key: "inss", label: "INSS" },
-  { key: "fgts", label: "FGTS" },
-  { key: "irrf", label: "IRRF" },
-  { key: "premioArt62", label: "Premiação art. 62" },
-  { key: "premioLoja", label: "Premiação loja" },
-  { key: "comissao", label: "Comissão" }
-];
 
 /* Modalidades do lançamento de treinamento. */
 export const MODALIDADE_OPTIONS = [

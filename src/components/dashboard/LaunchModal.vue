@@ -855,7 +855,8 @@ function handleExportTurnover() {
 const headcount = reactive({
   codigo: "",
   genero: "",
-  tipoContrato: "",
+  dataDesligamento: "",
+  mesReferente: "",
   colaborador: "",
   funcao: "",
   remuneracao: "",
@@ -897,7 +898,8 @@ const headcountFilterBranches = computed(() => {
 function resetHeadcountForm() {
   headcount.codigo = "";
   headcount.genero = "";
-  headcount.tipoContrato = "";
+  headcount.dataDesligamento = "";
+  headcount.mesReferente = "";
   headcount.colaborador = "";
   headcount.funcao = "";
   headcount.remuneracao = "";
@@ -916,6 +918,7 @@ function submitHeadcount() {
   const nome = headcount.colaborador.trim();
   if (!nome) return toast("Informe o colaborador.");
   if (!headcount.dataAdmissao) return toast("Informe a data de admissão.");
+  if (!headcount.mesReferente) return toast("Informe o mês referente.");
   const st = effectiveVagaEstado();
   const remuneracaoText = normalizeCurrencyInput(headcount.remuneracao);
   const remuneracao = remuneracaoText === "" ? null : parseCurrencyBR(remuneracaoText);
@@ -924,7 +927,8 @@ function submitHeadcount() {
   const payload = {
     codigo: headcount.codigo.trim(),
     genero: headcount.genero,
-    tipoContrato: headcount.tipoContrato,
+    dataDesligamento: headcount.dataDesligamento,
+    mesReferente: headcount.mesReferente,
     colaborador: nome,
     funcao: headcount.funcao,
     remuneracao,
@@ -2010,12 +2014,8 @@ onUnmounted(() => {
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label for="hcContrato" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de contrato</label>
-              <select id="hcContrato" v-model="headcount.tipoContrato" class="input-field">
-                <option value="">— Não informado —</option>
-                <option value="indeterminado">Indeterminado (efetivado)</option>
-                <option value="determinado">Determinado (experiência)</option>
-              </select>
+              <label for="hcMes" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês referente</label>
+              <input id="hcMes" v-model="headcount.mesReferente" type="month" class="input-field" required />
             </div>
           </div>
 
@@ -2048,6 +2048,10 @@ onUnmounted(() => {
             <div class="flex flex-col gap-1.5">
               <label for="hcAdmissao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de admissão</label>
               <input id="hcAdmissao" v-model="headcount.dataAdmissao" type="date" class="input-field" required />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcDesligamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de desligamento</label>
+              <input id="hcDesligamento" v-model="headcount.dataDesligamento" type="date" class="input-field" />
             </div>
           </div>
 

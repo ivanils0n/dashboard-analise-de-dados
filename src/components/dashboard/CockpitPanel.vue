@@ -375,7 +375,7 @@ function onPieClick(sliceIndex) {
     return;
   }
   if (centerChart.value.id !== "turnover") return;
-  openTurnoverDetail(sliceIndex === 1 ? "demissoes" : "admissoes");
+  openTurnoverDetail(sliceIndex === 1 ? "demissoes-empresas" : "admissoes-empresas");
 }
 
 /* Clique num card de Admissões/Demissões ao lado da pizza: abre o detalhe dos

@@ -112,19 +112,6 @@ export function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export function firstDayOfMonthISO() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`;
-}
-
-export function lastDayOfMonthISO() {
-  const d = new Date();
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${last.getFullYear()}-${pad(last.getMonth() + 1)}-${pad(last.getDate())}`;
-}
-
 /* Comparações de data ISO tolerantes a valores ausentes/inválidos.
    Evitam estouros em dados legados/importados com data nula. */
 export function compareDateAsc(a, b) {
@@ -132,14 +119,6 @@ export function compareDateAsc(a, b) {
 }
 export function compareDateDesc(a, b) {
   return String(b || "").localeCompare(String(a || ""));
-}
-
-/* Desloca uma data ISO (YYYY-MM-DD) em N dias (negativo = para trás). */
-export function shiftDaysISO(iso, deltaDays) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + deltaDays);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /* Agrega lançamentos por dia (soma dos valores na mesma data), usado na
@@ -214,6 +193,7 @@ export function upperText(value) {
 
 /* Compara siglas de estado tolerando caixa e espaços ("ro" = " RO " = "RO"). */
 export function sameState(value, target) {
+  if (value === target) return true;
   return (
     String(value ?? "").trim().toUpperCase() ===
     String(target ?? "").trim().toUpperCase()

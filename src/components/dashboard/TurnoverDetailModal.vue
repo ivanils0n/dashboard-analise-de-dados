@@ -3,10 +3,10 @@ import { computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATE_NAMES } from "@/lib/config";
-import { turnoverEntriesInRange, findBranchByShortName } from "@/lib/employees";
+import { turnoverEntriesInRange, headcountMovements, findBranchByShortName } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
-import { formatValue, ymLabel } from "@/lib/utils";
+import { formatValue, formatDate, ymLabel } from "@/lib/utils";
 
 /* Detalhe de Admissões ou Demissões do Turnover (cards ao lado da pizza no
    Painel): mostra os lançamentos por empresa e mês que compõem o número, no
@@ -24,7 +24,11 @@ const emit = defineEmits(["close"]);
 const { state } = useFilters();
 
 const isGeral = computed(() => props.kind === "geral");
-const isAdmissao = computed(() => props.kind === "admissoes");
+const isAdmissao = computed(() => props.kind.startsWith("admissoes"));
+/* Cards de Admissões/Demissões: lista os colaboradores (Headcount) em vez das
+   empresas. A pizza ("admissoes-empresas"/"demissoes-empresas") e "geral"
+   seguem com a tabela por empresa. */
+const isColaboradores = computed(() => props.kind === "admissoes" || props.kind === "demissoes");
 const rateLabel = computed(() => (isGeral.value ? "Geral" : isAdmissao.value ? "Entrada" : "Saída"));
 const PERCENT = { type: "percent", decimals: 1 };
 
@@ -58,6 +62,27 @@ const rows = computed(() =>
     };
   })
 );
+
+/* Colaboradores que entraram (Data de admissão) ou saíram (Data de
+   desligamento) no período — mesma fonte dos cards (headcountMovements). */
+const colaboradores = computed(() => {
+  if (!isColaboradores.value) return [];
+  const mov = headcountMovements(state.current, range.value);
+  const list = isAdmissao.value ? mov.admissoes : mov.demissoes;
+  return list
+    .map((h) => {
+      const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
+      return {
+        id: h.id,
+        colaborador: h.colaborador || "—",
+        empresa: branch ? branch.name : h.filial || "—",
+        funcao: h.funcao || "—",
+        estado: h.estado || "",
+        data: (isAdmissao.value ? h.dataAdmissao : h.dataDesligamento) || ""
+      };
+    })
+    .sort((a, b) => String(b.data).localeCompare(String(a.data)) || a.colaborador.localeCompare(b.colaborador));
+});
 
 const totalAtivos = computed(() => rows.value.reduce((sum, r) => sum + r.ativos, 0));
 
@@ -143,7 +168,33 @@ const title = computed(() => {
         </div>
       </div>
 
-      <div v-if="rows.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <div v-if="isColaboradores && colaboradores.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div class="max-h-[26rem] overflow-auto">
+          <table class="w-full min-w-max text-left text-sm">
+            <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
+              <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">{{ isAdmissao ? "Data de admissão" : "Data de desligamento" }}</th>
+              </tr>
+            </thead>
+            <tbody class="uppercase">
+              <tr v-for="c in colaboradores" :key="c.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+                <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ c.colaborador }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.empresa }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.estado || "—" }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.data ? formatDate(c.data) : "—" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="border-t border-zinc-100 px-4 py-2 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
+          {{ colaboradores.length === 1 ? "1 colaborador" : `${colaboradores.length} colaboradores` }}
+        </div>
+      </div>
+
+      <div v-else-if="!isColaboradores && rows.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div class="max-h-[26rem] overflow-auto">
           <table class="w-full min-w-max text-left text-sm">
             <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
@@ -177,8 +228,8 @@ const title = computed(() => {
 
       <EmptyState
         v-else
-        title="Sem lançamentos de Turnover"
-        text="Nenhum lançamento de Turnover no período e estado filtrados."
+        :title="isColaboradores ? (isAdmissao ? 'Sem admissões' : 'Sem demissões') : 'Sem movimentações de Turnover'"
+        text="Nenhum colaborador do Headcount no período e estado filtrados."
       />
     </div>
   </Modal>

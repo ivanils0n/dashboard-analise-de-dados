@@ -4,17 +4,17 @@ import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
-import { listHeadcountRecords, findBranchByShortName, deleteHeadcountRecord, branchKeyFor } from "@/lib/employees";
+import { listHeadcountRecords, isHeadcountAtivo, findBranchByShortName, deleteHeadcountRecord, branchKeyFor } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
-import { formatCurrency, formatDate, normalizeText, ymLabel } from "@/lib/utils";
+import { formatDate, normalizeText, ymLabel } from "@/lib/utils";
 import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
 
 /* Colaboradores do quadro de um estado (barra clicada no gráfico de
    Headcount), no mês do filtro do dashboard. Usa a mesma regra da contagem da
-   barra (headcountCountInRange): admitidos até o mês e ainda não desligados,
-   então o total aqui é sempre o número da barra. */
+   barra (headcountCountInRange): linhas com aquele mês referente, então o
+   total aqui é sempre o número da barra. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   estado: { type: String, default: "" },
@@ -35,8 +35,8 @@ const canEdit = canEditData();
 
 const search = ref("");
 
-/* Mesmo mês usado por headcountCountInRange: sem início de período, sem
-   reconstrução histórica (todos os registros). */
+/* Mesmo mês usado por headcountCountInRange: sem início de período, todos
+   os registros. */
 const ym = computed(() =>
   dateFilter.start ? String(dateFilter.end || dateFilter.start).slice(0, 7) : ""
 );
@@ -45,19 +45,31 @@ const ym = computed(() =>
    busca o cadastro em Filiais para exibir o nome completo; sem
    correspondência, mostra o texto lançado mesmo. */
 const rows = computed(() =>
-  listHeadcountRecords(props.estado, ym.value || undefined)
+  listHeadcountRecords(props.estado, ym.value || undefined, { incluirDesligados: true })
     .filter((h) => !props.filial || branchKeyFor(h.filial, h.estado) === branchKeyFor(props.filial))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
     .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
-    return { ...h, empresa: branch ? branch.name : h.filial || "" };
+    return { ...h, empresa: branch ? branch.name : h.filial || "", ativo: isHeadcountAtivo(h, ym.value) };
   })
+);
+
+/* Filtro de situação: o total do card e o número da barra do gráfico contam só
+   os ativos ("ativos" é o padrão); "desligados" e "todos" só existem aqui. */
+const situacao = ref("ativos");
+const situacaoOptions = computed(() => [
+  { value: "ativos", label: "Ativos", count: rows.value.filter((h) => h.ativo).length },
+  { value: "desligados", label: "Desligados", count: rows.value.filter((h) => !h.ativo).length },
+  { value: "todos", label: "Todos", count: rows.value.length }
+]);
+const situacaoRows = computed(() =>
+  situacao.value === "todos" ? rows.value : rows.value.filter((h) => h.ativo === (situacao.value === "ativos"))
 );
 
 const filteredRows = computed(() => {
   const q = normalizeText(search.value).trim();
-  if (!q) return rows.value;
-  return rows.value.filter((h) =>
+  if (!q) return situacaoRows.value;
+  return situacaoRows.value.filter((h) =>
     normalizeText([h.colaborador, h.empresa, h.funcao].join(" ")).includes(q)
   );
 });
@@ -116,7 +128,20 @@ async function removeRow(h) {
           <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             Colaboradores{{ ym ? ` em ${ymLabel(ym)}` : "" }}
           </p>
-          <p class="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ rows.length }}</p>
+          <p class="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ situacaoRows.length }}</p>
+        </div>
+        <div class="flex gap-1.5" role="group" aria-label="Filtro de situação">
+          <button
+            v-for="o in situacaoOptions"
+            :key="o.value"
+            type="button"
+            class="rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition"
+            :class="situacao === o.value ? 'bg-accent text-white ring-accent' : 'bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700'"
+            :aria-pressed="situacao === o.value"
+            @click="situacao = o.value"
+          >
+            {{ o.label }} ({{ o.count }})
+          </button>
         </div>
       </div>
 
@@ -143,11 +168,9 @@ async function removeRow(h) {
               >
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Função</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Gênero</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Contrato</th>
-                <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Remuneração</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Admissão</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Desligamento</th>
                 <th v-if="canEdit" class="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -170,14 +193,12 @@ async function removeRow(h) {
                   <span v-else>{{ h.colaborador }}</span>
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.empresa || "—" }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.funcao || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.genero || "—" }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.tipoContrato || "—" }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                  {{ h.remuneracao != null ? formatCurrency(h.remuneracao) : "—" }}
-                </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
                   {{ h.dataAdmissao ? formatDate(h.dataAdmissao) : "—" }}
+                </td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
+                  {{ h.dataDesligamento ? formatDate(h.dataDesligamento) : "—" }}
                 </td>
                 <td v-if="canEdit" class="normal-case whitespace-nowrap px-4 py-2.5 text-right">
                   <button type="button" class="icon-btn-sm" aria-label="Excluir colaborador" @click="removeRow(h)">&times;</button>

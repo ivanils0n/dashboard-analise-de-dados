@@ -79,7 +79,7 @@ function permanenciaRows(list) {
   return rows;
 }
 
-const HEADCOUNT_HEADER = ["Código", "Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Gênero", "Tipo de contrato"];
+const HEADCOUNT_HEADER = ["Código", "Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Gênero", "Data de desligamento", "Mês referente"];
 
 function headcountRows(list) {
   const rows = [HEADCOUNT_HEADER];
@@ -93,7 +93,8 @@ function headcountRows(list) {
       h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "",
       h.estado || "",
       h.genero ? (String(h.genero).toLowerCase() === "feminino" ? "Feminino" : "Masculino") : "",
-      h.tipoContrato === "determinado" ? "Determinado" : h.tipoContrato === "indeterminado" ? "Indeterminado" : ""
+      h.dataDesligamento ? String(h.dataDesligamento).slice(0, 10) : "",
+      h.mesReferente ? String(h.mesReferente).slice(0, 7) : ""
     ]);
   });
   return rows;

@@ -27,7 +27,8 @@ const { show: toast } = useToast();
 const form = reactive({
   codigo: "",
   genero: "",
-  tipoContrato: "",
+  dataDesligamento: "",
+  mesReferente: "",
   colaborador: "",
   funcao: "",
   remuneracao: "",
@@ -41,7 +42,8 @@ function loadRecord(id) {
   if (!h) return;
   form.codigo = h.codigo || "";
   form.genero = h.genero || "";
-  form.tipoContrato = h.tipoContrato || "";
+  form.dataDesligamento = h.dataDesligamento ? String(h.dataDesligamento).slice(0, 10) : "";
+  form.mesReferente = h.mesReferente ? String(h.mesReferente).slice(0, 7) : "";
   form.colaborador = h.colaborador || "";
   form.funcao = h.funcao || "";
   form.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
@@ -91,6 +93,7 @@ async function submit() {
   const nome = form.colaborador.trim();
   if (!nome) return toast("Informe o colaborador.");
   if (!form.dataAdmissao) return toast("Informe a data de admissão.");
+  if (!form.mesReferente) return toast("Informe o mês referente.");
   const remuneracaoText = normalizeCurrencyInput(form.remuneracao);
   const remuneracao = remuneracaoText === "" ? null : parseCurrencyBR(remuneracaoText);
   if (remuneracao !== null && isNaN(remuneracao)) return toast("Informe uma remuneração válida (R$).");
@@ -100,7 +103,8 @@ async function submit() {
     updateHeadcountRecord(props.recordId, {
       codigo: form.codigo.trim(),
       genero: form.genero,
-      tipoContrato: form.tipoContrato,
+      dataDesligamento: form.dataDesligamento,
+      mesReferente: form.mesReferente,
       colaborador: nome,
       funcao: form.funcao,
       remuneracao,
@@ -134,12 +138,8 @@ async function submit() {
         </select>
       </div>
       <div class="flex flex-col gap-1.5">
-        <label for="hcEditContrato" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de contrato</label>
-        <select id="hcEditContrato" v-model="form.tipoContrato" class="input-field">
-          <option value="">— Não informado —</option>
-          <option value="indeterminado">Indeterminado (efetivado)</option>
-          <option value="determinado">Determinado (experiência)</option>
-        </select>
+        <label for="hcEditMes" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês referente</label>
+        <input id="hcEditMes" v-model="form.mesReferente" type="month" class="input-field" required />
       </div>
     </div>
 
@@ -173,6 +173,10 @@ async function submit() {
         <div class="flex flex-col gap-1.5">
           <label for="hcEditAdmissao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de admissão</label>
           <input id="hcEditAdmissao" v-model="form.dataAdmissao" type="date" class="input-field" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="hcEditDesligamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de desligamento</label>
+          <input id="hcEditDesligamento" v-model="form.dataDesligamento" type="date" class="input-field" />
         </div>
         <div class="flex flex-col gap-1.5">
           <label for="hcEditRemuneracao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Remuneração (R$)</label>

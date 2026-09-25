@@ -49,13 +49,13 @@ const cards = computed(() => [
 </script>
 
 <template>
-  <div class="flex gap-3 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:flex-none">
+  <div class="flex gap-3 md:h-full md:min-h-0 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:min-h-0 md:[&>*]:flex-auto md:[&>*]:overflow-hidden">
     <TurnoverCostCard v-if="showCost" :summary="summary" />
     <button
       v-for="card in cards"
       :key="card.id"
       type="button"
-      class="flex flex-1 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-center shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+      class="flex flex-1 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 text-center shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
       :title="`Ver detalhes de ${card.label}`"
       @click="emit('select', card.id)"
     >

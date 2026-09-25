@@ -3,7 +3,7 @@
    vivo das vagas (sem gravar snapshot); Headcount, Retenção e Tempo de
    permanência são lançamento manual mensal/por planilha. */
 
-import { STATES } from "./config";
+
 import {
   useData,
   getVacancies,
@@ -25,7 +25,7 @@ import {
   getHeadcountById
 } from "./store";
 import { createId, nowLocalISO, daysBetween, sameState } from "./utils";
-import { loadedStates, reloadData } from "./db";
+import { reloadData } from "./db";
 
 /* Restringe uma lista ao estado escolhido ("todos"/vazio = sem filtro; nesse
    caso devolve a própria lista, sem cópia). */
@@ -37,13 +37,21 @@ function filterByState(list, state) {
 /* Chave de comparação de nomes abreviados de filial: ignora caixa, acentos,
    espaços/pontuação e zeros à esquerda de cada número.
    Ex.: "pvh5", "PVH 5", "pvh05", "Pvh-05" → mesma chave ("pvh5"). */
+const _branchKeyCache = new Map();
 export function normalizeBranchKey(value) {
-  const base = String(value ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
-  return base.replace(/0+(\d)/g, "$1");
+  const raw = String(value ?? "");
+  let key = _branchKeyCache.get(raw);
+  if (key === undefined) {
+    const base = raw
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+    key = base.replace(/0+(\d)/g, "$1");
+    if (_branchKeyCache.size > 5000) _branchKeyCache.clear();
+    _branchKeyCache.set(raw, key);
+  }
+  return key;
 }
 
 /* Distância de edição entre duas strings (Damerau-Levenshtein simplificada):
@@ -106,12 +114,36 @@ function fuzzyBranch(key, list) {
    fuzzyBranch). Quando `estado` é informado, exige que a filial pertença a ele —
    evita cruzar com uma filial de outro estado que reaproveite o mesmo nome
    abreviado. Devolve a filial ou null. */
+/* Resultados por (estado, texto): o casamento aproximado roda milhares de vezes
+   a cada troca de filtro, sempre com poucos textos distintos. O cache vale
+   dentro de uma mesma passada síncrona e é descartado se o cadastro de filiais
+   mudou (assinatura). */
+let _branchLookup = { sig: "", map: new Map(), fresh: false };
+
+function branchLookupCache(all) {
+  if (!_branchLookup.fresh) {
+    const sig = all.length + "|" + all.map((b) => `${b.id}:${b.shortName}:${b.estado}`).join("|");
+    if (sig !== _branchLookup.sig) _branchLookup = { sig, map: new Map(), fresh: true };
+    _branchLookup.fresh = true;
+    queueMicrotask(() => {
+      _branchLookup.fresh = false;
+    });
+  }
+  return _branchLookup.map;
+}
+
 export function findBranchByShortName(text, estado) {
   const key = normalizeBranchKey(text);
   if (!key) return null;
-  let list = useData().branches;
+  const all = useData().branches;
+  const cache = branchLookupCache(all);
+  const cacheKey = `${estado || ""}|${key}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+  let list = all;
   if (estado && estado !== "todos") list = list.filter((b) => sameState(b.estado, estado));
-  return list.find((b) => normalizeBranchKey(b.shortName) === key) || fuzzyBranch(key, list);
+  const found = list.find((b) => normalizeBranchKey(b.shortName) === key) || fuzzyBranch(key, list);
+  cache.set(cacheKey, found);
+  return found;
 }
 
 /* Chave canônica da filial de um lançamento: a do cadastro quando a filial é
@@ -181,13 +213,6 @@ export function computedSnapshot(indId, state) {
    troca de estado, fechamento de vaga) e removê-la exigiria tocar em todos
    esses pontos sem ganho nenhum. */
 export function syncAll() {}
-
-/* Estados cujos dados já estão em memória (otimização de carga). */
-export function activeStates() {
-  const loaded = STATES.filter((s) => loadedStates()[s]);
-  if (loaded.length) return loaded;
-  return STATES.slice();
-}
 
 /* ---------- Vagas (Tempo médio de contratação) ---------- */
 
@@ -378,24 +403,20 @@ function monthWithinRange(ym, range) {
   return true;
 }
 
-/* Soma de admitidos/demitidos/ativos lançados no período (mês) filtrado —
+/* Admitidos/demitidos/ativos (todos do Headcount) do período filtrado —
    base do Turnover (%) e das Novas contratações da Retenção. `ativos` é a
    quantidade de colaboradores ativos no período, lançada junto (substitui o
    Headcount no cálculo do Turnover — ver turnoverRateStats). `range` null
    soma o total já lançado. */
 export function turnoverQuantitiesInRange(state, range) {
-  /* A soma não depende da ordem: usa a lista sem a cópia ordenada. */
-  const list = filterByState(getTurnovers(), state);
-  const filtered = range ? list.filter((t) => monthWithinRange(t.mesReferencia, range)) : list;
-  return filtered.reduce(
-    (acc, t) => {
-      acc.admitidos += Number(t.admitidos) || 0;
-      acc.demitidos += Number(t.demitidos) || 0;
-      acc.ativos += Number(t.ativos) || 0;
-      return acc;
-    },
-    { admitidos: 0, demitidos: 0, ativos: 0 }
-  );
+  /* Tudo vem do Headcount: admitidos (Data de admissão), demitidos (Data de
+     desligamento) e ativos (quadro ativo do mês referente). */
+  const { admissoes, demissoes } = headcountMovements(state, range);
+  return {
+    admitidos: admissoes.length,
+    demitidos: demissoes.length,
+    ativos: headcountCountInRange(state, range)
+  };
 }
 
 export function addTurnoverEntry({ filial = null, mesReferencia, admitidos = 0, demitidos = 0, ativos = 0, estado }) {
@@ -509,16 +530,13 @@ export async function deletePermanenciaRecords(ids) {
   await reloadData();
 }
 
-/* ---------- Headcount (quadro persistente de colaboradores) ----------
-   Cada colaborador vira um registro próprio (código, colaborador, função,
-   remuneração, data de admissão), lançado uma vez e mantido daí em diante
-   — não é reimportado todo mês. O quadro sempre traz TODOS os colaboradores
-   já lançados; o filtro por mês (ex.: ago/2026) reconstrói "como estava
-   naquele mês" usando a Data de admissão como base — conta quem já tinha
-   sido admitido até aquele mês (ver activeInMonth) — e nunca inclui quem já
-   foi desligado até esse mês. "status"/"demitidoMes" registram o
-   desligamento (importação de "demitidos", que só altera o status — não
-   cria registro novo). */
+/* ---------- Headcount (quadro mensal de colaboradores) ----------
+   Cada linha é um colaborador no quadro de um mês: código, colaborador,
+   função, remuneração, data de admissão, gênero, data de desligamento (se
+   houver) e "mes_referente". O filtro por mês usa SÓ o mês referente — o quadro
+   do mês é o conjunto de linhas com aquele mês referente (a admissão não
+   filtra mais). Admissões = linhas com Data de admissão no mês; demissões =
+   linhas com Data de desligamento no mês (ver headcountMovements). */
 
 /* Mês ("YYYY-MM") de uma data em ISO (2026-09-01, com ou sem hora) ou em
    formato brasileiro (1/9/2026, 01-09-26, 09/2026); "" se ilegível. Antes o
@@ -543,20 +561,74 @@ function toYm(value) {
   return "";
 }
 
-function activeInMonth(h, ym) {
-  /* Conta a partir do mês da Data de admissão; sem ela (ou ilegível), o
-     colaborador conta em todos os meses. */
-  const admissaoYm = toYm(h.dataAdmissao);
-  if (admissaoYm && admissaoYm > ym) return false; // ainda não tinha sido admitido
-  return true;
+/* Linha ATIVA do quadro do mês `ym` ("YYYY-MM") — pelo mês referente. */
+function inMonth(h, ym) {
+  return toYm(h.mesReferente) === ym && isHeadcountAtivo(h, ym);
 }
 
-/* Lista o quadro "como estava" no mês `mesReferencia` (formato "YYYY-MM").
-   Sem mês informado, devolve todos os registros (cadastro completo, sem
-   reconstrução histórica) — usado pela busca por código na importação. */
-export function listHeadcountRecords(state, mesReferencia) {
+/* Ativo no mês `ym`: sem Data de desligamento, ou desligado só depois dele. */
+export function isHeadcountAtivo(h, ym) {
+  const desligYm = toYm(h.dataDesligamento);
+  return !desligYm || !ym || desligYm > ym;
+}
+
+/* Chave de identidade do colaborador (o mesmo aparece em vários meses do
+   quadro): admissão/desligamento são contados uma vez por pessoa. */
+function personKey(h) {
+  return `${h.estado || ""}|${String(h.codigo || h.colaborador || "").trim().toUpperCase()}|${String(h.dataAdmissao || "").slice(0, 10)}`;
+}
+
+/* Admissões (Data de admissão) e demissões (Data de desligamento) do Headcount
+   dentro do período — linhas, sem repetir a mesma pessoa. `range` null = tudo. */
+let _movementsCache = new Map();
+let _movementsFresh = false;
+
+export function headcountMovements(state, range) {
+  /* Vários KPIs (Turnover, Retenção, cards) pedem o mesmo período na mesma
+     passada de cálculo: reaproveita o resultado até o fim dela. */
+  const source = getHeadcounts();
+  if (!_movementsFresh) {
+    _movementsCache = new Map();
+    _movementsFresh = true;
+    queueMicrotask(() => {
+      _movementsFresh = false;
+    });
+  }
+  const cacheKey = `${state || ""}|${range ? `${range.start || ""}|${range.end || ""}` : ""}|${source.length}`;
+  const hit = _movementsCache.get(cacheKey);
+  if (hit) return hit;
+  const result = computeHeadcountMovements(source, state, range);
+  _movementsCache.set(cacheKey, result);
+  return result;
+}
+
+function computeHeadcountMovements(source, state, range) {
+  const list = filterByState(source, state);
+  const seenA = new Set();
+  const seenD = new Set();
+  const admissoes = [];
+  const demissoes = [];
+  list.forEach((h) => {
+    const key = personKey(h);
+    if (!seenA.has(key) && monthWithinRange(toYm(h.dataAdmissao), range)) {
+      seenA.add(key);
+      admissoes.push(h);
+    }
+    if (!seenD.has(key) && monthWithinRange(toYm(h.dataDesligamento), range)) {
+      seenD.add(key);
+      demissoes.push(h);
+    }
+  });
+  return { admissoes, demissoes };
+}
+
+/* Lista o quadro do mês `mesReferencia` (formato "YYYY-MM").
+   Sem mês informado, devolve todos os registros (sem filtro de mês) — usado pela busca por código na importação. */
+export function listHeadcountRecords(state, mesReferencia, { incluirDesligados = false } = {}) {
   let list = filterByState(getHeadcounts(), state);
-  if (mesReferencia) list = list.filter((h) => activeInMonth(h, mesReferencia));
+  if (mesReferencia) {
+    list = list.filter((h) => (incluirDesligados ? toYm(h.mesReferente) === mesReferencia : inMonth(h, mesReferencia)));
+  }
   return list
     .slice()
     .sort((a, b) => String(a.colaborador || "").localeCompare(String(b.colaborador || "")));
@@ -566,14 +638,14 @@ export function headcountCount(state, mesReferencia) {
   return listHeadcountRecords(state, mesReferencia).length;
 }
 
-/* Contagem no período (reconstrução "como estava" no mês do período) —
-   `range` null cai no total de registros já lançados (sem reconstrução). */
+/* Contagem do quadro do mês do período — `range` null cai no total de
+   registros já lançados. */
 export function headcountCountInRange(state, range) {
   const list = filterByState(getHeadcounts(), state);
   if (!range) return list.length;
   const ym = String(range.end || range.start || "").slice(0, 7);
   if (!ym) return list.length;
-  return list.filter((h) => activeInMonth(h, ym)).length;
+  return list.filter((h) => inMonth(h, ym)).length;
 }
 
 /* Filiais (nome abreviado lançado) que têm colaborador no estado, sem
@@ -590,7 +662,7 @@ export function headcountFilialOptions(state) {
   return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
-/* Quadro do período por gênero — mesma reconstrução de headcountCountInRange.
+/* Quadro do período por gênero — mesmo mês de headcountCountInRange.
    "total" conta todos os colaboradores (inclusive sem gênero informado). */
 export function headcountGenderCountInRange(state, range, filial = "") {
   let list = filterByState(getHeadcounts(), state);
@@ -599,7 +671,7 @@ export function headcountGenderCountInRange(state, range, filial = "") {
     list = list.filter((h) => branchKeyFor(h.filial, h.estado) === key);
   }
   const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
-  if (ym) list = list.filter((h) => activeInMonth(h, ym));
+  if (ym) list = list.filter((h) => inMonth(h, ym));
   /* Aceita maiúsculas/minúsculas (dados vindos da planilha). */
   const is = (h, g) => String(h.genero || "").trim().toLowerCase() === g;
   return {
@@ -616,7 +688,8 @@ export function addHeadcountRecord({
   remuneracao = null,
   dataAdmissao = null,
   genero = null,
-  tipoContrato = null,
+  dataDesligamento = null,
+  mesReferente = null,
   filial = null,
   estado
 }) {
@@ -627,7 +700,8 @@ export function addHeadcountRecord({
     remuneracao: moneyOrNull(remuneracao),
     dataAdmissao: dataAdmissao || null,
     genero: genero || null,
-    tipoContrato: tipoContrato || null,
+    dataDesligamento: dataDesligamento || null,
+    mesReferente: mesReferente ? String(mesReferente).slice(0, 7) : null,
     filial: filial || null,
     estado: estado || null
   };
@@ -637,7 +711,7 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { codigo, colaborador, funcao, remuneracao, dataAdmissao, genero, tipoContrato, filial, estado }
+  { codigo, colaborador, funcao, remuneracao, dataAdmissao, genero, dataDesligamento, mesReferente, filial, estado }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
@@ -649,7 +723,8 @@ export function updateHeadcountRecord(
     remuneracao: remuneracao !== undefined ? moneyOrNull(remuneracao) : record.remuneracao,
     dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
     genero: genero !== undefined ? genero || null : record.genero,
-    tipoContrato: tipoContrato !== undefined ? tipoContrato || null : record.tipoContrato,
+    dataDesligamento: dataDesligamento !== undefined ? dataDesligamento || null : record.dataDesligamento,
+    mesReferente: mesReferente !== undefined ? (mesReferente ? String(mesReferente).slice(0, 7) : null) : record.mesReferente,
     filial: filial !== undefined ? filial || null : record.filial,
     estado: estado !== undefined ? estado || null : record.estado
   };
@@ -698,43 +773,48 @@ export function turnoverRateStats(state, range) {
 /* ---------- Cálculo da Retenção (%) ----------
    Retenção(%) = ((Headcount final - Novas contratações) / Headcount inicial) × 100
 
-   Headcount final    = quadro do Headcount no último dia do mês filtrado
-                         (`range`).
-   Headcount inicial  = quadro do Headcount no primeiro dia do mês filtrado
-                         (reconstruído a partir do último dia do mês ANTERIOR,
-                         `prevRange`). Quem foi desligado DENTRO do mês
-                         filtrado (demitidoMes = mês filtrado) ainda está
-                         ativo nesse quadro — logo já está no inicial e NÃO
-                         pode ser somado de novo. Só entram na soma os
-                         "Demitidos" lançados no Turnover que o Headcount
-                         ainda não reflete (desligados sem status "demitido"
-                         no quadro), para quem lança o desligamento só no
-                         Turnover: antes toda a quantidade do Turnover era
-                         somada, e quem já estava marcado no Headcount era
-                         contado duas vezes (inicial inflado, retenção menor).
-   Novas contratações = total de "Admitidos" lançado no Turnover para o mês
-                         filtrado (mesma fonte do KPI de Turnover). */
+   Headcount final    = quadro do mês filtrado (linhas com esse mês referente).
+   Headcount inicial  = quadro do mês anterior (`prevRange`); sem quadro no mês
+                         anterior, reconstrói: final − novas contratações +
+                         demissões.
+   Novas contratações = admissões do Headcount no mês filtrado (Data de admissão).
+   Demissões          = linhas do Headcount com Data de desligamento no mês
+                         (informativo — não entra na fórmula). */
 export function retentionRate(state, range, prevRange) {
   const headcountFinal = headcountCountInRange(state, range);
-  const { admitidos: novasContratacoes, demitidos: demitidosNoPeriodo } = turnoverQuantitiesInRange(state, range);
-  /* Desligados do mês filtrado já marcados no Headcount e que estavam no
-     quadro do início do mês (já contados em headcountCountInRange(prevRange)). */
-  const demitidosAindaFora = demitidosNoPeriodo;
-  const headcountInicial = headcountCountInRange(state, prevRange) + demitidosAindaFora;
+  const { admitidos: novasContratacoes, demitidos: demissoes } = turnoverQuantitiesInRange(state, range);
+  const anterior = headcountCountInRange(state, prevRange);
+  const headcountInicial = anterior || Math.max(headcountFinal - novasContratacoes + demissoes, 0);
   const retencaoPct = headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
   return {
     headcountInicial,
     headcountFinal,
     novasContratacoes,
-    /* Demissões lançadas no Turnover no período (informativo — não entra na fórmula). */
-    demissoes: demitidosNoPeriodo,
+    demissoes,
     retencaoPct
   };
 }
 
-/* Lançamentos de Turnover (uma linha por filial e mês) dentro do período
-   filtrado — as mesmas linhas somadas por turnoverQuantitiesInRange, para o
-   detalhamento de Admissões/Demissões. Mais recentes primeiro. */
+/* Linhas do detalhamento de Admissões/Demissões: uma por mês e filial, com
+   admitidos/demitidos e "ativos" (quadro ativo do mês final do período — o
+   mesmo de headcountCountInRange) do Headcount. Mais recentes primeiro. */
 export function turnoverEntriesInRange(state, range) {
-  return listTurnoverEntries(state).filter((t) => monthWithinRange(t.mesReferencia, range));
+  const { admissoes, demissoes } = headcountMovements(state, range);
+  const groups = new Map();
+  const bucket = (h, ym) => {
+    const key = `${ym}|${h.estado || ""}|${branchKeyFor(h.filial, h.estado)}`;
+    if (!groups.has(key)) {
+      groups.set(key, { id: key, mesReferencia: ym, filial: h.filial || null, estado: h.estado || null, admitidos: 0, demitidos: 0, ativos: 0 });
+    }
+    return groups.get(key);
+  };
+  admissoes.forEach((h) => { bucket(h, toYm(h.dataAdmissao)).admitidos += 1; });
+  demissoes.forEach((h) => { bucket(h, toYm(h.dataDesligamento)).demitidos += 1; });
+  const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
+  if (ym) {
+    filterByState(getHeadcounts(), state)
+      .filter((h) => inMonth(h, ym))
+      .forEach((h) => { bucket(h, ym).ativos += 1; });
+  }
+  return [...groups.values()].sort((a, b) => String(b.mesReferencia).localeCompare(String(a.mesReferencia)));
 }

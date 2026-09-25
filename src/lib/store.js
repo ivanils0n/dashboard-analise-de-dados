@@ -106,45 +106,6 @@ export function addEntry(indicatorId, { date, value, meta, state }) {
   if (ok()) remote.entryAdded(indicatorId, entry);
 }
 
-export function upsertEntryForDate(indicatorId, date, value, meta, state) {
-  const key = entryList(indicatorId);
-  const list = data[key];
-  const mergedMeta = _withState(meta, state);
-  const mEstado = mergedMeta ? mergedMeta.estado : null;
-  const idx = list.findIndex((e) => {
-    if (e.date !== date) return false;
-    const eEstado = e.meta ? e.meta.estado : null;
-    return eEstado === mEstado;
-  });
-  if (idx >= 0) {
-    const current = list[idx];
-    const sameValue = Number(current.value) === Number(value);
-    const sameMeta = JSON.stringify(current.meta || null) === JSON.stringify(mergedMeta || null);
-    if (sameValue && sameMeta) return;
-    current.value = Number(value);
-    current.meta = mergedMeta;
-    if (ok()) remote.entryUpdated(indicatorId, current);
-  } else {
-    const entry = { id: createId(), date, value: Number(value), meta: mergedMeta };
-    list.push(entry);
-    if (ok()) remote.entryAdded(indicatorId, entry);
-  }
-  list.sort((a, b) => compareDateAsc(a.date, b.date));
-}
-
-export function removeEntryForDate(indicatorId, date, state) {
-  const key = entryList(indicatorId);
-  const removedIds = [];
-  data[key] = data[key].filter((e) => {
-    if (e.date !== date) return true;
-    const eEstado = e.meta ? e.meta.estado : null;
-    if (state && state !== "todos" && eEstado !== state) return true;
-    removedIds.push(e.id);
-    return false;
-  });
-  if (removedIds.length && ok()) remote.entriesRemoved(indicatorId, removedIds, state);
-}
-
 export function removeEntry(indicatorId, entryId) {
   const key = entryList(indicatorId);
   const entry = data[key].find((e) => e.id === entryId);
@@ -208,11 +169,6 @@ export function removeEntries(rows) {
     const key = entryList(indicatorId);
     data[key] = data[key].filter((e) => e.id !== entry.id);
   });
-}
-
-export function getLatestForMeta(indicatorId, metaKey, metaValue) {
-  const matches = getEntriesFor(indicatorId).filter((e) => e.meta && e.meta[metaKey] === metaValue);
-  return matches.length ? matches[matches.length - 1] : null;
 }
 
 export function getVacancies() {
@@ -383,26 +339,3 @@ export function mergeFromRemote(remoteData) {
   });
 }
 
-export function upsertInList(list, item) {
-  const idx = list.findIndex((x) => x.id === item.id);
-  if (idx >= 0) list[idx] = item;
-  else list.push(item);
-}
-
-/* Versão em lote de upsertInList: indexa a lista uma vez (O(n + k)) em vez de
-   varrê-la a cada item (O(n × k)) — usada pelo delta sync, que pode trazer
-   centenas de alterações de uma vez. */
-export function upsertManyInList(list, items) {
-  if (!items.length) return;
-  const index = new Map();
-  list.forEach((x, i) => index.set(x.id, i));
-  items.forEach((item) => {
-    const i = index.get(item.id);
-    if (i !== undefined) {
-      list[i] = item;
-    } else {
-      index.set(item.id, list.length);
-      list.push(item);
-    }
-  });
-}
