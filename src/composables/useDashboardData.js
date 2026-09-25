@@ -14,6 +14,7 @@ import {
   rescisaoFilterOptions,
   rescisoesTotal,
   rescisoesByFuncao,
+  rescisoesByEstado,
   rescisaoFuncaoLabel,
   turnoverRateStats,
   retentionRate,
@@ -1001,10 +1002,27 @@ export function useDashboardData(filter, options = {}) {
     }));
   }
 
+  /* Rescisões por estado (fatias da pizza) no período filtrado. */
+  function rescisoesPieByEstado(mode = "total", filters) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return rescisoesByEstado(currentState(), range, mode, filters).map((r) => ({
+      label: r.label,
+      value: r.value
+    }));
+  }
+
   /* Opções dos filtros de filial e gerente imediato do gráfico de Rescisões. */
   function rescisoesFilterOptions() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return rescisaoFilterOptions(currentState(), range);
+  }
+
+  /* Rescisões do estado (fatia clicada da pizza) no período filtrado. */
+  function rescisoesEntriesByEstado(label, filters) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return listRescisoes(currentState(), range, filters).filter(
+      (r) => (String(r.estado || "").trim().toUpperCase() || "SEM ESTADO") === label
+    );
   }
 
   /* Rescisões da função (barra clicada) no estado e período filtrados — as
@@ -1151,7 +1169,7 @@ export function useDashboardData(filter, options = {}) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountView, rescisaoMode, rescisaoFilters) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountView, rescisaoMode, rescisaoFilters, rescisaoView) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1292,14 +1310,16 @@ export function useDashboardData(filter, options = {}) {
     }
     if (kpiId === "rescisoes") {
       const liquido = rescisaoMode === "liquido";
+      const porEstado = rescisaoView === "estado";
+      const by = porEstado ? "estado" : "função";
       return {
         id: "rescisoes",
-        kind: "bar",
+        kind: porEstado ? "pie" : "bar",
         title: "Rescisões",
         sub: liquido
-          ? "Valor líquido (só a rescisão) por função no período filtrado"
-          : "Rescisão + GRRF/consig + 40% por função no período filtrado",
-        data: rescisoesBarByFuncao(rescisaoMode, rescisaoFilters),
+          ? `Valor líquido (só a rescisão) por ${by} no período filtrado`
+          : `Rescisão + GRRF/consig + 40% por ${by} no período filtrado`,
+        data: porEstado ? rescisoesPieByEstado(rescisaoMode, rescisaoFilters) : rescisoesBarByFuncao(rescisaoMode, rescisaoFilters),
         valueFormat: "currency"
       };
     }
@@ -1390,7 +1410,9 @@ export function useDashboardData(filter, options = {}) {
     chartPieData,
     turnoverTenureBarByEmployee,
     rescisoesBarByFuncao,
+    rescisoesPieByEstado,
     rescisoesEntriesByFuncao,
+    rescisoesEntriesByEstado,
     rescisoesFilterOptions,
     retentionBreakdown,
     vacanciesBarByOpen,

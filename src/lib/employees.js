@@ -375,6 +375,20 @@ export function rescisoesByFuncao(state, range, mode, filters) {
   return [...groups.values()].sort((a, b) => b.value - a.value);
 }
 
+/* Uma linha por estado (maior valor primeiro): valor no modo escolhido e
+   quantidade de rescisões — base da pizza de Rescisões por estado. */
+export function rescisoesByEstado(state, range, mode, filters) {
+  const groups = new Map();
+  listRescisoes(state, range, filters).forEach((r) => {
+    const label = String(r.estado || "").trim().toUpperCase() || "SEM ESTADO";
+    const g = groups.get(label) || { label, value: 0, count: 0 };
+    g.value += rescisaoAmount(r, mode);
+    g.count += 1;
+    groups.set(label, g);
+  });
+  return [...groups.values()].sort((a, b) => b.value - a.value);
+}
+
 /* ---------- Turnover (lançamento manual por quantidade) ----------
    Não depende mais de colaboradores individuais: cada lançamento é só uma
    quantidade de admitidos e demitidos por filial num mês de referência

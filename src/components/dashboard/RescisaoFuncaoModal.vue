@@ -10,6 +10,8 @@ import { rescisaoAmount } from "@/lib/employees";
 const props = defineProps({
   open: { type: Boolean, default: false },
   funcao: { type: String, default: "" },
+  /* true = o detalhe é de um estado (fatia da pizza), não de uma função. */
+  porEstado: { type: Boolean, default: false },
   records: { type: Array, default: () => [] }
 });
 
@@ -42,8 +44,8 @@ function mes(v) {
 
 <template>
   <Modal
-    :title="`Rescisões — ${funcao || 'Função'}`"
-    subtitle="Rescisões da função no período filtrado"
+    :title="`Rescisões — ${funcao || (porEstado ? 'Estado' : 'Função')}`"
+    :subtitle="porEstado ? 'Rescisões do estado no período filtrado' : 'Rescisões da função no período filtrado'"
     :open="open"
     max-width="max-w-6xl"
     @close="emit('close')"
@@ -101,6 +103,6 @@ function mes(v) {
       </ul>
     </div>
 
-    <EmptyState v-else title="Sem rescisões" text="Nenhuma rescisão desta função no período filtrado." />
+    <EmptyState v-else title="Sem rescisões" :text="`Nenhuma rescisão ${porEstado ? 'deste estado' : 'desta função'} no período filtrado.`" />
   </Modal>
 </template>

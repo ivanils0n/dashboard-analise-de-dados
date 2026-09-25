@@ -28,6 +28,8 @@ import RegionalTreinamentosModal from "@/components/dashboard/RegionalTreinament
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
+import PieChart from "@/components/charts/PieChart.vue";
+import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { useDashboardData } from "@/composables/useDashboardData";
@@ -422,11 +424,27 @@ watch(rescisaoOptions, (opts) => {
   if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
 });
 const rescisoesBarData = computed(() => dashboard.rescisoesBarByFuncao(rescisaoMode.value, rescisaoFilters.value));
-const rescisoesSub = computed(() =>
-  rescisaoMode.value === "liquido"
-    ? "Valor líquido (só a rescisão) por função no período filtrado"
-    : "Rescisão + GRRF/consig + 40% por função no período filtrado"
+/* Visualização: barras por função ou pizza por estado. */
+const rescisaoView = ref("funcao");
+const rescisoesPieData = computed(() => dashboard.rescisoesPieByEstado(rescisaoMode.value, rescisaoFilters.value));
+const rescisaoPorEstado = ref(false);
+function onRescisaoPieClick(sliceIndex) {
+  const row = sliceIndex != null ? rescisoesPieData.value[sliceIndex] : null;
+  if (!row) return;
+  rescisaoFuncaoName.value = row.label;
+  rescisaoFuncaoRows.value = dashboard.rescisoesEntriesByEstado(row.label, rescisaoFilters.value);
+  rescisaoPorEstado.value = true;
+  rescisaoFuncaoOpen.value = true;
+}
+const rescisoesHasData = computed(() =>
+  rescisaoView.value === "estado" ? rescisoesPieData.value.length > 0 : rescisoesBarData.value.length > 0
 );
+const rescisoesSub = computed(() => {
+  const by = rescisaoView.value === "estado" ? "estado" : "função";
+  return rescisaoMode.value === "liquido"
+    ? `Valor líquido (só a rescisão) por ${by} no período filtrado`
+    : `Rescisão + GRRF/consig + 40% por ${by} no período filtrado`;
+});
 const rescisaoFuncaoOpen = ref(false);
 const rescisaoFuncaoName = ref("");
 const rescisaoFuncaoRows = ref([]);
@@ -434,6 +452,7 @@ function onRescisaoBarClick({ label }) {
   if (!label) return;
   rescisaoFuncaoName.value = label;
   rescisaoFuncaoRows.value = dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
+  rescisaoPorEstado.value = false;
   rescisaoFuncaoOpen.value = true;
 }
 const rescisoesChartRef = ref(null);
@@ -1278,7 +1297,10 @@ watch(activeTab, (tab) => {
     >
       <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
         <div>
-          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Rescisões</h2>
+          <div class="flex flex-wrap items-center gap-3">
+            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Rescisões</h2>
+            <RescisaoViewToggle v-model="rescisaoView" />
+          </div>
           <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ rescisoesSub }}</span>
         </div>
         <div class="flex flex-wrap items-center justify-start gap-2 sm:justify-center">
@@ -1300,7 +1322,7 @@ watch(activeTab, (tab) => {
         </div>
         <div class="flex justify-start sm:justify-end">
           <button
-            v-if="rescisoesBarData.length"
+            v-if="rescisaoView === 'funcao' && rescisoesBarData.length"
             type="button"
             class="icon-btn-sm"
             title="Tela cheia"
@@ -1316,8 +1338,18 @@ watch(activeTab, (tab) => {
           </button>
         </div>
       </div>
+      <PieChart
+        v-if="rescisaoView === 'estado' && rescisoesHasData"
+        :data="rescisoesPieData"
+        :show-values="showValues"
+        value-format="currency"
+        height="h-[420px]"
+        clickable
+        @chart-click="onRescisaoPieClick"
+        @chart-contextmenu="onRescisaoPieClick"
+      />
       <BarChart
-        v-if="rescisoesBarData.length"
+        v-else-if="rescisoesHasData"
         ref="rescisoesBarChartRef"
         :data="rescisoesBarData"
         :show-values="showValues"
@@ -1378,6 +1410,7 @@ watch(activeTab, (tab) => {
       v-if="rescisaoFuncaoOpen"
       :open="rescisaoFuncaoOpen"
       :funcao="rescisaoFuncaoName"
+      :por-estado="rescisaoPorEstado"
       :records="rescisaoFuncaoRows"
       @close="rescisaoFuncaoOpen = false"
     />

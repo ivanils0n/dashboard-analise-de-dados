@@ -10,6 +10,7 @@ import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
+import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
 import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
@@ -79,6 +80,9 @@ const headcountView = ref("bar");
 /* Rescisões: "total" (rescisão + GRRF/consig + 40%) ou "liquido" (só a rescisão). */
 const rescisaoMode = ref("total");
 
+/* Rescisões: "funcao" (barras por função) ou "estado" (pizza por estado). */
+const rescisaoView = ref("funcao");
+
 /* Filtros de filial e gerente imediato do gráfico de Rescisões ("" = todos). */
 const rescisaoFilial = ref("");
 const rescisaoGerente = ref("");
@@ -93,6 +97,7 @@ watch(rescisaoOptions, (opts) => {
 const rescisaoFuncaoOpen = ref(false);
 const rescisaoFuncaoName = ref("");
 const rescisaoFuncaoRows = ref([]);
+const rescisaoPorEstado = ref(false);
 
 /* Painel central: Custo de folha de salário (padrão) quando nada está
    selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
@@ -107,7 +112,8 @@ const centerChart = computed(() =>
     headcountFilialFilter.value,
     headcountView.value,
     rescisaoMode.value,
-    rescisaoFilters.value
+    rescisaoFilters.value,
+    rescisaoView.value
   )
 );
 
@@ -261,6 +267,7 @@ function onCenterBarClick({ index, label, datasetIndex }) {
     if (!label) return;
     rescisaoFuncaoName.value = label;
     rescisaoFuncaoRows.value = props.dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
+    rescisaoPorEstado.value = false;
     rescisaoFuncaoOpen.value = true;
     return;
   }
@@ -374,6 +381,17 @@ function onPieClick(sliceIndex) {
     if (row && row.key) emit("custo-filial", row.key);
     return;
   }
+  if (centerChart.value.id === "rescisoes") {
+    /* Fatia clicada = um estado; fora de uma fatia (centro) não abre nada. */
+    const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
+    if (!row) return;
+    rescisaoFuncaoName.value = row.label;
+    rescisaoFuncaoRows.value = props.dashboard.rescisoesEntriesByEstado(row.label, rescisaoFilters.value);
+    rescisaoPorEstado.value = true;
+    fullscreenOpen.value = false;
+    rescisaoFuncaoOpen.value = true;
+    return;
+  }
   if (centerChart.value.id !== "turnover") return;
   openTurnoverDetail(sliceIndex === 1 ? "demissoes-empresas" : "admissoes-empresas");
 }
@@ -452,6 +470,7 @@ function goNextKpi() {
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
                   <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+                  <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
                 </div>
                 <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ centerChart.sub }}</span>
               </div>
@@ -529,7 +548,7 @@ function goNextKpi() {
                 :center-value="pieCenter.value"
                 :center-caption="pieCenter.caption"
                 :value-format="centerChart.valueFormat || 'percent'"
-                :clickable="['turnover', 'custo_contratacao', 'headcount'].includes(centerChart.id)"
+                :clickable="['turnover', 'custo_contratacao', 'headcount', 'rescisoes'].includes(centerChart.id)"
                 @chart-click="onPieClick"
                 @chart-contextmenu="onPieClick"
               />
@@ -631,6 +650,7 @@ function goNextKpi() {
       v-if="rescisaoFuncaoOpen"
       :open="rescisaoFuncaoOpen"
       :funcao="rescisaoFuncaoName"
+      :por-estado="rescisaoPorEstado"
       :records="rescisaoFuncaoRows"
       @close="rescisaoFuncaoOpen = false"
     />
@@ -706,6 +726,7 @@ function goNextKpi() {
           <div v-else class="flex min-w-[10rem] items-center justify-center gap-2">
             <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
             <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+            <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
           </div>
           <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
           <GerenteRegionalFilter
@@ -768,7 +789,7 @@ function goNextKpi() {
               :center-value="pieCenter.value"
               :center-caption="pieCenter.caption"
               :value-format="centerChart.valueFormat || 'percent'"
-              :clickable="['turnover', 'custo_contratacao', 'headcount'].includes(centerChart.id)"
+              :clickable="['turnover', 'custo_contratacao', 'headcount', 'rescisoes'].includes(centerChart.id)"
               @chart-click="onPieClick"
               @chart-contextmenu="onPieClick"
             />
