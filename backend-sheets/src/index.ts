@@ -1,14 +1,16 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { AppEnv } from "./types";
+import type { AppEnv, Bindings } from "./types";
 import { ApiError } from "./utils/errors";
 import { ENTITY_KEYS } from "./db/tables";
+import { refreshStaleCaches } from "./services/cache";
 import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
 import estadosRoutes from "./routes/estados";
 import { recordsRoutes } from "./routes/records";
 import dataRoutes from "./routes/data";
+import cacheRoutes from "./routes/cache";
 
 const app = new Hono<AppEnv>();
 
@@ -51,6 +53,7 @@ for (const entityKey of ENTITY_KEYS) {
 }
 
 app.route("/api/data", dataRoutes);
+app.route("/api/cache", cacheRoutes);
 
 app.notFound((c) => c.json({ success: false, error: { message: "Rota não encontrada." } }, 404));
 
@@ -68,4 +71,16 @@ app.onError((err, c) => {
   return c.json({ success: false, error: { message: "Erro interno do servidor." } }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  // Cron trigger (ver wrangler.jsonc "triggers.crons", a cada 5 min): renova
+  // só as abas do cache já vencidas — se o admin acabou de dar refresh manual,
+  // a contagem daquela aba ainda não venceu e este tick não faz nada com ela.
+  async scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      refreshStaleCaches(env).catch((err) => {
+        console.error("[cron] Falha ao atualizar o cache:", err instanceof Error ? err.stack : err);
+      })
+    );
+  }
+};

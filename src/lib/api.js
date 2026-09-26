@@ -56,9 +56,18 @@ export function setUnauthorizedHandler(handler) {
   onUnauthorized = typeof handler === "function" ? handler : null;
 }
 
+/* `timeoutMs: 0` desliga o limite — para chamadas que legitimamente demoram
+   mais que 30 s (ex.: o refresh do cache, que relê a planilha inteira). */
 export async function apiFetch(
   path,
-  { method = "GET", body, headers = {}, auth = true, keepalive = false } = {}
+  {
+    method = "GET",
+    body,
+    headers = {},
+    auth = true,
+    keepalive = false,
+    timeoutMs = method === "GET" ? 0 : REQUEST_TIMEOUT_MS
+  } = {}
 ) {
   const finalHeaders = { ...headers };
   const payload = body !== undefined ? JSON.stringify(body) : undefined;
@@ -72,7 +81,7 @@ export async function apiFetch(
   const controller = new AbortController();
   /* Leituras (GET) não têm limite: a 2ª tentativa do Worker à planilha fica
      ativa até responder — recarregar ou fechar a página cancela a requisição. */
-  const timer = method === "GET" ? null : setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let res;
   try {
     res = await fetch(API_BASE + path, {

@@ -5,7 +5,10 @@ import { hashPassword } from "../utils/password";
 import { ApiError } from "../utils/errors";
 import type { Bindings, Perfil } from "../types";
 
-const PERFIS: Perfil[] = ["admin", "analista", "visitante"];
+// "visitante" não é mais um perfil cadastrável (ver UsuariosView.vue) — esse
+// tipo de conta deixou de existir. Fica de fora daqui mesmo que o tipo Perfil
+// ainda o admita, para não permitir criar/editar para esse perfil pela API.
+const PERFIS: Perfil[] = ["admin", "analista"];
 
 type UserInput = Record<string, unknown>;
 

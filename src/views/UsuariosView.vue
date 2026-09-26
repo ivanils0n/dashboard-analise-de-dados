@@ -190,7 +190,6 @@ onActivated(load);
           <select id="usuarioPerfil" v-model="form.perfil" class="input-field">
             <option value="admin">Administrador</option>
             <option value="analista">Analista</option>
-            <option value="visitante">Visitante</option>
           </select>
         </div>
         <div class="flex flex-col gap-1.5">

@@ -8,6 +8,8 @@ export type Bindings = {
   JWT_SECRET: string;
   CORS_ORIGIN?: string;
   LOGIN_LIMITER?: RateLimit;
+  // Cache das abas da planilha (dados + usuários) — ver db/cache.ts.
+  CACHE: KVNamespace;
 };
 
 export type TokenPayload = {

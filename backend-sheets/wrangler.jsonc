@@ -13,5 +13,14 @@
       "namespace_id": "1001",
       "simple": { "limit": 6, "period": 60 }
     }
-  ]
+  ],
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "3cbe9ba669b7447fb9bf8cdf04f38617" }
+  ],
+  // Além do trigger, o cache também se autocorrige por TTL (ver db/cache.ts) e é
+  // invalidado a cada escrita — o cron é só quem repõe o dado "por conta própria",
+  // sem depender de alguém acessar a API para disparar a atualização.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
 }

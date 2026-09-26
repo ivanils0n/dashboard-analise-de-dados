@@ -1,5 +1,6 @@
 import { appendRows, deleteRows, readTable, readTables, updateRows } from "../db/sheets";
 import type { SheetRow } from "../db/sheets";
+import { invalidateCachedSheet } from "../db/cache";
 import { ENTITIES, ESTADO_TODOS, tableName } from "../db/tables";
 import type { ColumnDef, Estado, EstadoFiltro, EntityDef } from "../db/tables";
 import { buildCreatePayload, buildUpdatePayload, buildUpsertPayload } from "../utils/validation";
@@ -263,9 +264,12 @@ export async function bulkWrite(
     }
   });
 
+  // skipInvalidate: as três escritas abaixo são na MESMA aba — invalidar o
+  // cache uma vez ao final (depois de tudo terminar) evita 3 idas
+  // desnecessárias à KV (leitura+gravação cada) para o mesmo resultado.
   const [, updatedCount] = await Promise.all([
-    appendRows(env, table, entity.columns, toAppend),
-    updateRows(env, table, entity.columns, toUpdate)
+    appendRows(env, table, entity.columns, toAppend, { skipInvalidate: true }),
+    updateRows(env, table, entity.columns, toUpdate, { skipInvalidate: true })
   ]);
 
   // Deduplica ids marcados para exclusão mais de uma vez no mesmo lote.
@@ -280,7 +284,11 @@ export async function bulkWrite(
     const current = rowById.get(id);
     return current && matchesEstado(entity, current, estado);
   });
-  const deletedCount = await deleteRows(env, table, deleteIds);
+  const deletedCount = await deleteRows(env, table, deleteIds, { skipInvalidate: true });
+
+  if (toAppend.length || toUpdate.length || deleteIds.length) {
+    await invalidateCachedSheet(env, table);
+  }
 
   // Números REAIS devolvidos pelo Code.gs (quanto ele achou e alterou), não
   // quanto foi pedido — se algum id não bater mais na planilha, aparece aqui.

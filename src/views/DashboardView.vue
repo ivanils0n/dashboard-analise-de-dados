@@ -37,7 +37,7 @@ import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
-import { canEditData } from "@/lib/auth";
+import { canEditData, isAdmin } from "@/lib/auth";
 import { getIndicatorById, STATES } from "@/lib/config";
 import { singleMonthOfRange, ymLabel, safeSetItem, localStore, normalizeText } from "@/lib/utils";
 import { incompleteStates, setMonthIncomplete } from "@/lib/monthStatus";
@@ -45,6 +45,7 @@ import Modal from "@/components/ui/Modal.vue";
 import { toXLSX, toCSV } from "@/lib/export";
 import { hydrateState, reloadData } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
+import { apiFetch } from "@/lib/api";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
@@ -387,6 +388,9 @@ const orderedKpiChartCards = computed(() => {
 let flashTimer = null;
 
 const canEdit = canEditData();
+// Só o admin recarrega dados: é ele quem força a atualização do cache do
+// Worker (ver handleReload) — analistas não têm mais esse botão.
+const canRefreshCache = isAdmin();
 
 /* Busca na área de indicadores: filtra os cards pelo nome/descrição
    (ignorando maiúsculas/minúsculas e acentos). */
@@ -558,12 +562,17 @@ const estadoFiltroMapa = computed(() => {
   return ufs.map((uf) => ({ uf, text: "", sub: "", filled: true }));
 });
 
-/* "Recarregar dados": limpa o cache e baixa tudo de novo da planilha. */
+/* "Recarregar dados": força o Worker a buscar tudo de novo na planilha e
+   reescrever o cache (reseta a contagem dos 5 min a partir de agora — ver
+   services/cache.ts no backend), depois baixa o cache local com o resultado. */
 const reloading = ref(false);
 async function handleReload() {
   if (reloading.value) return;
   reloading.value = true;
   try {
+    // Sem limite de tempo: reler a planilha inteira pode passar de 30 s
+    // quando o Apps Script está lento (ele repete a leitura sozinho).
+    await apiFetch("/api/cache/refresh", { method: "POST", timeoutMs: 0 });
     await reloadData();
     syncAll();
     toast("Dados recarregados.");
@@ -783,6 +792,7 @@ watch(activeTab, (tab) => {
       <div class="flex items-center gap-3">
         <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Gente &amp; Gestão</h1>
         <button
+          v-if="canRefreshCache"
           type="button"
           class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           aria-label="Recarregar dados"

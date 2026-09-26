@@ -1,5 +1,6 @@
 import type { Bindings } from "../types";
 import type { ColumnDef } from "./tables";
+import { invalidateCachedSheet, readCachedSheet, readManyCachedSheets, writeCachedSheets } from "./cache";
 
 // Cliente para a "API" da planilha: um Google Apps Script publicado como Web
 // App (ver apps-script/Code.gs), vinculado à própria planilha. Sem service
@@ -308,28 +309,54 @@ export async function readTable(
   columns: ColumnDef[],
   clientSignal?: AbortSignal
 ): Promise<IndexedTable> {
+  const cached = await readCachedSheet(env, sheetName);
+  if (cached) return indexRawRows(cached.rows, columns);
+
+  const fetchedAt = Date.now();
   const rawRows = await callAppsScript<unknown[][]>(env, "read", { sheet: sheetName }, clientSignal);
+  await writeCachedSheets(env, { [sheetName]: rawRows }, fetchedAt);
   return indexRawRows(rawRows, columns);
 }
 
-// Lê várias abas numa única chamada ao Apps Script (ação "readMany"). Devolve,
-// por nome de aba, a tabela indexada — ou null quando a aba não existe.
+// Lê várias abas numa única chamada ao Apps Script (ação "readMany") — só para
+// as que não estiverem em cache. Devolve, por nome de aba, a tabela indexada
+// — ou null quando a aba não existe.
 export async function readTables(
   env: Bindings,
   requests: { sheetName: string; columns: ColumnDef[] }[],
   clientSignal?: AbortSignal
 ): Promise<Record<string, IndexedTable | null>> {
+  const out: Record<string, IndexedTable | null> = {};
+  const misses: { sheetName: string; columns: ColumnDef[] }[] = [];
+
+  // Uma única ida à KV para todas as abas pedidas, em vez de uma por aba.
+  const cached = await readManyCachedSheets(env, requests.map((r) => r.sheetName));
+  for (const request of requests) {
+    const entry = cached[request.sheetName];
+    if (entry) out[request.sheetName] = indexRawRows(entry.rows, request.columns);
+    else misses.push(request);
+  }
+  if (!misses.length) return out;
+
+  const fetchedAt = Date.now();
   const raw = await callAppsScript<Record<string, unknown[][] | null>>(
     env,
     "readMany",
-    { sheets: requests.map((r) => r.sheetName) },
+    { sheets: misses.map((r) => r.sheetName) },
     clientSignal
   );
-  const out: Record<string, IndexedTable | null> = {};
-  requests.forEach(({ sheetName, columns }) => {
+  const toCache: Record<string, unknown[][]> = {};
+  misses.forEach(({ sheetName, columns }) => {
     const rows = raw?.[sheetName];
-    out[sheetName] = rows == null ? null : indexRawRows(rows, columns);
+    if (rows == null) {
+      out[sheetName] = null;
+      return;
+    }
+    toCache[sheetName] = rows;
+    out[sheetName] = indexRawRows(rows, columns);
   });
+  // Uma única gravação na KV para todas as abas que vieram certas (ver db/cache.ts).
+  if (Object.keys(toCache).length) await writeCachedSheets(env, toCache, fetchedAt);
   return out;
 }
 
@@ -350,19 +377,65 @@ function indexRawRows(rawRows: unknown[][] | null | undefined, columns: ColumnDe
   return { rows, rowNumberById, rowById };
 }
 
+// ---------- atualização forçada do cache (cron + refresh manual do admin) ----------
+
+// Busca as abas informadas direto no Apps Script (ignora o cache) e regrava o
+// cache com o resultado — usado pelo cron (só para as abas vencidas, ver
+// services/cache.ts) e pelo refresh manual do admin (força todas, resetando a
+// contagem de todas de uma vez).
+export async function refreshCachedSheets(
+  env: Bindings,
+  sheetNames: string[]
+): Promise<{ refreshed: string[]; errors: Record<string, string> }> {
+  const refreshed: string[] = [];
+  const errors: Record<string, string> = {};
+  if (!sheetNames.length) return { refreshed, errors };
+
+  const fetchedAt = Date.now();
+  const raw = await callAppsScript<Record<string, unknown[][] | null>>(env, "readMany", {
+    sheets: sheetNames
+  });
+
+  const toCache: Record<string, unknown[][]> = {};
+  sheetNames.forEach((name) => {
+    const rows = raw?.[name];
+    if (rows == null) {
+      errors[name] = `Aba "${name}" não existe.`;
+      return;
+    }
+    toCache[name] = rows;
+    refreshed.push(name);
+  });
+  // Uma única gravação na KV para todas as abas de uma vez — é o que faz o
+  // cron custar 1 gravação por tick, não uma por aba.
+  if (Object.keys(toCache).length) await writeCachedSheets(env, toCache, fetchedAt);
+  return { refreshed, errors };
+}
+
 // ---------- escrita ----------
+
+// `skipInvalidate`: usado por bulkWrite (ver services/records.ts), que chama
+// append+update da MESMA aba em paralelo e depois delete — sem isso, uma
+// chamada só ao endpoint em lote invalidaria (leitura+gravação na KV) a
+// mesma aba até 3 vezes. bulkWrite pede pra pular aqui e invalida 1 vez só,
+// no final, depois que todas as escritas terminaram.
+type WriteOptions = { skipInvalidate?: boolean };
 
 export async function appendRows(
   env: Bindings,
   sheetName: string,
   columns: ColumnDef[],
-  rows: SheetRow[]
+  rows: SheetRow[],
+  options?: WriteOptions
 ): Promise<void> {
   if (!rows.length) return;
   await callAppsScript(env, "append", {
     sheet: sheetName,
     values: rows.map((row) => rowToValues(columns, row))
   });
+  // Sem isso, quem lê essa aba continuaria vendo a versão de antes da
+  // gravação até o cron passar (até 5 min) — a próxima leitura busca de novo.
+  if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
 }
 
 // A linha é resolvida pelo id DENTRO do Code.gs, sob o lock de escrita — não
@@ -375,7 +448,8 @@ export async function updateRows(
   env: Bindings,
   sheetName: string,
   columns: ColumnDef[],
-  rows: SheetRow[]
+  rows: SheetRow[],
+  options?: WriteOptions
 ): Promise<number> {
   if (!rows.length) return 0;
   const result = await callAppsScript<{ updated: number }>(env, "update", {
@@ -385,16 +459,23 @@ export async function updateRows(
       values: rowToValues(columns, row)
     }))
   });
+  if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
   return result.updated;
 }
 
 // Mesma ideia de updateRows acima: devolve o total realmente apagado pelo
 // Code.gs, não a quantidade pedida.
-export async function deleteRows(env: Bindings, sheetName: string, ids: string[]): Promise<number> {
+export async function deleteRows(
+  env: Bindings,
+  sheetName: string,
+  ids: string[],
+  options?: WriteOptions
+): Promise<number> {
   if (!ids.length) return 0;
   const result = await callAppsScript<{ deleted: number }>(env, "delete", {
     sheet: sheetName,
     ids: [...new Set(ids)]
   });
+  if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
   return result.deleted;
 }
