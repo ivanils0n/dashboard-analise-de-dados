@@ -1,11 +1,14 @@
 /* Cache local (sessionStorage) por item: ggd:<tabela>:<id> = JSON do registro.
-   sessionStorage evita persistir PII em disco; vale até um logout/login novo
-   ou "Recarregar Dados" (ver resetLocalState/reloadData em lib/db.js). */
+   sessionStorage evita persistir PII em disco. Vale por LOCAL_CACHE_TTL_MS
+   (ver lib/db.js) a partir do último download completo, até um logout/login
+   novo ou até "Recarregar Dados". */
 
-import { safeSetItem, sessionStore, localStore } from "./utils";
+import { sessionStore, localStore } from "./utils";
 
 const PREFIX = "ggd:";
 const LEGACY_KEY = "gg-data-cache";
+// Fora do prefixo "ggd:" de propósito: keys()/resetAll() varrem só os itens.
+const LOADED_AT_KEY = "gg-data-loaded-at";
 
 export const DataCache = {
   /* ---- Itens ---- */
@@ -22,11 +25,29 @@ export const DataCache = {
     }
   },
 
-  /* Devolve false quando o navegador recusou a gravação (cota cheia). Quem
-     grava em lote precisa checar: um cache parcial com a versão do delta
-     gravada faria o próximo boot "restaurar" dados incompletos. */
+  /* Devolve false quando o navegador recusou a gravação (cota cheia) — quem
+     chama descarta o cache inteiro. Não usa safeSetItem: ele abre espaço
+     apagando os OUTROS itens do cache e devolve true, o que deixava um cache
+     parcial que o próximo boot restaurava como se estivesse completo. */
   setItem(tabela, id, data) {
-    return safeSetItem(sessionStore, this.keyFor(tabela, id), JSON.stringify(data));
+    try {
+      sessionStore.setItem(this.keyFor(tabela, id), JSON.stringify(data));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /* ---- Validade ---- */
+  markLoaded() {
+    try {
+      sessionStore.setItem(LOADED_AT_KEY, String(Date.now()));
+    } catch (e) {}
+  },
+
+  isFresh(maxAgeMs) {
+    const loadedAt = Number(sessionStore.getItem(LOADED_AT_KEY)) || 0;
+    return loadedAt > 0 && Date.now() - loadedAt < maxAgeMs;
   },
 
   removeItem(tabela, id) {
@@ -53,6 +74,9 @@ export const DataCache = {
 
   resetAll() {
     this.keys().forEach((k) => sessionStore.removeItem(k));
+    try {
+      sessionStore.removeItem(LOADED_AT_KEY);
+    } catch (e) {}
   },
 
   // Remove resíduos legados (ggd:* e gg-data-cache) que ficaram em localStorage.

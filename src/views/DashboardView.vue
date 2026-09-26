@@ -764,7 +764,6 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClick);
   clearTimeout(flashTimer);
-  clearTimeout(tableSearchTimer);
 });
 
 /* Ao abrir a aba (inclusive ao voltar de outra, já que o KeepAlive não

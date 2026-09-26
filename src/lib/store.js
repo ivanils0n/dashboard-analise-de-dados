@@ -131,12 +131,11 @@ export function updateEntry(indicatorId, entryId, patch) {
   data[key][idx] = updated;
   data[key].sort((a, b) => compareDateAsc(a.date, b.date));
   if (!ok()) return;
-  /* Mudar de estado muda de tabela no servidor: remove a linha da antiga (se
-     for a mesma tabela, o upsert abaixo substitui a exclusão na fila). O envio
-     usa `updated` — após o sort, `idx` já pode apontar para outro lançamento. */
-  const prevEstado = (previous.meta && previous.meta.estado) || null;
-  const nextEstado = (updated.meta && updated.meta.estado) || null;
-  if (prevEstado !== nextEstado) remote.entriesRemoved(indicatorId, [entryId], prevEstado);
+  /* Mudar de estado não precisa de exclusão no estado antigo: o servidor
+     acha o id em qualquer estado e só troca o estado_sigla da linha (ver
+     bulkWrite no backend). Mandar as duas requisições em paralelo podia
+     apagar a linha errada. O envio usa `updated` — após o sort, `idx` já
+     pode apontar para outro lançamento. */
   remote.entryUpdated(indicatorId, updated);
 }
 

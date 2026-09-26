@@ -1,7 +1,8 @@
 /* Camada de dados: cache por item (sessionStorage) + download completo via API
    (Cloudflare Worker → Google Sheets), escritas em fila com debounce, sessão/
    purga via resetLocalState. Sem sincronização incremental: o cache local
-   vale até um logout/login novo ou até "Recarregar Dados" ser acionado. */
+   vale LOCAL_CACHE_TTL_MS desde o último download; depois disso o próximo
+   carregamento da página (F5) baixa tudo de novo. */
 import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
@@ -11,6 +12,11 @@ import { useToast } from "../composables/useToast";
 import { mapWithConcurrency } from "./utils";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
+
+/* Mesmo intervalo do cache do Worker (backend-sheets/src/db/cache.ts): sem
+   validade, o cache local valia a sessão inteira e quem não tem o botão
+   "Recarregar dados" (analistas) nunca via o que os outros lançaram. */
+const LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /* Teto de requisições simultâneas para a API (Worker → Apps Script), que
    aceita no máximo 30 execuções ao mesmo tempo por usuário — folga
@@ -195,6 +201,22 @@ function _enqueue(table, id, op) {
   if (!_queue[table]) _queue[table] = new Map();
   _queue[table].set(id, op);
   _schedule();
+  /* Espelha a edição no cache local: sem isso um F5 restaurava a versão do
+     último download, e o que o próprio usuário tinha acabado de lançar
+     sumia da tela. Se o navegador recusar (cota), descarta o cache inteiro
+     — o próximo boot baixa tudo de novo em vez de restaurar dado parcial. */
+  const cached =
+    op.type === "upsert" ? DataCache.setItem(table, id, op.row) : (DataCache.removeItem(table, id), true);
+  if (!cached) DataCache.resetAll();
+  /* Registro que mudou de estado: a cópia antiga fica em outra "tabela" do
+     cache local (vagas_ro → vagas_am) e voltaria no próximo F5. */
+  if (op.type === "upsert") {
+    const { base } = splitTable(table);
+    STATES.forEach((s) => {
+      const other = `${base}_${s.toLowerCase()}`;
+      if (other !== table) DataCache.removeItem(other, id);
+    });
+  }
 }
 
 function _schedule(delay = FLUSH_DELAY_MS) {
@@ -470,7 +492,6 @@ function mapRemoteTurnover(row, impliedState) {
 function mapRemotePermanencia(row, impliedState) {
   return {
     id: row.id,
-    codigo: row.codigo != null ? String(row.codigo) : null,
     colaborador: up(row.colaborador) ?? "",
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     dataDemissao: row.data_demissao ? String(row.data_demissao).slice(0, 10) : null,
@@ -515,6 +536,9 @@ function mapRemoteRescisao(row, impliedState) {
 function mapRemoteHeadcount(row, impliedState) {
   return {
     id: row.id,
+    // Sem isto o código nunca chegava à tela, e editar o registro gravava
+    // vazio por cima do código que estava na planilha (headcountToRow).
+    codigo: row.codigo != null ? String(row.codigo) : null,
     colaborador: up(row.colaborador) ?? "",
     funcao: row.funcao != null ? up(row.funcao) : null,
     remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
@@ -774,6 +798,8 @@ async function _hydrateStates(states) {
       // Cache incompleto (cota cheia): descarta tudo — o próximo boot baixa de novo.
       DataCache.resetAll();
       _cacheDirty = false;
+    } else {
+      DataCache.markLoaded();
     }
     STATES.forEach((s) => {
       _loadedStates[s] = true;
@@ -840,7 +866,12 @@ export function hydrateState(next) {
 async function _hydrateState(pending) {
   DataCache.removeLegacy();
 
-  if (pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0)) {
+  const fresh = DataCache.isFresh(LOCAL_CACHE_TTL_MS);
+  // Vencido: sai tudo antes de baixar — senão um registro apagado no servidor
+  // continuaria no sessionStorage (o download só grava por cima, não remove).
+  if (!fresh) DataCache.resetAll();
+
+  if (fresh && pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0)) {
     pending.forEach((s) => {
       mergeStateFromCache(s);
       _loadedStates[s] = true;
@@ -904,11 +935,13 @@ function clearLoadedTracking() {
 
 /* Boot:
    1) reconstrói a memória a partir do sessionStorage (renderização rápida,
-      sem ida à API) — vale até um logout/login novo ou "Recarregar Dados";
-   2) se não houver cache utilizável, baixa tudo da planilha. */
+      sem ida à API) — se o último download tiver menos de LOCAL_CACHE_TTL_MS;
+   2) senão, baixa tudo (servido pelo cache do Worker, sem esperar a planilha). */
 async function hydrateOnBoot(state) {
   DataCache.removeLegacy();
 
+  // Vencido: sai tudo antes de baixar (ver _hydrateState).
+  if (!DataCache.isFresh(LOCAL_CACHE_TTL_MS)) DataCache.resetAll();
   const hasLocal = loadLocalIntoMemory();
   if (hasLocal) {
     console.info("[API] Cache local restaurado do sessionStorage.");

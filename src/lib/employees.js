@@ -506,7 +506,6 @@ export function turnoverAvgTenureDays(state, range) {
 export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filial = null, estado }) {
   const record = {
     id: createId(),
-    codigo: codigo != null && codigo !== "" ? String(codigo) : null,
     colaborador: String(colaborador || "").toUpperCase(),
     dataAdmissao: dataAdmissao || null,
     dataDemissao: dataDemissao || null,
@@ -709,6 +708,7 @@ export function addHeadcountRecord({
 }) {
   const record = {
     id: createId(),
+    codigo: codigo != null && codigo !== "" ? String(codigo) : null,
     colaborador: String(colaborador || "").toUpperCase(),
     funcao: funcao != null ? String(funcao).toUpperCase() : null,
     remuneracao: moneyOrNull(remuneracao),

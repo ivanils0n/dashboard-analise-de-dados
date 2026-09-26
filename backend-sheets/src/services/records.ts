@@ -251,9 +251,12 @@ export async function bulkWrite(
 
   byId.forEach((payload, id) => {
     const current = rowById.get(id);
-    // Isolamento entre estados (ver getRecord): um id que já existe em outro
-    // estado não é sobrescrito — é tratado como criação de um registro novo.
-    if (current && matchesEstado(entity, current, estado)) {
+    // Um id que já existe em OUTRO estado é o mesmo registro mudando de
+    // estado (o payload já traz o estado_sigla novo): atualiza a linha no
+    // lugar. Antes virava uma linha nova com o mesmo id — o registro ficava
+    // duplicado, e o "apagar do estado antigo" que o front mandava em paralelo
+    // podia acabar apagando a linha nova (o Code.gs apaga a última com o id).
+    if (current) {
       const merged: SheetRow = { ...current, ...payload, id };
       if (now) merged.atualizado_em = now;
       toUpdate.push(merged);

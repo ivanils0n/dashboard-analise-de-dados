@@ -36,6 +36,8 @@ const form = reactive({
   filial: null,
   estado: ""
 });
+// Empresa como veio do registro (ver filialOriginalForaDaLista).
+const filialOriginal = ref(null);
 
 function loadRecord(id) {
   const h = id ? getHeadcountById(id) : null;
@@ -49,6 +51,7 @@ function loadRecord(id) {
   form.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
   form.dataAdmissao = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "";
   form.filial = h.filial || null;
+  filialOriginal.value = form.filial;
   form.estado = h.estado || "";
 }
 
@@ -74,11 +77,21 @@ watch(
     } catch (err) {
       console.warn("[HeadcountEditModal] Falha ao carregar filiais do estado:", err);
     }
-    if (form.filial && !branches.value.some((b) => b.shortName === form.filial)) {
-      form.filial = null;
-    }
   }
 );
+
+/* A "empresa" gravada é texto livre (na planilha real, a razão social — ex.:
+   "MODENA & ARAUJO S/A"), quase nunca igual à sigla de uma filial do
+   cadastro. Antes o modal limpava o campo ao abrir quando não achava a sigla,
+   e salvar apagava a empresa na planilha. Agora o valor atual vira uma opção
+   própria e só é limpo quando o usuário troca o estado. */
+const filialOriginalForaDaLista = computed(
+  () => !!filialOriginal.value && !branches.value.some((b) => b.shortName === filialOriginal.value)
+);
+
+function onEstadoChange() {
+  if (form.filial && !branches.value.some((b) => b.shortName === form.filial)) form.filial = null;
+}
 
 function onSalaryInput(ev) {
   form.remuneracao = maskCurrencyInput(ev.target.value);
@@ -156,7 +169,7 @@ async function submit() {
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label for="hcEditEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
-          <select id="hcEditEstado" v-model="form.estado" class="input-field">
+          <select id="hcEditEstado" v-model="form.estado" class="input-field" @change="onEstadoChange">
             <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
           </select>
         </div>
@@ -164,6 +177,7 @@ async function submit() {
           <label for="hcEditFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
           <select id="hcEditFilial" v-model="form.filial" class="input-field">
             <option :value="null">— Sem empresa —</option>
+            <option v-if="filialOriginalForaDaLista" :value="filialOriginal">{{ filialOriginal }} (atual)</option>
             <option v-for="b in branches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
           </select>
         </div>

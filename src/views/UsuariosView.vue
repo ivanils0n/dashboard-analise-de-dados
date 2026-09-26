@@ -31,7 +31,8 @@ async function load() {
   loading.value = true;
   beginLoading("Carregando usuários...");
   try {
-    const response = await apiFetch("/api/users");
+    // Sem limit a API devolve só os 50 primeiros (ver utils/pagination.ts).
+    const response = await apiFetch("/api/users?limit=500");
     users.value = (response.data || []).filter((u) => u.perfil);
   } catch (err) {
     console.error("[Usuarios] Erro ao carregar:", err);

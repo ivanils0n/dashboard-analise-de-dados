@@ -45,10 +45,17 @@ async function handleSubmit() {
       class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white px-6 py-8 shadow-sm slide-up dark:border-zinc-800 dark:bg-zinc-900 sm:px-10 sm:py-10"
     >
       <header class="flex flex-col items-center text-center">
+        <!-- logo.png é branca (para fundo escuro); no tema claro usa a versão com
+             texto escuro. Inverter com filtro CSS deixava o amarelo azul. -->
+        <img
+          src="/logo-on-light.png"
+          alt="Gente & Gestão"
+          class="h-36 w-auto max-w-full object-contain dark:hidden"
+        />
         <img
           src="/logo.png"
           alt="Gente & Gestão"
-          class="h-36 w-auto max-w-full object-contain [filter:invert(1)] dark:filter-none"
+          class="hidden h-36 w-auto max-w-full object-contain dark:block"
         />
         <h1 class="mt-5 text-xl font-bold text-zinc-900 dark:text-zinc-100">Bem-vindo</h1>
         <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Entre para acessar o dashboard</p>

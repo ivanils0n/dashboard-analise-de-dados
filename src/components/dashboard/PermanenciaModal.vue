@@ -49,13 +49,14 @@ const form = reactive({
   filial: null,
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE
 });
+// Filial como veio do registro em edição (ver filialOriginalForaDaLista).
+const filialOriginal = ref(null);
 
 /* Filiais disponíveis para o registro, conforme o estado selecionado no
    formulário — mesma ideia da vaga (ver vagaBranches em LaunchModal.vue). */
 const permBranches = computed(() => listBranches(form.estado === "todos" ? "todos" : form.estado));
 
-/* Garante que as filiais do estado escolhido estejam carregadas e limpa a
-   filial se ela deixar de existir nesse estado. */
+/* Garante que as filiais do estado escolhido estejam carregadas. */
 watch(
   () => form.estado,
   async (state) => {
@@ -64,12 +65,20 @@ watch(
     } catch (err) {
       console.warn("[PermanenciaModal] Falha ao carregar filiais do estado:", err);
     }
-    if (form.filial && !permBranches.value.some((b) => b.shortName === form.filial)) {
-      form.filial = null;
-    }
   },
   { immediate: true }
 );
+
+/* Filial é texto livre: um valor fora do cadastro vira opção própria em vez
+   de ser limpo ao abrir (salvar apagava a filial na planilha). Só é limpa
+   quando o usuário troca o estado. */
+const filialOriginalForaDaLista = computed(
+  () => !!filialOriginal.value && !permBranches.value.some((b) => b.shortName === filialOriginal.value)
+);
+
+function onEstadoChange() {
+  if (form.filial && !permBranches.value.some((b) => b.shortName === form.filial)) form.filial = null;
+}
 
 function resetForm() {
   editingId.value = null;
@@ -77,6 +86,7 @@ function resetForm() {
   form.dataAdmissao = "";
   form.dataDemissao = "";
   form.filial = null;
+  filialOriginal.value = null;
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
 }
 
@@ -91,6 +101,7 @@ function editRecord(p) {
   form.dataAdmissao = p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : "";
   form.dataDemissao = p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : "";
   form.filial = p.filial || null;
+  filialOriginal.value = form.filial;
   form.estado = p.estado || DEFAULT_STATE;
   showForm.value = true;
 }
@@ -264,7 +275,7 @@ function handleExport() {
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
-            <select v-model="form.estado" class="input-field">
+            <select v-model="form.estado" class="input-field" @change="onEstadoChange">
               <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
             </select>
           </div>
@@ -272,6 +283,7 @@ function handleExport() {
             <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
             <select v-model="form.filial" class="input-field">
               <option :value="null">— Sem filial —</option>
+              <option v-if="filialOriginalForaDaLista" :value="filialOriginal">{{ filialOriginal }} (atual)</option>
               <option v-for="b in permBranches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
             </select>
           </div>

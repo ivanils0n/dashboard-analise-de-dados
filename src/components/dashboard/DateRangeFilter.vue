@@ -119,7 +119,7 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
       <div class="flex flex-col gap-2 p-3">
         <div class="flex items-center justify-between gap-2">
           <button type="button" class="btn-ghost btn-sm" aria-label="Mês anterior" @click="setPrevMonth">‹</button>
-          <select v-model="draftYearNum" class="input-field flex-1 text-center" aria-label="Ano" @change="setDraftYear(Number($event.target.value))">
+          <select :value="draftYearNum" class="input-field flex-1 text-center" aria-label="Ano" @change="setDraftYear(Number($event.target.value))">
             <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
           </select>
           <button type="button" class="btn-ghost btn-sm" aria-label="Próximo mês" @click="setNextMonth">›</button>

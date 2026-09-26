@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
@@ -247,7 +247,7 @@ function prefillEdit(indId, entry) {
     diaria.filial = m.filial || "";
     diaria.liderImediato = m.liderImediato || "";
     diaria.gerenteRegional = m.gerenteRegional || "";
-    diaria.regional = m.regional || "";
+    diaria.regional = m.regional || m.estado || "";
     diaria.mes = m.competencia || (entry.date ? String(entry.date).slice(0, 7) : currentYm());
     diaria.motivo = m.motivo || "";
     diaria.value = entry.value != null ? String(entry.value) : "";
@@ -466,8 +466,7 @@ const vagaBranches = computed(() =>
   listBranches(estado.value === "todos" ? "todos" : estado.value)
 );
 
-/* Limpa a filial escolhida quando ela deixa de existir no estado selecionado e
-   garante que as filiais do estado estejam carregadas para o seletor. */
+/* Garante que as filiais do estado estejam carregadas para o seletor. */
 watch(
   () => estado.value,
   async (state) => {
@@ -476,11 +475,22 @@ watch(
     } catch (err) {
       console.warn("[LaunchModal] Falha ao carregar filiais do estado:", err);
     }
-    if (vaga.filial && !vagaBranches.value.some((b) => b.shortName === vaga.filial)) {
-      vaga.filial = null;
-    }
   }
 );
+
+/* Filial da vaga é texto livre (metade das vagas da planilha não bate com
+   nenhuma sigla do cadastro — ex.: "CD - RO", "NOVA ERA"). Antes, editar uma
+   dessas limpava a filial ao abrir, e salvar a apagava na planilha. Agora o
+   valor atual vira uma opção própria e só é limpo quando o usuário troca o
+   estado da vaga. */
+const vagaFilialOriginal = ref(null);
+const vagaFilialOriginalForaDaLista = computed(
+  () => !!vagaFilialOriginal.value && !vagaBranches.value.some((b) => b.shortName === vagaFilialOriginal.value)
+);
+
+function onVagaEstadoChange() {
+  if (vaga.filial && !vagaBranches.value.some((b) => b.shortName === vaga.filial)) vaga.filial = null;
+}
 
 function resetVagaForm() {
   vaga.nome = "";
@@ -489,6 +499,7 @@ function resetVagaForm() {
   vaga.salario = "";
   vaga.tipo = "clt";
   vaga.filial = null;
+  vagaFilialOriginal.value = null;
   vaga.recrutador = "";
 }
 
@@ -586,6 +597,7 @@ async function editVacancy(id) {
     }
   }
   vaga.filial = v.filial || null;
+  vagaFilialOriginal.value = vaga.filial;
   vaga.recrutador = v.recrutador || "";
   showTab("nova");
 }
@@ -1163,10 +1175,23 @@ function submitDiaria() {
   }
   const value = Number(valueRaw);
 
+  /* "Regional" é texto livre: só vira o estado do lançamento quando é uma
+     sigla (RO/AM/PA). Qualquer outro texto (ex.: "NORTE") mandava a diária
+     para RO sem aviso — agora mantém o estado atual dela (edição) ou o do
+     filtro (lançamento novo). */
+  const regional = up(diaria.regional);
+  const editing = editingEntryId.value
+    ? getEntriesFor("custo_diaria").find((e) => e.id === editingEntryId.value)
+    : null;
+  const estadoDiaria = STATES.includes(regional)
+    ? regional
+    : (editing && editing.meta && editing.meta.estado) ||
+      (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
+
   const payload = {
     date: `${diaria.mes}-01`,
     value,
-    state: diaria.regional || null,
+    state: estadoDiaria,
     meta: {
       employeeName,
       funcao: up(diaria.funcao),
@@ -1529,10 +1554,6 @@ function handleSubmit() {
 function close() {
   emit("close");
 }
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", onSubKeydown, true);
-});
 </script>
 
 <template>
@@ -1642,7 +1663,7 @@ onUnmounted(() => {
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="vagaEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
-              <select id="vagaEstado" v-model="estado" class="input-field">
+              <select id="vagaEstado" v-model="estado" class="input-field" @change="onVagaEstadoChange">
                 <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
               </select>
             </div>
@@ -1650,6 +1671,7 @@ onUnmounted(() => {
               <label for="vagaFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
               <select id="vagaFilial" v-model="vaga.filial" class="input-field">
                 <option :value="null">— Sem filial —</option>
+                <option v-if="vagaFilialOriginalForaDaLista" :value="vagaFilialOriginal">{{ vagaFilialOriginal }} (atual)</option>
                 <option v-for="b in vagaBranches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
               </select>
             </div>
