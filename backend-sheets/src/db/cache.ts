@@ -1,50 +1,58 @@
 import type { Bindings } from "../types";
+import { ENTITY_KEYS, tableName, USERS_SHEET } from "./tables";
 
-// Cache das abas da planilha (linhas cruas, como o Apps Script devolve) na KV
-// do Worker. Evita bater no Apps Script (lento e com limite de execuções
-// simultâneas) a cada leitura — a aba só é buscada de novo quando o cache
-// está frio, vencido, ou foi invalidado por uma escrita.
+// Cache das abas da planilha na KV do Worker — evita bater no Apps Script
+// (lento e com limite de execuções simultâneas) a cada leitura.
 //
-// Duas estruturas na KV:
+// Quem mantém o cache atualizado é o PRÓPRIO Apps Script (pushCache em
+// apps-script/Code.gs): um gatilho de tempo lá lê a planilha a cada 10 min e
+// grava na KV, pela API da Cloudflare, só as abas que mudaram. O Worker só
+// lê — e grava apenas no refresh manual do admin e quando uma leitura acha
+// a aba ausente ou invalidada. Nenhum trabalho pesado roda no Worker fora
+// de uma requisição (antes era o cron, limitado a 10 ms de CPU no plano
+// gratuito, que não dava conta dos dados).
 //
-// 1. "sheets" — UMA chave com todas as abas (mapa aba -> {updatedAt, rows}).
-//    Uma chave só porque o cron regrava as ~12 abas a cada 5 min: com uma
-//    chave por aba seriam ~3.400 gravações/dia, acima das 1.000/dia do plano
-//    gratuito; assim é 1 gravação por tick (~288/dia).
+// SEM EXPIRAÇÃO: a KV é armazenamento permanente, não um cache que descarta
+// itens sozinho. Uma aba fica gravada até ser substituída por uma atualização
+// (Apps Script, refresh do admin) ou invalidada por uma escrita do dashboard.
 //
-// 2. "inv:<aba>" — um marcador por aba com o horário da última escrita nela.
-//    A invalidação NÃO mexe em "sheets": a KV aceita no máximo 1 gravação por
-//    segundo na mesma chave, e o front grava várias tabelas em paralelo a cada
-//    sincronização — invalidar tudo em "sheets" faria parte dessas gravações
-//    ser recusada. Com um marcador por aba, tabelas diferentes nunca disputam
-//    a mesma chave. Uma entrada de "sheets" só vale se for mais nova que o
-//    marcador da aba — então nem uma cópia antiga regravada por engano (duas
-//    atualizações de "sheets" concorrentes) volta a ser servida.
+// Estruturas (o formato é o mesmo gravado pelo Code.gs — mudar um exige mudar o outro):
+//   "s:<aba>"    {"t": ms, "rows": [...]}   — t = quando a leitura da planilha COMEÇOU
+//   "s:<aba>"    {"t": ms, "parts": N}      — aba grande repartida em pedaços:
+//   "s:<aba>:<i>" {"t": ms, "rows": [...]}  — pedaço i (0..N-1), na ordem, com
+//                                              o MESMO t da principal (a
+//                                              Cloudflare não garante a ordem em
+//                                              que cada chave aparece; pedaço
+//                                              com outro t é de outra gravação)
+//   "inv:<aba>"  ms                         — hora da última escrita na aba pelo
+//                                              dashboard; a aba só vale se t > isto.
 
-export type CachedSheet = {
-  // Momento em que a BUSCA ao Apps Script começou (não quando terminou): se
-  // uma escrita acontecer durante a busca, o marcador dela sai mais novo que
-  // isto e a cópia (que pode não ter a escrita) é descartada.
-  updatedAt: number;
-  rows: unknown[][];
-};
-type CachedSheetMap = Record<string, CachedSheet>;
+export type CachedSheet = { updatedAt: number; rows: unknown[][] };
 
-const DATA_KEY = "sheets";
-const markerKey = (sheetName: string) => `inv:${sheetName}`;
+type StoredSheet = { t?: number; rows?: unknown[][]; parts?: number };
+type StoredPart = { t?: number; rows?: unknown[][] };
 
-// Mesmo intervalo do cron (ver wrangler.jsonc "triggers.crons"): abaixo disso
-// o dado é considerado fresco e o cron não o renova.
-const FRESH_TTL_MS = 5 * 60 * 1000;
+const sheetKey = (name: string) => `s:${name}`;
+const partKey = (name: string, index: number) => `s:${name}:${index}`;
+const markerKey = (name: string) => `inv:${name}`;
 
-// Rede de segurança se o cron parar: a KV apaga "sheets" sozinha 15 min
-// depois da última gravação, e a próxima leitura busca direto no Apps Script.
-const DATA_TTL_S = 15 * 60;
+// Folga abaixo do limite de 25 MiB por valor da KV (texto com acento ocupa
+// mais bytes que caracteres). Mesmo valor de KV_MAX_VALUE_CHARS no Code.gs.
+const MAX_VALUE_CHARS = 15 * 1024 * 1024;
 
-// O marcador precisa viver mais que qualquer cópia antiga que ele esteja
-// "vetando" — o cron repõe a aba em até 5 min, então 1h sobra com folga.
-// Expirar não conta como operação na cota da KV.
-const MARKER_TTL_S = 60 * 60;
+// A KV devolve no máximo 100 chaves por leitura em lote.
+const BULK_GET_MAX = 100;
+
+// Por quanto tempo cada servidor da Cloudflare reaproveita uma leitura da KV
+// antes de buscar de novo. O padrão é 60 s; 30 s é o mínimo aceito. Importa
+// porque o Apps Script grava de FORA da Cloudflare: até esse prazo vencer, um
+// servidor que já tinha lido a aba continua devolvendo a versão anterior.
+const READ_CACHE_TTL_S = 30;
+
+// Todas as abas guardadas no cache.
+export function allSheetNames(): string[] {
+  return [...ENTITY_KEYS.map(tableName), USERS_SHEET];
+}
 
 // O cache é só uma otimização: se a KV falhar ou estourar cota, quem chama não
 // pode quebrar por isso — os dados continuam corretos vindos direto do Apps
@@ -54,47 +62,58 @@ function logError(action: string, err: unknown) {
   console.error(`[cache] Falha ao ${action}:`, err instanceof Error ? err.message : err);
 }
 
-async function readData(env: Bindings): Promise<CachedSheetMap> {
-  try {
-    return (await env.CACHE.get<CachedSheetMap>(DATA_KEY, "json")) ?? {};
-  } catch (err) {
-    logError("ler os dados da KV", err);
-    return {};
-  }
-}
-
-// Leitura em lote (1 ida à KV para todos os marcadores). Se falhar, devolve
-// null e quem chama trata tudo como cache-miss — sem saber dos marcadores,
-// não dá pra garantir que a cópia em cache não está desatualizada.
-async function readMarkers(env: Bindings, sheetNames: string[]): Promise<Map<string, number> | null> {
-  if (!sheetNames.length) return new Map();
-  try {
-    const raw = await env.CACHE.get(sheetNames.map(markerKey), "text");
-    const out = new Map<string, number>();
-    sheetNames.forEach((name) => {
-      const value = raw.get(markerKey(name));
-      if (value) out.set(name, Number(value));
+async function bulkGet(env: Bindings, keys: string[]): Promise<Map<string, unknown>> {
+  const out = new Map<string, unknown>();
+  for (let i = 0; i < keys.length; i += BULK_GET_MAX) {
+    const batch = await env.CACHE.get<unknown>(keys.slice(i, i + BULK_GET_MAX), {
+      type: "json",
+      cacheTtl: READ_CACHE_TTL_S
     });
-    return out;
-  } catch (err) {
-    logError("ler os marcadores da KV", err);
-    return null;
+    batch.forEach((value, key) => out.set(key, value));
   }
+  return out;
 }
 
-// Lê o cache das abas pedidas (2 idas à KV em paralelo, qualquer que seja o
-// número de abas). Aba invalidada depois da cópia em cache volta como null.
+// Lê o cache das abas pedidas: dados e marcadores numa única leitura em lote
+// (+ uma para os pedaços, se alguma aba for repartida). Volta null para a aba
+// ausente ou invalidada por uma escrita posterior à cópia.
 export async function readManyCachedSheets(
   env: Bindings,
   sheetNames: string[]
 ): Promise<Record<string, CachedSheet | null>> {
-  const [data, markers] = await Promise.all([readData(env), readMarkers(env, sheetNames)]);
   const out: Record<string, CachedSheet | null> = {};
   sheetNames.forEach((name) => {
-    const entry = data[name];
-    const invalidatedAt = markers?.get(name);
-    const valid = entry && markers && (invalidatedAt === undefined || entry.updatedAt > invalidatedAt);
-    out[name] = valid ? entry : null;
+    out[name] = null;
+  });
+
+  let values: Map<string, unknown>;
+  try {
+    values = await bulkGet(env, [...sheetNames.map(sheetKey), ...sheetNames.map(markerKey)]);
+    const partKeys: string[] = [];
+    sheetNames.forEach((name) => {
+      const stored = values.get(sheetKey(name)) as StoredSheet | null;
+      for (let i = 0; i < (stored?.parts ?? 0); i++) partKeys.push(partKey(name, i));
+    });
+    if (partKeys.length) (await bulkGet(env, partKeys)).forEach((value, key) => values.set(key, value));
+  } catch (err) {
+    logError("ler o cache da KV", err);
+    return out;
+  }
+
+  sheetNames.forEach((name) => {
+    const stored = values.get(sheetKey(name)) as StoredSheet | null;
+    if (!stored || typeof stored.t !== "number") return;
+    const invalidatedAt = values.get(markerKey(name));
+    if (typeof invalidatedAt === "number" && stored.t <= invalidatedAt) return;
+
+    let rows: unknown[][] | undefined = stored.rows;
+    if (stored.parts) {
+      const parts = Array.from({ length: stored.parts }, (_, i) => values.get(partKey(name, i)) as StoredPart | null);
+      // Pedaço faltando ou de outra gravação: trata a aba como ausente.
+      if (!parts.every((part) => Array.isArray(part?.rows) && part?.t === stored.t)) return;
+      rows = parts.flatMap((part) => part!.rows!);
+    }
+    if (Array.isArray(rows)) out[name] = { updatedAt: stored.t, rows };
   });
   return out;
 }
@@ -103,38 +122,43 @@ export async function readCachedSheet(env: Bindings, sheetName: string): Promise
   return (await readManyCachedSheets(env, [sheetName]))[sheetName];
 }
 
-// Grava (mescla) uma ou mais abas em "sheets" numa única gravação. `fetchedAt`
-// é o horário em que a busca ao Apps Script COMEÇOU (ver CachedSheet). Não
-// sobrescreve uma cópia que já esteja lá e seja mais nova (ex.: o cron gravou
-// enquanto esta busca, mais lenta, ainda estava em andamento).
+// Grava abas no cache (sem expiração) — usado pelo refresh manual do admin e
+// quando uma leitura acha a aba ausente/invalidada. `fetchedAt` é o horário
+// em que a leitura da planilha COMEÇOU (se uma escrita acontecer durante a
+// leitura, o marcador dela sai mais novo e esta cópia não é servida). Aba
+// maior que MAX_VALUE_CHARS fica de fora: quem reparte em pedaços é o Code.gs.
 export async function writeCachedSheets(
   env: Bindings,
   updates: Record<string, unknown[][]>,
   fetchedAt: number
 ): Promise<void> {
-  const data = await readData(env);
-  for (const [sheetName, rows] of Object.entries(updates)) {
-    const current = data[sheetName];
-    if (!current || current.updatedAt < fetchedAt) data[sheetName] = { updatedAt: fetchedAt, rows };
-  }
-  try {
-    await env.CACHE.put(DATA_KEY, JSON.stringify(data), { expirationTtl: DATA_TTL_S });
-  } catch (err) {
-    logError("gravar os dados na KV", err);
-  }
+  await Promise.all(
+    Object.entries(updates).map(async ([name, rows]) => {
+      const text = JSON.stringify({ t: fetchedAt, rows });
+      if (text.length > MAX_VALUE_CHARS) {
+        console.warn(`[cache] Aba "${name}" grande demais para o Worker gravar — fica para o Apps Script.`);
+        return;
+      }
+      try {
+        await env.CACHE.put(sheetKey(name), text);
+      } catch (err) {
+        logError(`gravar a aba "${name}" na KV`, err);
+      }
+    })
+  );
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Chamado depois de toda escrita (append/update/delete) na aba: grava só o
-// marcador dela, sem ler nem regravar "sheets". Se a mesma aba foi invalidada
-// há menos de 1s (limite da KV por chave), tenta de novo uma vez após 1s —
-// perder essa invalidação faria a aba servir dado antigo por até 5 min.
+// Chamado depois de toda escrita (append/update/delete) na aba. Sem
+// expiração, como os dados: o marcador precisa durar até a próxima
+// atualização da aba. Se a mesma aba foi invalidada há menos de 1s (limite
+// da KV por chave), tenta de novo uma vez após 1s — perder a invalidação
+// faria a aba servir o dado de antes da escrita.
 export async function invalidateCachedSheet(env: Bindings, sheetName: string): Promise<void> {
-  const put = () =>
-    env.CACHE.put(markerKey(sheetName), String(Date.now()), { expirationTtl: MARKER_TTL_S });
+  const put = () => env.CACHE.put(markerKey(sheetName), String(Date.now()));
   try {
     await put();
   } catch {
@@ -145,10 +169,4 @@ export async function invalidateCachedSheet(env: Bindings, sheetName: string): P
       logError(`invalidar a aba "${sheetName}"`, err);
     }
   }
-}
-
-// Usado só pelo cron (ver services/cache.ts) para decidir o que vale a pena
-// buscar de novo.
-export function isFresh(entry: CachedSheet): boolean {
-  return Date.now() - entry.updatedAt < FRESH_TTL_MS;
 }

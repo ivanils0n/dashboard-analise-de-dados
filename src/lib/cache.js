@@ -1,14 +1,13 @@
-/* Cache local (sessionStorage) por item: ggd:<tabela>:<id> = JSON do registro.
-   sessionStorage evita persistir PII em disco. Vale por LOCAL_CACHE_TTL_MS
-   (ver lib/db.js) a partir do último download completo, até um logout/login
-   novo ou até "Recarregar Dados". */
+/* Cópia local (sessionStorage) por item: ggd:<tabela>:<id> = JSON do registro.
+   sessionStorage evita persistir PII em disco. É só reserva: o boot sempre
+   baixa do servidor e só usa esta cópia se o download falhar (ver lib/db.js). */
 
 import { sessionStore, localStore } from "./utils";
 
 const PREFIX = "ggd:";
 const LEGACY_KEY = "gg-data-cache";
-// Fora do prefixo "ggd:" de propósito: keys()/resetAll() varrem só os itens.
-const LOADED_AT_KEY = "gg-data-loaded-at";
+// Resíduo da versão que dava validade de 5 min à cópia local.
+const LEGACY_LOADED_AT_KEY = "gg-data-loaded-at";
 
 export const DataCache = {
   /* ---- Itens ---- */
@@ -38,18 +37,6 @@ export const DataCache = {
     }
   },
 
-  /* ---- Validade ---- */
-  markLoaded() {
-    try {
-      sessionStore.setItem(LOADED_AT_KEY, String(Date.now()));
-    } catch (e) {}
-  },
-
-  isFresh(maxAgeMs) {
-    const loadedAt = Number(sessionStore.getItem(LOADED_AT_KEY)) || 0;
-    return loadedAt > 0 && Date.now() - loadedAt < maxAgeMs;
-  },
-
   removeItem(tabela, id) {
     try {
       sessionStore.removeItem(this.keyFor(tabela, id));
@@ -72,15 +59,24 @@ export const DataCache = {
     return out;
   },
 
-  resetAll() {
-    this.keys().forEach((k) => sessionStore.removeItem(k));
-    try {
-      sessionStore.removeItem(LOADED_AT_KEY);
-    } catch (e) {}
+  /* Apaga todos os itens das tabelas informadas numa varredura só (em vez de
+     uma varredura do sessionStorage inteiro por tabela). */
+  removeTables(tabelas) {
+    const prefixes = tabelas.map((tabela) => PREFIX + tabela + ":");
+    this.keys()
+      .filter((key) => prefixes.some((p) => key.indexOf(p) === 0))
+      .forEach((key) => sessionStore.removeItem(key));
   },
 
-  // Remove resíduos legados (ggd:* e gg-data-cache) que ficaram em localStorage.
+  resetAll() {
+    this.keys().forEach((k) => sessionStore.removeItem(k));
+  },
+
+  // Remove resíduos legados (ggd:* e gg-data-cache em localStorage, validade antiga).
   removeLegacy() {
+    try {
+      sessionStore.removeItem(LEGACY_LOADED_AT_KEY);
+    } catch (e) {}
     try {
       const stale = [];
       for (let i = 0; i < localStore.length; i++) {

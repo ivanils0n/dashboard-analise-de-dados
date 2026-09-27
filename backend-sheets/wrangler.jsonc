@@ -17,10 +17,17 @@
   "kv_namespaces": [
     { "binding": "CACHE", "id": "3cbe9ba669b7447fb9bf8cdf04f38617" }
   ],
-  // Além do trigger, o cache também se autocorrige por TTL (ver db/cache.ts) e é
-  // invalidado a cada escrita — o cron é só quem repõe o dado "por conta própria",
-  // sem depender de alguém acessar a API para disparar a atualização.
+  // Sem cron: quem mantém o cache atualizado é o gatilho de tempo do próprio
+  // Apps Script (pushCache no Code.gs), que grava na KV pela API da
+  // Cloudflare. Com cron, cada disparo tinha só 10 ms de CPU no plano gratuito
+  // — não dava conta dos dados. A lista vazia REMOVE os crons antigos no
+  // deploy (sem a chave, o wrangler deixaria os que já existem).
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": []
+  },
+  // Logs no painel (Workers → api-gente-gestao → Logs): sem isso uma falha do
+  // cron (ex.: "exceededCpu") passava em silêncio e só aparecia como lentidão.
+  "observability": {
+    "enabled": true
   }
 }

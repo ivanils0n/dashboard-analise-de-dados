@@ -1,8 +1,7 @@
-/* Camada de dados: cache por item (sessionStorage) + download completo via API
-   (Cloudflare Worker → Google Sheets), escritas em fila com debounce, sessão/
-   purga via resetLocalState. Sem sincronização incremental: o cache local
-   vale LOCAL_CACHE_TTL_MS desde o último download; depois disso o próximo
-   carregamento da página (F5) baixa tudo de novo. */
+/* Camada de dados: download completo via API (Cloudflare Worker, que responde
+   do cache dele) a cada carregamento de página, escritas em fila com
+   debounce, sessão/purga via resetLocalState. A cópia por item no
+   sessionStorage é só reserva, usada se o download falhar. */
 import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
@@ -12,11 +11,6 @@ import { useToast } from "../composables/useToast";
 import { mapWithConcurrency } from "./utils";
 
 const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
-
-/* Mesmo intervalo do cache do Worker (backend-sheets/src/db/cache.ts): sem
-   validade, o cache local valia a sessão inteira e quem não tem o botão
-   "Recarregar dados" (analistas) nunca via o que os outros lançaram. */
-const LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /* Teto de requisições simultâneas para a API (Worker → Apps Script), que
    aceita no máximo 30 execuções ao mesmo tempo por usuário — folga
@@ -718,6 +712,12 @@ async function fetchTablesOnce(bases) {
   const failed = [];
   let persisted = true;
 
+  // Substitui a cópia local das tabelas que vieram certas (em vez de só gravar
+  // por cima): sem isso, um registro apagado no servidor ficava na reserva.
+  DataCache.removeTables(
+    results.filter((r) => !r.error).flatMap(({ base }) => STATES.map((s) => `${base}_${s.toLowerCase()}`))
+  );
+
   results.forEach(({ base, data, error }) => {
     if (error) {
       failed.push(base);
@@ -726,7 +726,8 @@ async function fetchTablesOnce(bases) {
     const kind = TABLE_KINDS[base];
     const buckets = bucketByEstado(data);
     STATES.forEach((s) => {
-      if (persisted) persisted = persistRows(`${base}_${s.toLowerCase()}`, buckets[s]);
+      const tabela = `${base}_${s.toLowerCase()}`;
+      if (persisted) persisted = persistRows(tabela, buckets[s]);
       payloads[s][kind.key] = buckets[s].map((row) => kind.map(row, s));
     });
   });
@@ -795,11 +796,9 @@ async function _hydrateStates(states) {
 
   if (ok) {
     if (_cacheDirty) {
-      // Cache incompleto (cota cheia): descarta tudo — o próximo boot baixa de novo.
+      // Cópia local incompleta (cota cheia): descarta — não serve de reserva.
       DataCache.resetAll();
       _cacheDirty = false;
-    } else {
-      DataCache.markLoaded();
     }
     STATES.forEach((s) => {
       _loadedStates[s] = true;
@@ -809,36 +808,9 @@ async function _hydrateStates(states) {
   return ok;
 }
 
-function keyTable(key) {
-  return key.slice("ggd:".length).split(":")[0] || "";
-}
-
-/* Chaves do cache local que pertencem a um estado (sufixo "ro"/"am"/"pa"). */
-function stateCachedKeys(suffix) {
-  return DataCache.keys().filter((key) => {
-    const { base, estado } = splitTable(keyTable(key));
-    return estado.toLowerCase() === suffix && base in TABLE_KINDS;
-  });
-}
-
-/* Reconstrói em memória (merge, sem apagar o resto) o estado a partir das
-   chaves do sessionStorage. Reusa os mesmos mapeamentos do download. */
-function mergeStateFromCache(state) {
-  const payload = emptyPayload();
-  stateCachedKeys(state.toLowerCase()).forEach((key) => {
-    const item = DataCache.readItem(key);
-    if (!item || !item.id) return;
-    addRowToPayload(payload, keyTable(key), item, state);
-  });
-  mergeFromRemote(payload);
-}
-
-/* Carrega estado(s) priorizando o cache local + delta sync (egress mínimo):
-   1. se o estado já está em memória, nada é baixado;
-   2. se há itens dele no cache local, reconstrói a memória e aplica apenas o
-      delta desde a última versão;
-   3. senão, faz o download completo do estado (que é então guardado no cache).
-   Pedidos simultâneos dos mesmos estados compartilham a mesma operação. */
+/* Carrega estado(s) que ainda não estão em memória (o boot já carrega os 3,
+   então isto só baixa algo se o boot tiver falhado). Pedidos simultâneos dos
+   mesmos estados compartilham a mesma operação. */
 const _hydrating = new Map();
 
 export function hydrateState(next) {
@@ -858,34 +830,8 @@ export function hydrateState(next) {
   return promise;
 }
 
-// Sem sincronização incremental: se os estados pedidos já têm itens no cache
-// local, reconstrói a memória a partir dele (sem ida à API); senão, baixa
-// tudo. O cache só é invalidado por um logout/login novo ou por "Recarregar
-// Dados" (ver resetLocalState/reloadData) — nunca por uma simples atualização
-// de página (F5).
 async function _hydrateState(pending) {
   DataCache.removeLegacy();
-
-  const fresh = DataCache.isFresh(LOCAL_CACHE_TTL_MS);
-  // Vencido: sai tudo antes de baixar — senão um registro apagado no servidor
-  // continuaria no sessionStorage (o download só grava por cima, não remove).
-  if (!fresh) DataCache.resetAll();
-
-  if (fresh && pending.every((s) => stateCachedKeys(s.toLowerCase()).length > 0)) {
-    pending.forEach((s) => {
-      mergeStateFromCache(s);
-      _loadedStates[s] = true;
-    });
-    /* Cache cobrindo os 3 estados: evita que o próximo hydrate (outro
-       componente pedindo um estado que não estava no cache) rebaixe tudo de
-       novo via rede — ver hydrateAllTables. */
-    if (STATES.every((s) => _loadedStates[s])) {
-      DATA_TABLES.forEach((base) => _tablesLoaded.add(base));
-    }
-    console.info(`[API] Estados restaurados do cache local: ${pending.join(", ")}.`);
-    return true;
-  }
-
   return _hydrateStates(pending);
 }
 
@@ -933,24 +879,24 @@ function clearLoadedTracking() {
   _tablesLoaded.clear();
 }
 
-/* Boot:
-   1) reconstrói a memória a partir do sessionStorage (renderização rápida,
-      sem ida à API) — se o último download tiver menos de LOCAL_CACHE_TTL_MS;
-   2) senão, baixa tudo (servido pelo cache do Worker, sem esperar a planilha). */
+/* Boot: todo carregamento de página (F5 inclusive) baixa do servidor — que
+   responde do cache do Worker, sem esperar a planilha. Antes a cópia local
+   do sessionStorage era restaurada sem consultar o servidor, e um navegador
+   continuava vendo os dados antigos depois de um refresh feito em outro. A
+   cópia local fica só como reserva, se o download falhar. */
 async function hydrateOnBoot(state) {
   DataCache.removeLegacy();
+  clearLoadedTracking();
 
-  // Vencido: sai tudo antes de baixar (ver _hydrateState).
-  if (!DataCache.isFresh(LOCAL_CACHE_TTL_MS)) DataCache.resetAll();
-  const hasLocal = loadLocalIntoMemory();
-  if (hasLocal) {
-    console.info("[API] Cache local restaurado do sessionStorage.");
+  const ok = await hydrate(state);
+  if (ok) return true;
+
+  // Servidor fora do ar: usa a última cópia que deu certo, se houver.
+  if (loadLocalIntoMemory()) {
+    console.warn("[API] Falha ao baixar os dados — usando a cópia local do sessionStorage.");
     return true;
   }
-
-  console.info("[API] Sem cache utilizável — baixando dados completos.");
-  clearLoadedTracking();
-  return await hydrate(state);
+  return false;
 }
 
 /* Boot: chamado pelo main.js antes da montagem do app. Só hidrata quando já

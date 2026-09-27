@@ -12,6 +12,12 @@ const PERFIS: Perfil[] = ["admin", "analista"];
 
 type UserInput = Record<string, unknown>;
 
+// Boolean("false") é true — um "ativo": "false" vindo como texto reativava o usuário.
+function toBoolean(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().toLowerCase() === "true";
+  return Boolean(value);
+}
+
 function normalizePerfil(value: unknown): Perfil {
   const perfil = String(value ?? "").trim();
   if (!PERFIS.includes(perfil as Perfil)) {
@@ -72,7 +78,9 @@ export async function createUser(env: Bindings, input: UserInput) {
   }
 
   const { rows } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
-  if (rows.some((row) => row.usuario === usuario)) {
+  // Sem diferenciar caixa, como o login (services/auth.ts): uma linha digitada
+  // à mão como "Ivan" e um cadastro "ivan" entrariam como a mesma pessoa.
+  if (rows.some((row) => String(row.usuario ?? "").trim().toLowerCase() === usuario)) {
     throw new ApiError(409, "Já existe um usuário com esse login.", "conflict");
   }
 
@@ -81,7 +89,7 @@ export async function createUser(env: Bindings, input: UserInput) {
     usuario,
     nome,
     perfil,
-    ativo: input.ativo === undefined ? true : Boolean(input.ativo),
+    ativo: input.ativo === undefined ? true : toBoolean(input.ativo),
     senha_hash: await hashPassword(senha),
     criado_em: new Date().toISOString()
   };
@@ -102,11 +110,11 @@ export async function updateUser(env: Bindings, id: string, input: UserInput, fu
     if (!nome) throw new ApiError(400, 'Campo "nome" é obrigatório.', "missing_field");
     changes.nome = nome;
     changes.perfil = normalizePerfil(input.perfil);
-    changes.ativo = input.ativo ?? true;
+    changes.ativo = input.ativo === undefined ? true : toBoolean(input.ativo);
   } else {
     if (input.nome !== undefined) changes.nome = String(input.nome).trim();
     if (input.perfil !== undefined) changes.perfil = normalizePerfil(input.perfil);
-    if (input.ativo !== undefined) changes.ativo = Boolean(input.ativo);
+    if (input.ativo !== undefined) changes.ativo = toBoolean(input.ativo);
   }
 
   if (input.senha !== undefined && input.senha !== "") {

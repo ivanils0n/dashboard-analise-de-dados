@@ -26,7 +26,7 @@
 // Sobe junto em toda resposta — dá pra confirmar pela própria API se a
 // implantação no ar já é esta versão do arquivo, sem precisar abrir o editor
 // do Apps Script. Troque essa string sempre que reimplantar.
-var CODE_VERSION = "2026-09-24-read-many-1";
+var CODE_VERSION = "2026-09-27-push-cache-1";
 
 // Ações que gravam na planilha — cada uma roda sob o lock (ver doPost). "read"
 // fica de fora de propósito: travar leituras também derrubaria a velocidade
@@ -165,6 +165,186 @@ function readMany_(names) {
     out[name] = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
   });
   return out;
+}
+
+/* ==========================================================================
+ * Cache do dashboard (Cloudflare KV)
+ *
+ * O Apps Script é quem mantém o cache do Worker atualizado: a cada 10 min
+ * (gatilho de tempo) lê as abas e grava na KV, pela API da Cloudflare, só as
+ * que mudaram desde a última vez. Sem expiração — cada aba fica gravada até
+ * a próxima atualização.
+ *
+ * Configuração (uma vez só):
+ * 1. Cloudflare → My Profile → API Tokens → Create Token → Create Custom
+ *    Token. Permissão: Account · Workers KV Storage · Edit. Account
+ *    Resources: Include · a conta do dashboard. Crie e copie o token.
+ * 2. Aqui no editor: Projeto → Propriedades do projeto → Propriedades do
+ *    script → adicione CF_API_TOKEN com o token copiado.
+ * 3. Selecione a função instalarGatilhoDoCache no topo do editor e clique em
+ *    Executar (autorize o acesso a serviço externo quando pedido).
+ * Para forçar uma atualização completa à mão: execute atualizarCacheAgora.
+ *
+ * O formato gravado TEM que ser o que o Worker lê (backend-sheets/src/db/cache.ts):
+ *   "s:<aba>"     {"t": ms, "rows": [...]}  — t = início da leitura da planilha
+ *   "s:<aba>"     {"t": ms, "parts": N}     — aba grande, repartida em pedaços:
+ *   "s:<aba>:<i>" {"t": ms, "rows": [...]}  — mesmo t da principal
+ * ========================================================================== */
+
+var CF_ACCOUNT_ID = "669a630ce000a6a3c41a1ccef1001d7b";
+var CF_KV_NAMESPACE_ID = "3cbe9ba669b7447fb9bf8cdf04f38617";
+
+// Abas guardadas no cache (as mesmas que o Worker lê).
+var CACHE_SHEETS = [
+  "vagas", "headcount", "turnover", "permanencia", "rescisoes", "filiais",
+  "diarias", "treinamentos", "custo_folha", "absenteismo", "meses_incompletos", "usuarios"
+];
+
+// Folga abaixo dos 25 MiB por valor da KV (acento ocupa mais bytes que
+// caracteres). Aba maior que isso vira pedaços. Mesmo valor de
+// MAX_VALUE_CHARS em backend-sheets/src/db/cache.ts.
+var KV_MAX_VALUE_CHARS = 15 * 1024 * 1024;
+
+// Tamanho máximo de cada chamada à API em lote (o UrlFetchApp aceita até 50 MB).
+var KV_MAX_REQUEST_CHARS = 40 * 1024 * 1024;
+
+var CACHE_TRIGGER_HANDLER = "atualizarCacheAgendado";
+
+// Chamada pelo gatilho de tempo: grava só as abas que mudaram.
+function atualizarCacheAgendado() {
+  pushCache_(false);
+}
+
+// Para rodar à mão no editor: regrava todas as abas, mudadas ou não.
+function atualizarCacheAgora() {
+  var result = pushCache_(true);
+  Logger.log(JSON.stringify(result));
+}
+
+// Cria (ou recria) o gatilho de 10 em 10 minutos e já faz a primeira gravação.
+function instalarGatilhoDoCache() {
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === CACHE_TRIGGER_HANDLER) ScriptApp.deleteTrigger(trigger);
+  });
+  ScriptApp.newTrigger(CACHE_TRIGGER_HANDLER).timeBased().everyMinutes(10).create();
+  atualizarCacheAgora();
+}
+
+function pushCache_(force) {
+  var token = PropertiesService.getScriptProperties().getProperty("CF_API_TOKEN");
+  if (!token) throw new Error("Configure CF_API_TOKEN nas Propriedades do script (ver instruções acima).");
+
+  // Uma atualização por vez (o gatilho e uma execução manual podiam se
+  // cruzar). Lock do documento, não do script: não trava as gravações do
+  // dashboard (doPost usa o lock do script).
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(1000)) return { skipped: "outra atualização em andamento" };
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var startedAt = Date.now();
+    var data = readMany_(CACHE_SHEETS);
+    var writes = [];
+    var hashes = {};
+    var changed = [];
+
+    CACHE_SHEETS.forEach(function (name) {
+      var rows = data[name];
+      if (rows === null) return; // aba inexistente: o Worker trata como ausente
+      var rowsJson = JSON.stringify(rows);
+      // Impressão digital da aba: sem mudança desde a última gravação, não
+      // regrava — poupa a cota de 1.000 gravações/dia da KV.
+      var hash = hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, rowsJson, Utilities.Charset.UTF_8));
+      var hashKey = "CACHE_HASH_" + name;
+      if (!force && props.getProperty(hashKey) === hash) return;
+
+      hashes[hashKey] = hash;
+      changed.push(name);
+      if (rowsJson.length <= KV_MAX_VALUE_CHARS) {
+        writes.push({ key: "s:" + name, value: '{"t":' + startedAt + ',"rows":' + rowsJson + "}" });
+        return;
+      }
+      // Cada pedaço leva o mesmo "t" da chave principal: a Cloudflare não
+      // garante em que ordem cada chave aparece nos servidores dela, e o
+      // Worker só junta pedaços com o "t" igual ao da principal — nunca
+      // mistura pedaços de uma gravação antiga com os de uma nova.
+      var chunks = chunkRows_(rows, KV_MAX_VALUE_CHARS);
+      chunks.forEach(function (chunk, i) {
+        writes.push({ key: "s:" + name + ":" + i, value: '{"t":' + startedAt + ',"rows":' + JSON.stringify(chunk) + "}" });
+      });
+      writes.push({ key: "s:" + name, value: '{"t":' + startedAt + ',"parts":' + chunks.length + "}" });
+    });
+
+    if (writes.length) kvBulkPut_(token, writes);
+    // Só depois de gravar com sucesso: se falhar, a próxima execução tenta de novo.
+    if (changed.length) props.setProperties(hashes);
+    return { changed: changed, writes: writes.length, ms: Date.now() - startedAt };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Divide as linhas em pedaços de até maxChars (em JSON).
+function chunkRows_(rows, maxChars) {
+  var chunks = [];
+  var current = [];
+  var size = 2;
+  rows.forEach(function (row) {
+    var rowSize = JSON.stringify(row).length + 1;
+    if (current.length && size + rowSize > maxChars) {
+      chunks.push(current);
+      current = [];
+      size = 2;
+    }
+    current.push(row);
+    size += rowSize;
+  });
+  chunks.push(current);
+  return chunks;
+}
+
+// Grava vários pares chave/valor na KV pela API em lote da Cloudflare,
+// dividindo em chamadas de até KV_MAX_REQUEST_CHARS.
+function kvBulkPut_(token, writes) {
+  var url =
+    "https://api.cloudflare.com/client/v4/accounts/" + CF_ACCOUNT_ID +
+    "/storage/kv/namespaces/" + CF_KV_NAMESPACE_ID + "/bulk";
+  var batch = [];
+  var size = 2;
+  var send = function () {
+    if (!batch.length) return;
+    var res = UrlFetchApp.fetch(url, {
+      method: "put",
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + token },
+      payload: JSON.stringify(batch),
+      muteHttpExceptions: true
+    });
+    var body = res.getContentText();
+    var json = null;
+    try {
+      json = JSON.parse(body);
+    } catch (err) {}
+    if (res.getResponseCode() !== 200 || !json || !json.success) {
+      throw new Error("Cloudflare recusou a gravação no cache (HTTP " + res.getResponseCode() + "): " + body.slice(0, 500));
+    }
+    batch = [];
+    size = 2;
+  };
+  writes.forEach(function (write) {
+    var writeSize = write.key.length + write.value.length + 30;
+    if (batch.length && size + writeSize > KV_MAX_REQUEST_CHARS) send();
+    batch.push(write);
+    size += writeSize;
+  });
+  send();
+}
+
+function hex_(bytes) {
+  return bytes
+    .map(function (b) {
+      return ("0" + (b & 0xff).toString(16)).slice(-2);
+    })
+    .join("");
 }
 
 function appendRows(sheetName, values) {

@@ -1,6 +1,12 @@
 import type { Bindings } from "../types";
 import type { ColumnDef } from "./tables";
-import { invalidateCachedSheet, readCachedSheet, readManyCachedSheets, writeCachedSheets } from "./cache";
+import {
+  allSheetNames,
+  invalidateCachedSheet,
+  readCachedSheet,
+  readManyCachedSheets,
+  writeCachedSheets
+} from "./cache";
 
 // Cliente para a "API" da planilha: um Google Apps Script publicado como Web
 // App (ver apps-script/Code.gs), vinculado à própria planilha. Sem service
@@ -30,12 +36,9 @@ async function callAppsScriptOnce<T>(
   env: Bindings,
   action: string,
   params: Record<string, unknown>,
-  timeoutMs?: number,
   clientSignal?: AbortSignal
-): Promise<{ ok: true; data: T } | { ok: false; retriable: boolean; message: string; timedOut?: boolean }> {
+): Promise<{ ok: true; data: T } | { ok: false; retriable: boolean; message: string }> {
   const controller = new AbortController();
-  let timedOut = false;
-  const timer = timeoutMs ? setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs) : null;
   // Cliente (navegador) desistiu — recarregou/fechou a página: cancela também a chamada ao Apps Script.
   const onClientAbort = () => controller.abort();
   clientSignal?.addEventListener("abort", onClientAbort);
@@ -47,13 +50,7 @@ async function callAppsScriptOnce<T>(
       body: JSON.stringify({ secret: env.APPS_SCRIPT_SECRET, action, ...params }),
       signal: controller.signal
     });
-  } catch (err) {
-    if (timedOut) {
-      return { ok: false, retriable: true, timedOut: true, message: `Apps Script sem resposta em ${timeoutMs! / 1000}s na ação "${action}".` };
-    }
-    throw err;
   } finally {
-    if (timer) clearTimeout(timer);
     clientSignal?.removeEventListener("abort", onClientAbort);
   }
 
@@ -93,12 +90,11 @@ async function callAppsScript<T>(
   let lastMessage = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (clientSignal?.aborted) throw new Error("Requisição cancelada pelo cliente.");
-    const result = await callAppsScriptOnce<T>(env, action, params, undefined, clientSignal);
+    const result = await callAppsScriptOnce<T>(env, action, params, clientSignal);
     if (result.ok) return result.data;
     if (!result.retriable || attempt === MAX_ATTEMPTS) throw new Error(result.message);
 
     lastMessage = result.message;
-    if ("timedOut" in result && result.timedOut) continue; // refaz na hora, sem espera
     const jitter = Math.random() * RETRY_BASE_DELAY_MS;
     await sleep(RETRY_BASE_DELAY_MS * attempt + jitter);
   }
@@ -296,10 +292,11 @@ function valuesToRow(columns: ColumnDef[], values: unknown[]): SheetRow {
 
 // ---------- leitura ----------
 
+// Sem número de linha: com o headcount repartido no cache (ver cacheGroups.ts)
+// a posição no array não é a da planilha — e ninguém precisa dela, o Code.gs
+// localiza a linha pelo id na hora de atualizar/apagar.
 export type IndexedTable = {
   rows: SheetRow[];
-  // Número da linha na planilha (1-based, já contando o cabeçalho) por id.
-  rowNumberById: Map<string, number>;
   rowById: Map<string, SheetRow>;
 };
 
@@ -362,42 +359,35 @@ export async function readTables(
 
 function indexRawRows(rawRows: unknown[][] | null | undefined, columns: ColumnDef[]): IndexedTable {
   const rows: SheetRow[] = [];
-  const rowNumberById = new Map<string, number>();
   const rowById = new Map<string, SheetRow>();
-  (rawRows ?? []).forEach((values, index) => {
+  (rawRows ?? []).forEach((values) => {
     if (!values.length) return; // linha em branco no meio da planilha
     const row = valuesToRow(columns, values);
     const id = row.id;
     if (id === null || id === undefined || id === "") return;
     rows.push(row);
-    rowNumberById.set(String(id), index + 2); // +2: 1-based e pula o cabeçalho
     rowById.set(String(id), row);
   });
 
-  return { rows, rowNumberById, rowById };
+  return { rows, rowById };
 }
 
-// ---------- atualização forçada do cache (cron + refresh manual do admin) ----------
+// ---------- refresh manual do admin ----------
 
-// Busca as abas informadas direto no Apps Script (ignora o cache) e regrava o
-// cache com o resultado — usado pelo cron (só para as abas vencidas, ver
-// services/cache.ts) e pelo refresh manual do admin (força todas, resetando a
-// contagem de todas de uma vez).
-export async function refreshCachedSheets(
-  env: Bindings,
-  sheetNames: string[]
-): Promise<{ refreshed: string[]; errors: Record<string, string> }> {
+// Relê todas as abas da planilha e regrava o cache inteiro. A atualização
+// periódica é do Apps Script (pushCache no Code.gs), que grava na KV pela API
+// da Cloudflare — mas uma gravação vinda de fora leva até 60 s para aparecer
+// em todos os servidores da Cloudflare, e o admin veria dado velho logo
+// depois de clicar. Gravando pelo próprio Worker, a leitura seguinte já vê.
+export async function refreshAllSheets(env: Bindings): Promise<{ refreshed: string[]; errors: Record<string, string> }> {
+  const names = allSheetNames();
+  const fetchedAt = Date.now();
+  const raw = await callAppsScript<Record<string, unknown[][] | null>>(env, "readMany", { sheets: names });
+
   const refreshed: string[] = [];
   const errors: Record<string, string> = {};
-  if (!sheetNames.length) return { refreshed, errors };
-
-  const fetchedAt = Date.now();
-  const raw = await callAppsScript<Record<string, unknown[][] | null>>(env, "readMany", {
-    sheets: sheetNames
-  });
-
   const toCache: Record<string, unknown[][]> = {};
-  sheetNames.forEach((name) => {
+  names.forEach((name) => {
     const rows = raw?.[name];
     if (rows == null) {
       errors[name] = `Aba "${name}" não existe.`;
@@ -406,9 +396,7 @@ export async function refreshCachedSheets(
     toCache[name] = rows;
     refreshed.push(name);
   });
-  // Uma única gravação na KV para todas as abas de uma vez — é o que faz o
-  // cron custar 1 gravação por tick, não uma por aba.
-  if (Object.keys(toCache).length) await writeCachedSheets(env, toCache, fetchedAt);
+  await writeCachedSheets(env, toCache, fetchedAt);
   return { refreshed, errors };
 }
 
@@ -434,7 +422,7 @@ export async function appendRows(
     values: rows.map((row) => rowToValues(columns, row))
   });
   // Sem isso, quem lê essa aba continuaria vendo a versão de antes da
-  // gravação até o cron passar (até 5 min) — a próxima leitura busca de novo.
+  // gravação até a próxima atualização do cache — a próxima leitura busca de novo.
   if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
 }
 
