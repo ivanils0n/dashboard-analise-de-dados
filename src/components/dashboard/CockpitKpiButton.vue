@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue } from "@/lib/utils";
+import { useCountUp } from "@/composables/useCountUp";
 
 /* KPI selecionável do Painel — mesma linguagem visual dos cards da Visão geral
    (ícone centralizado, nome embaixo, valor em destaque, "R$" acima do valor em
@@ -20,15 +21,17 @@ const hasValue = computed(() => props.kpi.current !== null && props.kpi.current 
 
 /* Turnover (pizza): mostra a taxa total. */
 const isPie = computed(() => props.kpi.kind === "pie");
-const pieText = computed(() => formatValue(PERCENT, props.kpi.totalPct));
+const animatedPct = useCountUp(() => props.kpi.totalPct);
+const pieText = computed(() => formatValue(PERCENT, animatedPct.value));
 
 const currencyPrefix = computed(() =>
   props.kpi.kind !== "pie" && props.kpi.type === "currency" && hasValue.value ? "R$" : ""
 );
 
+const animatedCurrent = useCountUp(() => props.kpi.current);
 const valueText = computed(() => {
   if (!hasValue.value) return "—";
-  const text = formatValue({ type: props.kpi.type, decimals: props.kpi.decimals ?? 1 }, props.kpi.current);
+  const text = formatValue({ type: props.kpi.type, decimals: props.kpi.decimals ?? 1 }, animatedCurrent.value);
   return currencyPrefix.value ? text.replace(/^R\$\s*/, "") : text;
 });
 </script>
@@ -36,7 +39,7 @@ const valueText = computed(() => {
 <template>
   <button
     type="button"
-    class="no-callout flex w-[200px] min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-2xl border bg-white px-2 py-2.5 sm:px-3 text-center shadow-sm transition hover:shadow-md dark:bg-zinc-900"
+    class="kpi-card no-callout flex w-[200px] min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-2xl border bg-white px-2 py-2.5 sm:px-3 text-center shadow-sm dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"

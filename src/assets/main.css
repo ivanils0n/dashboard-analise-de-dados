@@ -54,7 +54,7 @@ body {
 /* Transição entre as abas (views). Curta para não atrasar a navegação. */
 .page-enter-active,
 .page-leave-active {
-  transition: opacity 0.14s ease, transform 0.14s ease;
+  transition: opacity 0.16s cubic-bezier(0.22, 1, 0.36, 1), transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .page-enter-from {
   opacity: 0;
@@ -115,6 +115,67 @@ body {
   .mac-modal-enter-active .mac-panel,
   .mac-modal-leave-active .mac-panel {
     animation-duration: 0.01ms;
+  }
+}
+
+/* Cards de KPI: entrada em cascata (--i = posição) e hover com leve elevação.
+   Só transform/opacity/box-shadow — nada que force layout. */
+@keyframes gg-kpi-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.kpi-enter {
+  animation: gg-kpi-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.kpi-card {
+  position: relative;
+  isolation: isolate;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s ease;
+}
+/* A sombra do hover fica numa camada própria e só anima a opacidade: animar
+   box-shadow direto força repintura a cada quadro (travava com muitos cards). */
+.kpi-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: 0 14px 30px -12px rgb(0 0 0 / 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+@media (hover: hover) {
+  .kpi-card:hover {
+    transform: scale(1.1);
+    z-index: 10;
+    will-change: transform;
+  }
+  .kpi-card:hover::after {
+    opacity: 1;
+  }
+}
+.kpi-card:active {
+  transform: scale(0.98);
+}
+
+/* Reduzir movimento: desliga animações e transições decorativas. */
+@media (prefers-reduced-motion: reduce) {
+  .kpi-enter,
+  .slide-up,
+  .fade-in,
+  .is-flash {
+    animation: none;
+  }
+  .kpi-card,
+  .kpi-card::after,
+  .page-enter-active,
+  .page-leave-active {
+    transition: none;
+  }
+  .kpi-card:hover {
+    transform: none;
   }
 }
 

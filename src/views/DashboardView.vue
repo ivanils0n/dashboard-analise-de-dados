@@ -813,11 +813,12 @@ watch(activeTab, (tab) => {
         aria-label="Buscar indicador"
       />
     </div>
-    <section class="flex snap-x gap-3 overflow-x-auto pb-2 sm:gap-4" aria-label="Indicadores-chave">
+    <section class="flex snap-x gap-3 overflow-x-auto px-7 pb-9 pt-8 sm:gap-4" aria-label="Indicadores-chave">
       <KpiCard
-        v-for="kpi in visibleKpis"
+        v-for="(kpi, kpiIndex) in visibleKpis"
         :key="kpi.id"
         :kpi="kpi"
+        :index="kpiIndex"
         :selected="selectedKpiId === kpi.id"
         :show-values="showValues"
         @select="onSelectKpi"

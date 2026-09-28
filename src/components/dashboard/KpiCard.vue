@@ -3,12 +3,15 @@ import { computed } from "vue";
 import MiniLineChart from "@/components/charts/MiniLineChart.vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue, formatRawValue } from "@/lib/utils";
+import { useCountUp } from "@/composables/useCountUp";
 import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 
 const props = defineProps({
   kpi: { type: Object, required: true },
   selected: { type: Boolean, default: false },
-  showValues: { type: Boolean, default: false }
+  showValues: { type: Boolean, default: false },
+  /* Posição na faixa: escalona a entrada dos cards (ver .kpi-enter). */
+  index: { type: Number, default: 0 }
 });
 
 const emit = defineEmits(["select", "context"]);
@@ -40,9 +43,14 @@ const hasValue = computed(() => props.kpi.current !== null && props.kpi.current 
 const currencyPrefix = computed(() =>
   props.kpi.type === "currency" && hasValue.value ? "R$" : ""
 );
+/* Valor exibido: conta até o atual quando ele muda (filtro, mês, etc.). */
+const animatedCurrent = useCountUp(() => {
+  const v = props.kpi.current;
+  return hasValue.value && Number.isFinite(Number(v)) ? Number(v) : v;
+});
 const valueText = computed(() => {
   if (!hasValue.value) return "—";
-  const text = formatValue(indicator.value, props.kpi.current);
+  const text = formatValue(indicator.value, animatedCurrent.value);
   return currencyPrefix.value ? text.replace(/^R\$\s*/, "") : text;
 });
 
@@ -84,7 +92,8 @@ function onKeydown(e) {
 
 <template>
   <article
-    class="no-callout flex w-[220px] shrink-0 snap-start cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
+    class="kpi-card kpi-enter no-callout flex w-[220px] shrink-0 snap-start cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm dark:bg-zinc-900"
+    :style="{ '--i': Math.min(index, 12) }"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"

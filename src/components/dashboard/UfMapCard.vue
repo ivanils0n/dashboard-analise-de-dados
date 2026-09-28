@@ -85,6 +85,10 @@ const shapes = computed(() =>
     .map((s) => ({ ...s, shape: UF_MAP.states[s.uf], name: STATE_NAMES[s.uf] || s.uf }))
     .filter((s) => s.shape)
 );
+
+/* Estado sob o cursor/foco (desenha a cópia ampliada; ver template). */
+const hoverUf = ref(null);
+const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.value) || null);
 </script>
 
 <template>
@@ -119,6 +123,10 @@ const shapes = computed(() =>
             role="button"
             tabindex="0"
             :aria-label="stateLabel(s.name)"
+            @pointerenter="hoverUf = s.uf"
+            @pointerleave="hoverUf = null"
+            @focus="hoverUf = s.uf"
+            @blur="hoverUf = null"
             @click="selectState(s.uf)"
             @keydown.enter.prevent="selectState(s.uf)"
             @keydown.space.prevent="selectState(s.uf)"
@@ -138,6 +146,29 @@ const shapes = computed(() =>
           </text>
         </g>
         </TransitionGroup>
+        <!-- Estado sob o cursor: cópia ampliada desenhada por cima dos demais
+             (SVG não tem z-index) — cresce com um "pop" e ganha sombra. -->
+        <g v-if="hoverShape" :key="hoverShape.uf" class="uf-hover pointer-events-none" aria-hidden="true">
+          <path
+            :d="hoverShape.shape.d"
+            fill-rule="evenodd"
+            stroke-width="2"
+            stroke-linejoin="round"
+            class="stroke-white dark:stroke-zinc-900"
+            :class="hoverShape.filled ? 'fill-accent' : 'fill-zinc-300 dark:fill-zinc-600'"
+          />
+          <text
+            :x="hoverShape.shape.cx"
+            :y="hoverShape.shape.cy"
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-weight="700"
+            :font-size="fontSize"
+            class="fill-zinc-800 dark:fill-zinc-50"
+          >
+            {{ hoverShape.uf }}
+          </text>
+        </g>
       </svg>
     </div>
 
@@ -160,6 +191,22 @@ const shapes = computed(() =>
 </template>
 
 <style scoped>
+/* Hover no estado: "pop" com escala + sombra (só transform e filter na cópia). */
+@keyframes uf-hover-pop {
+  from { transform: scale(1); }
+  to { transform: scale(1.14); }
+}
+.uf-hover {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: uf-hover-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.35));
+}
+@media (prefers-reduced-motion: reduce) {
+  .uf-hover {
+    animation: none;
+  }
+}
 /* Estados que entram/saem ao filtrar: fade + pequeno "pop" a partir do centro
    do próprio estado (mesma linguagem dos modais). */
 .uf-shape {

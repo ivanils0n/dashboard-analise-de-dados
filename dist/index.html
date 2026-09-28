@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Dashboard de lançamento e análise de dados de Gente e Gestão (RH).">
   <meta name="robots" content="noindex">
   <title>Gente &amp; Gestão</title>
@@ -10,6 +10,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" type="image/png" href="./favicon.png">
+  <!-- PWA: permite instalar o dashboard como aplicativo (ver public/sw.js). -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Gente &amp; Gestão">
   <script>
     document.documentElement.classList.toggle("dark", localStorage.getItem("gg-theme") === "dark");
   </script>
@@ -96,10 +104,10 @@
       100% { transform: translateX(380%); }
     }
   </style>
-  <script type="module" crossorigin src="./assets/app-BW0uJZB8.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/vue-BMkXzlel.js">
-  <link rel="modulepreload" crossorigin href="./assets/vue-router-JARtwaI9.js">
-  <link rel="stylesheet" crossorigin href="./assets/app-DPDrqPn6.css">
+  <script type="module" crossorigin src="./assets/app-O26mZzRh.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vue-0MbX_GWF.js">
+  <link rel="modulepreload" crossorigin href="./assets/vue-router-DKglC6id.js">
+  <link rel="stylesheet" crossorigin href="./assets/app-D24fSM7J.css">
 </head>
 <body>
   <div id="app"></div>
@@ -112,6 +120,6 @@
       <p>Carregando informações...</p>
       <div class="gg-progress"><span class="gg-progress-fill"></span></div>
     </div>
-  </div>
+  </div>
 </body>
 </html>

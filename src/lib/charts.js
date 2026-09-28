@@ -10,7 +10,16 @@ Chart.register(...registerables);
    Chart.js (1 s de animação a cada atualização, resize a cada pixel) deixava a
    troca de filtros e a rolagem da página pesadas — o dashboard tem mais de dez
    gráficos que reagem ao mesmo filtro. */
-Chart.defaults.animation.duration = 300;
+const REDUCED_MOTION =
+  typeof window !== "undefined" &&
+  window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+Chart.defaults.animation.duration = REDUCED_MOTION ? 0 : 500;
+Chart.defaults.animation.easing = "easeOutQuart";
+/* Hover/tooltip respondem rápido (não seguem a animação longa de entrada). */
+Chart.defaults.transitions.active.animation.duration = REDUCED_MOTION ? 0 : 180;
+/* Resize (rolagem, troca de aba) nunca anima: evita "gráfico pulando". */
+Chart.defaults.transitions.resize.animation.duration = 0;
 Chart.defaults.resizeDelay = 120;
 
 export function isDarkTheme() {
@@ -412,7 +421,7 @@ export function createPieChart(canvas) {
           borderWidth: 0,
           borderRadius: 6,
           spacing: 1,
-          hoverOffset: 8
+          hoverOffset: 16
         }
       ]
     },
@@ -420,6 +429,8 @@ export function createPieChart(canvas) {
       responsive: true,
       maintainAspectRatio: false,
       cutout: "58%",
+      /* Folga para a fatia em hover (hoverOffset) não ser cortada pelo canvas. */
+      layout: { padding: 18 },
       plugins: {
         valueLabels: { display: false },
         legend: {
@@ -549,6 +560,7 @@ export function createAbsenteismoBar(canvas) {
   const p = chartPalette();
   return new Chart(canvas, {
     type: "bar",
+    plugins: [barHoverGrow],
     data: { labels: [], datasets: [] },
     options: {
       responsive: true,
@@ -741,8 +753,59 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
    barras para a entrada inteira nunca passar de BAR_STAGGER_TOTAL_MS (gráficos
    com dezenas de vagas/colaboradores não ficam esperando). Só vale para
    atualização de dados — resize, hover e troca de tema não atrasam. */
-const BAR_ANIMATION_MS = 450;
+const BAR_ANIMATION_MS = REDUCED_MOTION ? 0 : 550;
 const BAR_STAGGER_MAX_MS = 70;
+/* Barra sob o cursor "cresce" (mais larga e mais alta) e se destaca das demais.
+   Plugin próprio: aumenta o retângulo do elemento só durante o desenho, com um
+   progresso 0..1 por barra (suave, ~160 ms) — o hit-test do Chart.js não muda. */
+const BAR_HOVER_GROW_PX = REDUCED_MOTION ? 0 : 8;
+const BAR_HOVER_MS = 160;
+const barHoverGrow = {
+  id: "barHoverGrow",
+  beforeDatasetsDraw(chart) {
+    if (!BAR_HOVER_GROW_PX) return;
+    const state = chart.__barGrow || (chart.__barGrow = { p: new Map(), t: performance.now(), saved: [] });
+    const now = performance.now();
+    const step = Math.min(1, (now - state.t) / BAR_HOVER_MS);
+    state.t = now;
+    const active = new Set(chart.getActiveElements().map((a) => `${a.datasetIndex}:${a.index}`));
+    let animating = false;
+    chart.data.datasets.forEach((_, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (meta.type !== "bar" || !meta.visible) return;
+      meta.data.forEach((el, i) => {
+        const key = `${di}:${i}`;
+        const target = active.has(key) ? 1 : 0;
+        let cur = state.p.get(key) || 0;
+        if (cur !== target) {
+          cur = target > cur ? Math.min(target, cur + step) : Math.max(target, cur - step);
+          animating = true;
+          if (cur === 0) state.p.delete(key);
+          else state.p.set(key, cur);
+        }
+        if (!cur) return;
+        const e = 1 - Math.pow(1 - cur, 3);
+        const g = BAR_HOVER_GROW_PX * e;
+        const saved = { el, x: el.x, y: el.y, width: el.width, height: el.height };
+        state.saved.push(saved);
+        if (el.horizontal) {
+          el.x += g;
+          el.height += g * 2;
+        } else {
+          el.y -= g;
+          el.width += g * 2;
+        }
+      });
+    });
+    if (animating) requestAnimationFrame(() => chart.draw());
+  },
+  afterDatasetsDraw(chart) {
+    const state = chart.__barGrow;
+    if (!state) return;
+    state.saved.forEach((s) => Object.assign(s.el, { x: s.x, y: s.y, width: s.width, height: s.height }));
+    state.saved.length = 0;
+  }
+};
 const BAR_STAGGER_TOTAL_MS = 900;
 
 function barStaggerDelay(context) {
@@ -792,10 +855,11 @@ export function createBarChart(canvas, options = {}) {
       };
   return new Chart(canvas, {
     type: "bar",
+    plugins: [barHoverGrow],
     data: { labels: [], datasets: [] },
     options: {
       indexAxis: horizontal ? "y" : "x",
-      animation: { duration: BAR_ANIMATION_MS, easing: "easeOutCubic", delay: barStaggerDelay },
+      animation: { duration: BAR_ANIMATION_MS, easing: "easeOutQuart", delay: barStaggerDelay },
       responsive: true,
       maintainAspectRatio: false,
       /* Horizontal: folga à direita para o número não ser cortado. */
@@ -882,7 +946,7 @@ export function updateBarChart(chart, panorama, options = {}) {
         backgroundColor: ACCENT,
         hoverBackgroundColor: ACCENT_HOVER,
         borderRadius: 6,
-        barPercentage: 0.65
+          barPercentage: 0.65
       }
     ]
   };
