@@ -257,7 +257,7 @@ const columns = [
         </button>
       </div>
 
-      <div v-if="rows.length" class="max-h-[calc(100vh-22rem)] min-h-[16rem] overflow-auto">
+      <div v-if="rows.length" class="max-h-[calc(100dvh-22rem)] min-h-[16rem] overflow-auto">
         <table class="w-full min-w-max text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800">

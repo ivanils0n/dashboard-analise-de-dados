@@ -5,6 +5,10 @@ import router, { prefetchRoutes } from "./router";
 import { bootstrapData } from "./lib/db";
 import { syncAll } from "./lib/employees";
 import { isAuthenticated, getProfile, startAuthPolling } from "./lib/auth";
+import { installLongPressContextMenu } from "./lib/longPress";
+
+/* iPhone/iPad: toque longo vira "botão direito" (ver lib/longPress.js). */
+installLongPressContextMenu();
 
 if (import.meta.env.PROD) {
   try {

@@ -49,8 +49,8 @@ const cards = computed(() => [
 </script>
 
 <template>
-  <div class="flex gap-3 md:h-full md:min-h-0 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:min-h-0 md:[&>*]:flex-auto md:[&>*]:overflow-hidden">
-    <TurnoverCostCard v-if="showCost" :summary="summary" />
+  <div :class="showCost ? 'grid grid-cols-2 gap-2 sm:flex sm:gap-3' : 'flex gap-3'" class="md:h-full md:min-h-0 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:min-h-0 md:[&>*]:flex-auto md:[&>*]:overflow-hidden">
+    <TurnoverCostCard v-if="showCost" class="col-span-2 sm:col-span-1" :summary="summary" />
     <button
       v-for="card in cards"
       :key="card.id"
@@ -65,7 +65,7 @@ const cards = computed(() => [
         <KpiIcon :id="card.id" />
       </span>
       <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ card.label }}</span>
-      <span class="text-2xl font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100">{{ card.value }}</span>
+      <span class="text-xl font-bold leading-tight tabular-nums sm:text-2xl text-zinc-900 dark:text-zinc-100">{{ card.value }}</span>
       <span class="text-xs text-zinc-400">{{ card.rate }}</span>
     </button>
   </div>

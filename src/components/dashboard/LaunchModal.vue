@@ -66,6 +66,7 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
 import { dateFilter } from "@/composables/useDateFilter";
+import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -1622,7 +1623,7 @@ function close() {
           </div>
           <p class="text-xs text-zinc-500 dark:text-zinc-400">
             Um lançamento por mês/estado — lançar de novo no mesmo mês substitui o valor anterior.
-            Clique com o botão direito no card do indicador para ver o histórico.
+            {{ CONTEXT_ACTION_LABEL === "Botão direito" ? "Clique com o botão direito" : "Toque e segure" }} no card do indicador para ver o histórico.
           </p>
         </div>
       </template>

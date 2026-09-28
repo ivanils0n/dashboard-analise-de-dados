@@ -177,10 +177,23 @@ function pad2(n: number): string {
 // nome do mês (com ou sem ano) — um campo "competência" que só tem mês vira
 // o dia 1º desse mês. Sem bater com nenhum formato conhecido, devolve null
 // (quem chama mantém o texto original em vez de perder o dado). */
+// Data colada como número serial do Sheets (dias desde 30/12/1899), ex.:
+// "46294" = 29/09/2026 — acontece quando a célula estava formatada como
+// número e depois virou texto. Só aceita a faixa 20000–80000 (1954–2119),
+// para não confundir com outros números.
+function parseSheetsSerial(s: string): string | null {
+  if (!/^\d{5}(?:\.\d+)?$/.test(s)) return null;
+  const serial = Math.floor(Number(s));
+  if (serial < 20000 || serial > 80000) return null;
+  return new Date(Date.UTC(1899, 11, 30) + serial * 86400000).toISOString().slice(0, 10);
+}
+
 function parseFlexibleDate(raw: string): string | null {
   const s = raw.trim();
   if (!s) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const serial = parseSheetsSerial(s);
+  if (serial) return serial;
 
   // dia e mês com 1 ou 2 dígitos ("1/9/2026" também vale).
   let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
@@ -230,6 +243,8 @@ function parseFlexibleDate(raw: string): string | null {
 // filtro de período e os dias viram NaN (Tempo/Custo de contratação somem).
 // Converte para ISO local; formatos já ISO (ou desconhecidos) passam direto.
 function parseFlexibleTimestamp(raw: string): string | null {
+  const serial = parseSheetsSerial(raw.trim());
+  if (serial) return serial;
   const m = raw
     .trim()
     .match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2}|\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);

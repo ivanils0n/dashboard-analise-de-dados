@@ -162,10 +162,19 @@ export function formatMonthLabel(monthKey) {
   return date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", "");
 }
 
+/* Data fora de 1900–2100 é lixo de digitação, não uma data real: o Sheets
+   pode entregar uma data como número serial em texto ("46294"), que o
+   new Date() lê como o ano 46294 — uma única vaga assim levava o Tempo médio
+   de contratação para centenas de milhares de dias. */
+function isPlausibleDate(d) {
+  const year = d.getFullYear();
+  return !isNaN(d.getTime()) && year >= 1900 && year <= 2100;
+}
+
 export function daysBetween(startIso, endIso) {
   const start = new Date(startIso);
   const end = new Date(endIso);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  if (!isPlausibleDate(start) || !isPlausibleDate(end)) return null;
   return (end - start) / 86400000;
 }
 

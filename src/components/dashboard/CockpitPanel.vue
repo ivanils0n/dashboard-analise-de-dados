@@ -382,6 +382,10 @@ const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.inclu
 const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "rescisoes"];
 const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.value.id));
 
+/* Pizza e Retenção (tabela): no celular empilham conteúdo (pizza + cards) e
+   ficam com a altura do conteúdo em vez da caixa fixa das barras. */
+const stackedOnPhone = computed(() => centerChart.value.kind === "pie" || centerChart.value.kind === "table");
+
 /* Clique na pizza do Turnover: mesmo modal de Admissões/Demissões dos cards
    ao lado (openTurnoverDetail, abaixo) — a fatia clicada decide qual
    (0 = Entrada/Admissões, 1 = Saída/Demissões, ver chartPieData em
@@ -452,11 +456,26 @@ function goNextKpi() {
     <Teleport v-if="slotReady && topSummaryItems.length" to="#cockpit-kpi-slot">
       <SummaryTiles :items="topSummaryItems" compact />
     </Teleport>
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
       <div>
-        <div class="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)]">
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-[200px_minmax(0,1fr)]">
+          <!-- Celular: todos os KPIs no topo, em colunas de 3 que se arrastam
+               para o lado (a próxima coluna aparece na borda, indicando que há
+               mais). O "C" ao redor do gráfico volta a partir de md. -->
+          <div class="grid auto-cols-[82%] grid-flow-col grid-rows-3 gap-2 overflow-x-auto overscroll-x-contain pb-1 snap-x snap-mandatory [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden" aria-label="Indicadores">
+            <CockpitKpiButton
+              v-for="kpi in kpis"
+              :key="kpi.id"
+              class="!w-full snap-start"
+              :kpi="kpi"
+              :selected="selectedKpiId === kpi.id"
+              @select="select"
+              @context="onKpiContext"
+            />
+          </div>
+
           <!-- KPIs acima do gráfico (parte superior do "C"). -->
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 lg:col-span-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': topKpis.length }">
+          <div class="hidden grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] md:grid lg:col-span-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': topKpis.length }">
             <CockpitKpiButton
               v-for="kpi in topKpis"
               :key="kpi.id"
@@ -469,7 +488,7 @@ function goNextKpi() {
           </div>
 
           <!-- KPIs à esquerda do gráfico (mesmo estilo dos cards da Visão geral). -->
-          <div class="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+          <div class="hidden grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] md:grid lg:flex lg:flex-col">
             <CockpitKpiButton
               v-for="kpi in leftKpis"
               :key="kpi.id"
@@ -482,7 +501,7 @@ function goNextKpi() {
           </div>
 
           <!-- Gráfico central -->
-          <section class="flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <section class="flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <!-- Cabeçalho em linha que quebra: com zoom maior (tela "menor") o
                  título, os botões e os filtros descem em vez de se espremer. -->
             <div class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -576,15 +595,17 @@ function goNextKpi() {
             </div>
             <!-- Em telas largas a área do gráfico ocupa o restante da altura da
                  seção, que acompanha a altura da coluna vertical de KPIs
-                 (grid estica os dois); abaixo de lg usa altura fixa. -->
-            <div class="relative h-[480px] lg:h-auto lg:min-h-[420px] lg:flex-1">
+                 (grid estica os dois); abaixo de lg usa altura fixa. No
+                 celular, pizza (com os cards embaixo) e Retenção crescem com o
+                 conteúdo — numa altura fixa os cards vazavam para fora. -->
+            <div class="relative lg:h-auto lg:min-h-[420px] lg:flex-1" :class="stackedOnPhone ? 'md:h-[480px]' : 'h-[360px] sm:h-[480px]'">
             <div class="h-full lg:absolute lg:inset-0">
-            <div v-if="centerChart.kind === 'pie'" class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4 md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
+            <div v-if="centerChart.kind === 'pie'" class="grid gap-4 md:h-full md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
               <PieChart
                 class="min-h-0 min-w-0 md:col-start-2 md:row-start-1"
                 :data="centerChart.data"
                 :show-values="showValues"
-                height="h-full"
+                height="h-[280px] md:h-full"
                 :center-value="pieCenter.value"
                 :center-caption="pieCenter.caption"
                 :value-format="centerChart.valueFormat || 'percent'"
@@ -622,7 +643,7 @@ function goNextKpi() {
                na mesma borda esquerda dos KPIs laterais (colunas de no mínimo
                200px, mesmo espaçamento) e se esticam até a borda direita do
                gráfico central. -->
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 lg:col-span-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
+          <div class="hidden grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] md:grid lg:col-span-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
             <CockpitKpiButton
               v-for="kpi in bottomKpis"
               :key="kpi.id"
@@ -659,7 +680,7 @@ function goNextKpi() {
             v-for="kpi in kpis"
             :key="kpi.id"
             :ref="(el) => setIndicatorItem(kpi.id, el)"
-            class="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition"
+            class="no-callout flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition"
             :class="
               selectedKpiId === kpi.id
                 ? 'bg-accent/15 font-semibold text-accent-hover ring-1 ring-accent/50 dark:text-accent-light'
@@ -842,12 +863,12 @@ function goNextKpi() {
           </button>
         </div>
         <div class="min-h-0 flex-1">
-          <div v-if="centerChart.kind === 'pie'" class="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-4 md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
+          <div v-if="centerChart.kind === 'pie'" class="grid gap-4 md:h-full md:grid-cols-[180px_minmax(0,1fr)_180px] md:grid-rows-1">
             <PieChart
               class="min-h-0 min-w-0 md:col-start-2 md:row-start-1"
               :data="centerChart.data"
               :show-values="showValues"
-              height="h-full"
+              height="h-[280px] md:h-full"
               :center-value="pieCenter.value"
               :center-caption="pieCenter.caption"
               :value-format="centerChart.valueFormat || 'percent'"

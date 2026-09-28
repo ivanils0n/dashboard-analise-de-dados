@@ -961,7 +961,10 @@ export function retentionRate(state, range, prevRange) {
   const { admitidos: novasContratacoes, demitidos: demissoes } = turnoverQuantitiesInRange(state, range);
   const anterior = headcountCountInRange(state, prevRange);
   const headcountInicial = anterior || Math.max(headcountFinal - novasContratacoes + demissoes, 0);
-  const retencaoPct = headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
+  /* Sem quadro lançado no mês filtrado (headcount final 0) a taxa não existe
+     ("—"), como no Turnover — antes virava 0%, parecendo que ninguém ficou. */
+  const retencaoPct =
+    headcountFinal && headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
   return {
     headcountInicial,
     headcountFinal,

@@ -68,7 +68,7 @@ function mes(v) {
         </div>
       </dl>
 
-      <ul class="flex max-h-[calc(100vh-22rem)] min-h-[16rem] flex-col gap-3 overflow-auto pr-1">
+      <ul class="flex max-h-[calc(100dvh-22rem)] min-h-[16rem] flex-col gap-3 overflow-auto pr-1">
         <li v-for="r in sorted" :key="r.id" class="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div>

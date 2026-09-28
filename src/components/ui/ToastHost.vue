@@ -8,7 +8,7 @@ const { state } = useToast();
   <Teleport to="body">
     <div
       v-if="state.visible"
-      class="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-xl bg-zinc-900 px-5 py-3 text-sm font-medium text-white shadow-2xl slide-up dark:bg-zinc-100 dark:text-zinc-900"
+      class="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-[80] w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 text-center rounded-xl bg-zinc-900 px-5 py-3 text-sm font-medium text-white shadow-2xl slide-up dark:bg-zinc-100 dark:text-zinc-900"
       role="status"
     >
       {{ state.message }}

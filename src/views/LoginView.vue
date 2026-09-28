@@ -40,7 +40,7 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col items-center justify-center bg-ice px-4 py-8 dark:bg-zinc-950">
+  <div class="flex min-h-screen flex-col items-center justify-center bg-ice px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(2rem,env(safe-area-inset-top))] dark:bg-zinc-950">
     <main
       class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white px-6 py-8 shadow-sm slide-up dark:border-zinc-800 dark:bg-zinc-900 sm:px-10 sm:py-10"
     >

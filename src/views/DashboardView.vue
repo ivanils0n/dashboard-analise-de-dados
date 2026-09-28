@@ -44,6 +44,7 @@ import { toXLSX, toCSV } from "@/lib/export";
 import { hydrateState, reloadData } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 import { apiFetch } from "@/lib/api";
+import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
@@ -530,18 +531,6 @@ async function handleReload() {
   }
 }
 
-function openLaunch() {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  preEditSelectedKpiId.value = null;
-  editTarget.value = null;
-  editVacancyTarget.value = null;
-  viewIndicatorTarget.value = null;
-  launchOpen.value = true;
-}
-
 function closeLaunch() {
   launchOpen.value = false;
   preEditSelectedKpiId.value = null;
@@ -607,7 +596,6 @@ function onMenuClick(action) {
   menuOpen.value = false;
   if (action === "xlsx") toXLSX();
   else if (action === "csv") toCSV();
-  else if (action === "launch") openLaunch();
 }
 
 function onSelectKpi(id) {
@@ -732,9 +720,9 @@ watch(activeTab, (tab) => {
 <template>
   <div>
     <!-- ===== HERO ===== -->
-    <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6 sm:gap-4">
       <div class="flex items-center gap-3">
-        <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Gente &amp; Gestão</h1>
+        <h1 class="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-100">Gente &amp; Gestão</h1>
         <button
           v-if="canRefreshCache"
           type="button"
@@ -756,10 +744,10 @@ watch(activeTab, (tab) => {
       <div
         v-if="activeTab === 'cockpit'"
         id="cockpit-kpi-slot"
-        class="flex min-w-0 flex-1 items-center justify-center"
+        class="flex min-w-0 flex-1 items-center justify-center empty:hidden max-sm:basis-full"
       ></div>
 
-      <div class="flex items-center justify-start gap-2 sm:ml-auto sm:justify-end">
+      <div class="flex w-full flex-wrap items-center justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
         <button
           v-if="activeTab === 'cockpit'"
           type="button"
@@ -771,7 +759,7 @@ watch(activeTab, (tab) => {
         <DateRangeFilter :range="df" title="Período" />
         <StateFilter variant="page" />
 
-        <div v-if="canEdit" class="relative" @click.stop>
+        <div v-if="canEdit" class="relative ml-auto sm:ml-0" @click.stop>
         <button
           type="button"
           class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
@@ -792,8 +780,6 @@ watch(activeTab, (tab) => {
           v-if="menuOpen"
           class="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
         >
-          <button v-if="canEdit" type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('launch')">Lançar dados</button>
-          <div v-if="canEdit" class="my-1 border-t border-zinc-100 dark:border-zinc-800"></div>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('xlsx')">Baixar em XLSX</button>
           <button type="button" class="dropdown-item text-zinc-700 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800" @click="onMenuClick('csv')">Baixar em CSV</button>
         </div>
@@ -827,7 +813,7 @@ watch(activeTab, (tab) => {
         aria-label="Buscar indicador"
       />
     </div>
-    <section class="flex gap-4 overflow-x-auto pb-2" aria-label="Indicadores-chave">
+    <section class="flex snap-x gap-3 overflow-x-auto pb-2 sm:gap-4" aria-label="Indicadores-chave">
       <KpiCard
         v-for="kpi in visibleKpis"
         :key="kpi.id"
@@ -988,7 +974,7 @@ watch(activeTab, (tab) => {
         <div v-else class="p-6">
           <EmptyState
             title="Sem custos no período"
-            text="Use o botão “Lançar dados” (Custo de folha de salário) para registrar os custos do período ou ajuste o filtro."
+            text="Nenhum custo de folha lançado para o período e o estado filtrados."
           />
         </div>
       </section>
@@ -1067,7 +1053,7 @@ watch(activeTab, (tab) => {
       <div v-else class="p-6">
         <EmptyState
           title="Sem treinamentos no período"
-          text="Use o botão “Lançar dados” (Treinamento) para registrar as horas ou ajuste o filtro."
+          text="Nenhum treinamento lançado para o período e o estado filtrados."
         />
       </div>
     </section>
@@ -1168,7 +1154,7 @@ watch(activeTab, (tab) => {
       <div v-else class="p-6">
         <EmptyState
           title="Sem vagas no período"
-          text="Use o botão “Lançar dados” (Vaga) para registrar uma vaga ou ajuste o filtro."
+          text="Nenhuma vaga aberta no período e no estado filtrados."
         />
       </div>
       <HiringGoalsLegend size="md" class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800" />
@@ -1217,7 +1203,7 @@ watch(activeTab, (tab) => {
       <div v-else class="p-6">
         <EmptyState
           title="Sem colaboradores desligados no período"
-          text="Lance um registro (botão direito no KPI de Tempo médio de permanência) ou ajuste o filtro."
+          :text="`Lance um registro (${CONTEXT_ACTION_LABEL.toLowerCase()} no KPI de Tempo médio de permanência) ou ajuste o filtro.`"
         />
       </div>
     </section>

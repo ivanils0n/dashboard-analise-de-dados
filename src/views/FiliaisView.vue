@@ -198,7 +198,7 @@ function edit(id) {
         </button>
       </div>
 
-      <div v-if="tableList.length" class="max-h-[max(18rem,calc(100vh-20rem))] overflow-auto">
+      <div v-if="tableList.length" class="max-h-[max(18rem,calc(100dvh-20rem))] overflow-auto">
         <table class="w-full text-left text-sm">
           <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
             <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">

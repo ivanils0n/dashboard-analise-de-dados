@@ -240,7 +240,7 @@ watch(
     :subtitle="subtitle"
     @close="expandOpen = false"
   >
-    <div class="h-[calc(100vh-190px)] min-h-[320px] w-full">
+    <div class="h-[calc(100dvh-190px)] min-h-[320px] w-full">
       <BarChart
         :data="data"
         :show-values="showValues"

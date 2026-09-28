@@ -126,3 +126,52 @@ body {
 .is-flash {
   animation: gg-flash 1.4s ease-out 2;
 }
+
+/* ---------- Smartphones (Android e iOS) ---------- */
+
+/* Sem o "flash" cinza do toque (Android/iOS) e sem o ajuste automático do
+   tamanho do texto ao girar o aparelho. */
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Como app instalado a página não "estica" além do topo/fim (efeito elástico),
+   que no iOS revelava o fundo branco por trás do cabeçalho escuro. */
+body {
+  overscroll-behavior-y: none;
+}
+
+/* iOS dá zoom na página ao focar um campo com texto menor que 16px (e não
+   volta sozinho). Nos celulares os campos ficam com 16px — regra fora das
+   camadas do Tailwind, então vale por cima de text-sm/text-xs dos campos. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Gráficos e botões de KPI usam o toque longo como "botão direito" (ver
+   lib/longPress.js): sem o menu nativo de copiar/salvar imagem do iOS e sem
+   selecionar texto ao segurar o dedo. */
+canvas,
+.no-callout {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Áreas seguras do iPhone (notch, barra inferior) com viewport-fit=cover. */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}

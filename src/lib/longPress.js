@@ -1,0 +1,101 @@
+/* Toque longo = "botão direito" no iPhone/iPad.
+
+   O dashboard usa o evento `contextmenu` (botão direito) para ações
+   secundárias: informações do KPI, editar direto a partir da barra do
+   gráfico, etc. No Android, segurar o dedo já dispara `contextmenu`; no iOS
+   (Safari e app instalado) não dispara nada. Aqui o toque longo parado sobre
+   um elemento vira um `contextmenu` sintético nesse elemento, com as
+   coordenadas do dedo — os mesmos handlers de sempre (inclusive os dos
+   gráficos, que localizam a barra/fatia pelo ponto) funcionam sem mudança.
+   O toque que virou "botão direito" não gera o clique normal ao soltar. */
+
+const LONG_PRESS_MS = 550;
+const MOVE_TOLERANCE_PX = 10;
+
+function isIOS() {
+  const ua = navigator.userAgent || "";
+  /* iPadOS se apresenta como Mac: distingue pelo toque. */
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+export function installLongPressContextMenu() {
+  if (typeof window === "undefined" || !isIOS()) return;
+
+  let timer = null;
+  let start = null;
+  let firedAt = 0;
+
+  const cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      cancel();
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const target = e.target;
+      start = { x: t.clientX, y: t.clientY };
+      timer = setTimeout(() => {
+        timer = null;
+        firedAt = Date.now();
+        target.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            button: 2,
+            buttons: 2,
+            clientX: t.clientX,
+            clientY: t.clientY,
+            screenX: t.screenX,
+            screenY: t.screenY
+          })
+        );
+      }, LONG_PRESS_MS);
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!timer || !start) return;
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - start.x) > MOVE_TOLERANCE_PX || Math.abs(t.clientY - start.y) > MOVE_TOLERANCE_PX) cancel();
+    },
+    { passive: true }
+  );
+
+  const recentlyFired = () => Date.now() - firedAt < 800;
+
+  /* Soltar o dedo depois do "botão direito": sem o clique normal. */
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      cancel();
+      if (recentlyFired() && e.cancelable) e.preventDefault();
+    },
+    { passive: false }
+  );
+  document.addEventListener("touchcancel", cancel, { passive: true });
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (!recentlyFired()) return;
+      firedAt = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true
+  );
+}
+
+/* Nome da ação "botão direito" para as dicas na tela: em telas de toque
+   (celular/tablet) é o toque longo. */
+export const CONTEXT_ACTION_LABEL =
+  typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches
+    ? "Toque e segure"
+    : "Botão direito";

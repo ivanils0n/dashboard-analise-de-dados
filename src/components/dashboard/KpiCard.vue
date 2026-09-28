@@ -3,6 +3,7 @@ import { computed } from "vue";
 import MiniLineChart from "@/components/charts/MiniLineChart.vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue, formatRawValue } from "@/lib/utils";
+import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 
 const props = defineProps({
   kpi: { type: Object, required: true },
@@ -45,28 +46,29 @@ const valueText = computed(() => {
   return currencyPrefix.value ? text.replace(/^R\$\s*/, "") : text;
 });
 
-/* Dica de interação (clique direito) para KPIs com modal de detalhe. */
+/* Dica de interação (clique direito; toque longo no celular) para KPIs com
+   modal de detalhe. */
 const contextHint = computed(() => {
   switch (props.kpi.id) {
     case "headcount":
     case "retencao":
-      return "Botão direito: colaboradores do mês";
+      return `${CONTEXT_ACTION_LABEL}: colaboradores do mês`;
     case "custo_diaria":
-      return "Botão direito: lançamentos de diárias";
+      return `${CONTEXT_ACTION_LABEL}: lançamentos de diárias`;
     case "treinamento":
-      return "Botão direito: lançamentos de treinamento";
+      return `${CONTEXT_ACTION_LABEL}: lançamentos de treinamento`;
     case "custo_total":
-      return "Botão direito: lançamentos de custos";
+      return `${CONTEXT_ACTION_LABEL}: lançamentos de custos`;
     case "tempo_contratacao":
-      return "Botão direito: histórico de vagas";
+      return `${CONTEXT_ACTION_LABEL}: histórico de vagas`;
     case "custo_contratacao":
-      return "Botão direito: histórico de vagas";
+      return `${CONTEXT_ACTION_LABEL}: histórico de vagas`;
     case "absenteismo":
-      return "Botão direito: lançamentos mensais";
+      return `${CONTEXT_ACTION_LABEL}: lançamentos mensais`;
     case "turnover":
     case "turnover_experiencia":
     case "tempo_permanencia":
-      return "Botão direito: histórico de registros";
+      return `${CONTEXT_ACTION_LABEL}: histórico de registros`;
     default:
       return "";
   }
@@ -82,7 +84,7 @@ function onKeydown(e) {
 
 <template>
   <article
-    class="flex w-[220px] shrink-0 cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
+    class="no-callout flex w-[220px] shrink-0 snap-start cursor-pointer flex-col rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { authState, getProfile } from "@/lib/auth";
 import StateFilter from "./StateFilter.vue";
@@ -9,8 +9,9 @@ import { useTheme } from "@/composables/useTheme";
 import { sidebarCollapsed as collapsed } from "@/composables/useSidebar";
 
 /* Sidebar esquerda (antiga TopBar + navegação): logo, páginas, abas Visão
-   Geral/Painel, filtro de estado, tema e conta. Em telas pequenas vira uma
-   faixa no topo. */
+   Geral/Painel, filtro de estado, tema e conta. Em celulares (abaixo de md)
+   vira um cabeçalho compacto (menu, logo, tema, conta e as abas do Dashboard)
+   com a navegação num menu lateral deslizante. */
 const route = useRoute();
 const router = useRouter();
 const { isDark, toggle } = useTheme();
@@ -75,11 +76,122 @@ const visibleDetailItems = computed(() => (isVisitor.value ? [] : detailItems));
    controles visíveis dependem da rota ATUAL, não da inicial. */
 const showStateFilter = computed(() => route.name === "filiais");
 const showDashboardTabs = computed(() => route.name === "dashboard");
+
+/* Menu lateral do celular: fecha ao navegar, com Esc e ao tocar fora. */
+const drawerOpen = ref(false);
+watch(
+  () => route.fullPath,
+  () => {
+    drawerOpen.value = false;
+  }
+);
+function onKeydown(e) {
+  if (e.key === "Escape") drawerOpen.value = false;
+}
+onMounted(() => document.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
+
+const drawerSections = computed(() =>
+  [
+    { title: "Páginas", items: visibleItems.value },
+    { title: "Detalhado", items: visibleDetailItems.value }
+  ].filter((section) => section.items.length)
+);
 </script>
 
 <template>
+  <!-- ===== Celular: cabeçalho compacto + menu lateral ===== -->
+  <header class="safe-top safe-x sticky top-0 z-40 border-b border-zinc-800 bg-[#0a0a0a] md:hidden">
+    <div class="flex items-center gap-2 px-3 py-2">
+      <button
+        v-if="drawerSections.length || showStateFilter"
+        type="button"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-300 transition hover:bg-zinc-800"
+        aria-label="Abrir menu"
+        :aria-expanded="drawerOpen"
+        @click="drawerOpen = true"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="4" y1="6" x2="20" y2="6" />
+          <line x1="4" y1="12" x2="20" y2="12" />
+          <line x1="4" y1="18" x2="20" y2="18" />
+        </svg>
+      </button>
+      <a href="#/dashboard" class="flex min-w-0 flex-1 items-center" aria-label="Gente & Gestão — Dashboard">
+        <img src="/logo.png" alt="Gente & Gestão" class="h-9 w-auto max-w-[150px] object-contain" />
+      </a>
+      <button
+        type="button"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-zinc-300 transition hover:bg-zinc-800"
+        :aria-label="isDark ? 'Modo claro' : 'Modo noturno'"
+        @click="toggle"
+      >
+        <svg v-if="!isDark" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+        <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <line x1="12" y1="2" x2="12" y2="4" />
+          <line x1="12" y1="20" x2="12" y2="22" />
+          <line x1="4.93" y1="4.93" x2="6.34" y2="6.34" />
+          <line x1="17.66" y1="17.66" x2="19.07" y2="19.07" />
+          <line x1="2" y1="12" x2="4" y2="12" />
+          <line x1="20" y1="12" x2="22" y2="12" />
+          <line x1="4.93" y1="19.07" x2="6.34" y2="17.66" />
+          <line x1="17.66" y1="6.34" x2="19.07" y2="4.93" />
+        </svg>
+      </button>
+      <UserMenu compact />
+    </div>
+    <div v-if="showDashboardTabs" class="px-3 pb-2">
+      <DashboardTabs variant="topbar" />
+    </div>
+
+    <Transition name="drawer">
+      <div v-if="drawerOpen" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Menu">
+        <div class="absolute inset-0 bg-black/60" @click="drawerOpen = false"></div>
+        <nav class="drawer-panel safe-top safe-bottom absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col gap-5 overflow-y-auto border-r border-zinc-800 bg-[#0a0a0a] px-4" aria-label="Navegação">
+          <div class="flex items-center justify-between gap-2 pt-3">
+            <img src="/logo.png" alt="Gente & Gestão" class="h-10 w-auto max-w-[160px] object-contain" />
+            <button
+              type="button"
+              class="flex h-10 w-10 items-center justify-center rounded-lg text-2xl leading-none text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+              aria-label="Fechar menu"
+              @click="drawerOpen = false"
+            >
+              &times;
+            </button>
+          </div>
+          <div v-for="section in drawerSections" :key="section.title" class="flex flex-col gap-1">
+            <p class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{{ section.title }}</p>
+            <button
+              v-for="item in section.items"
+              :key="item.name"
+              type="button"
+              class="flex items-center gap-3 rounded-lg px-3 py-3 text-[15px] font-semibold transition"
+              :class="route.name === item.name ? 'bg-accent/15 text-accent' : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'"
+              :aria-current="route.name === item.name ? 'page' : undefined"
+              @click="router.push({ name: item.name })"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0">
+                <path v-for="d in item.paths" :key="d" :d="d" />
+              </svg>
+              {{ item.label }}
+            </button>
+          </div>
+          <div v-if="showStateFilter" class="flex flex-col gap-2">
+            <p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Filtro</p>
+            <StateFilter class="w-full" />
+          </div>
+          <p class="mb-6 mt-auto text-center text-[10px] text-zinc-500">Feito por <span class="font-bold text-zinc-300">Ivanilson</span></p>
+        </nav>
+      </div>
+    </Transition>
+  </header>
+
+  <!-- ===== Tablet/computador: sidebar ===== -->
   <aside
-    class="z-30 flex w-full flex-wrap items-center gap-3 border-b border-zinc-800 bg-[#0a0a0a] px-4 py-3 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:shrink-0 md:flex-col md:flex-nowrap md:items-stretch md:gap-0 md:self-start md:border-b-0 md:border-r"
+    class="z-30 hidden w-full flex-wrap md:flex items-center gap-3 border-b border-zinc-800 bg-[#0a0a0a] px-4 py-3 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:shrink-0 md:flex-col md:flex-nowrap md:items-stretch md:gap-0 md:self-start md:border-b-0 md:border-r"
     :class="collapsed ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4'"
     aria-label="Painel de controle"
   >
@@ -130,7 +242,6 @@ const showDashboardTabs = computed(() => route.name === "dashboard");
     <div v-if="showDashboardTabs" class="md:mt-4 md:border-t md:border-zinc-800 md:pt-4">
       <p v-if="!collapsed" class="mb-2 hidden px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500 md:block">Visualização</p>
       <DashboardTabs variant="topbar" class="hidden md:grid" vertical :compact="collapsed" />
-      <DashboardTabs variant="topbar" class="md:hidden" />
     </div>
 
     <nav v-if="visibleDetailItems.length" class="flex gap-1 md:mt-4 md:flex-col md:border-t md:border-zinc-800 md:pt-4" aria-label="Detalhado">
@@ -192,3 +303,30 @@ const showDashboardTabs = computed(() => route.name === "dashboard");
     </div>
   </aside>
 </template>
+
+<style scoped>
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: opacity 0.2s ease;
+}
+.drawer-enter-active .drawer-panel,
+.drawer-leave-active .drawer-panel {
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.drawer-enter-from,
+.drawer-leave-to {
+  opacity: 0;
+}
+.drawer-enter-from .drawer-panel,
+.drawer-leave-to .drawer-panel {
+  transform: translateX(-100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-enter-active,
+  .drawer-leave-active,
+  .drawer-enter-active .drawer-panel,
+  .drawer-leave-active .drawer-panel {
+    transition-duration: 0.01ms;
+  }
+}
+</style>

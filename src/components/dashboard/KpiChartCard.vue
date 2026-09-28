@@ -192,7 +192,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
     />
 
     <Modal v-if="fullscreenOpen" fullscreen :title="card.title" :subtitle="card.sub" @close="fullscreenOpen = false">
-      <div class="h-[calc(100vh-190px)] min-h-[320px] w-full">
+      <div class="h-[calc(100dvh-190px)] min-h-[320px] w-full">
         <div v-if="card.kind === 'pie'" class="flex h-full flex-col gap-4 md:flex-row md:items-center">
           <PieChart
             class="min-h-0 min-w-0 md:flex-1"

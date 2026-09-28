@@ -82,7 +82,7 @@ const TONES = {
             class="absolute left-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
             aria-hidden="true"
           >{{ step.sign }}</span>
-          <span class="block text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ step.label }}</span>
+          <span class="block px-4 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ step.label }}</span>
           <p class="mt-1 font-bold tabular-nums" :class="[TONES[step.tone], large ? 'text-4xl' : 'text-3xl']">{{ step.value }}</p>
         </div>
       </div>

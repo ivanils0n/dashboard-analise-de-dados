@@ -36,7 +36,7 @@ const valueText = computed(() => {
 <template>
   <button
     type="button"
-    class="flex w-[200px] shrink-0 flex-col items-center gap-1.5 rounded-2xl border bg-white px-3 py-2.5 text-center shadow-sm transition hover:shadow-md dark:bg-zinc-900"
+    class="no-callout flex w-[200px] min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-2xl border bg-white px-2 py-2.5 sm:px-3 text-center shadow-sm transition hover:shadow-md dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"
@@ -57,13 +57,13 @@ const valueText = computed(() => {
 
     <span
       v-if="isPie"
-      class="max-w-full break-words text-xl font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100"
+      class="max-w-full break-words text-lg font-bold sm:text-xl leading-tight tabular-nums text-zinc-900 dark:text-zinc-100"
     >
       {{ pieText }}
     </span>
     <span
       v-else
-      class="max-w-full break-words text-xl font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100"
+      class="max-w-full break-words text-lg font-bold sm:text-xl leading-tight tabular-nums text-zinc-900 dark:text-zinc-100"
     >
       <span v-if="currencyPrefix" class="block text-sm font-semibold text-zinc-400">{{ currencyPrefix }}</span>
       {{ valueText }}
