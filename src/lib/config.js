@@ -4,7 +4,7 @@ export const INDICATORS = [
   {
     id: "headcount",
     name: "Headcount",
-    desc: "Quadro de colaboradores (código, colaborador, função, remuneração, admissão, desligamento, mês referente) — o filtro por mês usa o mês referente de cada linha",
+    desc: "Quadro de colaboradores (código, colaborador, função, admissão, desligamento, mês referente) — o filtro por mês usa o mês referente de cada linha",
     calc: "Colaboradores do quadro cujo mês referente é o mês filtrado",
     type: "number",
     unit: "colaboradores",
@@ -140,7 +140,7 @@ export const INDICATORS = [
   {
     id: "custo_diaria",
     name: "Custo médio da diária geral",
-    desc: "Valor pago em diárias (colaborador, departamento, filial, líder, regional, período e diária)",
+    desc: "Valor pago em diárias (colaborador, filial, líder, regional, período e diária)",
     calc: "Total pago em diárias ÷ quantidade de colaboradores",
     type: "currency",
     unit: "R$",

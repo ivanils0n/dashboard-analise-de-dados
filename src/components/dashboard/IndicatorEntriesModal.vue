@@ -118,10 +118,8 @@ function hoursLabel(value) {
   return formatHoursClock(Number(value));
 }
 
-/* Competência com ano completo ("ago/2026"); diária sem período (data-sentinela)
-   aparece como "Sem período". */
+/* Competência com ano completo ("ago/2026"). */
 function monthYearText(entry) {
-  if (entry.meta && entry.meta.semPeriodo) return "Sem período";
   const ym = String(entry.date || "").slice(0, 7);
   return ym ? ymLabel(ym).toLowerCase() : "—";
 }
@@ -129,7 +127,7 @@ function monthYearText(entry) {
 function cellText(entry, col) {
   if (col.value) return formatValue(entry);
   if (col.date) return formatDate(entry.date);
-  if (col.month) return entry.meta && entry.meta.semPeriodo ? "Sem período" : ymShortLabel(entry.date);
+  if (col.month) return ymShortLabel(entry.date);
   if (col.monthYear) return monthYearText(entry);
   if (col.period) {
     const a = meta(entry, col.period[0]);

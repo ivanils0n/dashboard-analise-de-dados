@@ -52,13 +52,7 @@ const { state: filters, setState } = useFilters();
 const { show: toast } = useToast();
 const { confirm } = useDialog();
 
-/* Diárias importadas sem período (planilha sem a coluna Periodo preenchida)
-   ficam ocultas do KPI por padrão — este filtro, ao lado do card, ativa a
-   visualização delas (agrupadas numa barra "Sem período" e somadas ao total
-   do KPI). Declarado antes do useDashboardData para ser passado a ele. */
-const diariaShowSemPeriodo = ref(false);
-
-const dashboard = useDashboardData(dateFilter, { diariaShowSemPeriodo });
+const dashboard = useDashboardData(dateFilter);
 
 /* Retornos desestruturados como bindings de topo (o template desembrulha
    automaticamente refs de topo; um ref aninhado em objeto não é desembrulhado). */
@@ -327,7 +321,6 @@ const diariaColumns = [
   { label: "Mês", monthYear: true },
   { label: "Colaborador", meta: "employeeName" },
   { label: "Filial", meta: "filial" },
-  { label: "Gerente regional", meta: "gerenteRegional" },
   { label: "Regional", meta: "estado" },
   { label: "Diária", meta: "motivo" },
   { label: "Valor pago", value: true }
@@ -462,15 +455,13 @@ function onRescisaoBarClick({ label }) {
 const rescisoesChartRef = ref(null);
 const rescisoesBarChartRef = ref(null);
 
-const diariaSemPeriodoCount = computed(() => dashboard.diariaSemPeriodoCount());
-
 /* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
    treinamento usam a série agregada por dia (total do dia, sem visão
    individual); os demais indicadores usam os lançamentos do período. */
 function lineEntries(card) {
   if (card.kind !== "line") return [];
   const ind = getIndicatorById(card.id);
-  if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries(diariaShowSemPeriodo.value);
+  if (ind && ind.id === "custo_diaria") return dashboard.diariaDailySeries();
   return filteredEntries(ind);
 }
 
@@ -523,7 +514,7 @@ const kpiChartViews = computed(() =>
 /* Headcount por gênero (pizza Masculino x Feminino, nos filtros atuais): ocupa
    na grade o lugar do Absenteísmo, que foi para a linha do Custo de folha. */
 const generoChartView = computed(() => {
-  const chart = dashboard.cockpitChartFor("headcount", undefined, undefined, undefined, "", "pie");
+  const chart = dashboard.cockpitChartFor("headcount", undefined, undefined, undefined, [], [], "pie");
   return {
     card: {
       id: "headcount_genero",
@@ -906,11 +897,8 @@ watch(activeTab, (tab) => {
         :kpi="kpi"
         :selected="selectedKpiId === kpi.id"
         :show-values="showValues"
-        :sem-periodo-count="kpi.id === 'custo_diaria' ? diariaSemPeriodoCount : 0"
-        :show-sem-periodo="diariaShowSemPeriodo"
         @select="onSelectKpi"
         @context="onKpiContext"
-        @toggle-sem-periodo="diariaShowSemPeriodo = $event"
       />
       <p
         v-if="!visibleKpis.length"

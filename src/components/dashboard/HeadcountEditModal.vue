@@ -6,7 +6,6 @@ import { getHeadcountById } from "@/lib/store";
 import { updateHeadcountRecord } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
-import { maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 
 /* Modal dedicado à edição de um colaborador do Headcount — autocontido (não
@@ -31,12 +30,12 @@ const form = reactive({
   mesReferente: "",
   colaborador: "",
   funcao: "",
-  remuneracao: "",
   dataAdmissao: "",
+  empresa: "",
   filial: null,
   estado: ""
 });
-// Empresa como veio do registro (ver filialOriginalForaDaLista).
+// Filial como veio do registro (ver filialOriginalForaDaLista).
 const filialOriginal = ref(null);
 
 function loadRecord(id) {
@@ -48,8 +47,8 @@ function loadRecord(id) {
   form.mesReferente = h.mesReferente ? String(h.mesReferente).slice(0, 7) : "";
   form.colaborador = h.colaborador || "";
   form.funcao = h.funcao || "";
-  form.remuneracao = h.remuneracao != null ? normalizeCurrencyInput(String(h.remuneracao)) : "";
   form.dataAdmissao = h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "";
+  form.empresa = h.empresa || "";
   form.filial = h.filial || null;
   filialOriginal.value = form.filial;
   form.estado = h.estado || "";
@@ -80,24 +79,16 @@ watch(
   }
 );
 
-/* A "empresa" gravada é texto livre (na planilha real, a razão social — ex.:
-   "MODENA & ARAUJO S/A"), quase nunca igual à sigla de uma filial do
-   cadastro. Antes o modal limpava o campo ao abrir quando não achava a sigla,
-   e salvar apagava a empresa na planilha. Agora o valor atual vira uma opção
-   própria e só é limpo quando o usuário troca o estado. */
+/* A "filial" gravada às vezes é texto livre que não bate com a sigla de
+   nenhuma filial do cadastro. Antes o modal limpava o campo ao abrir quando
+   não achava a sigla, e salvar apagava a filial na planilha. Agora o valor
+   atual vira uma opção própria e só é limpo quando o usuário troca o estado. */
 const filialOriginalForaDaLista = computed(
   () => !!filialOriginal.value && !branches.value.some((b) => b.shortName === filialOriginal.value)
 );
 
 function onEstadoChange() {
   if (form.filial && !branches.value.some((b) => b.shortName === form.filial)) form.filial = null;
-}
-
-function onSalaryInput(ev) {
-  form.remuneracao = maskCurrencyInput(ev.target.value);
-}
-function onSalaryBlur() {
-  form.remuneracao = normalizeCurrencyInput(form.remuneracao);
 }
 
 const saving = ref(false);
@@ -107,9 +98,6 @@ async function submit() {
   if (!nome) return toast("Informe o colaborador.");
   if (!form.dataAdmissao) return toast("Informe a data de admissão.");
   if (!form.mesReferente) return toast("Informe o mês referente.");
-  const remuneracaoText = normalizeCurrencyInput(form.remuneracao);
-  const remuneracao = remuneracaoText === "" ? null : parseCurrencyBR(remuneracaoText);
-  if (remuneracao !== null && isNaN(remuneracao)) return toast("Informe uma remuneração válida (R$).");
 
   saving.value = true;
   try {
@@ -120,8 +108,8 @@ async function submit() {
       mesReferente: form.mesReferente,
       colaborador: nome,
       funcao: form.funcao,
-      remuneracao,
       dataAdmissao: form.dataAdmissao,
+      empresa: form.empresa,
       filial: form.filial,
       estado: form.estado
     });
@@ -174,9 +162,13 @@ async function submit() {
           </select>
         </div>
         <div class="flex flex-col gap-1.5">
-          <label for="hcEditFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
+          <label for="hcEditEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
+          <input id="hcEditEmpresa" v-model="form.empresa" type="text" class="input-field uppercase" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="hcEditFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
           <select id="hcEditFilial" v-model="form.filial" class="input-field">
-            <option :value="null">— Sem empresa —</option>
+            <option :value="null">— Sem filial —</option>
             <option v-if="filialOriginalForaDaLista" :value="filialOriginal">{{ filialOriginal }} (atual)</option>
             <option v-for="b in branches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
           </select>
@@ -191,20 +183,6 @@ async function submit() {
         <div class="flex flex-col gap-1.5">
           <label for="hcEditDesligamento" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de desligamento</label>
           <input id="hcEditDesligamento" v-model="form.dataDesligamento" type="date" class="input-field" />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="hcEditRemuneracao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Remuneração (R$)</label>
-          <input
-            id="hcEditRemuneracao"
-            class="input-field text-right tabular-nums"
-            type="text"
-            inputmode="decimal"
-            autocomplete="off"
-            placeholder="0,00"
-            :value="form.remuneracao"
-            @input="onSalaryInput"
-            @blur="onSalaryBlur"
-          />
         </div>
       </div>
 

@@ -95,11 +95,12 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "codigo", type: "text" },
       { name: "colaborador", type: "text", required: true },
       { name: "funcao", type: "text" },
-      { name: "remuneracao", type: "number" },
       { name: "data_admissao", type: "date", required: true },
       { name: "genero", type: "text", values: ["masculino", "feminino"] },
       { name: "data_desligamento", type: "date" },
       { name: "mes_referente", type: "date", required: true },
+      // Razão social/empresa (texto livre), separada da filial/unidade.
+      { name: "empresa", type: "text" },
       // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/diarias/treinamentos.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
@@ -211,14 +212,11 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "id", type: "text" },
       { name: "nome_colaborador", type: "text", required: true },
       { name: "funcao", type: "text" },
-      { name: "departamento", type: "text" },
       { name: "filial", type: "text" },
       { name: "lider_imediato", type: "text" },
-      { name: "gerente_regional", type: "text" },
       { name: "regional", type: "text" },
       { name: "motivo", type: "text" },
       { name: "competencia", type: "date", required: true },
-      { name: "sem_periodo", type: "boolean", notNull: true },
       { name: "valor", type: "number", notNull: true, required: true },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]

@@ -90,31 +90,17 @@ let flashTimer = null;
 
 const indicator = computed(() => getIndicatorById(props.card.id) || { id: props.card.id, name: props.card.title });
 
-/* Sentinela gravada como `date` dos lançamentos "sem período" (ver Custo da
-   diária geral): cai sempre no mesmo mês (0001-01), o que permite isolar o
-   grupo do restante da agregação mensal normal. */
-const NO_PERIODO_MONTH = "0001-01";
-
 /* Evolução por indicador: agrega os lançamentos por mês para o gráfico de
-   barras (soma para contagens/valores, média para percentuais e prazos).
-   Lançamentos "sem período" viram uma barra própria no fim, em vez de se
-   misturarem com o mês real em que foram importados. */
+   barras (soma para contagens/valores, média para percentuais e prazos). */
 const monthlyBarData = computed(() => {
   if (props.card.kind !== "line") return [];
   const method = AVG_TYPES.includes(indicator.value.type) ? "avg" : "sum";
   const monthly = aggregateByMonth(props.entries, method);
-  const rows = [];
-  let semPeriodo = null;
-  monthly.forEach((m) => {
-    const row = { label: formatMonthLabel(m.date), value: m.value, tooltipValue: formatValue(indicator.value, m.value) };
-    if (m.date === NO_PERIODO_MONTH) {
-      semPeriodo = { ...row, label: "Sem período" };
-    } else {
-      rows.push(row);
-    }
-  });
-  if (semPeriodo) rows.push(semPeriodo);
-  return rows;
+  return monthly.map((m) => ({
+    label: formatMonthLabel(m.date),
+    value: m.value,
+    tooltipValue: formatValue(indicator.value, m.value)
+  }));
 });
 
 const monthlyValueFormat = computed(() => {

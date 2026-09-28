@@ -123,10 +123,8 @@ function setCloseDate(id, value) {
 const diaria = reactive({
   employeeName: "",
   funcao: "",
-  departamento: "",
   filial: "",
   liderImediato: "",
-  gerenteRegional: "",
   regional: "",
   mes: currentYm(),
   motivo: "",
@@ -243,10 +241,8 @@ function prefillEdit(indId, entry) {
   if (indId === "custo_diaria") {
     diaria.employeeName = m.employeeName || "";
     diaria.funcao = m.funcao || "";
-    diaria.departamento = m.departamento || "";
     diaria.filial = m.filial || "";
     diaria.liderImediato = m.liderImediato || "";
-    diaria.gerenteRegional = m.gerenteRegional || "";
     diaria.regional = m.regional || m.estado || "";
     diaria.mes = m.competencia || (entry.date ? String(entry.date).slice(0, 7) : currentYm());
     diaria.motivo = m.motivo || "";
@@ -297,10 +293,8 @@ function prefillEdit(indId, entry) {
 function resetDiaria() {
   diaria.employeeName = "";
   diaria.funcao = "";
-  diaria.departamento = "";
   diaria.filial = "";
   diaria.liderImediato = "";
-  diaria.gerenteRegional = "";
   diaria.regional = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   diaria.mes = currentYm();
   diaria.motivo = "";
@@ -871,8 +865,8 @@ const headcount = reactive({
   mesReferente: "",
   colaborador: "",
   funcao: "",
-  remuneracao: "",
   dataAdmissao: "",
+  empresa: "",
   filial: null
 });
 const headcountSearch = ref("");
@@ -914,16 +908,9 @@ function resetHeadcountForm() {
   headcount.mesReferente = "";
   headcount.colaborador = "";
   headcount.funcao = "";
-  headcount.remuneracao = "";
   headcount.dataAdmissao = "";
+  headcount.empresa = "";
   headcount.filial = null;
-}
-
-function onHeadcountSalaryInput(ev) {
-  headcount.remuneracao = maskCurrencyInput(ev.target.value);
-}
-function onHeadcountSalaryBlur() {
-  headcount.remuneracao = normalizeCurrencyInput(headcount.remuneracao);
 }
 
 function submitHeadcount() {
@@ -932,9 +919,6 @@ function submitHeadcount() {
   if (!headcount.dataAdmissao) return toast("Informe a data de admissão.");
   if (!headcount.mesReferente) return toast("Informe o mês referente.");
   const st = effectiveVagaEstado();
-  const remuneracaoText = normalizeCurrencyInput(headcount.remuneracao);
-  const remuneracao = remuneracaoText === "" ? null : parseCurrencyBR(remuneracaoText);
-  if (remuneracao !== null && isNaN(remuneracao)) return toast("Informe uma remuneração válida (R$).");
 
   const payload = {
     codigo: headcount.codigo.trim(),
@@ -943,8 +927,8 @@ function submitHeadcount() {
     mesReferente: headcount.mesReferente,
     colaborador: nome,
     funcao: headcount.funcao,
-    remuneracao,
     dataAdmissao: headcount.dataAdmissao,
+    empresa: headcount.empresa,
     filial: headcount.filial,
     estado: st
   };
@@ -1195,10 +1179,8 @@ function submitDiaria() {
     meta: {
       employeeName,
       funcao: up(diaria.funcao),
-      departamento: up(diaria.departamento),
       filial: up(diaria.filial),
       liderImediato: up(diaria.liderImediato),
-      gerenteRegional: up(diaria.gerenteRegional),
       regional: up(diaria.regional),
       motivo: up(diaria.motivo),
       competencia: diaria.mes
@@ -2044,28 +2026,18 @@ function close() {
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="flex flex-col gap-1.5">
               <label for="hcEmpresa" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Empresa</label>
-              <select id="hcEmpresa" v-model="headcount.filial" class="input-field">
-                <option :value="null">— Sem empresa —</option>
+              <input id="hcEmpresa" v-model="headcount.empresa" type="text" class="input-field uppercase" />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label for="hcFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
+              <select id="hcFilial" v-model="headcount.filial" class="input-field">
+                <option :value="null">— Sem filial —</option>
                 <option v-for="b in headcountBranches" :key="b.id" :value="b.shortName">{{ b.shortName }} — {{ b.name }}</option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="hcFuncao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Função</label>
               <input id="hcFuncao" v-model="headcount.funcao" v-upper type="text" class="input-field uppercase" placeholder="Ex.: ANALISTA DE RH" />
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="hcRemuneracao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Remuneração (R$)</label>
-              <input
-                id="hcRemuneracao"
-                class="input-field text-right tabular-nums"
-                type="text"
-                inputmode="decimal"
-                autocomplete="off"
-                placeholder="0,00"
-                :value="headcount.remuneracao"
-                @input="onHeadcountSalaryInput"
-                @blur="onHeadcountSalaryBlur"
-              />
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="hcAdmissao" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Data de admissão</label>
@@ -2191,9 +2163,6 @@ function close() {
                 <span v-if="h.funcao || h.estado || headcountBranchName(h)" class="text-xs text-zinc-500 dark:text-zinc-400">
                   {{ [headcountBranchName(h), h.funcao, h.estado].filter(Boolean).join(" · ") }}
                 </span>
-                <span v-if="h.remuneracao != null" class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Remuneração: {{ formatCurrency(h.remuneracao) }}
-                </span>
                 <span v-if="h.dataAdmissao" class="text-xs text-zinc-500 dark:text-zinc-400">
                   Admissão: {{ formatDate(h.dataAdmissao) }}
                 </span>
@@ -2229,20 +2198,12 @@ function close() {
                 <input id="diariaFuncao" v-model="diaria.funcao" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label for="diariaDep" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Departamento</label>
-                <input id="diariaDep" v-model="diaria.departamento" v-upper type="text" class="input-field" />
-              </div>
-              <div class="flex flex-col gap-1.5">
                 <label for="diariaFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
                 <input id="diariaFilial" v-model="diaria.filial" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaLider" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Líder imediato</label>
                 <input id="diariaLider" v-model="diaria.liderImediato" v-upper type="text" class="input-field" />
-              </div>
-              <div class="flex flex-col gap-1.5">
-                <label for="diariaGerente" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Gerente regional</label>
-                <input id="diariaGerente" v-model="diaria.gerenteRegional" v-upper type="text" class="input-field" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="diariaRegional" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Regional</label>

@@ -79,7 +79,7 @@ function permanenciaRows(list) {
   return rows;
 }
 
-const HEADCOUNT_HEADER = ["Código", "Colaborador", "Empresa", "Função", "Remuneração", "Data de admissão", "Estado", "Gênero", "Data de desligamento", "Mês referente"];
+const HEADCOUNT_HEADER = ["Código", "Colaborador", "Empresa", "Filial", "Função", "Data de admissão", "Estado", "Gênero", "Data de desligamento", "Mês referente"];
 
 function headcountRows(list) {
   const rows = [HEADCOUNT_HEADER];
@@ -87,9 +87,9 @@ function headcountRows(list) {
     rows.push([
       h.codigo || "",
       h.colaborador || "",
+      h.empresa || "",
       h.filial || "",
       h.funcao || "",
-      h.remuneracao != null ? Number(h.remuneracao) : null,
       h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : "",
       h.estado || "",
       h.genero ? (String(h.genero).toLowerCase() === "feminino" ? "Feminino" : "Masculino") : "",
@@ -110,21 +110,20 @@ function filiaisRows(list) {
   return rows;
 }
 
-const DIARIA_HEADER = ["Data", "Colaborador", "Função", "Filial", "Motivo", "Valor", "Estado", "Sem período"];
+const DIARIA_HEADER = ["Data", "Colaborador", "Função", "Filial", "Motivo", "Valor", "Estado"];
 
 function diariasRows(list) {
   const rows = [DIARIA_HEADER];
   (list || []).forEach((e) => {
     const m = e.meta || {};
     rows.push([
-      m.semPeriodo ? "" : e.date || "",
+      e.date || "",
       m.employeeName || "",
       m.funcao || "",
       m.filial || "",
       m.motivo || "",
       Number(e.value) || 0,
-      m.estado || "",
-      m.semPeriodo ? "Sim" : "Não"
+      m.estado || ""
     ]);
   });
   return rows;
@@ -187,9 +186,9 @@ function allTables() {
     { name: "Vagas", rows: vagasRows(getVacancies()), cols: [28, 16, 18, 20, 14, 10, 14, 12, 14] },
     { name: "Turnover", rows: turnoverRows(getTurnovers()), cols: [20, 16, 12, 12, 10, 10] },
     { name: "Permanência", rows: permanenciaRows(getPermanencias()), cols: [28, 18, 18, 10] },
-    { name: "Headcount", rows: headcountRows(getHeadcounts()), cols: [28, 14, 22, 16, 18, 10, 12] },
+    { name: "Headcount", rows: headcountRows(getHeadcounts()), cols: [28, 14, 22, 16, 22, 16, 10, 12] },
     { name: "Filiais", rows: filiaisRows(getBranches()), cols: [14, 22, 30, 18, 22, 10] },
-    { name: "Diárias", rows: diariasRows(getEntriesFor("custo_diaria")), cols: [12, 28, 20, 20, 26, 14, 10, 12] },
+    { name: "Diárias", rows: diariasRows(getEntriesFor("custo_diaria")), cols: [12, 28, 20, 20, 26, 14, 10] },
     { name: "Treinamentos", rows: treinamentosRows(getEntriesFor("treinamento")), cols: [14, 28, 20, 20, 26, 14, 20, 10] },
     { name: "Custo de Folha", rows: custoFolhaRows(getEntriesFor("custo_total")), cols: [14, 22, 30, 14, 14, 10] },
     { name: "Absenteísmo", rows: absenteismoRows(getEntriesFor("absenteismo")), cols: [14, 14, 10] }

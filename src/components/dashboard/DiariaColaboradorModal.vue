@@ -37,12 +37,11 @@ function latest(key) {
 const info = computed(() => [
   { label: "Função", value: latest("funcao") },
   { label: "Filial", value: latest("filial") },
-  { label: "Gerente regional", value: latest("gerenteRegional") },
   { label: "Regional", value: latest("regional") || latest("estado") }
 ]);
 
 function competencia(entry) {
-  return entry.meta && entry.meta.semPeriodo ? "Sem período" : ymShortLabel(entry.date);
+  return ymShortLabel(entry.date);
 }
 
 function cell(entry, key) {

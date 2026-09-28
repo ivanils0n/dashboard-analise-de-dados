@@ -545,7 +545,7 @@ export async function deletePermanenciaRecords(ids) {
 
 /* ---------- Headcount (quadro mensal de colaboradores) ----------
    Cada linha é um colaborador no quadro de um mês: código, colaborador,
-   função, remuneração, data de admissão, gênero, data de desligamento (se
+   função, data de admissão, gênero, data de desligamento (se
    houver) e "mes_referente". O filtro por mês usa SÓ o mês referente — o quadro
    do mês é o conjunto de linhas com aquele mês referente (a admissão não
    filtra mais). Admissões = linhas com Data de admissão no mês; demissões =
@@ -663,25 +663,46 @@ export function headcountCountInRange(state, range) {
 
 /* Filiais (nome abreviado lançado) que têm colaborador no estado, sem
    repetição (mesma chave normalizada) e em ordem alfabética — opções do
-   filtro de filial do gráfico de Headcount. */
-export function headcountFilialOptions(state) {
+   filtro de filial do gráfico de Headcount. `empresas`: quando informado
+   (filtro de empresa marcado), só considera colaboradores dessas empresas —
+   assim o filtro de filial só lista as filiais da(s) empresa(s) filtrada(s). */
+export function headcountFilialOptions(state, empresas = []) {
   const seen = new Map();
-  filterByState(getHeadcounts(), state).forEach((h) => {
-    const key = branchKeyFor(h.filial, h.estado);
-    if (!key || seen.has(key)) return;
-    const b = findBranchByShortName(h.filial, h.estado);
-    seen.set(key, String((b && b.shortName) || h.filial).trim().toUpperCase());
-  });
+  filterByState(getHeadcounts(), state)
+    .filter((h) => !empresas.length || empresas.includes(String(h.empresa || "").trim().toUpperCase()))
+    .forEach((h) => {
+      const key = branchKeyFor(h.filial, h.estado);
+      if (!key || seen.has(key)) return;
+      const b = findBranchByShortName(h.filial, h.estado);
+      seen.set(key, String((b && b.shortName) || h.filial).trim().toUpperCase());
+    });
   return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
+/* Empresas (campo livre "empresa" do Headcount) que aparecem no estado, sem
+   repetição — opções do filtro de empresa do gráfico de Headcount. */
+export function headcountEmpresaOptions(state) {
+  const seen = new Set();
+  filterByState(getHeadcounts(), state).forEach((h) => {
+    const v = String(h.empresa || "").trim().toUpperCase();
+    if (v) seen.add(v);
+  });
+  return [...seen].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
 /* Quadro do período por gênero — mesmo mês de headcountCountInRange.
-   "total" conta todos os colaboradores (inclusive sem gênero informado). */
-export function headcountGenderCountInRange(state, range, filial = "") {
+   "total" conta todos os colaboradores (inclusive sem gênero informado).
+   `filiais`/`empresas`: listas de valores marcados no filtro (multi-seleção);
+   vazio = sem filtro. */
+export function headcountGenderCountInRange(state, range, filiais = [], empresas = []) {
   let list = filterByState(getHeadcounts(), state);
-  if (filial) {
-    const key = branchKeyFor(filial);
-    list = list.filter((h) => branchKeyFor(h.filial, h.estado) === key);
+  if (filiais.length) {
+    const keys = new Set(filiais.map((f) => branchKeyFor(f)));
+    list = list.filter((h) => keys.has(branchKeyFor(h.filial, h.estado)));
+  }
+  if (empresas.length) {
+    const set = new Set(empresas.map((e) => String(e).trim().toUpperCase()));
+    list = list.filter((h) => set.has(String(h.empresa || "").trim().toUpperCase()));
   }
   const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
   if (ym) list = list.filter((h) => inMonth(h, ym));
@@ -698,11 +719,11 @@ export function addHeadcountRecord({
   codigo = null,
   colaborador,
   funcao = null,
-  remuneracao = null,
   dataAdmissao = null,
   genero = null,
   dataDesligamento = null,
   mesReferente = null,
+  empresa = null,
   filial = null,
   estado
 }) {
@@ -711,11 +732,11 @@ export function addHeadcountRecord({
     codigo: codigo != null && codigo !== "" ? String(codigo) : null,
     colaborador: String(colaborador || "").toUpperCase(),
     funcao: funcao != null ? String(funcao).toUpperCase() : null,
-    remuneracao: moneyOrNull(remuneracao),
     dataAdmissao: dataAdmissao || null,
     genero: genero || null,
     dataDesligamento: dataDesligamento || null,
     mesReferente: mesReferente ? String(mesReferente).slice(0, 7) : null,
+    empresa: empresa != null ? String(empresa).toUpperCase() : null,
     filial: filial || null,
     estado: estado || null
   };
@@ -725,7 +746,7 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { codigo, colaborador, funcao, remuneracao, dataAdmissao, genero, dataDesligamento, mesReferente, filial, estado }
+  { codigo, colaborador, funcao, dataAdmissao, genero, dataDesligamento, mesReferente, empresa, filial, estado }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
@@ -734,11 +755,11 @@ export function updateHeadcountRecord(
     codigo: codigo !== undefined ? (codigo != null && codigo !== "" ? String(codigo) : null) : record.codigo,
     colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
     funcao: funcao !== undefined ? (funcao != null ? String(funcao).toUpperCase() : null) : record.funcao,
-    remuneracao: remuneracao !== undefined ? moneyOrNull(remuneracao) : record.remuneracao,
     dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
     genero: genero !== undefined ? genero || null : record.genero,
     dataDesligamento: dataDesligamento !== undefined ? dataDesligamento || null : record.dataDesligamento,
     mesReferente: mesReferente !== undefined ? (mesReferente ? String(mesReferente).slice(0, 7) : null) : record.mesReferente,
+    empresa: empresa !== undefined ? (empresa != null ? String(empresa).toUpperCase() : null) : record.empresa,
     filial: filial !== undefined ? filial || null : record.filial,
     estado: estado !== undefined ? estado || null : record.estado
   };

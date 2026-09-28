@@ -13,6 +13,7 @@ import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
 import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
+import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
 import RetentionPanel from "@/components/dashboard/RetentionPanel.vue";
@@ -65,13 +66,19 @@ watch(hiringRecrutadorOptions, (opts) => {
   }
 });
 
-/* Filtro por Filial do gráfico de Headcount — "" = todas as filiais. */
-const headcountFilialFilter = ref("");
-const headcountFilialOptions = computed(() => props.dashboard.headcountFiliais());
+/* Filtros (multi-seleção) por Filial e Empresa do gráfico de Headcount —
+   [] = todas. Com empresa(s) marcada(s), o filtro de filial só lista as
+   filiais dessa(s) empresa(s) (ver headcountFilialOptions). */
+const headcountEmpresaFilter = ref([]);
+const headcountEmpresaOptions = computed(() => props.dashboard.headcountEmpresas());
+watch(headcountEmpresaOptions, (opts) => {
+  headcountEmpresaFilter.value = headcountEmpresaFilter.value.filter((v) => opts.includes(v));
+});
+
+const headcountFilialFilter = ref([]);
+const headcountFilialOptions = computed(() => props.dashboard.headcountFiliais(headcountEmpresaFilter.value));
 watch(headcountFilialOptions, (opts) => {
-  if (headcountFilialFilter.value && !opts.includes(headcountFilialFilter.value)) {
-    headcountFilialFilter.value = "";
-  }
+  headcountFilialFilter.value = headcountFilialFilter.value.filter((v) => opts.includes(v));
 });
 
 /* Headcount: "bar" (barras por estado) ou "pie" (pizza Masculino x Feminino). */
@@ -110,6 +117,7 @@ const centerChart = computed(() =>
     treinamentoGerenteFilter.value,
     hiringRecrutadorFilter.value,
     headcountFilialFilter.value,
+    headcountEmpresaFilter.value,
     headcountView.value,
     rescisaoMode.value,
     rescisaoFilters.value,
@@ -495,13 +503,23 @@ function goNextKpi() {
                   all-label="Todos os gerentes imediatos"
                   title="Filtrar Rescisões por gerente imediato"
                 />
-                <GerenteRegionalFilter
+                <MultiSelectFilter
                   v-if="centerChart.id === 'headcount'"
                   v-model="headcountFilialFilter"
                   :options="headcountFilialOptions"
                   label="Filial"
                   all-label="Todas as filiais"
-                  title="Filtrar Headcount por filial"
+                  plural-label="filiais"
+                  title="Filtrar Headcount por uma ou mais filiais"
+                />
+                <MultiSelectFilter
+                  v-if="centerChart.id === 'headcount'"
+                  v-model="headcountEmpresaFilter"
+                  :options="headcountEmpresaOptions"
+                  label="Empresa"
+                  all-label="Todas as empresas"
+                  plural-label="empresas"
+                  title="Filtrar Headcount por uma ou mais empresas"
                 />
                 <GerenteRegionalFilter
                   v-if="centerChart.id === 'treinamento'"
@@ -668,6 +686,7 @@ function goNextKpi() {
       :estado="headcountEstadoSigla"
       :genero="headcountGenero"
       :filial="headcountFilialFilter"
+      :empresa="headcountEmpresaFilter"
       @close="headcountEstadoOpen = false"
     />
 
@@ -745,13 +764,23 @@ function goNextKpi() {
             all-label="Todos os gerentes imediatos"
             title="Filtrar Rescisões por gerente imediato"
           />
-          <GerenteRegionalFilter
+          <MultiSelectFilter
             v-if="centerChart.id === 'headcount'"
             v-model="headcountFilialFilter"
             :options="headcountFilialOptions"
             label="Filial"
             all-label="Todas as filiais"
-            title="Filtrar Headcount por filial"
+            plural-label="filiais"
+            title="Filtrar Headcount por uma ou mais filiais"
+          />
+          <MultiSelectFilter
+            v-if="centerChart.id === 'headcount'"
+            v-model="headcountEmpresaFilter"
+            :options="headcountEmpresaOptions"
+            label="Empresa"
+            all-label="Todas as empresas"
+            plural-label="empresas"
+            title="Filtrar Headcount por uma ou mais empresas"
           />
           <GerenteRegionalFilter
             v-if="centerChart.id === 'treinamento'"

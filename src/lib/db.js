@@ -52,14 +52,11 @@ function diariaToRow(entry) {
     id: entry.id,
     nome_colaborador: meta.employeeName || "",
     funcao: meta.funcao || null,
-    departamento: meta.departamento || null,
     filial: meta.filial || null,
     lider_imediato: meta.liderImediato || null,
-    gerente_regional: meta.gerenteRegional || null,
     regional: meta.regional || null,
     motivo: meta.motivo || null,
     competencia: entry.date,
-    sem_periodo: Boolean(meta.semPeriodo),
     valor: Number(entry.value) || 0,
     estado_sigla: meta.estado || null
   };
@@ -159,11 +156,11 @@ function headcountToRow(h) {
     codigo: h.codigo != null ? String(h.codigo) : null,
     colaborador: h.colaborador ?? "",
     funcao: h.funcao != null ? String(h.funcao) : null,
-    remuneracao: h.remuneracao != null ? Number(h.remuneracao) : null,
     data_admissao: h.dataAdmissao ? String(h.dataAdmissao).slice(0, 10) : null,
     genero: h.genero || null,
     data_desligamento: h.dataDesligamento ? String(h.dataDesligamento).slice(0, 10) : null,
     mes_referente: h.mesReferente ? `${String(h.mesReferente).slice(0, 7)}-01` : null,
+    empresa: h.empresa || null,
     filial: h.filial || null,
     estado_sigla: h.estado || null
   };
@@ -393,13 +390,10 @@ function mapRemoteDiaria(row, impliedState) {
     meta: {
       employeeName: up(row.nome_colaborador) || "",
       funcao: up(row.funcao) || null,
-      departamento: up(row.departamento) || null,
       filial: up(row.filial) || null,
       liderImediato: up(row.lider_imediato) || null,
-      gerenteRegional: up(row.gerente_regional) || null,
       regional: up(row.regional) || null,
       motivo: motivoKey(row.motivo),
-      semPeriodo: Boolean(row.sem_periodo),
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -535,11 +529,11 @@ function mapRemoteHeadcount(row, impliedState) {
     codigo: row.codigo != null ? String(row.codigo) : null,
     colaborador: up(row.colaborador) ?? "",
     funcao: row.funcao != null ? up(row.funcao) : null,
-    remuneracao: row.remuneracao != null ? Number(row.remuneracao) : null,
     dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
     genero: row.genero || null,
     dataDesligamento: row.data_desligamento ? String(row.data_desligamento).slice(0, 10) : null,
     mesReferente: row.mes_referente ? String(row.mes_referente).slice(0, 10) : null,
+    empresa: row.empresa != null ? up(row.empresa) : null,
     filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null
   };

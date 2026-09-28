@@ -65,8 +65,8 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
 const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial", "estado_sigla", "recrutador"],
   headcount: [
-    "id", "codigo", "colaborador", "funcao", "remuneracao", "data_admissao",
-    "genero", "data_desligamento", "mes_referente", "filial", "estado_sigla"
+    "id", "codigo", "colaborador", "funcao", "data_admissao",
+    "genero", "data_desligamento", "mes_referente", "empresa", "filial", "estado_sigla"
   ],
   turnover: ["id", "filial", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
   permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial", "estado_sigla"],
@@ -79,8 +79,8 @@ const ENTITY_COLUMNS = {
   // para migrar dados de uma planilha antiga). Colaboradores/Departamentos
   // saíram do sistema — Headcount passou a ser a fonte de colaborador/mês.
   diarias: [
-    "id", "nome_colaborador", "funcao", "departamento", "filial", "lider_imediato",
-    "gerente_regional", "regional", "motivo", "competencia", "sem_periodo", "valor",
+    "id", "nome_colaborador", "funcao", "filial", "lider_imediato",
+    "regional", "motivo", "competencia", "valor",
     "estado_sigla"
   ],
   treinamentos: [

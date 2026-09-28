@@ -1,8 +1,9 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
+import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
 import { listHeadcountRecords, isHeadcountAtivo, findBranchByShortName, deleteHeadcountRecord, branchKeyFor } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
@@ -21,8 +22,11 @@ const props = defineProps({
   /* "masculino" | "feminino": só colaboradores desse gênero (barra de gênero
      clicada). Vazio = quadro geral (barra Total ou clique no KPI). */
   genero: { type: String, default: "" },
-  /* Só colaboradores dessa filial (filtro do gráfico). Vazio = todas. */
-  filial: { type: String, default: "" }
+  /* Filiais/empresas marcadas no filtro (multi-seleção) do gráfico — contexto
+     herdado de fora. [] = todas. Os filtros de Filial/Empresa deste modal
+     (abaixo) recortam ainda mais, dentro do que já veio filtrado daqui. */
+  filial: { type: Array, default: () => [] },
+  empresa: { type: Array, default: () => [] }
 });
 
 /* Edição e exclusão são resolvidas aqui mesmo, sem passar pelo pai — clicar
@@ -42,16 +46,64 @@ const ym = computed(() =>
 );
 
 /* `h.filial` é lançado como o nome abreviado da filial (ex.: "PVH 5") —
-   busca o cadastro em Filiais para exibir o nome completo; sem
-   correspondência, mostra o texto lançado mesmo. */
-const rows = computed(() =>
+   busca o cadastro em Filiais para exibir o nome completo em `filialNome`;
+   sem correspondência, usa o texto lançado mesmo. `h.empresa` é o campo livre
+   de empresa (razão social), separado da filial. */
+const records = computed(() =>
   listHeadcountRecords(props.estado, ym.value || undefined, { incluirDesligados: true })
-    .filter((h) => !props.filial || branchKeyFor(h.filial, h.estado) === branchKeyFor(props.filial))
+    .filter((h) => !props.filial.length || props.filial.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
+    .filter((h) => !props.empresa.length || props.empresa.some((e) => String(h.empresa || "").trim().toUpperCase() === String(e).trim().toUpperCase()))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
     .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
-    return { ...h, empresa: branch ? branch.name : h.filial || "", ativo: isHeadcountAtivo(h, ym.value) };
+    return { ...h, filialNome: branch ? branch.name : h.filial || "", ativo: isHeadcountAtivo(h, ym.value) };
   })
+);
+
+/* Filtros de Filial e Empresa próprios do modal — recortam ainda mais o que
+   já chegou filtrado do gráfico (props.filial/props.empresa), para explorar
+   sem precisar fechar e trocar o filtro do gráfico. Zerados sempre que o
+   modal reabre. */
+const filialFilter = ref([]);
+const empresaFilter = ref([]);
+watch(
+  () => props.open,
+  (open) => {
+    if (!open) return;
+    filialFilter.value = [];
+    empresaFilter.value = [];
+  }
+);
+
+/* Com empresa(s) marcada(s) no filtro deste modal, o filtro de filial só
+   lista as filiais dessa(s) empresa(s) (mesma regra do gráfico). */
+const filialOptions = computed(() => {
+  const seen = new Map();
+  records.value
+    .filter((h) => !empresaFilter.value.length || empresaFilter.value.includes(String(h.empresa || "").trim().toUpperCase()))
+    .forEach((h) => {
+      const key = branchKeyFor(h.filial, h.estado);
+      if (!key || seen.has(key)) return;
+      seen.set(key, h.filial);
+    });
+  return [...seen.values()].sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
+});
+watch(filialOptions, (opts) => {
+  filialFilter.value = filialFilter.value.filter((v) => opts.includes(v));
+});
+const empresaOptions = computed(() => {
+  const set = new Set();
+  records.value.forEach((h) => {
+    const v = String(h.empresa || "").trim().toUpperCase();
+    if (v) set.add(v);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+});
+
+const rows = computed(() =>
+  records.value
+    .filter((h) => !filialFilter.value.length || filialFilter.value.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
+    .filter((h) => !empresaFilter.value.length || empresaFilter.value.includes(String(h.empresa || "").trim().toUpperCase()))
 );
 
 /* Filtro de situação: o total do card e o número da barra do gráfico contam só
@@ -70,7 +122,7 @@ const filteredRows = computed(() => {
   const q = normalizeText(search.value).trim();
   if (!q) return situacaoRows.value;
   return situacaoRows.value.filter((h) =>
-    normalizeText([h.colaborador, h.empresa, h.funcao].join(" ")).includes(q)
+    normalizeText([h.colaborador, h.filialNome, h.empresa, h.funcao].join(" ")).includes(q)
   );
 });
 
@@ -145,14 +197,32 @@ async function removeRow(h) {
         </div>
       </div>
 
-      <div v-if="rows.length" class="flex flex-col gap-1.5">
-        <label for="hcEstadoSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
-        <input
-          id="hcEstadoSearch"
-          v-model="search"
-          type="search"
-          class="input-field"
-          placeholder="Nome, empresa ou função..."
+      <div v-if="records.length" class="flex flex-wrap items-end gap-3">
+        <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+          <label for="hcEstadoSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar colaborador</label>
+          <input
+            id="hcEstadoSearch"
+            v-model="search"
+            type="search"
+            class="input-field"
+            placeholder="Nome, filial, empresa ou função..."
+          />
+        </div>
+        <MultiSelectFilter
+          v-model="filialFilter"
+          :options="filialOptions"
+          label="Filial"
+          all-label="Todas as filiais"
+          plural-label="filiais"
+          title="Filtrar por uma ou mais filiais"
+        />
+        <MultiSelectFilter
+          v-model="empresaFilter"
+          :options="empresaOptions"
+          label="Empresa"
+          all-label="Todas as empresas"
+          plural-label="empresas"
+          title="Filtrar por uma ou mais empresas"
         />
       </div>
 
@@ -167,6 +237,7 @@ async function removeRow(h) {
                 class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400"
               >
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Gênero</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Admissão</th>
@@ -192,6 +263,7 @@ async function removeRow(h) {
                   </button>
                   <span v-else>{{ h.colaborador }}</span>
                 </td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.filialNome || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.empresa || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.genero || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
@@ -216,9 +288,9 @@ async function removeRow(h) {
       </div>
 
       <EmptyState
-        v-else-if="rows.length"
+        v-else-if="records.length"
         title="Nenhum colaborador encontrado"
-        text="Ajuste a busca e tente novamente."
+        text="Ajuste a busca ou os filtros de filial/empresa e tente novamente."
       />
       <EmptyState
         v-else

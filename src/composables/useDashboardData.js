@@ -10,6 +10,7 @@ import {
   headcountCountInRange,
   headcountGenderCountInRange,
   headcountFilialOptions,
+  headcountEmpresaOptions,
   listRescisoes,
   rescisaoFilterOptions,
   rescisoesTotal,
@@ -44,12 +45,9 @@ import { faturamento } from "@/composables/useFaturamento";
 
 /* Centraliza o cálculo dos dados exibidos no dashboard a partir do
    filtro de período (reactive { start, end }) e do estado selecionado.
-   Todos os totais são calculados diretamente sobre os lançamentos.
-   `options.diariaShowSemPeriodo` (ref) controla o filtro "Mostrar sem
-   período" do KPI de Custo da diária geral. */
-export function useDashboardData(filter, options = {}) {
+   Todos os totais são calculados diretamente sobre os lançamentos. */
+export function useDashboardData(filter) {
   const { state } = useFilters();
-  const diariaShowSemPeriodo = options.diariaShowSemPeriodo || ref(false);
 
   /* Estado forçado temporariamente por kpiValueByEstado, para reaproveitar
      exatamente as regras de cada KPI calculando um estado por vez. Só vale
@@ -100,10 +98,7 @@ export function useDashboardData(filter, options = {}) {
     const start = (range && range.start) || null;
     const end = (range && range.end) || null;
     const folha = getEntriesFor("custo_total", uf).filter(
-      (e) =>
-        !(e.meta && e.meta.semPeriodo) &&
-        !(start && e.date < start) &&
-        !(end && e.date > end)
+      (e) => !(start && e.date < start) && !(end && e.date > end)
     );
     return {
       folhaCount: folha.length,
@@ -213,49 +208,18 @@ export function useDashboardData(filter, options = {}) {
     return list;
   }
 
-  /* Lançamentos "sem período" (ver diariaDailySeries) usam uma data-sentinela
-     bem no passado só para satisfazer o banco — nunca representam um período
-     real e por isso NUNCA entram nas listas/agregados normais, mesmo sem
-     filtro de data ativo (sentinela sempre "antes" de qualquer início de
-     período). Só entram quando explicitamente pedidos (toggle "Mostrar sem
-     período" do KPI, tratado à parte em `kpis`). */
   function filteredEntries(ind) {
-    const withPeriod = scopeEntries(
-      ind,
-      stateEntries(ind.id, currentState()).filter((e) => !(e.meta && e.meta.semPeriodo))
-    );
+    const withPeriod = scopeEntries(ind, stateEntries(ind.id, currentState()));
     return filterByRange(withPeriod);
   }
 
   /* Série diária das diárias: soma o valor pago por dia (vários lançamentos
-     podem ocorrer na mesma data). Lançamentos importados sem período (ver
-     importação por planilha) ficam de fora por padrão — não têm uma data
-     real, então não respeitam o filtro de período — e só entram quando
-     `includeSemPeriodo` é true (filtro ao lado do KPI). */
-  function diariaDailySeries(includeSemPeriodo = false) {
+     podem ocorrer na mesma data). */
+  function diariaDailySeries() {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
     const all = stateEntries(ind.id, currentState());
-    const comPeriodo = all.filter((e) => !(e.meta && e.meta.semPeriodo));
-    let list = filterByRange(comPeriodo);
-    if (includeSemPeriodo) {
-      list = list.concat(all.filter((e) => e.meta && e.meta.semPeriodo));
-    }
-    return aggregateByDay(list);
-  }
-
-  /* Lançamentos de diária sem competência definida (estado/filtro atual, sem
-     considerar o filtro de data). Única fonte para a contagem exibida no KPI
-     e para a soma adicionada quando "Mostrar sem período" está ativo — usada
-     tanto por `indicatorCurrentValue` (KPI e Panorama) quanto pelo card. */
-  function diariaSemPeriodoEntries() {
-    const ind = getIndicatorById("custo_diaria");
-    if (!ind) return [];
-    return stateEntries(ind.id, currentState()).filter((e) => e.meta && e.meta.semPeriodo);
-  }
-
-  function diariaSemPeriodoCount() {
-    return diariaSemPeriodoEntries().length;
+    return aggregateByDay(filterByRange(all));
   }
 
   /* Valor de um indicador para uma lista de lançamentos (regra única de
@@ -267,15 +231,18 @@ export function useDashboardData(filter, options = {}) {
   /* Headcount por estado para o card de barras: três barras por estado —
      Masculino, Feminino e o total (soma de todos os colaboradores do mês
      filtrado, inclusive sem gênero informado). `value` é o total. */
-  function headcountBarByState(filial = "") {
+  function headcountBarByState(filiais = [], empresas = []) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     /* Respeita o filtro de estado: com um estado selecionado, só a barra dele. */
     const st = currentState();
     let states = st && st !== "todos" ? [st] : STATES;
-    /* Com uma filial escolhida, só os estados onde ela tem colaborador. */
-    if (filial) states = states.filter((s) => headcountFilialOptions(s).includes(filial));
+    /* Com filiais e/ou empresas escolhidas, só os estados onde alguma delas
+       tem colaborador — sem isto, estados sem nenhum colaborador da seleção
+       ainda apareciam com barra zerada, espalhando o gráfico à toa. */
+    if (filiais.length) states = states.filter((s) => headcountFilialOptions(s).some((f) => filiais.includes(f)));
+    if (empresas.length) states = states.filter((s) => headcountEmpresaOptions(s).some((e) => empresas.includes(e)));
     return states.map((s) => {
-      const g = headcountGenderCountInRange(s, range, filial);
+      const g = headcountGenderCountInRange(s, range, filiais, empresas);
       return {
         label: s,
         value: g.total,
@@ -360,8 +327,12 @@ export function useDashboardData(filter, options = {}) {
   /* Recrutadores que aparecem nas vagas abertas no período filtrado (para o
      filtro do gráfico de Tempo médio de contratação no Painel), em ordem
      alfabética — mesma ideia de treinamentoGerentesRegionais, abaixo. */
-  function headcountFiliais() {
-    return headcountFilialOptions(currentState());
+  function headcountFiliais(empresas = []) {
+    return headcountFilialOptions(currentState(), empresas);
+  }
+
+  function headcountEmpresas() {
+    return headcountEmpresaOptions(currentState());
   }
 
   function vagasRecrutadores() {
@@ -616,18 +587,11 @@ export function useDashboardData(filter, options = {}) {
   }
 
   /* Agregação para o gráfico de barras do Custo médio da diária geral: soma
-     o valor pago por colaborador no período filtrado. Inclui os lançamentos
-     sem competência definida quando "Mostrar sem período" está ativo, igual
-     ao KPI (ver indicatorCurrentValue). */
+     o valor pago por colaborador no período filtrado. */
   function diariaBarEntries() {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
-    let list = filteredEntries(ind);
-    if (diariaShowSemPeriodo.value) {
-      const sem = diariaSemPeriodoEntries();
-      if (sem.length) list = list.concat(sem);
-    }
-    return list;
+    return filteredEntries(ind);
   }
 
   function diariaColaboradorName(entry) {
@@ -676,9 +640,7 @@ export function useDashboardData(filter, options = {}) {
 
   /* Fonte única do "valor atual" de um indicador: usada tanto pelos KPIs
      quanto pelo Panorama atual — ambos precisam mostrar exatamente o mesmo
-     número. Para "Custo da diária geral" (média), inclui os lançamentos sem
-     competência definida na agregação quando "Mostrar sem período" está
-     ativo (e só então), recalculando a média sobre a lista combinada. */
+     número. */
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
       /* Todos os "computed" seguem o filtro de período (mês) ativo — ver
@@ -688,12 +650,7 @@ export function useDashboardData(filter, options = {}) {
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       return computedValue(ind, range);
     }
-    let list = filteredEntries(ind);
-    if (ind.id === "custo_diaria" && diariaShowSemPeriodo.value) {
-      const sem = diariaSemPeriodoEntries();
-      if (sem.length) list = list.concat(sem);
-    }
-    return aggregateList(ind, list);
+    return aggregateList(ind, filteredEntries(ind));
   }
 
   /* Mês civil anterior ao mês selecionado no filtro — usado tanto pela seta
@@ -770,17 +727,9 @@ export function useDashboardData(filter, options = {}) {
       } else if (prevMonthRangeForDelta && allEntries.length) {
         /* Mês civil anterior, imediatamente antes do mês filtrado — não
            "tudo desde sempre" (comparar set/2026 contra anos de histórico
-           acumulado quase sempre dava seta de queda, mesmo num mês normal).
-           Exclui semPeriodo: a data-sentinela é sempre "antes" de qualquer
-           início de período, então sem este filtro toda diária sem período
-           entraria no "anterior" e distorceria a seta. */
+           acumulado quase sempre dava seta de queda, mesmo num mês normal). */
         const range = prevMonthRangeForDelta;
-        const before = allEntries.filter(
-          (e) =>
-            e.date >= range.start &&
-            e.date <= range.end &&
-            !(e.meta && e.meta.semPeriodo)
-        );
+        const before = allEntries.filter((e) => e.date >= range.start && e.date <= range.end);
         prev = before.length ? aggregateList(ind, before) : null;
       } else if (!filter.start && entries.length > 1) {
         /* Sem início de período: o "anterior" é a agregação de tudo menos o
@@ -794,20 +743,13 @@ export function useDashboardData(filter, options = {}) {
         delta = { diff, up: diff > 0, down: diff < 0 };
       }
 
-      /* "Mostrar sem período" (filtro ao lado do KPI): a soma em si já está em
-         `current` (ver indicatorCurrentValue) — aqui só ajusta a contagem de
-         lançamentos exibida no card. */
-      const extraCount = ind.id === "custo_diaria" && diariaShowSemPeriodo.value
-        ? diariaSemPeriodoEntries().length
-        : 0;
-
       /* Indicadores "computed" (headcount, turnover, retenção, tempo de
          permanência/contratação) não têm lançamentos manuais: `entries` é o
          histórico de snapshots diários recalculados automaticamente (um por
          dia em que o dashboard foi aberto), não algo que o usuário lançou.
          Rotular isso como "N lançamentos" é enganoso — o card não exibe
          contagem nenhuma para esses indicadores. */
-      const totalCount = entries.length + extraCount;
+      const totalCount = entries.length;
       const countText = ind.computed
         ? ""
         : totalCount === 1
@@ -1104,11 +1046,7 @@ export function useDashboardData(filter, options = {}) {
     const matchesState = (e) =>
       stateTarget === "TODOS" ||
       String((e.meta && e.meta.estado) || "").trim().toUpperCase() === stateTarget;
-    /* Diárias importadas sem período não têm uma data real (usam uma
-       sentinela só para satisfazer o banco) — sempre aparecem aqui, sem
-       respeitar o filtro de data do topo. */
     const inDateRange = (e) => {
-      if (e.meta && e.meta.semPeriodo) return true;
       if (filter.start && e.date < filter.start) return false;
       if (filter.end && e.date > filter.end) return false;
       return true;
@@ -1162,14 +1100,13 @@ export function useDashboardData(filter, options = {}) {
 
   /* ---------- Painel: gráfico central por KPI selecionado ---------- */
   const COCKPIT_AVG_TYPES = ["percent", "days", "months"];
-  const NO_PERIODO_MONTH = "0001-01";
 
   /* Monta os dados do gráfico grande do Painel a partir do KPI selecionado
      (ou o gráfico padrão — Custo de folha de salário — quando nenhum está
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountView, rescisaoMode, rescisaoFilters, rescisaoView) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1220,7 +1157,7 @@ export function useDashboardData(filter, options = {}) {
     }
     if (kpiId === "headcount" && headcountView === "pie") {
       /* Pizza: total de Masculino x Feminino nos estados/filial/mês filtrados. */
-      const rows = headcountBarByState(headcountFilial);
+      const rows = headcountBarByState(headcountFilial, headcountEmpresa);
       const sum = (i) => rows.reduce((acc, r) => acc + (r.series[i].value || 0), 0);
       return {
         id: "headcount",
@@ -1241,7 +1178,7 @@ export function useDashboardData(filter, options = {}) {
         kind: "bar",
         title: "Headcount",
         sub: "Por estado",
-        data: headcountBarByState(headcountFilial),
+        data: headcountBarByState(headcountFilial, headcountEmpresa),
         valueFormat: ""
       };
     }
@@ -1361,20 +1298,15 @@ export function useDashboardData(filter, options = {}) {
       return { id: kpiId, kind: "bar", title: "", sub: "", data: [], valueFormat: "" };
     }
 
-    let entries;
-    if (ind.id === "custo_diaria") entries = diariaDailySeries(diariaShowSemPeriodo.value);
-    else entries = filteredEntries(ind);
+    const entries = ind.id === "custo_diaria" ? diariaDailySeries() : filteredEntries(ind);
 
     const method = COCKPIT_AVG_TYPES.includes(ind.type) ? "avg" : "sum";
     const monthly = aggregateByMonth(entries, method);
-    const rows = [];
-    let semPeriodo = null;
-    monthly.forEach((m) => {
-      const row = { label: formatMonthLabel(m.date), value: m.value, tooltipValue: formatValue(ind, m.value) };
-      if (m.date === NO_PERIODO_MONTH) semPeriodo = { ...row, label: "Sem período" };
-      else rows.push(row);
-    });
-    if (semPeriodo) rows.push(semPeriodo);
+    const rows = monthly.map((m) => ({
+      label: formatMonthLabel(m.date),
+      value: m.value,
+      tooltipValue: formatValue(ind, m.value)
+    }));
 
     const valueFormat = ind.type === "currency" ? "currency" : ind.type === "hours" ? "hours" : "";
     return { id: ind.id, kind: "bar", title: ind.name, sub: "Evolução no período", data: rows, valueFormat };
@@ -1383,7 +1315,6 @@ export function useDashboardData(filter, options = {}) {
   return {
     filteredEntries,
     diariaDailySeries,
-    diariaSemPeriodoCount,
     treinamentoBarByFilial,
     treinamentoGerentesRegionais,
     treinamentoFilialEntries,
@@ -1391,6 +1322,7 @@ export function useDashboardData(filter, options = {}) {
     treinamentoRegionalGroups,
     vagasRecrutadores,
     headcountFiliais,
+    headcountEmpresas,
     headcountBarByState,
     ticketMedioBarByState,
     ticketMedioPieCenter,
