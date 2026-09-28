@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed } from "vue";
+import ChartEmpty from "@/components/charts/ChartEmpty.vue";
 import { createAbsenteismoBar, updateAbsenteismoBar, setShowValues } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
@@ -8,6 +9,10 @@ const props = defineProps({
   showValues: { type: Boolean, default: false },
   height: { type: String, default: "h-56" }
 });
+
+/* Sem nada para desenhar (lista vazia ou todos os valores zerados/vazios):
+   mostra o aviso ChartEmpty por cima do gráfico. */
+const isEmpty = computed(() => props.data.every((d) => !Number(d.value)));
 
 const canvas = ref(null);
 let chart = null;
@@ -59,5 +64,6 @@ watch(
 <template>
   <div class="relative" :class="height">
     <canvas ref="canvas" aria-hidden="true"></canvas>
+    <ChartEmpty v-if="isEmpty" />
   </div>
 </template>

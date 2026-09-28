@@ -285,21 +285,6 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "valor", type: "number", notNull: true, required: true },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
-  },
-  // Marcação de "mês incompleto" (ver src/lib/monthStatus.js no frontend):
-  // a existência de uma linha para o mês+estado já é o marcador, sem mais
-  // nenhum dado — também vivia na antiga "lancamentos" genérica.
-  meses_incompletos: {
-    key: "meses_incompletos",
-    label: "Meses incompletos",
-    orderBy: "competencia desc",
-    search: [],
-    filters: [],
-    columns: [
-      { name: "id", type: "text" },
-      { name: "competencia", type: "date", required: true },
-      { name: "estado_sigla", type: "text", stateRef: true }
-    ]
   }
 };
 

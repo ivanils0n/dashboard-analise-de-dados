@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, onBeforeUnmount, onActivated, watch, ref } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed } from "vue";
+import ChartEmpty from "@/components/charts/ChartEmpty.vue";
 import { createPieChart, updatePieChart, setShowValues, setCenterText, setPieFormat, pieFormatter } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 
@@ -16,6 +17,10 @@ const props = defineProps({
   /* Formato dos valores (tooltip e rótulos): "percent" (Turnover) ou "currency". */
   valueFormat: { type: String, default: "percent" }
 });
+
+/* Sem nada para desenhar (lista vazia ou todos os valores zerados/vazios):
+   mostra o aviso ChartEmpty por cima do gráfico. */
+const isEmpty = computed(() => props.data.every((d) => !Number(d.value)));
 
 const emit = defineEmits(["chart-click", "chart-contextmenu"]);
 
@@ -137,5 +142,6 @@ watch(
       @mousemove="onCanvasMove"
       @mouseleave="overPlot = false"
     ></canvas>
+    <ChartEmpty v-if="isEmpty" />
   </div>
 </template>

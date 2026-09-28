@@ -11,6 +11,7 @@ import {
   headcountGenderCountInRange,
   headcountFilialOptions,
   headcountEmpresaOptions,
+  headcountFuncaoOptions,
   listRescisoes,
   rescisaoFilterOptions,
   rescisoesTotal,
@@ -231,7 +232,7 @@ export function useDashboardData(filter) {
   /* Headcount por estado para o card de barras: três barras por estado —
      Masculino, Feminino e o total (soma de todos os colaboradores do mês
      filtrado, inclusive sem gênero informado). `value` é o total. */
-  function headcountBarByState(filiais = [], empresas = []) {
+  function headcountBarByState(filiais = [], empresas = [], funcoes = []) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     /* Respeita o filtro de estado: com um estado selecionado, só a barra dele. */
     const st = currentState();
@@ -241,8 +242,9 @@ export function useDashboardData(filter) {
        ainda apareciam com barra zerada, espalhando o gráfico à toa. */
     if (filiais.length) states = states.filter((s) => headcountFilialOptions(s).some((f) => filiais.includes(f)));
     if (empresas.length) states = states.filter((s) => headcountEmpresaOptions(s).some((e) => empresas.includes(e)));
+    if (funcoes.length) states = states.filter((s) => headcountFuncaoOptions(s).some((f) => funcoes.includes(f)));
     return states.map((s) => {
-      const g = headcountGenderCountInRange(s, range, filiais, empresas);
+      const g = headcountGenderCountInRange(s, range, filiais, empresas, funcoes);
       return {
         label: s,
         value: g.total,
@@ -335,6 +337,10 @@ export function useDashboardData(filter) {
     return headcountEmpresaOptions(currentState());
   }
 
+  function headcountFuncoes() {
+    return headcountFuncaoOptions(currentState());
+  }
+
   function vagasRecrutadores() {
     const vacs = listVacancies(currentState()).filter((v) => v.openAt);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
@@ -349,7 +355,29 @@ export function useDashboardData(filter) {
      pela sigla (ignorando caixa, espaços e zeros à esquerda: "PVH05" = "PVH 5"),
      depois pelo nome, e por fim por "contém"; sem nenhuma batida, usa o
      próprio texto digitado. */
+  /* Resultado por (estado, texto) reaproveitado dentro da mesma passada de
+     cálculo: com centenas de lançamentos e poucas filiais distintas, a busca
+     no cadastro (várias varreduras de filiais por lançamento) se repetia à toa.
+     Descartado ao fim da passada, então nunca fica desatualizado. */
+  let filialLabelCache = null;
+
   function treinamentoFilialLabel(meta) {
+    if (!filialLabelCache) {
+      filialLabelCache = new Map();
+      queueMicrotask(() => {
+        filialLabelCache = null;
+      });
+    }
+    const cacheKey = `${(meta && meta.estado) || ""}\u0000${(meta && meta.filial) || ""}`;
+    let label = filialLabelCache.get(cacheKey);
+    if (label === undefined) {
+      label = resolveTreinamentoFilialLabel(meta);
+      filialLabelCache.set(cacheKey, label);
+    }
+    return label;
+  }
+
+  function resolveTreinamentoFilialLabel(meta) {
     const text = String((meta && meta.filial) || "").toUpperCase().trim();
     if (!text) return "Sem filial";
     const key = normalizeBranchKey(text);
@@ -714,8 +742,10 @@ export function useDashboardData(filter) {
 
   /* ---------- KPIs ---------- */
 
+  /* Regional Treinamentos não tem KPI próprio: virou uma visão do gráfico de
+     Treinamento (botão Filial | Regional ao lado do título, no Painel). */
   const kpis = computed(() => {
-    return INDICATORS.map((ind) => {
+    return INDICATORS.filter((ind) => ind.id !== "horas_regional").map((ind) => {
       const entries = filteredEntries(ind);
       const allEntries = scopeEntries(ind, stateEntries(ind.id, currentState()));
       let current = indicatorCurrentValue(ind);
@@ -1106,7 +1136,7 @@ export function useDashboardData(filter) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = []) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1157,7 +1187,7 @@ export function useDashboardData(filter) {
     }
     if (kpiId === "headcount" && headcountView === "pie") {
       /* Pizza: total de Masculino x Feminino nos estados/filial/mês filtrados. */
-      const rows = headcountBarByState(headcountFilial, headcountEmpresa);
+      const rows = headcountBarByState(headcountFilial, headcountEmpresa, headcountFuncao);
       const sum = (i) => rows.reduce((acc, r) => acc + (r.series[i].value || 0), 0);
       return {
         id: "headcount",
@@ -1178,7 +1208,7 @@ export function useDashboardData(filter) {
         kind: "bar",
         title: "Headcount",
         sub: "Por estado",
-        data: headcountBarByState(headcountFilial, headcountEmpresa),
+        data: headcountBarByState(headcountFilial, headcountEmpresa, headcountFuncao),
         valueFormat: ""
       };
     }
@@ -1209,8 +1239,8 @@ export function useDashboardData(filter) {
       return {
         id: "horas_regional",
         kind: "bar",
-        title: "Regional Treinamentos",
-        sub: "Carga horária de treinamento por gerente regional no período filtrado",
+        title: "Treinamento",
+        sub: "Carga horária por gerente regional no período filtrado",
         data: horasPorRegional(),
         valueFormat: "hours"
       };
@@ -1323,6 +1353,7 @@ export function useDashboardData(filter) {
     vagasRecrutadores,
     headcountFiliais,
     headcountEmpresas,
+    headcountFuncoes,
     headcountBarByState,
     ticketMedioBarByState,
     ticketMedioPieCenter,

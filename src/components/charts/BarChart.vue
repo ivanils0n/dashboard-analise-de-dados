@@ -1,6 +1,7 @@
 <script setup>
-import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed, nextTick } from "vue";
 import Modal from "@/components/ui/Modal.vue";
+import ChartEmpty from "@/components/charts/ChartEmpty.vue";
 import { createBarChart, updateBarChart, createSeriesLineChart, updateSeriesLineChart } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 import { formatCurrency, formatHoursClock } from "@/lib/utils";
@@ -29,6 +30,14 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["bar-click", "bar-contextmenu"]);
+
+/* Sem nada para desenhar (lista vazia ou todos os valores zerados/vazios):
+   mostra o aviso ChartEmpty por cima do gráfico. */
+const isEmpty = computed(() =>
+  props.data.every((row) =>
+    Array.isArray(row.series) ? row.series.every((s) => !Number(s.value)) : !Number(row.value)
+  )
+);
 
 const expandOpen = ref(false);
 
@@ -110,13 +119,28 @@ function applyOptions() {
 }
 
 /* Desenha os dados no formato do variant atual (barras ou linha). */
-function refreshData() {
+function drawData() {
   if (!chart) return;
   if (props.variant === "line") {
     updateSeriesLineChart(chart, props.data, { formatter: formatterFor(props.valueFormat) });
   } else {
     updateBarChart(chart, props.data, { trend: props.showTrend });
   }
+}
+
+/* Barras deitadas: a altura da moldura acompanha o número de linhas
+   (rowsHeightPx). Se o canvas só se ajustasse depois (ResizeObserver do
+   Chart.js), o redimensionamento chegaria no meio da entrada escalonada das
+   barras e a encerraria de uma vez. Por isso, espera o DOM aplicar a nova
+   altura, redimensiona já e só então troca os dados — a animação roda
+   inteira. */
+async function refreshData() {
+  if (!chart) return;
+  if (!isHorizontal.value) return drawData();
+  await nextTick();
+  if (!chart) return;
+  chart.resize();
+  drawData();
 }
 
 function mountChart() {
@@ -206,6 +230,7 @@ watch(
         @contextmenu="onCanvasContextmenu"
       ></canvas>
     </div>
+    <ChartEmpty v-if="isEmpty" />
   </div>
 
   <Modal

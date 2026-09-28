@@ -56,6 +56,10 @@ watch(treinamentoGerenteOptions, (opts) => {
   }
 });
 
+/* Treinamento: "filial" (horas por filial) ou "regional" (horas por gerente
+   regional — antigo KPI Regional Treinamentos). */
+const treinamentoView = ref("filial");
+
 /* Filtro por Recrutador do gráfico de Tempo médio de contratação, quando ele
    é o gráfico central — "" (vazio) = todos os recrutadores. */
 const hiringRecrutadorFilter = ref("");
@@ -73,6 +77,13 @@ const headcountEmpresaFilter = ref([]);
 const headcountEmpresaOptions = computed(() => props.dashboard.headcountEmpresas());
 watch(headcountEmpresaOptions, (opts) => {
   headcountEmpresaFilter.value = headcountEmpresaFilter.value.filter((v) => opts.includes(v));
+});
+
+/* Filtro (multi-seleção) por Função do gráfico de Headcount — [] = todas. */
+const headcountFuncaoFilter = ref([]);
+const headcountFuncaoOptions = computed(() => props.dashboard.headcountFuncoes());
+watch(headcountFuncaoOptions, (opts) => {
+  headcountFuncaoFilter.value = headcountFuncaoFilter.value.filter((v) => opts.includes(v));
 });
 
 const headcountFilialFilter = ref([]);
@@ -112,7 +123,7 @@ const rescisaoPorEstado = ref(false);
    cockpitChartFor em useDashboardData.js). */
 const centerChart = computed(() =>
   props.dashboard.cockpitChartFor(
-    selectedKpiId.value,
+    selectedKpiId.value === "treinamento" && treinamentoView.value === "regional" ? "horas_regional" : selectedKpiId.value,
     hiringStatusFilter.value,
     treinamentoGerenteFilter.value,
     hiringRecrutadorFilter.value,
@@ -121,7 +132,8 @@ const centerChart = computed(() =>
     headcountView.value,
     rescisaoMode.value,
     rescisaoFilters.value,
-    rescisaoView.value
+    rescisaoView.value,
+    headcountFuncaoFilter.value
   )
 );
 
@@ -478,6 +490,7 @@ function goNextKpi() {
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
                   <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+                  <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
                   <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
                 </div>
                 <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ centerChart.sub }}</span>
@@ -520,6 +533,15 @@ function goNextKpi() {
                   all-label="Todas as empresas"
                   plural-label="empresas"
                   title="Filtrar Headcount por uma ou mais empresas"
+                />
+                <MultiSelectFilter
+                  v-if="centerChart.id === 'headcount'"
+                  v-model="headcountFuncaoFilter"
+                  :options="headcountFuncaoOptions"
+                  label="Função"
+                  all-label="Todas as funções"
+                  plural-label="funções"
+                  title="Filtrar Headcount por uma ou mais funções"
                 />
                 <GerenteRegionalFilter
                   v-if="centerChart.id === 'treinamento'"
@@ -687,6 +709,7 @@ function goNextKpi() {
       :genero="headcountGenero"
       :filial="headcountFilialFilter"
       :empresa="headcountEmpresaFilter"
+      :funcao="headcountFuncaoFilter"
       @close="headcountEstadoOpen = false"
     />
 
@@ -745,6 +768,7 @@ function goNextKpi() {
           <div v-else class="flex min-w-[10rem] items-center justify-center gap-2">
             <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
             <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+            <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
             <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
           </div>
           <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
@@ -781,6 +805,15 @@ function goNextKpi() {
             all-label="Todas as empresas"
             plural-label="empresas"
             title="Filtrar Headcount por uma ou mais empresas"
+          />
+          <MultiSelectFilter
+            v-if="centerChart.id === 'headcount'"
+            v-model="headcountFuncaoFilter"
+            :options="headcountFuncaoOptions"
+            label="Função"
+            all-label="Todas as funções"
+            plural-label="funções"
+            title="Filtrar Headcount por uma ou mais funções"
           />
           <GerenteRegionalFilter
             v-if="centerChart.id === 'treinamento'"

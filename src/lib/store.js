@@ -19,9 +19,7 @@ export function emptyData() {
     diarias: [],
     treinamentos: [],
     custoFolha: [],
-    absenteismo: [],
-    // Marcação de "mês incompleto" (ver lib/monthStatus.js) — mesmo padrão.
-    mesesIncompletos: []
+    absenteismo: []
   };
 }
 
@@ -50,8 +48,7 @@ const ENTRY_LISTS = {
   custo_diaria: "diarias",
   treinamento: "treinamentos",
   custo_total: "custoFolha",
-  absenteismo: "absenteismo",
-  mes_incompleto: "mesesIncompletos"
+  absenteismo: "absenteismo"
 };
 
 function entryList(indicatorId) {
@@ -60,10 +57,7 @@ function entryList(indicatorId) {
   return key;
 }
 
-// "mes_incompleto" (ver lib/monthStatus.js) usa o mesmo mecanismo de
-// lançamento, mas não é um indicador de verdade — não deve aparecer em
-// getAllEntries() (tabela de lançamentos, exportação).
-const PUBLIC_ENTRY_INDICATORS = ["custo_diaria", "treinamento", "custo_total", "absenteismo"];
+const PUBLIC_ENTRY_INDICATORS = Object.keys(ENTRY_LISTS);
 
 export function getAllEntries() {
   const all = {};
@@ -296,7 +290,6 @@ export function replaceFromCache(cached) {
     d.treinamentos = Array.isArray(cached.treinamentos) ? cached.treinamentos : [];
     d.custoFolha = Array.isArray(cached.custoFolha) ? cached.custoFolha : [];
     d.absenteismo = Array.isArray(cached.absenteismo) ? cached.absenteismo : [];
-    d.mesesIncompletos = Array.isArray(cached.mesesIncompletos) ? cached.mesesIncompletos : [];
   }
   Object.assign(data, d);
 }
@@ -327,8 +320,7 @@ const MERGE_LIST_KEYS = [
   "diarias",
   "treinamentos",
   "custoFolha",
-  "absenteismo",
-  "mesesIncompletos"
+  "absenteismo"
 ];
 
 export function mergeFromRemote(remoteData) {

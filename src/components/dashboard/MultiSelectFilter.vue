@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 
 /* Filtro em dropdown com seleção múltipla (caixas de marcar), no mesmo visual
    do GerenteRegionalFilter. `modelValue`: lista dos valores marcados
@@ -22,6 +22,35 @@ const emit = defineEmits(["update:modelValue"]);
 
 const open = ref(false);
 const root = ref(null);
+const panel = ref(null);
+
+/* Posição do painel: abre abaixo e alinhado à esquerda do botão; se passar da
+   borda do container que corta/rola o conteúdo (ex.: corpo de um modal) ou da
+   janela, alinha pela direita e/ou abre para cima — sem isto o painel gerava
+   rolagem desnecessária no modal. */
+const alignRight = ref(false);
+const dropUp = ref(false);
+
+function clipBounds(el) {
+  for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+    const { overflowX, overflowY } = getComputedStyle(node);
+    if (/(auto|scroll|hidden)/.test(overflowX + overflowY)) return node.getBoundingClientRect();
+  }
+  return { top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight };
+}
+
+watch(open, async (isOpen) => {
+  if (!isOpen) return;
+  alignRight.value = false;
+  dropUp.value = false;
+  await nextTick();
+  if (!panel.value || !root.value) return;
+  const bounds = clipBounds(root.value);
+  const btn = root.value.getBoundingClientRect();
+  const rect = panel.value.getBoundingClientRect();
+  if (rect.right > bounds.right && btn.right - rect.width >= bounds.left) alignRight.value = true;
+  if (rect.bottom > bounds.bottom && btn.top - rect.height - 8 >= bounds.top) dropUp.value = true;
+});
 
 function short(text) {
   const t = String(props.formatOption(text));
@@ -69,7 +98,9 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocumentClick));
 
     <div
       v-if="open"
-      class="absolute left-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+      ref="panel"
+      class="absolute z-40 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+      :class="[alignRight ? 'right-0' : 'left-0', dropUp ? 'bottom-full mb-2' : 'mt-2']"
       role="listbox"
       aria-multiselectable="true"
     >

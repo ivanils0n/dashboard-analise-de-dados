@@ -12,6 +12,17 @@ if (import.meta.env.PROD) {
   } catch (e) {}
 }
 
+/* PWA: registra o service worker (public/sw.js) só no build de produção — no
+   dev ele guardaria arquivos do Vite em cache e atrapalharia o hot reload.
+   Depois do carregamento, para não disputar rede com os dados iniciais. */
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((err) => {
+      console.warn("[PWA] Falha ao registrar o service worker:", err);
+    });
+  });
+}
+
 async function bootstrap() {
   const authed = isAuthenticated();
   await bootstrapData(authed);

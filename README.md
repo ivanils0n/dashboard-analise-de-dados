@@ -8,7 +8,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 - **Vue Router** — SPA com roteamento por hash (funciona em hospedagem estática sem rewrite)
 - **Tailwind CSS v4** — estilização 100% utilitária e responsiva
 - **Vite** — build, code-splitting automático por rota e chunks de bibliotecas
-- **Cloudflare Workers + Hono** — backend/API (pasta `backend-sheets/`)
+- **Cloudflare Workers + Hono** — backend/API (pasta `API/`)
 - **Google Sheets** — banco de dados, acessado via um Google Apps Script publicado como Web App
 - **Chart.js** e **SheetJS (xlsx)** — via npm (sem CDN)
 
@@ -42,7 +42,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 ```
 ├── index.html                    # Ponto de entrada (monta a SPA)
 ├── vite.config.js                # Vite + Tailwind + variáveis de ambiente
-├── backend-sheets/                # API (Cloudflare Worker + Hono)
+├── API/                          # API (Cloudflare Worker + Hono)
 │   ├── package.json              # hono, wrangler
 │   ├── wrangler.jsonc            # Configuração do Worker (nodejs_compat)
 │   ├── .dev.vars.example         # APPS_SCRIPT_URL / APPS_SCRIPT_SECRET / JWT_SECRET (local)
@@ -92,19 +92,19 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 │   └── views/                    # Login, Dashboard, Equipe, Filiais,
 │                                 # Departamentos, Usuários
 ├── public/logo.png               # Logo (servido na raiz)
-└── backend-sheets/apps-script/Code.gs   # Ponte da planilha (fora do deploy do Worker)
+└── API/apps-script/Code.gs   # Ponte da planilha (fora do deploy do Worker)
 ```
 
 ## Backend: Cloudflare Worker (Hono) + Google Sheets
 
 O front é 100% offline-first (cache em `sessionStorage`), mas sincroniza com uma
 **planilha do Google Sheets** através de uma API em **Cloudflare Worker** (framework
-**Hono**), na pasta `backend-sheets/`. A planilha nunca é acessada direto pelo
+**Hono**), na pasta `API/`. A planilha nunca é acessada direto pelo
 browser: só o Worker fala com ela, por meio de um Google Apps Script publicado
-como Web App (ver `backend-sheets/apps-script/Code.gs`).
+como Web App (ver `API/apps-script/Code.gs`).
 
 Passo a passo completo de configuração (criar a planilha, publicar o Apps
-Script, variáveis, seed): **[`backend-sheets/README.md`](backend-sheets/README.md)**.
+Script, variáveis, seed): **[`API/README.md`](API/README.md)**.
 
 ### Rodar localmente
 
@@ -112,7 +112,7 @@ O front (Vite) e o Worker (wrangler) rodam em processos separados:
 
 ```bash
 npm install                          # front
-npm --prefix backend-sheets install  # API
+npm --prefix API install  # API
 npm run dev:api                      # Worker em http://127.0.0.1:8787
 npm run dev                          # front em http://localhost:5173
 ```
@@ -132,7 +132,7 @@ A autenticação é **própria** (não há Supabase Auth):
 - O JWT fica apenas no `sessionStorage` (chave `gg-auth`); nada de tokens em disco.
 - Perfis: `admin` (tudo), `analista` (edita dados) e `visitante` (somente leitura).
 
-> O usuário inicial é criado pelo script de seed (`npm run seed` em `backend-sheets/`). Veja `backend-sheets/README.md`.
+> O usuário inicial é criado pelo script de seed (`npm run seed` em `API/`). Veja `API/README.md`.
 
 ## Deploy
 
@@ -141,7 +141,7 @@ O front (estático) e o Worker (API) são publicados separadamente.
 ### 1. Worker (API)
 
 ```bash
-cd backend-sheets
+cd API
 npx wrangler login          # uma vez
 npx wrangler secret put APPS_SCRIPT_URL
 npx wrangler secret put APPS_SCRIPT_SECRET

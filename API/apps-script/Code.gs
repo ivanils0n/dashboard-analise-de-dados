@@ -1,5 +1,5 @@
 /**
- * Ponte entre o Worker (backend-sheets) e esta planilha.
+ * Ponte entre o Worker (API) e esta planilha.
  *
  * Como publicar:
  * 1. Abra a planilha → Extensões → Apps Script.
@@ -11,7 +11,7 @@
  *    - Executar como: Eu (sua conta, dona da planilha).
  *    - Quem pode acessar: Qualquer pessoa.
  * 5. Autorize o acesso quando pedido e copie a URL gerada (termina em /exec)
- *    — é o valor de APPS_SCRIPT_URL no backend-sheets/.dev.vars.
+ *    — é o valor de APPS_SCRIPT_URL no API/.dev.vars.
  *
  * Pra atualizar este código numa implantação já existente (sem trocar a
  * URL): cole o arquivo novo por cima do antigo no editor e vá em
@@ -62,7 +62,7 @@ function doPost(e) {
     return respond({ success: false, error: "Não autorizado." });
   }
 
-  // Duas gravações na mesma aba ao mesmo tempo (ex.: marcar "mês incompleto"
+  // Duas gravações na mesma aba ao mesmo tempo (ex.: salvar um lançamento
   // nos 3 estados de uma vez, cada um numa requisição separada) podiam se
   // sobrescrever silenciosamente: appendRows calculava a mesma "próxima linha
   // livre" pras duas chamadas, e a segunda pisava na primeira. O lock serializa
@@ -185,7 +185,7 @@ function readMany_(names) {
  *    Executar (autorize o acesso a serviço externo quando pedido).
  * Para forçar uma atualização completa à mão: execute atualizarCacheAgora.
  *
- * O formato gravado TEM que ser o que o Worker lê (backend-sheets/src/db/cache.ts):
+ * O formato gravado TEM que ser o que o Worker lê (API/src/db/cache.ts):
  *   "s:<aba>"     {"t": ms, "rows": [...]}  — t = início da leitura da planilha
  *   "s:<aba>"     {"t": ms, "parts": N}     — aba grande, repartida em pedaços:
  *   "s:<aba>:<i>" {"t": ms, "rows": [...]}  — mesmo t da principal
@@ -197,12 +197,12 @@ var CF_KV_NAMESPACE_ID = "3cbe9ba669b7447fb9bf8cdf04f38617";
 // Abas guardadas no cache (as mesmas que o Worker lê).
 var CACHE_SHEETS = [
   "vagas", "headcount", "turnover", "permanencia", "rescisoes", "filiais",
-  "diarias", "treinamentos", "custo_folha", "absenteismo", "meses_incompletos", "usuarios"
+  "diarias", "treinamentos", "custo_folha", "absenteismo", "usuarios"
 ];
 
 // Folga abaixo dos 25 MiB por valor da KV (acento ocupa mais bytes que
 // caracteres). Aba maior que isso vira pedaços. Mesmo valor de
-// MAX_VALUE_CHARS em backend-sheets/src/db/cache.ts.
+// MAX_VALUE_CHARS em API/src/db/cache.ts.
 var KV_MAX_VALUE_CHARS = 15 * 1024 * 1024;
 
 // Tamanho máximo de cada chamada à API em lote (o UrlFetchApp aceita até 50 MB).

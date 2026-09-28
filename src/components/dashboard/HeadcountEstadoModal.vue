@@ -26,7 +26,8 @@ const props = defineProps({
      herdado de fora. [] = todas. Os filtros de Filial/Empresa deste modal
      (abaixo) recortam ainda mais, dentro do que já veio filtrado daqui. */
   filial: { type: Array, default: () => [] },
-  empresa: { type: Array, default: () => [] }
+  empresa: { type: Array, default: () => [] },
+  funcao: { type: Array, default: () => [] }
 });
 
 /* Edição e exclusão são resolvidas aqui mesmo, sem passar pelo pai — clicar
@@ -53,6 +54,7 @@ const records = computed(() =>
   listHeadcountRecords(props.estado, ym.value || undefined, { incluirDesligados: true })
     .filter((h) => !props.filial.length || props.filial.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
     .filter((h) => !props.empresa.length || props.empresa.some((e) => String(h.empresa || "").trim().toUpperCase() === String(e).trim().toUpperCase()))
+    .filter((h) => !props.funcao.length || props.funcao.some((f) => String(h.funcao || "").trim().toUpperCase() === String(f).trim().toUpperCase()))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
     .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
@@ -60,18 +62,20 @@ const records = computed(() =>
   })
 );
 
-/* Filtros de Filial e Empresa próprios do modal — recortam ainda mais o que
+/* Filtros de Filial, Empresa e Função próprios do modal — recortam ainda mais o que
    já chegou filtrado do gráfico (props.filial/props.empresa), para explorar
    sem precisar fechar e trocar o filtro do gráfico. Zerados sempre que o
    modal reabre. */
 const filialFilter = ref([]);
 const empresaFilter = ref([]);
+const funcaoFilter = ref([]);
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
     filialFilter.value = [];
     empresaFilter.value = [];
+    funcaoFilter.value = [];
   }
 );
 
@@ -99,11 +103,20 @@ const empresaOptions = computed(() => {
   });
   return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
 });
+const funcaoOptions = computed(() => {
+  const set = new Set();
+  records.value.forEach((h) => {
+    const v = String(h.funcao || "").trim().toUpperCase();
+    if (v) set.add(v);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+});
 
 const rows = computed(() =>
   records.value
     .filter((h) => !filialFilter.value.length || filialFilter.value.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
     .filter((h) => !empresaFilter.value.length || empresaFilter.value.includes(String(h.empresa || "").trim().toUpperCase()))
+    .filter((h) => !funcaoFilter.value.length || funcaoFilter.value.includes(String(h.funcao || "").trim().toUpperCase()))
 );
 
 /* Filtro de situação: o total do card e o número da barra do gráfico contam só
@@ -224,6 +237,14 @@ async function removeRow(h) {
           plural-label="empresas"
           title="Filtrar por uma ou mais empresas"
         />
+        <MultiSelectFilter
+          v-model="funcaoFilter"
+          :options="funcaoOptions"
+          label="Função"
+          all-label="Todas as funções"
+          plural-label="funções"
+          title="Filtrar por uma ou mais funções"
+        />
       </div>
 
       <div
@@ -239,6 +260,7 @@ async function removeRow(h) {
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Função</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Gênero</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Admissão</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Desligamento</th>
@@ -265,6 +287,7 @@ async function removeRow(h) {
                 </td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.filialNome || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.empresa || "—" }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.funcao || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ h.genero || "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">
                   {{ h.dataAdmissao ? formatDate(h.dataAdmissao) : "—" }}
@@ -290,7 +313,7 @@ async function removeRow(h) {
       <EmptyState
         v-else-if="records.length"
         title="Nenhum colaborador encontrado"
-        text="Ajuste a busca ou os filtros de filial/empresa e tente novamente."
+        text="Ajuste a busca ou os filtros de filial/empresa/função e tente novamente."
       />
       <EmptyState
         v-else

@@ -736,6 +736,22 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
   chart.update();
 }
 
+/* Entrada escalonada das barras: cada barra começa um pouco depois da anterior,
+   em vez de todas surgirem de uma vez. O intervalo encolhe com a quantidade de
+   barras para a entrada inteira nunca passar de BAR_STAGGER_TOTAL_MS (gráficos
+   com dezenas de vagas/colaboradores não ficam esperando). Só vale para
+   atualização de dados — resize, hover e troca de tema não atrasam. */
+const BAR_ANIMATION_MS = 450;
+const BAR_STAGGER_MAX_MS = 70;
+const BAR_STAGGER_TOTAL_MS = 900;
+
+function barStaggerDelay(context) {
+  if (context.type !== "data" || context.mode !== "default") return 0;
+  const count = (context.chart.data.labels || []).length || 1;
+  const step = Math.min(BAR_STAGGER_MAX_MS, BAR_STAGGER_TOTAL_MS / count);
+  return context.dataIndex * step;
+}
+
 /* options: { horizontal } — barras deitadas (uma categoria por linha, nome à
    esquerda e barra crescendo para a direita) em vez de colunas em pé. */
 export function createBarChart(canvas, options = {}) {
@@ -779,6 +795,7 @@ export function createBarChart(canvas, options = {}) {
     data: { labels: [], datasets: [] },
     options: {
       indexAxis: horizontal ? "y" : "x",
+      animation: { duration: BAR_ANIMATION_MS, easing: "easeOutCubic", delay: barStaggerDelay },
       responsive: true,
       maintainAspectRatio: false,
       /* Horizontal: folga à direita para o número não ser cortado. */

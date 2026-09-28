@@ -24,8 +24,9 @@ import {
   deleteHeadcount,
   getHeadcountById
 } from "./store";
+import { computed, toRaw } from "vue";
 import { createId, nowLocalISO, daysBetween, sameState } from "./utils";
-import { reloadData } from "./db";
+import { flush } from "./db";
 
 /* Restringe uma lista ao estado escolhido ("todos"/vazio = sem filtro; nesse
    caso devolve a própria lista, sem cópia). */
@@ -280,19 +281,20 @@ export function closeVacancy(id, closeDate = null) {
   return updated;
 }
 
-/* Depois de excluir, recarrega os dados direto do servidor (mesmo mecanismo
-   do botão "Recarregar Dados") — sem isso, uma exclusão que falhasse ao
-   gravar na planilha (rede, sobrecarga do Apps Script) ficava "sumida" só
-   localmente, e o app seguia mostrando dados desatualizados até um F5. */
+/* Exclusões e edições não recarregam mais o dashboard: o registro sai/muda
+   na memória local na hora e a alteração é enviada à planilha já (flush, sem
+   esperar o debounce da fila). O servidor invalida o cache da aba a cada
+   gravação, então quem carregar o dashboard depois já recebe a versão nova.
+   Se o envio falhar de vez, flush avisa com um toast (ver db.js). */
 export async function deleteVacancyRecord(id) {
   deleteVacancy(id);
-  await reloadData();
+  await flush();
 }
 
 /* Exclusão em lote. */
 export async function deleteVacancies(ids) {
   (ids || []).forEach((id) => deleteVacancy(id));
-  await reloadData();
+  await flush();
 }
 
 /* Fechamento em lote: fecha as vagas ainda abertas. */
@@ -464,16 +466,16 @@ export function updateTurnoverEntry(id, { filial, mesReferencia, admitidos, demi
   return updated;
 }
 
-/* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
+/* Envia a exclusão já, sem recarregar — ver deleteVacancyRecord acima. */
 export async function deleteTurnoverEntry(id) {
   deleteTurnover(id);
-  await reloadData();
+  await flush();
 }
 
 /* Exclusão em lote (aba Histórico do Lançamento). */
 export async function deleteTurnoverEntries(ids) {
   (ids || []).forEach((id) => deleteTurnover(id));
-  await reloadData();
+  await flush();
 }
 
 /* ---------- Tempo médio de permanência (lançamento manual por planilha) ----------
@@ -531,16 +533,16 @@ export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDem
   return updated;
 }
 
-/* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
+/* Envia a exclusão já, sem recarregar — ver deleteVacancyRecord acima. */
 export async function deletePermanenciaRecord(id) {
   deletePermanencia(id);
-  await reloadData();
+  await flush();
 }
 
 /* Exclusão em lote (modal de Tempo médio de permanência). */
 export async function deletePermanenciaRecords(ids) {
   (ids || []).forEach((id) => deletePermanencia(id));
-  await reloadData();
+  await flush();
 }
 
 /* ---------- Headcount (quadro mensal de colaboradores) ----------
@@ -556,7 +558,19 @@ export async function deletePermanenciaRecords(ids) {
    mês era só `slice(0, 7)` do texto: uma data digitada como "1/9/2026" virava
    "1/9/202", que no comparador de texto fica ANTES de qualquer "2026-.." e
    fazia o colaborador contar em todos os meses, inclusive antes da admissão. */
+const _ymCache = new Map();
 function toYm(value) {
+  /* Memo por texto: o quadro repete as mesmas poucas datas em milhares de
+     linhas, e cada troca de filtro relia todas com as regex abaixo. */
+  const cached = _ymCache.get(value);
+  if (cached !== undefined) return cached;
+  const ym = parseYm(value);
+  if (_ymCache.size > 20000) _ymCache.clear();
+  _ymCache.set(value, ym);
+  return ym;
+}
+
+function parseYm(value) {
   const s = String(value ?? "").trim();
   let m = s.match(/^(\d{4})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}`;
@@ -574,15 +588,97 @@ function toYm(value) {
   return "";
 }
 
-/* Linha ATIVA do quadro do mês `ym` ("YYYY-MM") — pelo mês referente. */
-function inMonth(h, ym) {
-  return toYm(h.mesReferente) === ym && isHeadcountAtivo(h, ym);
-}
-
 /* Ativo no mês `ym`: sem Data de desligamento, ou desligado só depois dele. */
 export function isHeadcountAtivo(h, ym) {
   const desligYm = toYm(h.dataDesligamento);
   return !desligYm || !ym || desligYm > ym;
+}
+
+/* ---------- Índice do Headcount ----------
+   O quadro tem milhares de linhas (um colaborador por mês referente) e cada
+   troca de filtro pedia dezenas de varreduras completas dele (KPIs do mês e do
+   mês anterior, mapa por estado, barras por estado x filial/empresa/função,
+   Turnover, Retenção, Custo médio...), cada uma relendo campos pelo proxy
+   reativo e convertendo datas de novo. O índice é montado UMA vez por mudança
+   nos dados (computed: recalcula quando uma linha é incluída, trocada ou
+   excluída) com os campos já normalizados e as linhas agrupadas por estado e
+   por mês referente. As regras de contagem continuam as mesmas; só deixam de
+   varrer a lista inteira. `h` é o próprio registro (o mesmo objeto de
+   getHeadcounts()), devolvido a quem lista colaboradores. */
+const EMPTY_ROWS = Object.freeze([]);
+
+function normUpper(v) {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+const headcountIndex = computed(() => {
+  const list = getHeadcounts();
+  const all = [];
+  const byState = new Map();
+  const byYm = new Map();
+  const byStateYm = new Map();
+  const push = (map, key, row) => {
+    const bucket = map.get(key);
+    if (bucket) bucket.push(row);
+    else map.set(key, [row]);
+  };
+  for (let i = 0; i < list.length; i++) {
+    const h = list[i];
+    const raw = toRaw(h);
+    const row = {
+      h,
+      raw,
+      estado: normUpper(raw.estado),
+      ym: toYm(raw.mesReferente),
+      admYm: toYm(raw.dataAdmissao),
+      desligYm: toYm(raw.dataDesligamento),
+      empresa: normUpper(raw.empresa),
+      funcao: normUpper(raw.funcao),
+      genero: String(raw.genero || "").trim().toLowerCase()
+    };
+    all.push(row);
+    push(byState, row.estado, row);
+    push(byYm, row.ym, row);
+    push(byStateYm, `${row.estado}|${row.ym}`, row);
+  }
+  /* Opções de filtro (empresa/função) por estado, montadas sob demanda e
+     descartadas junto com o índice quando os dados mudam. */
+  return { all, byState, byYm, byStateYm, options: new Map() };
+});
+
+function isAllStates(state) {
+  return !state || state === "todos";
+}
+
+/* Linhas do estado (todas as linhas com "todos"/vazio) — mesma regra de
+   filterByState/sameState (compara sem caixa e sem espaços). */
+function rowsOf(state) {
+  const idx = headcountIndex.value;
+  if (isAllStates(state)) return idx.all;
+  return idx.byState.get(normUpper(state)) || EMPTY_ROWS;
+}
+
+/* Linhas do estado com aquele mês referente (ativas ou não). */
+function monthRowsOf(state, ym) {
+  const idx = headcountIndex.value;
+  if (isAllStates(state)) return idx.byYm.get(ym) || EMPTY_ROWS;
+  return idx.byStateYm.get(`${normUpper(state)}|${ym}`) || EMPTY_ROWS;
+}
+
+/* Linha ATIVA do quadro do mês `ym` — pelo mês referente, sem desligamento
+   até o mês (mesma regra de isHeadcountAtivo). */
+function rowAtivoInMonth(row, ym) {
+  return row.ym === ym && (!row.desligYm || row.desligYm > ym);
+}
+
+/* Linhas ativas do quadro do mês `ym` no estado. */
+function activeRowsOf(state, ym) {
+  return monthRowsOf(state, ym).filter((row) => rowAtivoInMonth(row, ym));
+}
+
+/* Mês do período usado pelas contagens do quadro ("" = sem mês). */
+function rangeYm(range) {
+  return range ? String(range.end || range.start || "").slice(0, 7) : "";
 }
 
 /* Chave de identidade do colaborador (o mesmo aparece em vários meses do
@@ -595,41 +691,48 @@ function personKey(h) {
    dentro do período — linhas, sem repetir a mesma pessoa. `range` null = tudo. */
 let _movementsCache = new Map();
 let _movementsFresh = false;
+let _movementsIndex = null;
 
 export function headcountMovements(state, range) {
   /* Vários KPIs (Turnover, Retenção, cards) pedem o mesmo período na mesma
-     passada de cálculo: reaproveita o resultado até o fim dela. */
-  const source = getHeadcounts();
-  if (!_movementsFresh) {
+     passada de cálculo: reaproveita o resultado até o fim dela (ou até os
+     dados mudarem — índice novo). */
+  const idx = headcountIndex.value;
+  if (!_movementsFresh || _movementsIndex !== idx) {
     _movementsCache = new Map();
-    _movementsFresh = true;
-    queueMicrotask(() => {
-      _movementsFresh = false;
-    });
+    _movementsIndex = idx;
+    if (!_movementsFresh) {
+      _movementsFresh = true;
+      queueMicrotask(() => {
+        _movementsFresh = false;
+      });
+    }
   }
-  const cacheKey = `${state || ""}|${range ? `${range.start || ""}|${range.end || ""}` : ""}|${source.length}`;
+  const cacheKey = `${state || ""}|${range ? `${range.start || ""}|${range.end || ""}` : ""}`;
   const hit = _movementsCache.get(cacheKey);
   if (hit) return hit;
-  const result = computeHeadcountMovements(source, state, range);
+  const result = computeHeadcountMovements(rowsOf(state), range);
   _movementsCache.set(cacheKey, result);
   return result;
 }
 
-function computeHeadcountMovements(source, state, range) {
-  const list = filterByState(source, state);
+function computeHeadcountMovements(rows, range) {
   const seenA = new Set();
   const seenD = new Set();
   const admissoes = [];
   const demissoes = [];
-  list.forEach((h) => {
-    const key = personKey(h);
-    if (!seenA.has(key) && monthWithinRange(toYm(h.dataAdmissao), range)) {
+  rows.forEach((row) => {
+    const admIn = monthWithinRange(row.admYm, range);
+    const desligIn = monthWithinRange(row.desligYm, range);
+    if (!admIn && !desligIn) return;
+    const key = personKey(row.raw);
+    if (admIn && !seenA.has(key)) {
       seenA.add(key);
-      admissoes.push(h);
+      admissoes.push(row.h);
     }
-    if (!seenD.has(key) && monthWithinRange(toYm(h.dataDesligamento), range)) {
+    if (desligIn && !seenD.has(key)) {
       seenD.add(key);
-      demissoes.push(h);
+      demissoes.push(row.h);
     }
   });
   return { admissoes, demissoes };
@@ -638,27 +741,26 @@ function computeHeadcountMovements(source, state, range) {
 /* Lista o quadro do mês `mesReferencia` (formato "YYYY-MM").
    Sem mês informado, devolve todos os registros (sem filtro de mês) — usado pela busca por código na importação. */
 export function listHeadcountRecords(state, mesReferencia, { incluirDesligados = false } = {}) {
-  let list = filterByState(getHeadcounts(), state);
+  let rows = rowsOf(state);
   if (mesReferencia) {
-    list = list.filter((h) => (incluirDesligados ? toYm(h.mesReferente) === mesReferencia : inMonth(h, mesReferencia)));
+    rows = incluirDesligados ? monthRowsOf(state, mesReferencia) : activeRowsOf(state, mesReferencia);
   }
-  return list
+  return rows
     .slice()
-    .sort((a, b) => String(a.colaborador || "").localeCompare(String(b.colaborador || "")));
+    .sort((a, b) => String(a.raw.colaborador || "").localeCompare(String(b.raw.colaborador || "")))
+    .map((row) => row.h);
 }
 
 export function headcountCount(state, mesReferencia) {
-  return listHeadcountRecords(state, mesReferencia).length;
+  return mesReferencia ? activeRowsOf(state, mesReferencia).length : rowsOf(state).length;
 }
 
 /* Contagem do quadro do mês do período — `range` null cai no total de
    registros já lançados. */
 export function headcountCountInRange(state, range) {
-  const list = filterByState(getHeadcounts(), state);
-  if (!range) return list.length;
-  const ym = String(range.end || range.start || "").slice(0, 7);
-  if (!ym) return list.length;
-  return list.filter((h) => inMonth(h, ym)).length;
+  const ym = rangeYm(range);
+  if (!ym) return rowsOf(state).length;
+  return activeRowsOf(state, ym).length;
 }
 
 /* Filiais (nome abreviado lançado) que têm colaborador no estado, sem
@@ -668,51 +770,89 @@ export function headcountCountInRange(state, range) {
    assim o filtro de filial só lista as filiais da(s) empresa(s) filtrada(s). */
 export function headcountFilialOptions(state, empresas = []) {
   const seen = new Map();
-  filterByState(getHeadcounts(), state)
-    .filter((h) => !empresas.length || empresas.includes(String(h.empresa || "").trim().toUpperCase()))
-    .forEach((h) => {
-      const key = branchKeyFor(h.filial, h.estado);
-      if (!key || seen.has(key)) return;
-      const b = findBranchByShortName(h.filial, h.estado);
-      seen.set(key, String((b && b.shortName) || h.filial).trim().toUpperCase());
-    });
+  /* Milhares de linhas, poucas combinações filial+estado: cada combinação é
+     resolvida uma vez só (o resultado depende só dela). */
+  const tried = new Set();
+  rowsOf(state).forEach((row) => {
+    if (empresas.length && !empresas.includes(row.empresa)) return;
+    const { filial, estado } = row.raw;
+    const pair = `${estado}\u0000${filial}`;
+    if (tried.has(pair)) return;
+    tried.add(pair);
+    const key = branchKeyFor(filial, estado);
+    if (!key || seen.has(key)) return;
+    const b = findBranchByShortName(filial, estado);
+    seen.set(key, String((b && b.shortName) || filial).trim().toUpperCase());
+  });
   return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+/* Valores distintos de um campo já normalizado (empresa/função) no estado,
+   em ordem alfabética — memorizados no índice até os dados mudarem. */
+function distinctOptions(state, field) {
+  const idx = headcountIndex.value;
+  const cacheKey = `${field}|${isAllStates(state) ? "todos" : normUpper(state)}`;
+  let result = idx.options.get(cacheKey);
+  if (!result) {
+    const seen = new Set();
+    rowsOf(state).forEach((row) => {
+      if (row[field]) seen.add(row[field]);
+    });
+    result = [...seen].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    idx.options.set(cacheKey, result);
+  }
+  return result.slice();
 }
 
 /* Empresas (campo livre "empresa" do Headcount) que aparecem no estado, sem
    repetição — opções do filtro de empresa do gráfico de Headcount. */
 export function headcountEmpresaOptions(state) {
-  const seen = new Set();
-  filterByState(getHeadcounts(), state).forEach((h) => {
-    const v = String(h.empresa || "").trim().toUpperCase();
-    if (v) seen.add(v);
-  });
-  return [...seen].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return distinctOptions(state, "empresa");
+}
+
+/* Funções (campo "funcao" do Headcount) que aparecem no estado, sem
+   repetição — opções do filtro de função do gráfico de Headcount. */
+export function headcountFuncaoOptions(state) {
+  return distinctOptions(state, "funcao");
 }
 
 /* Quadro do período por gênero — mesmo mês de headcountCountInRange.
    "total" conta todos os colaboradores (inclusive sem gênero informado).
-   `filiais`/`empresas`: listas de valores marcados no filtro (multi-seleção);
-   vazio = sem filtro. */
-export function headcountGenderCountInRange(state, range, filiais = [], empresas = []) {
-  let list = filterByState(getHeadcounts(), state);
+   `filiais`/`empresas`/`funcoes`: listas de valores marcados no filtro
+   (multi-seleção); vazio = sem filtro. */
+export function headcountGenderCountInRange(state, range, filiais = [], empresas = [], funcoes = []) {
+  const ym = rangeYm(range);
+  let rows = ym ? activeRowsOf(state, ym) : rowsOf(state);
+  if (funcoes.length) {
+    const set = new Set(funcoes.map((f) => normUpper(f)));
+    rows = rows.filter((row) => set.has(row.funcao));
+  }
   if (filiais.length) {
     const keys = new Set(filiais.map((f) => branchKeyFor(f)));
-    list = list.filter((h) => keys.has(branchKeyFor(h.filial, h.estado)));
+    const memo = new Map();
+    rows = rows.filter((row) => {
+      const { filial, estado } = row.raw;
+      const pair = `${estado}\u0000${filial}`;
+      let hit = memo.get(pair);
+      if (hit === undefined) {
+        hit = keys.has(branchKeyFor(filial, estado));
+        memo.set(pair, hit);
+      }
+      return hit;
+    });
   }
   if (empresas.length) {
-    const set = new Set(empresas.map((e) => String(e).trim().toUpperCase()));
-    list = list.filter((h) => set.has(String(h.empresa || "").trim().toUpperCase()));
+    const set = new Set(empresas.map((e) => normUpper(e)));
+    rows = rows.filter((row) => set.has(row.empresa));
   }
-  const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
-  if (ym) list = list.filter((h) => inMonth(h, ym));
   /* Aceita maiúsculas/minúsculas (dados vindos da planilha). */
-  const is = (h, g) => String(h.genero || "").trim().toLowerCase() === g;
-  return {
-    masculino: list.filter((h) => is(h, "masculino")).length,
-    feminino: list.filter((h) => is(h, "feminino")).length,
-    total: list.length
-  };
+  let masculino = 0;
+  let feminino = 0;
+  rows.forEach((row) => {
+    if (row.genero === "masculino") masculino += 1;
+    else if (row.genero === "feminino") feminino += 1;
+  });
+  return { masculino, feminino, total: rows.length };
 }
 
 export function addHeadcountRecord({
@@ -764,19 +904,20 @@ export function updateHeadcountRecord(
     estado: estado !== undefined ? estado || null : record.estado
   };
   upsertHeadcount(updated);
+  flush();
   return updated;
 }
 
-/* Recarrega do servidor depois de excluir — ver deleteVacancyRecord acima. */
+/* Envia a exclusão já, sem recarregar — ver deleteVacancyRecord acima. */
 export async function deleteHeadcountRecord(id) {
   deleteHeadcount(id);
-  await reloadData();
+  await flush();
 }
 
 /* Exclusão em lote (aba Histórico do Lançamento). */
 export async function deleteHeadcountRecords(ids) {
   (ids || []).forEach((id) => deleteHeadcount(id));
-  await reloadData();
+  await flush();
 }
 
 /* ---------- Cálculo do Turnover (%) e Turnover de Saída (%) ----------
@@ -847,9 +988,7 @@ export function turnoverEntriesInRange(state, range) {
   demissoes.forEach((h) => { bucket(h, toYm(h.dataDesligamento)).demitidos += 1; });
   const ym = range ? String(range.end || range.start || "").slice(0, 7) : "";
   if (ym) {
-    filterByState(getHeadcounts(), state)
-      .filter((h) => inMonth(h, ym))
-      .forEach((h) => { bucket(h, ym).ativos += 1; });
+    activeRowsOf(state, ym).forEach((row) => { bucket(row.h, ym).ativos += 1; });
   }
   return [...groups.values()].sort((a, b) => String(b.mesReferencia).localeCompare(String(a.mesReferencia)));
 }

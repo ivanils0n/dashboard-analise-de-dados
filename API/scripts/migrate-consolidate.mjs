@@ -59,7 +59,7 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
   process.exit(1);
 }
 
-// ---------- schema (espelha backend-sheets/src/db/tables.ts) ----------
+// ---------- schema (espelha API/src/db/tables.ts) ----------
 
 const ESTADOS = ["ro", "am", "pa"];
 const ENTITY_COLUMNS = {

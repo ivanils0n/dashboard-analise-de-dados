@@ -102,17 +102,6 @@ function absenteismoToRow(entry) {
   };
 }
 
-// "mes_incompleto" (ver lib/monthStatus.js): a existência da linha já é o
-// marcador — sem "valor" nenhum a gravar.
-function mesIncompletoToRow(entry) {
-  const meta = entry.meta || {};
-  return {
-    id: entry.id,
-    competencia: entry.date,
-    estado_sigla: meta.estado || null
-  };
-}
-
 function vacancyToRow(vacancy) {
   return {
     id: vacancy.id,
@@ -312,8 +301,7 @@ const ENTRY_TABLE_META = {
   custo_diaria: { table: "diarias", toRow: diariaToRow },
   treinamento: { table: "treinamentos", toRow: treinamentoToRow },
   custo_total: { table: "custo_folha", toRow: custoFolhaToRow },
-  absenteismo: { table: "absenteismo", toRow: absenteismoToRow },
-  mes_incompleto: { table: "meses_incompletos", toRow: mesIncompletoToRow }
+  absenteismo: { table: "absenteismo", toRow: absenteismoToRow }
 };
 
 function entryTableMeta(indicatorId) {
@@ -442,15 +430,6 @@ function mapRemoteAbsenteismo(row, impliedState) {
   };
 }
 
-function mapRemoteMesIncompleto(row, impliedState) {
-  return {
-    id: row.id,
-    date: row.competencia,
-    value: 1,
-    meta: { estado: row.estado_sigla || impliedState || null }
-  };
-}
-
 function mapRemoteVacancy(row, impliedState) {
   return {
     id: row.id,
@@ -566,8 +545,7 @@ const TABLE_KINDS = {
   diarias: { key: "diarias", map: mapRemoteDiaria },
   treinamentos: { key: "treinamentos", map: mapRemoteTreinamento },
   custo_folha: { key: "custoFolha", map: mapRemoteCustoFolha },
-  absenteismo: { key: "absenteismo", map: mapRemoteAbsenteismo },
-  meses_incompletos: { key: "mesesIncompletos", map: mapRemoteMesIncompleto }
+  absenteismo: { key: "absenteismo", map: mapRemoteAbsenteismo }
 };
 const DATA_TABLES = Object.keys(TABLE_KINDS);
 
@@ -592,8 +570,7 @@ function emptyPayload() {
     diarias: [],
     treinamentos: [],
     custoFolha: [],
-    absenteismo: [],
-    mesesIncompletos: []
+    absenteismo: []
   };
 }
 

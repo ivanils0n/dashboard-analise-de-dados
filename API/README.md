@@ -48,7 +48,7 @@ ler/gravar nada.
 ## Estrutura
 
 ```
-backend-sheets/
+API/
 ├── apps-script/
 │   └── Code.gs           # publicado manualmente no editor do Apps Script (não faz parte do deploy do Worker)
 ├── src/
@@ -146,8 +146,8 @@ npm run seed        # cria abas/cabeçalhos + admin inicial na planilha configur
 ## Modelo de dados na planilha
 
 Uma aba por entidade (`vagas`, `headcount`, `turnover`, `permanencia`,
-`filiais`, `diarias`, `treinamentos`, `custo_folha`, `absenteismo`,
-`meses_incompletos`) + uma aba `usuarios` — 11 abas ao todo. RO/AM/PA convivem na mesma aba, distinguidos
+`filiais`, `diarias`, `treinamentos`, `custo_folha`, `absenteismo`) + uma
+aba `usuarios` — 10 abas ao todo. RO/AM/PA convivem na mesma aba, distinguidos
 pela coluna `estado_sigla`; o Worker filtra por estado em memória depois de
 ler a aba (ver `matchesEstado` em `src/services/records.ts`). Isso substituiu
 o modelo antigo de uma aba por `entidade_estado` (`vagas_ro`, `vagas_am`, ...),
@@ -161,8 +161,8 @@ trabalha onde passou a vir só da importação mensal em `headcount`
 (`mes_referencia` + `remuneracao`). A antiga aba genérica `lancamentos`
 (`indicador_id` + `meta` json, usada por vários indicadores manuais) também
 não existe mais: `diarias`, `treinamentos`, `custo_folha` e `absenteismo` têm
-colunas tipadas próprias, e `meses_incompletos` guarda a marcação de "mês
-incompleto" (a existência da linha já é o marcador). `custo_contratacao` não
+colunas tipadas próprias (a antiga `meses_incompletos`, marcação de "mês
+incompleto", foi removida junto com essa função do dashboard). `custo_contratacao` não
 tem aba — é calculado ao vivo a partir de `vagas` (salário × vagas fechadas
 no período).
 

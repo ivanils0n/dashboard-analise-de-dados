@@ -60,7 +60,7 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
   process.exit(1);
 }
 
-// ---------- schema (espelha backend-sheets/src/db/tables.ts) ----------
+// ---------- schema (espelha API/src/db/tables.ts) ----------
 
 const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial", "estado_sigla", "recrutador"],
@@ -88,9 +88,7 @@ const ENTITY_COLUMNS = {
     "competencia", "horas", "estado_sigla"
   ],
   custo_folha: ["id", "filial_cnpj", "razao_social", "percent", "competencia", "valor", "estado_sigla"],
-  absenteismo: ["id", "competencia", "valor", "estado_sigla"],
-  // Marcação de "mês incompleto" (ver src/lib/monthStatus.js no frontend).
-  meses_incompletos: ["id", "competencia", "estado_sigla"]
+  absenteismo: ["id", "competencia", "valor", "estado_sigla"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];
 
