@@ -40,6 +40,9 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
             <h2 class="text-base font-bold text-zinc-900 sm:text-lg dark:text-zinc-100">{{ title }}</h2>
             <p v-if="subtitle" class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{{ subtitle }}</p>
           </div>
+          <div v-if="$slots.actions" class="ml-auto flex min-w-0 items-center">
+            <slot name="actions" />
+          </div>
           <button
             type="button"
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-2xl sm:h-8 sm:w-8 sm:text-xl leading-none text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"

@@ -101,7 +101,8 @@ const vaga = reactive({
   salario: "",
   tipo: "clt",
   filial: null,
-  recrutador: ""
+  recrutador: "",
+  motivo: ""
 });
 const editingVacancyId = ref(null);
 
@@ -496,6 +497,7 @@ function resetVagaForm() {
   vaga.filial = null;
   vagaFilialOriginal.value = null;
   vaga.recrutador = "";
+  vaga.motivo = "";
 }
 
 function tipoContratacaoLabel(t) {
@@ -551,7 +553,8 @@ function handleVacancyAdd() {
       tipoContratacao: vaga.tipo,
       estado: st,
       filial: vaga.filial,
-      recrutador: vaga.recrutador.trim() || null
+      recrutador: vaga.recrutador.trim() || null,
+      motivoContratacao: vaga.motivo.trim() || null
     });
     editingVacancyId.value = null;
     toast("Vaga atualizada.");
@@ -564,7 +567,8 @@ function handleVacancyAdd() {
       tipoContratacao: vaga.tipo,
       estado: st,
       filial: vaga.filial,
-      recrutador: vaga.recrutador.trim() || null
+      recrutador: vaga.recrutador.trim() || null,
+      motivoContratacao: vaga.motivo.trim() || null
     });
     toast(`Vaga adicionada${closeAt ? " e fechada" : " — aguardando fechamento"}.${st ? ` (${st})` : ""}`);
   }
@@ -594,6 +598,7 @@ async function editVacancy(id) {
   vaga.filial = v.filial || null;
   vagaFilialOriginal.value = vaga.filial;
   vaga.recrutador = v.recrutador || "";
+  vaga.motivo = v.motivoContratacao || "";
   showTab("nova");
 }
 
@@ -1688,6 +1693,11 @@ function close() {
           <div class="flex flex-col gap-1.5 sm:w-64">
             <label for="vagaRecrutador" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Recrutador</label>
             <input id="vagaRecrutador" v-model="vaga.recrutador" v-upper type="text" class="input-field uppercase" placeholder="Ex.: FULANO DE TAL" />
+          </div>
+
+          <div class="flex flex-col gap-1.5 sm:w-64">
+            <label for="vagaMotivo" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Motivo da Contratação</label>
+            <input id="vagaMotivo" v-model="vaga.motivo" v-upper type="text" class="input-field uppercase" placeholder="Ex.: SUBSTITUIÇÃO" />
           </div>
 
           <div class="flex flex-wrap gap-2">

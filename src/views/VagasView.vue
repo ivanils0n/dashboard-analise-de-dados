@@ -49,6 +49,7 @@ const base = computed(() => {
       tipo: v.tipoContratacao ? String(v.tipoContratacao).toUpperCase() : "",
       filial: v.filial || "",
       recrutador: v.recrutador || "",
+      motivo: v.motivoContratacao || "",
       estado: v.estado || ""
     };
   });
@@ -109,7 +110,7 @@ const rows = computed(() => {
       if (recrutadores.value.length && !recrutadores.value.includes(r.recrutador)) return false;
       if (tipos.value.length && !tipos.value.includes(r.tipo)) return false;
       if (!q) return true;
-      return normalizeText([r.nome, r.filial, r.recrutador, r.estado, r.tipo].join(" ")).includes(q);
+      return normalizeText([r.nome, r.filial, r.recrutador, r.motivo, r.estado, r.tipo].join(" ")).includes(q);
     })
     .slice()
     .sort((a, b) => b.abertaEm.localeCompare(a.abertaEm) || a.nome.localeCompare(b.nome, "pt-BR"));
@@ -157,6 +158,7 @@ const columns = [
   { label: "Contratação", get: (r) => text(r.tipo) },
   { label: "Filial", get: (r) => text(r.filial) },
   { label: "Recrutador", get: (r) => text(r.recrutador) },
+  { label: "Motivo da Contratação", get: (r) => text(r.motivo) },
   { label: "Estado", get: (r) => text(r.estado) }
 ];
 </script>

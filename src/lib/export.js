@@ -23,7 +23,7 @@ function safeRows(rows) {
 
 const VAGA_HEADER = [
   "Nome da vaga", "Data de abertura", "Data de fechamento", "Tipo de contratação",
-  "Salário (R$)", "Estado", "Filial", "Recrutador", "Status", "Tempo (dias)"
+  "Salário (R$)", "Estado", "Filial", "Recrutador", "Motivo da Contratação", "Status", "Tempo (dias)"
 ];
 
 function vagasRows(list) {
@@ -39,6 +39,7 @@ function vagasRows(list) {
       v.estado || "",
       v.filial || "",
       v.recrutador || "",
+      v.motivoContratacao || "",
       v.closeAt ? "Fechada" : "Aberta",
       days === null || isNaN(days) ? null : Number(days.toFixed(1))
     ]);

@@ -903,7 +903,7 @@ function updateGroupedBarChart(chart, panorama) {
     datasets: names.map((name, si) => ({
       label: name,
       data: panorama.map((row) => (row.series[si] && row.series[si].value) || 0),
-      backgroundColor: BAR_SERIES_COLORS[si % BAR_SERIES_COLORS.length],
+      backgroundColor: panorama[0].series[si].color || BAR_SERIES_COLORS[si % BAR_SERIES_COLORS.length],
       borderRadius: 4,
       barPercentage: 0.9,
       categoryPercentage: 0.8
@@ -916,7 +916,11 @@ function updateGroupedBarChart(chart, panorama) {
   };
   chart.options.plugins.tooltip.displayColors = true;
   chart.options.plugins.tooltip.callbacks = {
-    label: (context) => `${context.dataset.label}: ${context.parsed.y ?? context.parsed.x}`
+    label: (context) => {
+      const value = context.parsed.y ?? context.parsed.x;
+      const fmt = chart.__valueLabels && chart.__valueLabels.formatter;
+      return `${context.dataset.label}: ${typeof fmt === "function" ? fmt(value) : value}`;
+    }
   };
   chart.update();
 }

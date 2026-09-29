@@ -232,7 +232,8 @@ export function addVacancy({
   tipoContratacao = null,
   estado,
   filial = null,
-  recrutador = null
+  recrutador = null,
+  motivoContratacao = null
 }) {
   const vacancy = {
     id: createId(),
@@ -243,7 +244,8 @@ export function addVacancy({
     tipoContratacao: tipoContratacao || null,
     estado: estado || null,
     filial: filial || null,
-    recrutador: recrutador || null
+    recrutador: recrutador || null,
+    motivoContratacao: motivoContratacao || null
   };
   upsertVacancy(vacancy);
   return vacancy;
@@ -251,7 +253,7 @@ export function addVacancy({
 
 export function updateVacancy(
   id,
-  { name, openAt, closeAt, salario, tipoContratacao, estado, filial, recrutador }
+  { name, openAt, closeAt, salario, tipoContratacao, estado, filial, recrutador, motivoContratacao }
 ) {
   const vacancy = getVacancyById(id);
   if (!vacancy) return null;
@@ -265,7 +267,9 @@ export function updateVacancy(
       tipoContratacao !== undefined ? tipoContratacao || null : vacancy.tipoContratacao,
     estado: estado !== undefined ? estado || null : vacancy.estado,
     filial: filial !== undefined ? filial || null : vacancy.filial,
-    recrutador: recrutador !== undefined ? recrutador || null : vacancy.recrutador
+    recrutador: recrutador !== undefined ? recrutador || null : vacancy.recrutador,
+    motivoContratacao:
+      motivoContratacao !== undefined ? motivoContratacao || null : vacancy.motivoContratacao
   };
   upsertVacancy(updated);
   return updated;
@@ -761,6 +765,15 @@ export function headcountCountInRange(state, range) {
   const ym = rangeYm(range);
   if (!ym) return rowsOf(state).length;
   return activeRowsOf(state, ym).length;
+}
+
+/* Colaboradores (registros) que compõem a contagem acima — mesma regra de
+   headcountCountInRange, para quem precisa agrupar o quadro ativo (função,
+   gênero). */
+export function headcountActiveInRange(state, range) {
+  const ym = rangeYm(range);
+  const rows = ym ? activeRowsOf(state, ym) : rowsOf(state);
+  return rows.map((row) => row.h);
 }
 
 /* Filiais (nome abreviado lançado) que têm colaborador no estado, sem

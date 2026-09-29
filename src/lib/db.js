@@ -112,7 +112,8 @@ function vacancyToRow(vacancy) {
     tipo_contratacao: vacancy.tipoContratacao || null,
     filial: vacancy.filial || null,
     estado_sigla: vacancy.estado || null,
-    recrutador: vacancy.recrutador || null
+    recrutador: vacancy.recrutador || null,
+    motivo_contratacao: vacancy.motivoContratacao || null
   };
 }
 
@@ -440,7 +441,8 @@ function mapRemoteVacancy(row, impliedState) {
     tipoContratacao: row.tipo_contratacao ? String(row.tipo_contratacao).trim().toLowerCase() : null,
     filial: up(row.filial) || null,
     estado: row.estado_sigla || impliedState || null,
-    recrutador: up(row.recrutador) || null
+    recrutador: up(row.recrutador) || null,
+    motivoContratacao: up(row.motivo_contratacao) || null
   };
 }
 

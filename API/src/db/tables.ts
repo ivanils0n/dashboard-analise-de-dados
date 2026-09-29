@@ -78,7 +78,8 @@ export const ENTITIES: Record<string, EntityDef> = {
       // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/headcount.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true },
-      { name: "recrutador", type: "text" }
+      { name: "recrutador", type: "text" },
+      { name: "motivo_contratacao", type: "text" }
     ]
   },
   headcount: {

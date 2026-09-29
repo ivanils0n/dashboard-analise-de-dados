@@ -8,6 +8,7 @@ import UfMapCard from "@/components/dashboard/UfMapCard.vue";
 import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vue";
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
+import TurnoverAnaliseModal from "@/components/dashboard/TurnoverAnaliseModal.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
@@ -17,6 +18,7 @@ import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
+import HeadcountAnaliseModal from "@/components/dashboard/HeadcountAnaliseModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
@@ -133,6 +135,19 @@ const turnoverDetailKind = ref("admissoes");
 function openTurnoverDetail(kind) {
   turnoverDetailKind.value = kind;
   turnoverDetailOpen.value = true;
+}
+
+/* Análise de Turnover em tela cheia (botão direito no KPI de Turnover). */
+const turnoverAnaliseOpen = ref(false);
+
+/* Análise de Headcount em tela cheia (botão direito no KPI de Headcount); de
+   lá, "Ver colaboradores"/clique na pizza abre a lista abaixo por cima. */
+const headcountAnaliseOpen = ref(false);
+
+function onHeadcountAnaliseColaboradores({ genero, estado }) {
+  headcountGenero.value = genero || "";
+  headcountEstadoSigla.value = estado || filters.current;
+  headcountEstadoOpen.value = true;
 }
 
 const headcountEstadoOpen = ref(false);
@@ -642,9 +657,7 @@ function onSelectKpi(id) {
    colaborador/admissão/demissão). */
 function onKpiContext(id) {
   if (id === "headcount") {
-    headcountEstadoSigla.value = filters.current;
-    headcountGenero.value = "";
-    headcountEstadoOpen.value = true;
+    headcountAnaliseOpen.value = true;
   } else if (id === "retencao") openLaunchView("headcount");
   else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "horas_regional") {
@@ -656,7 +669,7 @@ function onKpiContext(id) {
     mensalEntriesIndicatorId.value = id;
     mensalEntriesOpen.value = true;
   } else if (id === "turnover") {
-    openTurnoverDetail("geral");
+    turnoverAnaliseOpen.value = true;
   } else if (id === "tempo_permanencia") {
     permanenciaEditId.value = null;
     permanenciaOpen.value = true;
@@ -1354,11 +1367,22 @@ watch(activeTab, (tab) => {
       :kind="turnoverDetailKind"
       @close="turnoverDetailOpen = false"
     />
+    <TurnoverAnaliseModal
+      v-if="turnoverAnaliseOpen"
+      :open="turnoverAnaliseOpen"
+      @close="turnoverAnaliseOpen = false"
+    />
     <RegionalTreinamentosModal
       v-if="regionalModalOpen"
       :open="regionalModalOpen"
       :groups="regionalGroups"
       @close="regionalModalOpen = false"
+    />
+    <HeadcountAnaliseModal
+      v-if="headcountAnaliseOpen"
+      :open="headcountAnaliseOpen"
+      @close="headcountAnaliseOpen = false"
+      @colaboradores="onHeadcountAnaliseColaboradores"
     />
     <HeadcountEstadoModal
       v-if="headcountEstadoOpen"

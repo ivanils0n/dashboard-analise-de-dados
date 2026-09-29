@@ -102,6 +102,10 @@ async function remove() {
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Recrutador</dt>
           <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ vacancy.recrutador || "—" }}</dd>
         </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Motivo da Contratação</dt>
+          <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ vacancy.motivoContratacao || "—" }}</dd>
+        </div>
         <div class="col-span-2">
           <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Tempo de contratação</dt>
           <dd class="mt-0.5 text-zinc-800 dark:text-zinc-100">{{ formatVacancyTempo(vacancy) }}</dd>

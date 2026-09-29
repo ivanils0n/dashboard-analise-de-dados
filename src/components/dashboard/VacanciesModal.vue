@@ -453,6 +453,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Salário</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Recrutador</th>
+                  <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Motivo da Contratação</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Abertura</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Fechamento</th>
@@ -482,6 +483,7 @@ watch(rows, () => nextTick(updateTableWidths));
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.salario != null ? formatCurrency(v.salario) : "—" }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.filial || "—" }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.recrutador || "—" }}</td>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.motivoContratacao || "—" }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.estado || "—" }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ formatDate(v.openAt) }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{{ v.closeAt ? formatDate(v.closeAt) : "—" }}</td>
