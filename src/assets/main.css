@@ -148,7 +148,7 @@ body {
 }
 @media (hover: hover) {
   .kpi-card:hover {
-    transform: scale(1.1);
+    transform: scale(1.05);
     z-index: 10;
     will-change: transform;
   }

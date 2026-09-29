@@ -6,7 +6,7 @@ import StateFilter from "./StateFilter.vue";
 import UserMenu from "./UserMenu.vue";
 import DashboardTabs from "./DashboardTabs.vue";
 import { useTheme } from "@/composables/useTheme";
-import { sidebarCollapsed as collapsed } from "@/composables/useSidebar";
+import { sidebarCollapsed, sidebarEffectiveCollapsed as collapsed } from "@/composables/useSidebar";
 
 /* Sidebar esquerda (antiga TopBar + navegação): logo, páginas, abas Visão
    Geral/Painel, filtro de estado, tema e conta. Em celulares (abaixo de md)
@@ -143,7 +143,7 @@ const drawerSections = computed(() =>
       </button>
       <UserMenu compact />
     </div>
-    <div v-if="showDashboardTabs" class="px-3 pb-2">
+    <div v-if="showDashboardTabs" data-tour="tabs" class="px-3 pb-2">
       <DashboardTabs variant="topbar" />
     </div>
 
@@ -183,7 +183,7 @@ const drawerSections = computed(() =>
             <p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Filtro</p>
             <StateFilter class="w-full" />
           </div>
-          <p class="mb-6 mt-auto text-center text-[10px] text-zinc-500">Feito por <span class="font-bold text-zinc-300">Ivanilson</span></p>
+          <p class="mb-6 mt-auto text-center text-[10px] text-zinc-500">Copyright © <span class="font-bold text-zinc-300">IBDS</span></p>
         </nav>
       </div>
     </Transition>
@@ -195,17 +195,21 @@ const drawerSections = computed(() =>
     :class="collapsed ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4'"
     aria-label="Painel de controle"
   >
+    <!-- Cantos arredondados "para fora": a cor da sidebar escorre em curva para
+         o conteúdo no topo e na base (raio invertido). Só visual. -->
+    <span class="sidebar-flare sidebar-flare-top" aria-hidden="true"></span>
+    <span class="sidebar-flare sidebar-flare-bottom" aria-hidden="true"></span>
     <div class="flex items-center gap-2 md:pb-4" :class="collapsed ? 'md:justify-center' : 'md:justify-between'">
       <a href="#/dashboard" class="flex min-w-0 items-center md:flex-1 md:justify-center" :class="collapsed && 'md:hidden'" aria-label="Gente & Gestão — Dashboard">
         <img src="/logo.png" alt="Gente & Gestão" class="h-12 w-auto max-w-[180px] object-contain md:h-auto md:max-h-16 md:w-full" />
       </a>
       <button
         type="button"
-        class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 md:flex"
+        class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 lg:flex"
         :aria-label="collapsed ? 'Expandir sidebar' : 'Recolher sidebar'"
         :title="collapsed ? 'Expandir sidebar' : 'Recolher sidebar'"
         :aria-expanded="!collapsed"
-        @click="collapsed = !collapsed"
+        @click="sidebarCollapsed = !sidebarCollapsed"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline v-if="!collapsed" points="15 18 9 12 15 6" />
@@ -239,7 +243,7 @@ const drawerSections = computed(() =>
       </button>
     </nav>
 
-    <div v-if="showDashboardTabs" class="md:mt-4 md:border-t md:border-zinc-800 md:pt-4">
+    <div v-if="showDashboardTabs" data-tour="tabs" class="md:mt-4 md:border-t md:border-zinc-800 md:pt-4">
       <p v-if="!collapsed" class="mb-2 hidden px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500 md:block">Visualização</p>
       <DashboardTabs variant="topbar" class="hidden md:grid" vertical :compact="collapsed" />
     </div>
@@ -299,12 +303,34 @@ const drawerSections = computed(() =>
         <span class="hidden" :class="!collapsed && 'md:inline'">{{ isDark ? "Modo claro" : "Modo noturno" }}</span>
       </button>
       <UserMenu :compact="collapsed" />
-      <p v-if="!collapsed" class="hidden text-center text-[10px] text-zinc-500 md:block">Feito por <span class="font-bold text-zinc-300">Ivanilson</span></p>
+      <p v-if="!collapsed" class="hidden text-center text-[10px] text-zinc-500 md:block">Copyright © <span class="font-bold text-zinc-300">IBDS</span></p>
     </div>
   </aside>
 </template>
 
 <style scoped>
+/* Raio invertido nos cantos externos da sidebar (topo e base): um quadrado
+   colado na borda direita, com um quarto de círculo transparente. */
+.sidebar-flare {
+  position: absolute;
+  left: 100%;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+.sidebar-flare-top {
+  top: 0;
+  background: radial-gradient(circle at 100% 100%, transparent 23px, #0a0a0a 24px);
+}
+.sidebar-flare-bottom {
+  bottom: 0;
+  background: radial-gradient(circle at 100% 0, transparent 23px, #0a0a0a 24px);
+}
+@media (max-width: 767px) {
+  .sidebar-flare {
+    display: none;
+  }
+}
 .drawer-enter-active,
 .drawer-leave-active {
   transition: opacity 0.2s ease;

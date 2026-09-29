@@ -14,8 +14,17 @@ const props = defineProps({
   showCost: { type: Boolean, default: false },
   /* false no Painel (CockpitPanel): o gráfico já tem a taxa geral no centro
      da pizza, então o card "Geral" ficaria redundante ali. */
-  showGeral: { type: Boolean, default: true }
+  showGeral: { type: Boolean, default: true },
+  /* A partir de que largura os cards viram uma coluna vertical de 180px ao lado
+     do gráfico: "md" (padrão) ou "lg". Abaixo disso ficam alinhados numa linha
+     horizontal (ex.: tablet no Painel, com a pizza ocupando a largura toda). */
+  verticalFrom: { type: String, default: "md" }
 });
+
+const VERTICAL = {
+  md: "md:h-full md:min-h-0 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:min-h-0 md:[&>*]:flex-auto md:[&>*]:overflow-hidden",
+  lg: "lg:h-full lg:min-h-0 lg:w-[180px] lg:shrink-0 lg:flex-col lg:justify-center lg:[&>*]:min-h-0 lg:[&>*]:flex-auto lg:[&>*]:overflow-hidden"
+};
 
 /* Clique num card: abre o detalhe — id "geral" | "admissoes" | "demissoes". */
 const emit = defineEmits(["select"]);
@@ -49,7 +58,7 @@ const cards = computed(() => [
 </script>
 
 <template>
-  <div :class="showCost ? 'grid grid-cols-2 gap-2 sm:flex sm:gap-3' : 'flex gap-3'" class="md:h-full md:min-h-0 md:w-[180px] md:shrink-0 md:flex-col md:justify-center md:[&>*]:min-h-0 md:[&>*]:flex-auto md:[&>*]:overflow-hidden">
+  <div :class="[showCost ? 'grid grid-cols-2 gap-2 sm:flex sm:gap-3' : 'flex gap-3', VERTICAL[verticalFrom] || VERTICAL.md]">
     <TurnoverCostCard v-if="showCost" class="col-span-2 sm:col-span-1" :summary="summary" />
     <button
       v-for="card in cards"

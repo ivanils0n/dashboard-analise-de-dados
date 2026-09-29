@@ -19,6 +19,7 @@ import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModa
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import HeadcountAnaliseModal from "@/components/dashboard/HeadcountAnaliseModal.vue";
+import DashboardTour from "@/components/dashboard/DashboardTour.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
@@ -50,7 +51,7 @@ import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
-const { show: toast } = useToast();
+const { show: toast, hide: hideToast } = useToast();
 const { confirm } = useDialog();
 
 const dashboard = useDashboardData(dateFilter);
@@ -139,6 +140,9 @@ function openTurnoverDetail(kind) {
 
 /* Análise de Turnover em tela cheia (botão direito no KPI de Turnover). */
 const turnoverAnaliseOpen = ref(false);
+
+/* Tour guiado pela dashboard (botão "i" ao lado de "Ocultar valores"). */
+const tourOpen = ref(false);
 
 /* Análise de Headcount em tela cheia (botão direito no KPI de Headcount); de
    lá, "Ver colaboradores"/clique na pizza abre a lista abaixo por cima. */
@@ -531,15 +535,20 @@ const reloading = ref(false);
 async function handleReload() {
   if (reloading.value) return;
   reloading.value = true;
+  /* Aviso fixo (não some sozinho) enquanto a planilha é relida; trocado pelo
+     resultado ao terminar. */
+  const loadingToast = toast("Atualizando dados, aguarde...", "loading");
   try {
     // Sem limite de tempo: reler a planilha inteira pode passar de 30 s
     // quando o Apps Script está lento (ele repete a leitura sozinho).
     await apiFetch("/api/cache/refresh", { method: "POST", timeoutMs: 0 });
     await reloadData();
     syncAll();
+    hideToast(loadingToast);
     toast("Dados recarregados.");
   } catch (err) {
     console.error("[DashboardView] Falha ao recarregar os dados:", err);
+    hideToast(loadingToast);
     toast("Não foi possível recarregar os dados.");
   } finally {
     reloading.value = false;
@@ -739,6 +748,7 @@ watch(activeTab, (tab) => {
         <button
           v-if="canRefreshCache"
           type="button"
+          data-tour="refresh"
           class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           aria-label="Recarregar dados"
           title="Recarregar dados"
@@ -761,18 +771,34 @@ watch(activeTab, (tab) => {
       ></div>
 
       <div class="flex w-full flex-wrap items-center justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+        <!-- Tour guiado pela dashboard (à esquerda de "Ocultar valores"). -->
+        <button
+          type="button"
+          data-tour="tour-button"
+          class="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          aria-label="Tour pela dashboard"
+          title="Tour pela dashboard"
+          @click="tourOpen = true"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </button>
         <button
           v-if="activeTab === 'cockpit'"
           type="button"
+          data-tour="hide-values"
           class="whitespace-nowrap rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           @click="toggleShowValues"
         >
           {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
         </button>
-        <DateRangeFilter :range="df" title="Período" />
-        <StateFilter variant="page" />
+        <DateRangeFilter data-tour="period" :range="df" title="Período" />
+        <StateFilter data-tour="state" variant="page" />
 
-        <div v-if="canEdit" class="relative ml-auto sm:ml-0" @click.stop>
+        <div v-if="canEdit" data-tour="menu" class="relative ml-auto sm:ml-0" @click.stop>
         <button
           type="button"
           class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
@@ -826,7 +852,7 @@ watch(activeTab, (tab) => {
         aria-label="Buscar indicador"
       />
     </div>
-    <section class="flex snap-x gap-3 overflow-x-auto px-7 pb-9 pt-8 sm:gap-4" aria-label="Indicadores-chave">
+    <section data-tour="overview-kpis" class="flex snap-x gap-3 overflow-x-auto px-7 pb-9 pt-8 sm:gap-4" aria-label="Indicadores-chave">
       <KpiCard
         v-for="(kpi, kpiIndex) in visibleKpis"
         :key="kpi.id"
@@ -877,11 +903,11 @@ watch(activeTab, (tab) => {
 
     <!-- ===== GRÁFICOS POR INDICADOR (um abaixo do outro) ===== -->
     <div class="mt-8 flex justify-end">
-      <button type="button" class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800" @click="toggleShowValues">
+      <button type="button" data-tour="hide-values" class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800" @click="toggleShowValues">
         {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
       </button>
     </div>
-    <div ref="scrollRef" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-12">
+    <div ref="scrollRef" data-tour="overview-charts" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-12">
       <template v-for="view in gridChartViews" :key="view.card.id">
         <KpiChartCard
           stacked
@@ -1378,6 +1404,7 @@ watch(activeTab, (tab) => {
       :groups="regionalGroups"
       @close="regionalModalOpen = false"
     />
+    <DashboardTour :open="tourOpen" :tab="activeTab === 'cockpit' ? 'cockpit' : 'overview'" @close="tourOpen = false" />
     <HeadcountAnaliseModal
       v-if="headcountAnaliseOpen"
       :open="headcountAnaliseOpen"

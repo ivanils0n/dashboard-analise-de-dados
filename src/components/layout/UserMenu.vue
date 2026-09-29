@@ -39,6 +39,7 @@ function doLogout() {
   open.value = false;
   logout();
   router.replace("/login");
+  toast("Até a próxima!", "info");
 }
 
 function openModal(mode) {

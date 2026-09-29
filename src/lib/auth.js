@@ -18,7 +18,10 @@ export const PERFIL_LABELS = {
 
 export const authState = reactive({
   profile: null,
-  loading: true
+  loading: true,
+  /* Por que a sessão terminou: "logout" (o usuário saiu) ou "expired" (limite
+     de tempo/token recusado). Permite avisar só a expiração de verdade. */
+  endReason: null
 });
 
 /* Nota: a montagem do e-mail a partir do usuário ("ivan" -> "ivan@...") é
@@ -137,6 +140,7 @@ export async function ensureProfile() {
 
 function saveSession(token, profile) {
   _expiredHandled = false;
+  authState.endReason = null;
   _lastProfileCheck = 0;
   writeSession({
     token,
@@ -229,12 +233,14 @@ function performFullCleanup() {
 
 export function logout() {
   _expiredHandled = true;
+  authState.endReason = "logout";
   performFullCleanup();
 }
 
 export function handleSessionExpired() {
   if (_expiredHandled) return;
   _expiredHandled = true;
+  authState.endReason = "expired";
   performFullCleanup();
 }
 

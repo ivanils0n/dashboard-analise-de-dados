@@ -347,12 +347,29 @@ function hex_(bytes) {
     .join("");
 }
 
+// Segurança: setValues interpreta texto começando com = + - @ como fórmula, e
+// os valores vêm de usuários da API (ex.: "=INDEX(usuarios!A:F;2;6)" no nome
+// leria o senha_hash de outro usuário). Nessas células, força formato de
+// texto puro ANTES de gravar — o valor fica literal e volta igual na leitura.
+function writeValues_(range, values) {
+  var pattern = /^[=+\-@\t\r]/;
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      var v = values[r][c];
+      if (typeof v === "string" && pattern.test(v)) {
+        range.getCell(r + 1, c + 1).setNumberFormat("@");
+      }
+    }
+  }
+  range.setValues(values);
+}
+
 function appendRows(sheetName, values) {
   if (!values || !values.length) return { appended: 0 };
   var sheet = sheet_(sheetName);
   var startRow = sheet.getLastRow() + 1;
   var numCols = values[0].length;
-  sheet.getRange(startRow, 1, values.length, numCols).setValues(values);
+  writeValues_(sheet.getRange(startRow, 1, values.length, numCols), values);
   return { appended: values.length };
 }
 
@@ -390,7 +407,7 @@ function updateRows(sheetName, updates, startedAt) {
     checkTimeout_(startedAt);
     var rowNumber = map[update.id];
     if (!rowNumber) return; // linha já não existe mais (apagada por outra gravação) — ignora
-    sheet.getRange(rowNumber, 1, 1, update.values.length).setValues([update.values]);
+    writeValues_(sheet.getRange(rowNumber, 1, 1, update.values.length), [update.values]);
     applied++;
   });
   return { updated: applied };

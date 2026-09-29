@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from "vue";
 import { login } from "@/lib/auth";
+import { useToast } from "@/composables/useToast";
+
+const { show: toast } = useToast();
 
 const usuario = ref("");
 const password = ref("");
-const error = ref("");
 const busy = ref(false);
 const passwordInput = ref(null);
 
@@ -13,9 +15,15 @@ function focusPassword() {
 }
 
 async function handleSubmit() {
-  error.value = "";
   if (!usuario.value.trim() || !password.value) {
-    error.value = "Informe usuário e senha.";
+    toast(
+      !usuario.value.trim() && !password.value
+        ? "Informe o usuário e a senha para entrar."
+        : !usuario.value.trim()
+          ? "Informe o usuário."
+          : "Informe a senha.",
+      "warning"
+    );
     return;
   }
   busy.value = true;
@@ -26,8 +34,15 @@ async function handleSubmit() {
       err.message === "Invalid login credentials"
         ? "Usuário ou senha inválidos."
         : err.message;
-    error.value = friendly;
+    toast(friendly, "error");
     return;
+  }
+  /* O reload abaixo zera a página: deixa um aviso para o App mostrar o
+     "login realizado" na nova carga. */
+  try {
+    sessionStorage.setItem("gg_login_toast", "1");
+  } catch (e) {
+    /* sessionStorage indisponível: só não mostra o aviso */
   }
   /* Usuário confirmado: recarrega a página ANTES de baixar os dados. O login já
      gravou a sessão (sessionStorage, que sobrevive ao reload); na nova carga o
@@ -42,7 +57,7 @@ async function handleSubmit() {
 <template>
   <div class="flex min-h-screen flex-col items-center justify-center bg-ice px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(2rem,env(safe-area-inset-top))] dark:bg-zinc-950">
     <main
-      class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white px-6 py-8 shadow-sm slide-up dark:border-zinc-800 dark:bg-zinc-900 sm:px-10 sm:py-10"
+      class="w-full max-w-md px-6 py-8 slide-up sm:px-10 sm:py-10"
     >
       <header class="flex flex-col items-center text-center">
         <!-- logo.png é branca (para fundo escuro); no tema claro usa a versão com
@@ -57,26 +72,26 @@ async function handleSubmit() {
           alt="Gente & Gestão"
           class="hidden h-36 w-auto max-w-full object-contain dark:block"
         />
-        <h1 class="mt-5 text-xl font-bold text-zinc-900 dark:text-zinc-100">Bem-vindo</h1>
-        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Entre para acessar o dashboard</p>
+        <h1 class="mt-6 text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-white">Bem-vindo</h1>
+        <span class="mt-3 h-1 w-12 rounded-full bg-accent" aria-hidden="true"></span>
       </header>
 
-      <form class="mt-8 flex flex-col gap-5 border-t border-zinc-100 pt-8 dark:border-zinc-800" @submit.prevent="handleSubmit">
+      <form class="mt-8 flex flex-col gap-5 pt-2" @submit.prevent="handleSubmit">
         <div class="flex flex-col gap-1.5">
-          <label for="loginUser" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Usuário</label>
+          <label for="loginUser" class="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Usuário</label>
           <input
             id="loginUser"
             v-model="usuario"
             type="text"
             placeholder="Digite seu usuário"
             autocomplete="username"
-            class="rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+            class="rounded-xl border-2 border-zinc-300 bg-white px-4 py-3 text-base text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-accent focus:ring-4 focus:ring-accent/25 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:hover:border-zinc-500 dark:focus:border-accent"
             @keydown.enter.prevent="focusPassword"
           />
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label for="loginPassword" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Senha</label>
+          <label for="loginPassword" class="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Senha</label>
           <input
             id="loginPassword"
             ref="passwordInput"
@@ -84,21 +99,13 @@ async function handleSubmit() {
             type="password"
             placeholder="••••••••"
             autocomplete="current-password"
-            class="rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+            class="rounded-xl border-2 border-zinc-300 bg-white px-4 py-3 text-base text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-accent focus:ring-4 focus:ring-accent/25 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:hover:border-zinc-500 dark:focus:border-accent"
           />
         </div>
 
-        <p
-          v-if="error"
-          role="alert"
-          class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400"
-        >
-          {{ error }}
-        </p>
-
         <button
           type="submit"
-          class="mt-1 w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:opacity-60"
+          class="mt-2 w-full rounded-xl bg-accent px-4 py-3.5 text-base font-bold text-white shadow-md shadow-accent/30 transition hover:bg-accent-hover focus:outline-none focus:ring-4 focus:ring-accent/30 disabled:opacity-60"
           :disabled="busy"
         >
           {{ busy ? "Entrando..." : "Entrar" }}
@@ -106,8 +113,8 @@ async function handleSubmit() {
       </form>
     </main>
 
-    <footer class="mt-6 text-center text-xs text-zinc-400 dark:text-zinc-400">
-      Gente &amp; Gestão · Dashboard de análise de dados RH
+    <footer class="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
+      Copyright © <span class="font-bold text-zinc-700 dark:text-zinc-200">IBDS</span>
     </footer>
   </div>
 </template>

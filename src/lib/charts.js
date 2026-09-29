@@ -84,7 +84,7 @@ function pieLabelsOutside(chart) {
 /* Tamanho da fonte dos valores: cresce com o gráfico (14–22px). */
 function pieLabelFontSize(chart) {
   const size = Math.min(chart.width || 0, chart.height || 0);
-  return Math.max(14, Math.min(22, Math.round(size / 16)));
+  return Math.max(14, Math.min(20, Math.round(size / 18)));
 }
 
 /* Encolhe o raio da pizza para sobrar margem, dentro da própria área do
@@ -105,7 +105,7 @@ function reservePieLabelSpace(chart) {
   if (!half) return;
   /* Vertical: linha + meia altura do texto. Horizontal: linha (~1,8 fs) +
      texto (~5 caracteres, ex.: "12,5%", ~3,2 fs) + folga. */
-  const r = Math.min(h / 2 - fs * 1.8, w / 2 - fs * 5.4);
+  const r = Math.min(h / 2 - fs * 1.8, w / 2 - fs * 5);
   const pct = Math.max(0.3, Math.min(1, r / half));
   raw.radius = `${Math.round(pct * 100)}%`;
 }

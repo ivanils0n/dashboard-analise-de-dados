@@ -14,9 +14,6 @@ import SideBar from "./SideBar.vue";
             </keep-alive>
           </transition>
         </router-view>
-        <footer class="mt-10 border-t border-zinc-200 pt-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
-          Gente &amp; Gestão · Dashboard de análise de dados RH
-        </footer>
       </main>
     </div>
   </div>

@@ -391,7 +391,7 @@ const totals = computed(() => [
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
       <div class="mx-auto flex max-w-7xl flex-col gap-6">
         <!-- Indicadores -->
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="t in totals"
             :key="t.label"
@@ -405,7 +405,7 @@ const totals = computed(() => [
         </div>
 
         <!-- Visão geral -->
-        <div class="grid gap-5 lg:grid-cols-3">
+        <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Entrada vs Saída</h3>
@@ -435,7 +435,7 @@ const totals = computed(() => [
             </div>
           </section>
 
-          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm md:col-span-2 lg:col-span-1 dark:border-zinc-800 dark:bg-zinc-900">
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Período de experiência</h3>
               <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -540,12 +540,12 @@ const totals = computed(() => [
         </section>
 
         <!-- Detalhamento -->
-        <div class="grid items-start gap-5 lg:grid-cols-2">
+        <div class="grid items-start gap-5 xl:grid-cols-2">
           <section
             v-for="t in tables"
             :key="t.title"
             class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-            :class="t.span ? 'lg:row-span-2' : ''"
+            :class="t.span ? 'xl:row-span-2' : ''"
           >
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Detalhamento {{ t.title.toLowerCase() }}</h3>

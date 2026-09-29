@@ -240,7 +240,7 @@ function onGeneroClick(sliceIndex) {
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
       <div class="mx-auto flex max-w-7xl flex-col gap-6">
         <!-- Indicadores -->
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="c in cards"
             :key="c.label"
@@ -274,7 +274,7 @@ function onGeneroClick(sliceIndex) {
               Perfil dos colaboradores ativos: gênero, empresa e tempo de casa
             </p>
           </header>
-          <div v-if="total" class="grid gap-5 p-4 lg:grid-cols-3">
+          <div v-if="total" class="grid gap-5 p-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
               <p class="mb-1 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">Por gênero</p>
               <PieChart
@@ -291,7 +291,7 @@ function onGeneroClick(sliceIndex) {
               <p class="mb-1 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">Por empresa</p>
               <BarChart :data="quadroEmpresa" show-values :show-trend="false" horizontal align-top :height-px="256" />
             </div>
-            <div>
+            <div class="md:col-span-2 lg:col-span-1">
               <p class="mb-1 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">Por tempo de casa</p>
               <BarChart :data="quadroTempoCasa" show-values :show-trend="false" :height-px="256" />
             </div>
