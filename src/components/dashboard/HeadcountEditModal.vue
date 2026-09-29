@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, computed, watch } from "vue";
+import { reactive, ref, computed, watch, nextTick } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import { STATES, STATE_NAMES } from "@/lib/config";
 import { getHeadcountById } from "@/lib/store";
@@ -7,6 +7,7 @@ import { updateHeadcountRecord } from "@/lib/employees";
 import { listBranches } from "@/lib/filiais";
 import { hydrateState } from "@/lib/db";
 import { useToast } from "@/composables/useToast";
+import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 
 /* Modal dedicado à edição de um colaborador do Headcount — autocontido (não
    depende de nenhum modal "pai" ficar aberto ou fechado certo). Substitui o
@@ -38,6 +39,8 @@ const form = reactive({
 // Filial como veio do registro (ver filialOriginalForaDaLista).
 const filialOriginal = ref(null);
 
+const unsaved = useUnsavedGuard(() => form);
+
 function loadRecord(id) {
   const h = id ? getHeadcountById(id) : null;
   if (!h) return;
@@ -60,10 +63,21 @@ function loadRecord(id) {
 watch(
   () => [props.open, props.recordId],
   ([open, id]) => {
-    if (open) loadRecord(id);
+    if (open) {
+      loadRecord(id);
+      nextTick(unsaved.markClean);
+    } else {
+      unsaved.reset();
+    }
   },
   { immediate: true }
 );
+
+/* Fechar sem salvar (×, Esc, Cancelar): pergunta antes de descartar alterações. */
+async function requestClose() {
+  if (!(await unsaved.confirmDiscard())) return;
+  emit("close");
+}
 
 /* Filiais do estado do colaborador — recarrega ao trocar de estado no form. */
 const branches = computed(() => listBranches(form.estado || "todos"));
@@ -113,7 +127,7 @@ async function submit() {
       filial: form.filial,
       estado: form.estado
     });
-    toast(`Headcount atualizado para ${nome}.`);
+    toast(`Colaborador ${nome} atualizado com sucesso!`, "success");
     emit("saved");
     emit("close");
   } finally {
@@ -123,7 +137,7 @@ async function submit() {
 </script>
 
 <template>
-  <Modal title="Editar colaborador" :open="open" max-width="max-w-2xl" @close="emit('close')">
+  <Modal title="Editar colaborador" :open="open" max-width="max-w-2xl" @close="requestClose">
     <div class="flex flex-col gap-4">
       <div class="grid gap-4 sm:grid-cols-3">
       <div class="flex flex-col gap-1.5">
@@ -187,7 +201,7 @@ async function submit() {
       </div>
 
       <div class="flex justify-end gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-        <button type="button" class="btn-ghost" @click="emit('close')">Cancelar</button>
+        <button type="button" class="btn-ghost" @click="requestClose">Cancelar</button>
         <button type="button" class="btn-primary" :disabled="saving" @click="submit">Salvar alterações</button>
       </div>
     </div>

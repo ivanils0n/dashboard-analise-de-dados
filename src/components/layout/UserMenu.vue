@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import Modal from "@/components/ui/Modal.vue";
 import { authState, getProfile, logout, changeName, changePassword, PERFIL_LABELS } from "@/lib/auth";
 import { useToast } from "@/composables/useToast";
+import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 
 /* `compact`: só o avatar (sidebar recolhida). */
 defineProps({ compact: { type: Boolean, default: false } });
@@ -50,10 +51,25 @@ function openModal(mode) {
   passwordCurrent.value = "";
   passwordNew.value = "";
   passwordConfirm.value = "";
+  unsaved.markClean();
 }
 
 function closeModal() {
   modalMode.value = null;
+}
+
+/* Fechar sem salvar (×, Esc, Cancelar) com campos alterados: pergunta antes de
+   descartar. Depois de salvar usa closeModal() direto. */
+const unsaved = useUnsavedGuard(() => ({
+  nome: nameInput.value,
+  atual: passwordCurrent.value,
+  nova: passwordNew.value,
+  confirma: passwordConfirm.value
+}));
+
+async function requestClose() {
+  if (!(await unsaved.confirmDiscard())) return;
+  closeModal();
 }
 
 async function saveName() {
@@ -71,7 +87,7 @@ async function saveName() {
     return;
   }
   closeModal();
-  toast("Nome atualizado.");
+  toast("Nome atualizado com sucesso!", "success");
 }
 
 async function savePassword() {
@@ -96,7 +112,7 @@ async function savePassword() {
     return;
   }
   closeModal();
-  toast("Senha alterada com sucesso.");
+  toast("Senha alterada com sucesso!", "success");
 }
 
 onMounted(() => document.addEventListener("click", onDocumentClick));
@@ -160,7 +176,7 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
       title="Alterar nome"
       subtitle="Altera apenas a exibição do seu nome — não afeta o login."
       max-width="max-w-md"
-      @close="closeModal"
+      @close="requestClose"
     >
       <form class="flex flex-col gap-4" @submit.prevent="saveName">
         <div class="flex flex-col gap-1.5">
@@ -177,7 +193,7 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
           <button
             type="button"
             class="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-            @click="closeModal"
+            @click="requestClose"
           >
             Cancelar
           </button>
@@ -196,7 +212,7 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
       v-if="modalMode === 'password'"
       title="Alterar senha"
       max-width="max-w-md"
-      @close="closeModal"
+      @close="requestClose"
     >
       <form class="flex flex-col gap-4" @submit.prevent="savePassword">
         <div class="flex flex-col gap-1.5">
@@ -234,7 +250,7 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
           <button
             type="button"
             class="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-            @click="closeModal"
+            @click="requestClose"
           >
             Cancelar
           </button>

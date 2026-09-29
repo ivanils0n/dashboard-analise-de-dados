@@ -6,7 +6,7 @@ import StateFilter from "./StateFilter.vue";
 import UserMenu from "./UserMenu.vue";
 import DashboardTabs from "./DashboardTabs.vue";
 import { useTheme } from "@/composables/useTheme";
-import { sidebarCollapsed, sidebarEffectiveCollapsed as collapsed } from "@/composables/useSidebar";
+import { sidebarCollapsed, sidebarEffectiveCollapsed as collapsedTarget } from "@/composables/useSidebar";
 
 /* Sidebar esquerda (antiga TopBar + navegação): logo, páginas, abas Visão
    Geral/Painel, filtro de estado, tema e conta. Em celulares (abaixo de md)
@@ -15,6 +15,20 @@ import { sidebarCollapsed, sidebarEffectiveCollapsed as collapsed } from "@/comp
 const route = useRoute();
 const router = useRouter();
 const { isDark, toggle } = useTheme();
+
+/* `collapsedTarget` define a LARGURA da sidebar (anima em 200 ms). `collapsed`
+   é o estado do CONTEÚDO (textos/rótulos): ao recolher muda na hora (os textos
+   somem antes de a barra encolher); ao expandir só muda quando a largura já
+   terminou de crescer — senão os textos apareciam antes da barra abrir. */
+const SIDEBAR_TRANSITION_MS = 200;
+const collapsed = ref(collapsedTarget.value);
+let expandTimer = null;
+watch(collapsedTarget, (target) => {
+  clearTimeout(expandTimer);
+  if (target) collapsed.value = true;
+  else expandTimer = setTimeout(() => (collapsed.value = false), SIDEBAR_TRANSITION_MS);
+});
+onBeforeUnmount(() => clearTimeout(expandTimer));
 
 const profile = computed(() => authState.profile || getProfile() || {});
 const isAdmin = computed(() => profile.value.perfil === "admin");
@@ -192,7 +206,7 @@ const drawerSections = computed(() =>
   <!-- ===== Tablet/computador: sidebar ===== -->
   <aside
     class="z-30 hidden w-full flex-wrap md:flex items-center gap-3 border-b border-zinc-800 bg-[#0a0a0a] px-4 py-3 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:shrink-0 md:flex-col md:flex-nowrap md:items-stretch md:gap-0 md:self-start md:border-b-0 md:border-r"
-    :class="collapsed ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4'"
+    :class="collapsedTarget ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4'"
     aria-label="Painel de controle"
   >
     <!-- Cantos arredondados "para fora": a cor da sidebar escorre em curva para
@@ -206,13 +220,13 @@ const drawerSections = computed(() =>
       <button
         type="button"
         class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 lg:flex"
-        :aria-label="collapsed ? 'Expandir sidebar' : 'Recolher sidebar'"
-        :title="collapsed ? 'Expandir sidebar' : 'Recolher sidebar'"
-        :aria-expanded="!collapsed"
+        :aria-label="collapsedTarget ? 'Expandir sidebar' : 'Recolher sidebar'"
+        :title="collapsedTarget ? 'Expandir sidebar' : 'Recolher sidebar'"
+        :aria-expanded="!collapsedTarget"
         @click="sidebarCollapsed = !sidebarCollapsed"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline v-if="!collapsed" points="15 18 9 12 15 6" />
+          <polyline v-if="!collapsedTarget" points="15 18 9 12 15 6" />
           <polyline v-else points="9 18 15 12 9 6" />
         </svg>
       </button>

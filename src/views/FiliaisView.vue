@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onActivated } from "vue";
 import Badge from "@/components/ui/Badge.vue";
 import Modal from "@/components/ui/Modal.vue";
+import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
@@ -73,6 +74,15 @@ function closeEdit() {
   resetForm();
 }
 
+/* Fechar sem salvar (×, Esc, Cancelar) com campos alterados: pergunta antes de
+   descartar. Depois de salvar usa closeEdit() direto. */
+const unsaved = useUnsavedGuard(() => form);
+
+async function requestCloseEdit() {
+  if (!(await unsaved.confirmDiscard())) return;
+  closeEdit();
+}
+
 function fillForm(branch) {
   form.id = branch.id;
   form.cnpj = branch.cnpj;
@@ -101,7 +111,7 @@ function handleSubmit() {
 
   saveBranch(data);
   closeEdit();
-  toast("Filial atualizada.");
+  toast("Filial atualizada com sucesso!", "success");
 }
 
 async function handleDelete(id) {
@@ -162,6 +172,7 @@ function edit(id) {
   const branch = getBranches().find((b) => b.id === id);
   if (branch) {
     fillForm(branch);
+    unsaved.markClean();
     editOpen.value = true;
   }
 }
@@ -262,7 +273,7 @@ function edit(id) {
       </div>
     </section>
     <!-- ===== EDIÇÃO DA FILIAL (modal) ===== -->
-    <Modal v-if="editOpen" title="Editar filial" :open="editOpen" max-width="max-w-2xl" @close="closeEdit">
+    <Modal v-if="editOpen" title="Editar filial" :open="editOpen" max-width="max-w-2xl" @close="requestCloseEdit">
     <form class="grid gap-4 sm:grid-cols-2" novalidate @submit.prevent="handleSubmit">
       <div class="flex flex-col gap-1.5">
         <label for="branchCnpj" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">CNPJ Filial</label>
@@ -289,7 +300,7 @@ function edit(id) {
       </div>
 
       <div class="flex items-end justify-end gap-2 sm:col-span-2">
-        <button type="button" class="btn-ghost" @click="closeEdit">Cancelar</button>
+        <button type="button" class="btn-ghost" @click="requestCloseEdit">Cancelar</button>
         <button type="submit" class="btn-primary">Salvar alterações</button>
       </div>
     </form>

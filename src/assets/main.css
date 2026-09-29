@@ -179,6 +179,21 @@ body {
   }
 }
 
+/* Tabelas com barra de rolagem horizontal "fixa" (barra falsa abaixo da tabela,
+   sincronizada por JS — só dá para arrastar com mouse): em celular/tablet e
+   aparelhos de toque a própria tabela rola na horizontal com o dedo e a barra
+   falsa some. */
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
+  .tbl-scroll-x {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .table-hscroll {
+    display: none !important;
+  }
+}
+
 /* Pulso discreto usado para destacar um card na faixa de gráficos */
 @keyframes gg-flash {
   0% { box-shadow: 0 0 0 0 rgb(232 175 62 / 0.45); }

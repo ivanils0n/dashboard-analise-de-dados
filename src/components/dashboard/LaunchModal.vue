@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, nextTick } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import Badge from "@/components/ui/Badge.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
@@ -67,14 +67,12 @@ import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
 import { dateFilter } from "@/composables/useDateFilter";
 import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
+import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   editEntry: { type: Object, default: null },
-  editVacancyId: { type: String, default: null },
-  /* Abre direto na aba Histórico de um indicador (ex.: Turnover, vindo do
-     botão direito no card do KPI), sem pré-selecionar nenhum registro. */
-  viewIndicatorId: { type: String, default: null }
+  editVacancyId: { type: String, default: null }
 });
 const emit = defineEmits(["close", "saved"]);
 
@@ -217,18 +215,6 @@ function initModal() {
     indicatorId.value = "tempo_contratacao";
     buildForm();
     editVacancy(props.editVacancyId);
-    return;
-  }
-
-  /* Abre direto no histórico de um indicador (botão direito no KPI, clique
-     na pizza do Turnover). O histórico segue o Estado do formulário (ver
-     turnoverList), que aqui parte do filtro do dashboard — inclusive "Todos
-     Estados"; antes caía sempre em RO e escondia AM e PA. */
-  if (props.viewIndicatorId) {
-    indicatorId.value = props.viewIndicatorId;
-    buildForm();
-    estado.value = filters.current;
-    showTab("historico");
     return;
   }
 
@@ -557,7 +543,7 @@ function handleVacancyAdd() {
       motivoContratacao: vaga.motivo.trim() || null
     });
     editingVacancyId.value = null;
-    toast("Vaga atualizada.");
+    toast("Vaga atualizada com sucesso!", "success");
   } else {
     addVacancy({
       name,
@@ -576,6 +562,8 @@ function handleVacancyAdd() {
   resetVagaForm();
   showTab("historico");
   emit("saved");
+  /* Edição concluída: fecha o modal (ele não serve para lançar vagas novas). */
+  close();
 }
 
 async function editVacancy(id) {
@@ -1092,6 +1080,8 @@ function resetMensalForm() {
 function submitMensal() {
   const ind = indicator.value;
   if (!ind) return;
+  /* Só edita registros existentes; lançamento novo é feito pela planilha. */
+  if (!editingMensalId.value) return;
   if (!mensal.mes) return toast("Informe o mês.");
   const raw = String(mensal.valor).trim();
   if (raw === "" || isNaN(Number(raw)) || Number(raw) < 0) {
@@ -1107,7 +1097,7 @@ function submitMensal() {
 
   if (editingMensalId.value) {
     updateEntry(ind.id, editingMensalId.value, payload);
-    toast(`${ind.name} atualizado para ${MONTHS_SHORT[mensalMonthNum.value - 1]}/${mensalYearNum.value}.`);
+    toast(`${ind.name} de ${MONTHS_SHORT[mensalMonthNum.value - 1]}/${mensalYearNum.value} atualizado com sucesso!`, "success");
   } else {
     /* Um lançamento por mês/estado: lançar de novo no mesmo mês substitui o
        valor anterior em vez de duplicar a linha. */
@@ -1124,6 +1114,8 @@ function submitMensal() {
 
   emit("saved");
   resetMensalForm();
+  /* Edição concluída: fecha o modal. */
+  close();
 }
 
 /* ---------- Diária ---------- */
@@ -1197,7 +1189,7 @@ function submitDiaria() {
     updateEntry("custo_diaria", editingEntryId.value, payload);
     editingEntryId.value = null;
     emit("saved");
-    toast(`Diária atualizada para ${employeeName}.`);
+    toast(`Diária de ${employeeName} atualizada com sucesso!`, "success");
     close();
     return;
   }
@@ -1276,7 +1268,7 @@ function submitTreinamento() {
     updateEntry("treinamento", editingEntryId.value, payload);
     editingEntryId.value = null;
     emit("saved");
-    toast(`Treinamento atualizado para ${employeeName}: ${formatHoursClock(carga)}.`);
+    toast(`Treinamento de ${employeeName} atualizado com sucesso!`, "success");
     close();
     return;
   }
@@ -1498,7 +1490,7 @@ function submitCustosTotal() {
     updateEntry("custo_total", editingEntryId.value, payload);
     editingEntryId.value = null;
     emit("saved");
-    toast(`Custos de ${custosTotMonthLabel.value} atualizados para ${b.name}.`);
+    toast(`Custos de ${b.name} (${custosTotMonthLabel.value}) atualizados com sucesso!`, "success");
     close();
     return;
   }
@@ -1533,27 +1525,58 @@ function handleSubmit() {
   if (form === "diaria") return submitDiaria();
   if (form === "treinamento") return submitTreinamento();
   if (form === "custo_total") return submitCustosTotal();
-  if (form === "vaga") emit("close");
-  if (form === "turnover") emit("close");
-  if (form === "headcount") emit("close");
-  if (form === "mensal") emit("close");
+  /* "Concluir" não grava (a gravação é pelo botão de salvar do formulário):
+     se houver alterações não salvas, pergunta antes de fechar. */
+  if (form === "vaga") return requestClose();
+  if (form === "turnover") return requestClose();
+  if (form === "headcount") return requestClose();
+  if (form === "mensal") return requestClose();
 }
 
 function close() {
   emit("close");
 }
+
+/* ---------- Alterações não salvas ---------- */
+/* Foto dos campos logo após o modal abrir (já pré-preenchido para edição);
+   qualquer diferença depois disso é uma alteração não salva. */
+const unsaved = useUnsavedGuard(() => ({
+  vaga,
+  diaria,
+  treinamento,
+  custosTot,
+  mensal,
+  estado: estado.value
+}));
+watch(
+  () => props.open,
+  (open) => {
+    unsaved.reset();
+    if (open) nextTick(unsaved.markClean);
+  },
+  { immediate: true }
+);
+
+/* Fechar (×, Esc, fora do modal, Cancelar ou Concluir) sem ter salvo: pede
+   confirmação antes de descartar. Depois de salvar, o modal usa close() direto. */
+async function requestClose() {
+  if (!(await unsaved.confirmDiscard())) return;
+  close();
+}
 </script>
 
 <template>
   <Modal
-    :title="indicator ? indicator.name : 'Lançar dados'"
+    :title="indicator ? `Editar — ${indicator.name}` : 'Editar registro'"
     :subtitle="indicator ? indicator.calc : ''"
     :open="open"
     max-width="max-w-4xl"
-    @close="close"
+    @close="requestClose"
   >
     <form v-if="indicator" class="flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
-      <div class="flex flex-col gap-1.5">
+      <!-- Este modal só edita registros existentes (aberto por "Editar"): sem
+           troca de indicador nem abas de lançamento/histórico. -->
+      <div v-if="false" class="flex flex-col gap-1.5">
         <label for="entryIndicator" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Indicador</label>
         <select
           id="entryIndicator"
@@ -1566,7 +1589,7 @@ function close() {
       </div>
 
       <!-- Abas -->
-      <div v-if="tabs.length" class="flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
+      <div v-if="false && tabs.length" class="flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
         <button
           v-for="(t, i) in tabs"
           :key="t.id"
@@ -2534,7 +2557,7 @@ function close() {
       </template>
 
       <div class="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-        <button type="button" class="btn-ghost" @click="close">Cancelar</button>
+        <button type="button" class="btn-ghost" @click="requestClose">Cancelar</button>
         <button v-if="canSubmitForm" type="submit" class="btn-primary">{{ submitLabel }}</button>
       </div>
     </form>

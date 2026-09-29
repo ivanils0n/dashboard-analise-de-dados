@@ -352,7 +352,7 @@ function onCenterBarContext({ index }) {
 
 /* Clique numa barra do gráfico de Tempo médio de contratação: abre o
    detalhe da vaga; "Editar" ali repassa para a Visão geral (que hospeda o
-   formulário de lançamento). */
+   modal de edição). */
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
 const vacancyDetailFallback = ref(null);

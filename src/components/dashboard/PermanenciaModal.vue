@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed, ref, watch } from "vue";
+import { reactive, computed, ref, watch, nextTick } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATES, STATE_NAMES, DEFAULT_STATE, getIndicatorById } from "@/lib/config";
@@ -19,6 +19,7 @@ import { useFilters } from "@/composables/useFilters";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
+import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
@@ -37,6 +38,21 @@ const canEdit = canEditData();
 
 function close() {
   emit("close");
+}
+
+/* Alterações não salvas no formulário de edição: fechar o modal ou cancelar o
+   formulário pergunta antes de descartar. */
+const unsaved = useUnsavedGuard(() => form);
+
+async function requestClose() {
+  if (showForm.value && !(await unsaved.confirmDiscard())) return;
+  close();
+}
+
+async function cancelForm() {
+  if (!(await unsaved.confirmDiscard())) return;
+  showForm.value = false;
+  unsaved.reset();
 }
 
 /* ---------- Formulário (Novo/Editar) ---------- */
@@ -90,11 +106,6 @@ function resetForm() {
   form.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
 }
 
-function openNewForm() {
-  resetForm();
-  showForm.value = true;
-}
-
 function editRecord(p) {
   editingId.value = p.id;
   form.colaborador = p.colaborador || "";
@@ -104,6 +115,7 @@ function editRecord(p) {
   filialOriginal.value = form.filial;
   form.estado = p.estado || DEFAULT_STATE;
   showForm.value = true;
+  nextTick(unsaved.markClean);
 }
 
 /* Abre direto no formulário de edição do registro indicado (ex.: clique
@@ -119,6 +131,8 @@ watch(
 );
 
 function submitForm() {
+  /* Só edita registros existentes; lançamento novo é feito pela planilha. */
+  if (!editingId.value) return;
   const nome = form.colaborador.trim();
   if (!nome) return toast("Informe o colaborador.");
   if (!form.dataAdmissao) return toast("Informe a data de admissão.");
@@ -132,13 +146,14 @@ function submitForm() {
   };
   if (editingId.value) {
     updatePermanenciaRecord(editingId.value, payload);
-    toast("Registro atualizado.");
+    toast("Registro atualizado com sucesso!", "success");
   } else {
     addPermanenciaRecord(payload);
     toast(`Registro lançado para ${nome}.`);
   }
   resetForm();
   showForm.value = false;
+  unsaved.reset();
 }
 
 async function removeRecord(id) {
@@ -241,7 +256,7 @@ function handleExport() {
     :subtitle="getIndicatorById('tempo_permanencia')?.calc"
     :open="open"
     max-width="max-w-4xl"
-    @close="close"
+    @close="requestClose"
   >
     <div class="flex flex-col gap-4">
       <div class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
@@ -290,14 +305,13 @@ function handleExport() {
         </div>
         <div class="mt-3 flex flex-wrap gap-2">
           <button type="button" class="btn-primary btn-sm" @click="submitForm">
-            {{ editingId ? "Salvar alterações" : "+ Lançar registro" }}
+            Salvar alterações
           </button>
-          <button type="button" class="btn-ghost btn-sm" @click="showForm = false">Cancelar</button>
+          <button type="button" class="btn-ghost btn-sm" @click="cancelForm">Cancelar</button>
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <button v-if="canEdit && !showForm" type="button" class="btn-primary btn-sm" @click="openNewForm">+ Novo registro</button>
         <input v-model="search" type="search" class="input-field ml-auto w-full sm:w-64" placeholder="Buscar colaborador, filial, estado..." />
         <button type="button" class="btn-ghost btn-sm" @click="handleExport">Exportar</button>
       </div>
@@ -360,7 +374,7 @@ function handleExport() {
       <div v-else>
         <EmptyState
           title="Nenhum registro encontrado"
-          text="Não há demissões neste mês. Troque o mês no filtro do dashboard, importe uma planilha ou lance um registro."
+          text="Não há demissões neste mês. Troque o mês no filtro do dashboard."
         />
       </div>
     </div>

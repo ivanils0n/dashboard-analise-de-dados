@@ -9,7 +9,6 @@ import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vu
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import TurnoverAnaliseModal from "@/components/dashboard/TurnoverAnaliseModal.vue";
-import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
@@ -20,6 +19,7 @@ import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue"
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import HeadcountAnaliseModal from "@/components/dashboard/HeadcountAnaliseModal.vue";
 import DashboardTour from "@/components/dashboard/DashboardTour.vue";
+import LaunchModal from "@/components/dashboard/LaunchModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
@@ -70,12 +70,16 @@ const {
   formatDate
 } = dashboard;
 
+/* Modal de edição de lançamentos (vaga ou registro de Diárias, Treinamento,
+   Custos e indicadores mensais). Só edita o que já existe — a entrada de dados
+   nova é feita pela planilha. */
 const launchOpen = ref(false);
-/* KPI selecionado no Painel antes de abrir o Lançamento para editar algo
-   vindo de lá (ex.: editar vaga a partir do gráfico de Tempo médio de
-   contratação) — restaurado em onSaved para não jogar o Painel de volta ao
-   Panorama atual depois de salvar. */
+/* KPI selecionado no Painel antes de abrir a edição vinda de lá (ex.: editar
+   vaga a partir do gráfico de Tempo médio de contratação) — restaurado em
+   onSaved para não jogar o Painel de volta ao Panorama atual. */
 const preEditSelectedKpiId = ref(null);
+const editTarget = ref(null);
+const editVacancyTarget = ref(null);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
@@ -193,6 +197,8 @@ function onHiringBarClick({ index }) {
   vacancyDetailOpen.value = true;
 }
 
+/* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
+   vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
 /* Botão direito na barra: vai direto para a edição da vaga, sem passar pelo
    modal de detalhe (mesmo destino do botão "Editar" de lá). */
 function onHiringBarContext({ index }) {
@@ -201,8 +207,11 @@ function onHiringBarContext({ index }) {
   onVacancyEdit(row.vacancyId);
 }
 
-/* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
-   vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
+function onVacancyDetailEdit(vacancyId) {
+  vacancyDetailOpen.value = false;
+  onVacancyEdit(vacancyId);
+}
+
 function onKpiCardBarClick({ card, pieData }, { index, label, datasetIndex }) {
   if (card.id === "headcount_genero") {
     headcountGenero.value = ["masculino", "feminino"][index] || "";
@@ -215,11 +224,6 @@ function onKpiCardBarClick({ card, pieData }, { index, label, datasetIndex }) {
   if (card.id !== "custo_contratacao") return;
   const row = (pieData || [])[index];
   if (row && row.key) onCustoFilial(row.key);
-}
-
-function onVacancyDetailEdit(vacancyId) {
-  vacancyDetailOpen.value = false;
-  onVacancyEdit(vacancyId);
 }
 
 /* Modal ao clicar em uma barra do gráfico de Tempo médio de permanência
@@ -285,9 +289,6 @@ const regionalModalOpen = ref(false);
 const regionalGroups = ref([]);
 const hiringBarChartRef = ref(null);
 const permanenciaBarChartRef = ref(null);
-const editTarget = ref(null);
-const editVacancyTarget = ref(null);
-const viewIndicatorTarget = ref(null);
 
 /* Colunas exibidas no modal de registros (clique direito no KPI). Regional
    passou a vir do próprio estado do lançamento (estado_sigla → meta.estado,
@@ -560,20 +561,10 @@ function closeLaunch() {
   preEditSelectedKpiId.value = null;
   editTarget.value = null;
   editVacancyTarget.value = null;
-  viewIndicatorTarget.value = null;
 }
 
-/* Botão direito no KPI de Turnover/Turnover (Exp): abre o Lançamento já na
-   aba Histórico do indicador, sem exigir perfil de edição (só leitura). */
-function openLaunchView(indicatorId) {
-  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
-  editTarget.value = null;
-  editVacancyTarget.value = null;
-  viewIndicatorTarget.value = indicatorId;
-  launchOpen.value = true;
-}
-
-/* Editar uma vaga a partir do histórico (botão direito no KPI de contratação). */
+/* Editar uma vaga (botão "Editar" do detalhe/lista ou botão direito na barra
+   do gráfico de contratação). */
 function onVacancyEdit(vacancyId) {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -586,8 +577,7 @@ function onVacancyEdit(vacancyId) {
   launchOpen.value = true;
 }
 
-/* Editar um lançamento vindo do modal de registros (botão direito no KPI):
-   abre o modal de lançamento de dados em modo edição. */
+/* Editar um registro vindo do modal de registros (botão direito no KPI). */
 function onEntriesEdit({ indicatorId, entry }) {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -600,14 +590,12 @@ function onEntriesEdit({ indicatorId, entry }) {
   mensalEntriesOpen.value = false;
   editTarget.value = { indicatorId, entry };
   editVacancyTarget.value = null;
-  viewIndicatorTarget.value = null;
   launchOpen.value = true;
 }
 
 function onSaved() {
-  /* Salvando uma edição aberta a partir de um KPI/gráfico já selecionado
-     (ex.: Painel) mantém a mesma seleção; só volta ao Panorama atual quando
-     nada estava selecionado antes (ex.: "+ Lançamento" do zero). */
+  /* Salvar uma edição aberta a partir de um KPI/gráfico já selecionado (ex.:
+     Painel) mantém a mesma seleção. */
   dashboard.selectKpi(preEditSelectedKpiId.value);
   preEditSelectedKpiId.value = null;
 }
@@ -667,8 +655,7 @@ function onSelectKpi(id) {
 function onKpiContext(id) {
   if (id === "headcount") {
     headcountAnaliseOpen.value = true;
-  } else if (id === "retencao") openLaunchView("headcount");
-  else if (id === "custo_diaria") diariaEntriesOpen.value = true;
+  } else if (id === "custo_diaria") diariaEntriesOpen.value = true;
   else if (id === "horas_regional") {
     regionalGroups.value = dashboard.treinamentoRegionalGroups();
     regionalModalOpen.value = true;
@@ -1339,7 +1326,6 @@ watch(activeTab, (tab) => {
       :open="launchOpen"
       :edit-entry="editTarget"
       :edit-vacancy-id="editVacancyTarget"
-      :view-indicator-id="viewIndicatorTarget"
       @close="closeLaunch"
       @saved="onSaved"
     />

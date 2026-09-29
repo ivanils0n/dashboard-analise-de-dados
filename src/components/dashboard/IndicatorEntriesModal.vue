@@ -300,7 +300,7 @@ async function handleBulkDelete() {
   toast(`${n} registro(s) excluído(s).`);
 }
 
-/* Pede ao pai para abrir o modal de lançamento em modo edição. */
+/* Pede ao pai para abrir o modal de edição do registro. */
 function editRow(entry) {
   emit("edit", { indicatorId: props.indicatorId, entry });
 }
@@ -438,7 +438,7 @@ watch(rows, () => nextTick(updateTableWidths));
       <div v-if="rows.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div
           ref="tableWrapRef"
-          class="max-h-[28rem] overflow-y-auto overflow-x-hidden"
+          class="tbl-scroll-x max-h-[28rem] overflow-y-auto overflow-x-hidden"
           @scroll="onTableScroll"
         >
           <table ref="tableElRef" class="w-full min-w-max text-left text-sm">
