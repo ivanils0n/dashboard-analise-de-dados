@@ -4,13 +4,8 @@
 // da planilha (uma por entidade, + "usuarios") com o cabeçalho certo e, se
 // ainda não houver nenhum, um usuário admin inicial.
 //
-// Desde a consolidação das abas por estado (ver README/CHANGELOG), cada
-// entidade tem uma única aba com a coluna estado_sigla distinguindo RO/AM/PA
-// — não mais uma aba por entidade x estado. Para migrar dados de uma
-// planilha antiga (com abas "vagas_ro" etc.), rode scripts/migrate-consolidate.mjs
-// antes ou depois deste setup. Colaboradores/Departamentos e a antiga aba
-// genérica "lancamentos" não existem mais — rode scripts/migrate-restructure.mjs
-// para migrar os dados dela para diarias/treinamentos/custo_folha/absenteismo/meses_incompletos.
+// Cada entidade tem uma única aba, com a coluna estado_sigla distinguindo RO/AM/PA.
+// Headcount é a fonte de colaborador/mês (não há abas de Colaboradores/Departamentos).
 //
 // Lê as credenciais de .dev.vars (mesmo arquivo usado pelo `wrangler dev`)
 // ou das variáveis de ambiente já exportadas no shell.
@@ -75,10 +70,8 @@ const ENTITY_COLUMNS = {
     "regional", "motivo", "justificativa_apurada", "ponderacoes", "ult_dia_aviso", "valor_rescisao", "grrf_consig", "multa_40", "mes_referencia"
   ],
   filiais: ["id", "cnpj", "nome", "abreviado", "gerente", "estado_sigla"],
-  // Substituem a antiga "lancamentos" genérica (ver migrate-restructure.mjs
-  // para migrar dados de uma planilha antiga). Colaboradores/Departamentos
-  // saíram do sistema — Headcount passou a ser a fonte de colaborador/mês.
-  diarias: [
+  // Headcount é a fonte de colaborador/mês (não há abas de Colaboradores/Departamentos).
+    diarias: [
     "id", "nome_colaborador", "funcao", "filial", "lider_imediato",
     "regional", "motivo", "competencia", "valor",
     "estado_sigla"
@@ -88,7 +81,7 @@ const ENTITY_COLUMNS = {
     "competencia", "horas", "estado_sigla"
   ],
   custo_folha: ["id", "filial_cnpj", "razao_social", "percent", "competencia", "valor", "estado_sigla"],
-  absenteismo: ["id", "competencia", "valor", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho"]
+  absenteismo: ["id", "competencia", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];
 

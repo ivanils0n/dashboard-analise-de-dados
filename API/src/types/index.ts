@@ -15,6 +15,9 @@ export type Bindings = {
   LOGIN_LIMITER?: RateLimit;
   // Cache das abas da planilha (dados + usuários) — ver db/cache.ts.
   CACHE: KVNamespace;
+  // Fila de gravação por aba (Durable Object) — ver db/sheetWriter.ts. Opcional:
+  // sem ele as gravações em lote rodam direto, sem serialização entre servidores.
+  SHEET_WRITER?: DurableObjectNamespace<import("../db/sheetWriter").SheetWriter>;
 };
 
 export type TokenPayload = {

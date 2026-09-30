@@ -83,31 +83,6 @@ function applyColumn(
   target[column.name] = value;
 }
 
-export function buildCreatePayload(
-  entity: EntityDef,
-  body: Record<string, unknown>,
-  estado: Estado
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-
-  for (const column of entity.columns) {
-    if (column.readOnly) continue;
-    if (column.name === "id") {
-      if (body.id !== undefined && body.id !== null && body.id !== "") {
-        payload.id = String(body.id);
-      }
-      continue;
-    }
-    if (column.stateRef) {
-      payload[column.name] = estado;
-      continue;
-    }
-    applyColumn(payload, column, body[column.name], Boolean(column.required));
-  }
-
-  return payload;
-}
-
 // Usado no endpoint em lote: aceita só os campos enviados, sem exigir os
 // obrigatórios (o registro normalmente já existe).
 export function buildUpsertPayload(
@@ -131,35 +106,6 @@ export function buildUpsertPayload(
     }
     if (body[column.name] === undefined) continue;
     applyColumn(payload, column, body[column.name], false);
-  }
-
-  return payload;
-}
-
-// full = true (PUT) exige os obrigatórios e zera os opcionais ausentes.
-// full = false (PATCH) altera apenas os campos enviados.
-export function buildUpdatePayload(
-  entity: EntityDef,
-  body: Record<string, unknown>,
-  estado: Estado,
-  full: boolean
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-
-  for (const column of entity.columns) {
-    if (column.readOnly || column.name === "id") continue;
-    if (column.stateRef) {
-      payload[column.name] = estado;
-      continue;
-    }
-    const raw = body[column.name];
-    if (raw === undefined && full) {
-      // Campos NOT NULL sem valor no PUT mantêm o valor atual.
-      if (column.notNull) continue;
-      applyColumn(payload, column, null, Boolean(column.required));
-      continue;
-    }
-    applyColumn(payload, column, raw, full && Boolean(column.required));
   }
 
   return payload;

@@ -24,10 +24,15 @@ const cards = computed(() => {
     };
   });
 });
+
+/* Advertência e Acidente acompanham um motivo: a soma dos cards pode passar do total. */
+const somaCards = computed(() => cards.value.reduce((s, c) => s + c.count, 0));
+const sobreposicao = computed(() => somaCards.value - props.ocorrencias.length);
 </script>
 
 <template>
-  <div class="mx-auto grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-5/6 lg:min-w-[56rem] lg:grid-cols-6">
+  <div class="mx-auto w-full lg:w-5/6 lg:min-w-[56rem]">
+  <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
     <div
       v-for="c in cards"
       :key="c.key"
@@ -42,5 +47,10 @@ const cards = computed(() => {
         </p>
       </div>
     </div>
+  </div>
+  <p v-if="sobreposicao > 0" class="mx-auto mt-2 text-center text-[11px] text-zinc-400 dark:text-zinc-500">
+    Total: {{ ocorrencias.length }} ocorrências. Advertência e Acidente são marcações somadas a um motivo
+    ({{ sobreposicao }} {{ sobreposicao === 1 ? "ocorrência tem" : "ocorrências têm" }} marcação junto de um motivo).
+  </p>
   </div>
 </template>

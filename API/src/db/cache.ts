@@ -1,8 +1,8 @@
 import type { Bindings } from "../types";
 import { ENTITY_KEYS, tableName, USERS_SHEET } from "./tables";
 
-// Cache das abas da planilha na KV do Worker — evita bater no Apps Script
-// (lento e com limite de execuções simultâneas) a cada leitura.
+// Cache das abas da planilha na KV do Worker — evita bater na planilha
+// a cada leitura.
 //
 // Quem mantém o cache atualizado é o PRÓPRIO Apps Script (pushCache em
 // apps-script/Code.gs): um gatilho de tempo lá lê a planilha a cada 10 min e

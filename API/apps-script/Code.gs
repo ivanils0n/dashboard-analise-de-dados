@@ -26,12 +26,12 @@
 // Sobe junto em toda resposta — dá pra confirmar pela própria API se a
 // implantação no ar já é esta versão do arquivo, sem precisar abrir o editor
 // do Apps Script. Troque essa string sempre que reimplantar.
-var CODE_VERSION = "2026-09-27-push-cache-1";
+var CODE_VERSION = "2026-10-01-sem-deletesheet-1";
 
 // Ações que gravam na planilha — cada uma roda sob o lock (ver doPost). "read"
 // fica de fora de propósito: travar leituras também derrubaria a velocidade
 // de carregamento do dashboard sem necessidade (elas não corrompem nada).
-var WRITE_ACTIONS = { setup: true, append: true, update: true, delete: true, deleteSheet: true };
+var WRITE_ACTIONS = { setup: true, append: true, update: true, delete: true };
 
 // Nenhuma requisição pode passar de 1 min rodando aqui dentro — acima disso,
 // vira erro em vez de continuar (e travar o lock pros outros por mais tempo).
@@ -98,9 +98,6 @@ function doPost(e) {
         break;
       case "delete":
         data = deleteRows(body.sheet, body.ids, startedAt);
-        break;
-      case "deleteSheet":
-        data = deleteSheet(body.sheet);
         break;
       default:
         return respond({ success: false, error: 'Ação desconhecida: "' + body.action + '".' });
@@ -428,17 +425,6 @@ function deleteRows(sheetName, ids, startedAt) {
     sheet.deleteRow(rowNumber);
   });
   return { deleted: sorted.length };
-}
-
-// Usada só na migração/limpeza (ver scripts/migrate-consolidate.mjs): apaga
-// uma aba inteira depois que os dados dela já foram copiados para a aba nova
-// consolidada. Não reclama se a aba já não existir (idempotente).
-function deleteSheet(sheetName) {
-  var ss = spreadsheet_();
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) return { deleted: false };
-  ss.deleteSheet(sheet);
-  return { deleted: true };
 }
 
 function respond(payload) {

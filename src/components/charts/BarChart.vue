@@ -101,6 +101,7 @@ function onCanvasContextmenu(evt) {
 function formatterFor(format) {
   if (format === "currency") return (v) => formatCurrency(v);
   if (format === "percent") return (v) => `${Number(v).toFixed(1).replace(".", ",")}%`;
+  if (format === "percent2") return (v) => `${Number(v).toFixed(2).replace(".", ",")}%`;
   if (format === "hours") {
     return (v) => formatHoursClock(v);
   }

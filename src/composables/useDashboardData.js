@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, STATES } from "@/lib/config";
 import { getEntriesFor, getAllEntries, getBranches, getOcorrencias } from "@/lib/store";
-import { TIPOS, isOcorrenciaAusencia } from "@/lib/absenteismo";
+import { TIPOS, isOcorrenciaAusencia, competenciaYm } from "@/lib/absenteismo";
 import {
   computedSnapshot,
   listVacancies,
@@ -126,12 +126,15 @@ export function useDashboardData(filter) {
     const uf = String(st || "").trim().toUpperCase();
     const all = !uf || uf === "TODOS";
     const filialKeys = (filiais || []).map((f) => String(f).trim().toUpperCase());
+    /* O filtro por mês usa a competência (mês) da ocorrência, não o dia. */
+    const fromYm = range && range.start ? String(range.start).slice(0, 7) : null;
+    const toYm = range && range.end ? String(range.end).slice(0, 7) : null;
     return getOcorrencias().filter(
       (o) =>
         isOcorrenciaAusencia(o.meta) &&
         (!filialKeys.length || filialKeys.includes(String(o.meta.filial || "").trim().toUpperCase())) &&
-        !(range && range.start && o.date < range.start) &&
-        !(range && range.end && o.date > range.end) &&
+        !(fromYm && competenciaYm(o.meta, o.date) < fromYm) &&
+        !(toYm && competenciaYm(o.meta, o.date) > toYm) &&
         (all || String(o.meta.estado || "").trim().toUpperCase() === uf)
     );
   }

@@ -18,6 +18,13 @@
   "kv_namespaces": [
     { "binding": "CACHE", "id": "3cbe9ba669b7447fb9bf8cdf04f38617" }
   ],
+  // Fila de gravação por aba (ver src/db/sheetWriter.ts): serializa as escritas
+  // na planilha para duas pessoas não se sobrescreverem. SQLite-backed, que é o
+  // tipo disponível no plano gratuito.
+  "durable_objects": {
+    "bindings": [{ "name": "SHEET_WRITER", "class_name": "SheetWriter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SheetWriter"] }],
   // Sem cron: quem mantém o cache atualizado é o gatilho de tempo do próprio
   // Apps Script (pushCache no Code.gs), que grava na KV pela API da
   // Cloudflare. Com cron, cada disparo tinha só 10 ms de CPU no plano gratuito

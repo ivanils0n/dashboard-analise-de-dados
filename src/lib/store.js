@@ -1,7 +1,7 @@
 /* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada na API
    (Google Sheets) via adaptador "remote" (write-through em lote com debounce). */
 import { reactive } from "vue";
-import { createId, compareDateAsc } from "./utils";
+import { createId, compareDateAsc, nameKey } from "./utils";
 
 export function emptyData() {
   return {
@@ -182,7 +182,7 @@ export function getOcorrencias() {
    colaborador/dia). Devolve a entrada gravada. */
 export function saveOcorrencia({ date, colaborador, setor, filial, motivo, observacao, estado, advertencia, acidente }) {
   const existing = data.absenteismo.find(
-    (e) => isOcorrencia(e) && e.date === date && e.meta.colaborador === colaborador
+    (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
   );
   const meta = {
     colaborador,
@@ -191,6 +191,7 @@ export function saveOcorrencia({ date, colaborador, setor, filial, motivo, obser
     motivo,
     observacao: observacao || null,
     estado: estado || null,
+    competencia: String(date).slice(0, 7),
     advertencia: !!advertencia,
     acidente: !!acidente
   };
@@ -209,7 +210,7 @@ export function saveOcorrencia({ date, colaborador, setor, filial, motivo, obser
 
 export function removeOcorrencia(date, colaborador) {
   const existing = data.absenteismo.find(
-    (e) => isOcorrencia(e) && e.date === date && e.meta.colaborador === colaborador
+    (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
   );
   if (!existing) return;
   data.absenteismo = data.absenteismo.filter((e) => e.id !== existing.id);
@@ -228,7 +229,7 @@ export function upsertVacancy(vacancy) {
   const idx = data.vacancies.findIndex((v) => v.id === vacancy.id);
   if (idx >= 0) data.vacancies[idx] = vacancy;
   else data.vacancies.push(vacancy);
-  if (ok()) remote.vacancySaved(vacancy);
+  if (ok()) remote.vacancySaved(vacancy, idx < 0);
 }
 
 export function deleteVacancy(id) {
@@ -249,7 +250,7 @@ export function upsertTurnover(turnover) {
   const idx = data.turnovers.findIndex((t) => t.id === turnover.id);
   if (idx >= 0) data.turnovers[idx] = turnover;
   else data.turnovers.push(turnover);
-  if (ok()) remote.turnoverSaved(turnover);
+  if (ok()) remote.turnoverSaved(turnover, idx < 0);
 }
 
 export function deleteTurnover(id) {
@@ -270,7 +271,7 @@ export function upsertPermanencia(record) {
   const idx = data.permanencias.findIndex((p) => p.id === record.id);
   if (idx >= 0) data.permanencias[idx] = record;
   else data.permanencias.push(record);
-  if (ok()) remote.permanenciaSaved(record);
+  if (ok()) remote.permanenciaSaved(record, idx < 0);
 }
 
 export function deletePermanencia(id) {
@@ -295,7 +296,7 @@ export function upsertHeadcount(record) {
   const idx = data.headcounts.findIndex((h) => h.id === record.id);
   if (idx >= 0) data.headcounts[idx] = record;
   else data.headcounts.push(record);
-  if (ok()) remote.headcountSaved(record);
+  if (ok()) remote.headcountSaved(record, idx < 0);
 }
 
 export function deleteHeadcount(id) {
@@ -316,7 +317,7 @@ export function upsertBranch(branch) {
   const idx = data.branches.findIndex((b) => b.id === branch.id);
   if (idx >= 0) data.branches[idx] = branch;
   else data.branches.push(branch);
-  if (ok()) remote.branchSaved(branch);
+  if (ok()) remote.branchSaved(branch, idx < 0);
 }
 
 export function deleteBranch(id) {

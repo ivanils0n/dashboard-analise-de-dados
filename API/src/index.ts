@@ -3,11 +3,8 @@ import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { AppEnv } from "./types";
 import { ApiError } from "./utils/errors";
-import { ENTITY_KEYS } from "./db/tables";
 import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
-import estadosRoutes from "./routes/estados";
-import { recordsRoutes } from "./routes/records";
 import dataRoutes from "./routes/data";
 import cacheRoutes from "./routes/cache";
 
@@ -38,18 +35,8 @@ app.get("/", (c) =>
   c.json({ success: true, data: { service: "gente-gestao-api-sheets", status: "ok" } })
 );
 
-app.get("/api/test", (c) =>
-  c.json({ success: true, data: { message: "Backend (Google Sheets) funcionando" } })
-);
-
 app.route("/api/auth", authRoutes);
 app.route("/api/users", usersRoutes);
-app.route("/api/estados", estadosRoutes);
-
-// Recursos por estado: colaboradores, vagas, filiais, departamentos, lançamentos.
-for (const entityKey of ENTITY_KEYS) {
-  app.route(`/api/${entityKey}`, recordsRoutes(entityKey));
-}
 
 app.route("/api/data", dataRoutes);
 app.route("/api/cache", cacheRoutes);
@@ -69,5 +56,8 @@ app.onError((err, c) => {
   console.error("[API]", err instanceof Error ? err.stack : err);
   return c.json({ success: false, error: { message: "Erro interno do servidor." } }, 500);
 });
+
+// Classe do Durable Object (fila de gravação por aba) — o Cloudflare a procura aqui.
+export { SheetWriter } from "./db/sheetWriter";
 
 export default app;

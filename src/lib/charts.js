@@ -39,7 +39,6 @@ export function chartPalette() {
 
 export const ACCENT = "#E8AF3E";
 export const ACCENT_HOVER = "#B7791F";
-export const ABSENTEEISM_COLORS = ["#E8AF3E", "#b45309", "#94a3b8"];
 /* Cor neutra da segunda fatia da pizza — legível em temas claro e escuro. */
 export const PIE_SECONDARY = "#94a3b8";
 /* Cores das fatias da pizza: as duas primeiras são as do Turnover (Entrada/
@@ -553,70 +552,6 @@ export function createLineChart(canvas) {
       scales: buildLineScales(null)
     }
   });
-}
-
-/* Barras do Absenteísmo (Falta/Atestado/Acidente) */
-export function createAbsenteismoBar(canvas) {
-  const p = chartPalette();
-  return new Chart(canvas, {
-    type: "bar",
-    plugins: [barHoverGrow],
-    data: { labels: [], datasets: [] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: { padding: { top: 24 } },
-      plugins: {
-        valueLabels: { display: false },
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: p.tooltip,
-          titleColor: "#ffffff",
-          bodyColor: "#ffffff",
-          padding: 12,
-          cornerRadius: 8,
-          displayColors: false
-        }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: {
-            color: p.tick,
-            font: { size: 10 },
-            autoSkip: false,
-            maxRotation: 90,
-            minRotation: 90
-          }
-        },
-        y: {
-          grid: { color: p.grid },
-          border: { display: false },
-          ticks: { color: p.tick },
-          beginAtZero: true,
-          grace: "12%"
-        }
-      }
-    }
-  });
-}
-
-/* data: [{ label, value }] — uma barra por tipo de ocorrência */
-export function updateAbsenteismoBar(chart, data) {
-  if (!chart || !data) return;
-  chart.data = {
-    labels: data.map((d) => d.label),
-    datasets: [
-      {
-        label: "Ocorrências",
-        data: data.map((d) => d.value),
-        backgroundColor: ABSENTEEISM_COLORS.slice(0, data.length),
-        borderRadius: 6,
-        barPercentage: 0.55
-      }
-    ]
-  };
-  chart.update();
 }
 
 export function updateLineChart(chart, indicator, entries) {

@@ -3,8 +3,8 @@
    ficam na aba "absenteismo" (ver getOcorrencias/saveOcorrencia em store.js). */
 import { computed } from "vue";
 import { getOcorrencias } from "./store";
-import { listHeadcountRecords } from "./employees";
-import { normalizeText } from "./utils";
+import { listHeadcountRecords, headcountMonths } from "./employees";
+import { normalizeText, nameKey } from "./utils";
 
 /* Motivos lançáveis. "Presente" sem observação nem marcação apaga o dia. */
 export const MOTIVOS = [
@@ -50,10 +50,21 @@ export const isOcorrenciaAusencia = (o) => (o.motivo && o.motivo !== "Presente")
 export function cellInfo(meta) {
   if (!meta) return null;
   const flags = FLAGS.filter((f) => meta[f.key]);
-  const motivo = meta.motivo && meta.motivo !== PRESENTE.value ? motivoOf(meta.motivo) : null;
+  let motivo = meta.motivo && meta.motivo !== PRESENTE.value ? motivoOf(meta.motivo) : null;
+  /* Motivo que o app não conhece (digitado à mão na planilha): aparece como "?" em
+     vez de a ocorrência sumir do mapa. */
+  if (!motivo && meta.motivo && meta.motivo !== PRESENTE.value) motivo = { ...DESCONHECIDO, label: meta.motivo };
   const primary = motivo || flags[0] || (meta.motivo === PRESENTE.value ? PRESENTE : null);
   return primary ? { primary, flags: flags.filter((f) => f !== primary) } : null;
 }
+
+const DESCONHECIDO = {
+  value: "?",
+  label: "Motivo desconhecido",
+  letter: "?",
+  chip: "bg-zinc-200 text-zinc-700 dark:bg-zinc-600/50 dark:text-zinc-200",
+  dot: "bg-zinc-400"
+};
 
 export function motivoOf(value) {
   if (value === PRESENTE.value) return PRESENTE;
@@ -87,19 +98,31 @@ export function monthDays({ start, end }) {
   return days;
 }
 
+/* Mês de Headcount usado para listar os colaboradores de `ym`: o próprio mês ou,
+   se ele ainda não tem Headcount lançado, o mais recente anterior (o mês corrente
+   costuma ter ocorrências antes de o Headcount dele ser importado). Sem nenhum
+   anterior, o mais antigo disponível. */
+export function headcountMonthFor(state, ym) {
+  const months = headcountMonths(state);
+  if (!months.length || months.includes(ym)) return { ym, fallback: false };
+  const before = months.filter((m) => m < ym);
+  return { ym: before.length ? before[before.length - 1] : months[0], fallback: true };
+}
+
 /* Colaboradores do mês de referência `ym`, vindos do Headcount (um por nome),
    exceto quem foi desligado antes do início do mês. `setor` é a função. */
 export function monthEmployees(state, ym, period) {
   const startIso = isoOf(period.start);
   const byName = new Map();
-  listHeadcountRecords(state, ym, { incluirDesligados: true }).forEach((h) => {
-    const name = String(h.colaborador || "").trim();
-    if (name) byName.set(name, h);
+  listHeadcountRecords(state, headcountMonthFor(state, ym).ym, { incluirDesligados: true }).forEach((h) => {
+    const key = nameKey(h.colaborador);
+    if (key) byName.set(key, h);
   });
   return [...byName.values()]
     .filter((h) => !h.dataDesligamento || h.dataDesligamento >= startIso)
     .map((h) => ({
       nome: String(h.colaborador).trim(),
+      key: nameKey(h.colaborador),
       busca: normalizeText(h.colaborador),
       setorKey: String(h.funcao || "").trim().toUpperCase(),
       filial: h.filial || "",
@@ -115,31 +138,30 @@ export function monthEmployees(state, ym, period) {
 export function useOcorrenciaIndex() {
   return computed(() => {
     const map = new Map();
-    getOcorrencias().forEach((o) => map.set(`${o.meta.colaborador}|${o.date}`, o));
+    getOcorrencias().forEach((o) => map.set(`${nameKey(o.meta.colaborador)}|${o.date}`, o));
     return map;
   });
 }
 
-export function matchesSearch(name, query) {
-  const q = normalizeText(query).trim();
-  return !q || normalizeText(name).includes(q);
+/* Mês (YYYY-MM) de uma ocorrência: a coluna `competencia` da planilha; sem ela,
+   o mês do dia (`data`). É por aqui que as ocorrências entram no filtro por mês. */
+export function competenciaYm(meta, date) {
+  return (meta && meta.competencia) || String(date || "").slice(0, 7);
 }
 
-/* Ocorrências de ausência (sem "Presente") do mês `ym` e do estado escolhido,
-   já achatadas para os KPIs e gráficos. `ym` e `estado` são refs/getters. */
+/* Ocorrências de ausência (sem "Presente" puro) cuja competência é o mês `ym` e
+   do estado escolhido, já achatadas para os KPIs e gráficos. `ym` e `estado`
+   são refs/getters. */
 export function useMonthOcorrencias(ym, estado) {
   return computed(() => {
-    const { start, end } = monthRange(ym.value);
-    const from = isoOf(start);
-    const to = isoOf(end);
+    const month = ym.value;
     const uf = String(estado.value || "").toUpperCase();
     const all = !uf || uf === "TODOS";
     return getOcorrencias()
       .filter(
         (o) =>
           isOcorrenciaAusencia(o.meta) &&
-          o.date >= from &&
-          o.date <= to &&
+          competenciaYm(o.meta, o.date) === month &&
           (all || String(o.meta.estado || "").toUpperCase() === uf)
       )
       .map((o) => ({

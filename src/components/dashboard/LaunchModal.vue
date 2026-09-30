@@ -66,7 +66,6 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { useFilters } from "@/composables/useFilters";
 import { dateFilter } from "@/composables/useDateFilter";
-import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 
 const props = defineProps({
@@ -200,7 +199,6 @@ function initModal() {
   headcountAdmissaoStart.value = "";
   headcountAdmissaoEnd.value = "";
   selectedHeadcountIds.value = new Set();
-  resetMensalForm();
 
   /* Modo edição: pré-preenche o formulário do lançamento selecionado. */
   if (props.editEntry && props.editEntry.entry && props.editEntry.indicatorId) {
@@ -270,12 +268,6 @@ function prefillEdit(indId, entry) {
     return;
   }
 
-  if (getIndicatorById(indId) && getIndicatorById(indId).form === "mensal") {
-    editingMensalId.value = entry.id;
-    mensal.estado = m.estado || (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
-    mensal.mes = entry.date ? String(entry.date).slice(0, 7) : currentYm();
-    mensal.valor = entry.value != null ? String(entry.value) : "";
-  }
 }
 
 function resetDiaria() {
@@ -387,8 +379,7 @@ const canSubmitForm = computed(() => {
     f === "headcount" ||
     f === "diaria" ||
     f === "treinamento" ||
-    f === "custo_total" ||
-    f === "mensal"
+    f === "custo_total"
   );
 });
 
@@ -1047,77 +1038,6 @@ function handleExportHeadcount() {
   exportHeadcount(filteredHeadcount.value);
 }
 
-/* ---------- Lançamento mensal (Absenteísmo, Tempo de
-   permanência, Retenção) ---------- */
-const mensal = reactive({
-  estado: DEFAULT_STATE,
-  mes: currentYm(),
-  valor: ""
-});
-const editingMensalId = ref(null);
-const mensalYearOptions = yearOptions(4, 1);
-
-const mensalMonthNum = computed(() => (mensal.mes ? Number(mensal.mes.split("-")[1]) : new Date().getMonth() + 1));
-const mensalYearNum = computed(() => (mensal.mes ? Number(mensal.mes.split("-")[0]) : new Date().getFullYear()));
-
-function setMensalMonth(m) {
-  mensal.mes = `${mensalYearNum.value}-${String(m).padStart(2, "0")}`;
-}
-function setMensalYear(y) {
-  mensal.mes = `${y}-${String(mensalMonthNum.value).padStart(2, "0")}`;
-}
-function setMensalCurrentMonth() {
-  mensal.mes = currentYm();
-}
-
-function resetMensalForm() {
-  mensal.estado = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
-  mensal.mes = currentYm();
-  mensal.valor = "";
-  editingMensalId.value = null;
-}
-
-function submitMensal() {
-  const ind = indicator.value;
-  if (!ind) return;
-  /* Só edita registros existentes; lançamento novo é feito pela planilha. */
-  if (!editingMensalId.value) return;
-  if (!mensal.mes) return toast("Informe o mês.");
-  const raw = String(mensal.valor).trim();
-  if (raw === "" || isNaN(Number(raw)) || Number(raw) < 0) {
-    return toast(`Informe um valor válido para ${ind.name}.`);
-  }
-  const value = Number(raw);
-  const payload = {
-    date: `${mensal.mes}-01`,
-    value,
-    state: mensal.estado,
-    meta: { estado: mensal.estado, competencia: mensal.mes }
-  };
-
-  if (editingMensalId.value) {
-    updateEntry(ind.id, editingMensalId.value, payload);
-    toast(`${ind.name} de ${MONTHS_SHORT[mensalMonthNum.value - 1]}/${mensalYearNum.value} atualizado com sucesso!`, "success");
-  } else {
-    /* Um lançamento por mês/estado: lançar de novo no mesmo mês substitui o
-       valor anterior em vez de duplicar a linha. */
-    const existing = getEntriesFor(ind.id, mensal.estado).find(
-      (e) => e.date === payload.date && e.meta && e.meta.estado === mensal.estado
-    );
-    if (existing) {
-      updateEntry(ind.id, existing.id, payload);
-    } else {
-      addEntry(ind.id, payload);
-    }
-    toast(`${ind.name} lançado para ${MONTHS_SHORT[mensalMonthNum.value - 1]}/${mensalYearNum.value}: ${value}.`);
-  }
-
-  emit("saved");
-  resetMensalForm();
-  /* Edição concluída: fecha o modal. */
-  close();
-}
-
 /* ---------- Diária ---------- */
 
 /* ---------- Mês/ano da diária (competência) ---------- */
@@ -1530,7 +1450,6 @@ function handleSubmit() {
   if (form === "vaga") return requestClose();
   if (form === "turnover") return requestClose();
   if (form === "headcount") return requestClose();
-  if (form === "mensal") return requestClose();
 }
 
 function close() {
@@ -1545,7 +1464,6 @@ const unsaved = useUnsavedGuard(() => ({
   diaria,
   treinamento,
   custosTot,
-  mensal,
   estado: estado.value
 }));
 watch(
@@ -1604,57 +1522,6 @@ async function requestClose() {
           {{ t.label }}
         </button>
       </div>
-
-      <!-- ===== LANÇAMENTO MENSAL (Headcount, Absenteísmo, Tempo de permanência, Retenção) ===== -->
-      <template v-if="indicator.form === 'mensal'">
-        <div class="flex flex-col gap-4">
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div class="flex flex-col gap-1.5">
-              <label for="mensalEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
-              <select id="mensalEstado" v-model="mensal.estado" class="input-field">
-                <option v-for="s in STATES" :key="s" :value="s">{{ s }} — {{ STATE_NAMES[s] }}</option>
-              </select>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês</label>
-              <div class="flex items-center gap-2">
-                <select class="input-field" :value="mensalMonthNum" @change="setMensalMonth(Number($event.target.value))">
-                  <option v-for="(m, i) in MONTHS_SHORT" :key="m" :value="i + 1">{{ m }}</option>
-                </select>
-                <select class="input-field" :value="mensalYearNum" @change="setMensalYear(Number($event.target.value))">
-                  <option v-for="y in mensalYearOptions" :key="y" :value="y">{{ y }}</option>
-                </select>
-                <button type="button" class="btn-ghost btn-sm shrink-0" @click="setMensalCurrentMonth">Atual</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-1.5 sm:w-64">
-            <label for="mensalValor" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              {{ indicator.name }} ({{ indicator.unit }})
-            </label>
-            <input
-              id="mensalValor"
-              v-model="mensal.valor"
-              type="number"
-              min="0"
-              step="any"
-              class="input-field"
-              :placeholder="indicator.type === 'percent' ? '0,0' : '0'"
-            />
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-primary" @click="submitMensal">
-              {{ editingMensalId ? "Salvar alterações" : "+ Lançar" }}
-            </button>
-          </div>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            Um lançamento por mês/estado — lançar de novo no mesmo mês substitui o valor anterior.
-            {{ CONTEXT_ACTION_LABEL === "Botão direito" ? "Clique com o botão direito" : "Toque e segure" }} no card do indicador para ver o histórico.
-          </p>
-        </div>
-      </template>
 
       <!-- ===== VAGA ===== -->
       <template v-if="indicator.form === 'vaga'">

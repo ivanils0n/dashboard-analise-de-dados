@@ -43,7 +43,7 @@ const porEstado = computed(() =>
 
 const selectCls =
   "h-8 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-xs font-medium text-zinc-700 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]";
-const cardCls = "rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900";
+const cardCls = "min-w-0 rounded-xl border border-zinc-200 bg-white p-3 sm:p-4 dark:border-zinc-800 dark:bg-zinc-900";
 const titleCls = "text-sm font-semibold text-zinc-800 dark:text-zinc-100";
 const hintCls = "text-[11px] text-zinc-400 dark:text-zinc-500";
 </script>

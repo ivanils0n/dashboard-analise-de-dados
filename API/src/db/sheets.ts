@@ -12,13 +12,15 @@ import {
   deleteRowNumbers,
   googleSheetsEnabled,
   readIdRows,
+  readSheetsRaw,
   updateValues
 } from "./googleSheets";
 
-// Cliente para a "API" da planilha: um Google Apps Script publicado como Web
-// App (ver apps-script/Code.gs), vinculado à própria planilha. Sem service
-// account, sem chave privada — o script roda com a identidade de quem o
-// publicou (dona da planilha) e só aceita chamadas com o segredo combinado.
+// Acesso à planilha. O caminho principal é a API do Google Sheets com conta de
+// serviço (db/googleSheets.ts): leituras e gravações em poucas centenas de ms.
+// Se ela não estiver configurada ou falhar, cai no Google Apps Script
+// publicado como Web App (apps-script/Code.gs), que roda com a identidade de
+// quem o publicou e só aceita chamadas com o segredo combinado (reserva).
 
 export type SheetRow = Record<string, unknown>;
 
@@ -314,6 +316,25 @@ export function valuesToRow(columns: ColumnDef[], values: unknown[]): SheetRow {
 
 // ---------- leitura ----------
 
+// Linhas brutas (sem cabeçalho) das abas pedidas. Pela API do Sheets quando
+// configurada (uma chamada, ~1 s para a planilha toda); se falhar — ou a aba
+// não existir —, cai no "readMany" do Apps Script, que devolve null para a aba
+// inexistente.
+async function readRawSheets(
+  env: Bindings,
+  names: string[],
+  clientSignal?: AbortSignal
+): Promise<Record<string, unknown[][] | null>> {
+  if (googleSheetsEnabled(env)) {
+    try {
+      return await readSheetsRaw(env, names);
+    } catch (err) {
+      console.error("[sheets-api] leitura falhou, usando Apps Script:", err);
+    }
+  }
+  return callAppsScript<Record<string, unknown[][] | null>>(env, "readMany", { sheets: names }, clientSignal);
+}
+
 // Sem número de linha: com o headcount repartido no cache (ver cacheGroups.ts)
 // a posição no array não é a da planilha — e ninguém precisa dela, o Code.gs
 // localiza a linha pelo id na hora de atualizar/apagar.
@@ -332,7 +353,8 @@ export async function readTable(
   if (cached) return indexRawRows(cached.rows, columns);
 
   const fetchedAt = Date.now();
-  const rawRows = await callAppsScript<unknown[][]>(env, "read", { sheet: sheetName }, clientSignal);
+  const rawRows = (await readRawSheets(env, [sheetName], clientSignal))[sheetName];
+  if (rawRows == null) throw new Error(`Aba "${sheetName}" não existe.`);
   await writeCachedSheets(env, { [sheetName]: rawRows }, fetchedAt);
   return indexRawRows(rawRows, columns);
 }
@@ -358,10 +380,9 @@ export async function readTables(
   if (!misses.length) return out;
 
   const fetchedAt = Date.now();
-  const raw = await callAppsScript<Record<string, unknown[][] | null>>(
+  const raw = await readRawSheets(
     env,
-    "readMany",
-    { sheets: misses.map((r) => r.sheetName) },
+    misses.map((r) => r.sheetName),
     clientSignal
   );
   const toCache: Record<string, unknown[][]> = {};
@@ -404,7 +425,7 @@ function indexRawRows(rawRows: unknown[][] | null | undefined, columns: ColumnDe
 export async function refreshAllSheets(env: Bindings): Promise<{ refreshed: string[]; errors: Record<string, string> }> {
   const names = allSheetNames();
   const fetchedAt = Date.now();
-  const raw = await callAppsScript<Record<string, unknown[][] | null>>(env, "readMany", { sheets: names });
+  const raw = await readRawSheets(env, names);
 
   const refreshed: string[] = [];
   const errors: Record<string, string> = {};
@@ -475,7 +496,7 @@ export async function updateRows(
       const ids = await readIdRows(env, sheetName);
       const updates = rows
         .filter((row) => ids.has(String(row.id)))
-        .map((row) => ({ row: ids.get(String(row.id)) as number, values: rowToValues(columns, row) }));
+        .map((row) => ({ row: (ids.get(String(row.id)) as { row: number }).row, values: rowToValues(columns, row) }));
       await updateValues(env, sheetName, columns.length, updates);
       updated = updates.length;
     } catch (err) {
@@ -509,7 +530,7 @@ export async function deleteRows(
   if (googleSheetsEnabled(env)) {
     try {
       const idRows = await readIdRows(env, sheetName);
-      const rowNumbers = [...new Set(ids)].map((id) => idRows.get(String(id))).filter((n): n is number => !!n);
+      const rowNumbers = [...new Set(ids)].map((id) => idRows.get(String(id))?.row).filter((n): n is number => !!n);
       await deleteRowNumbers(env, sheetName, rowNumbers);
       deleted = rowNumbers.length;
     } catch (err) {

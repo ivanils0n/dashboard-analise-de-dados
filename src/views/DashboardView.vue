@@ -45,7 +45,7 @@ import { canEditData, isAdmin } from "@/lib/auth";
 import { getIndicatorById, STATES } from "@/lib/config";
 import { safeSetItem, localStore, normalizeText } from "@/lib/utils";
 import { toXLSX, toCSV } from "@/lib/export";
-import { hydrateState, reloadData } from "@/lib/db";
+import { hydrateState, reloadData, warmApi } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 import { apiFetch } from "@/lib/api";
 import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
@@ -505,9 +505,24 @@ const gridChartViews = computed(() =>
     .filter((v) => v.card.id !== "ticket_medio")
     .map((v) => (v.card.id === "absenteismo" ? generoChartView.value : v))
 );
-const absenteismoChartView = computed(() => kpiChartViews.value.find((v) => v.card.id === "absenteismo") || null);
+/* Absenteísmo (ao lado do Custo médio por colaborador): a mesma pizza do Painel —
+   total de cada ocorrência no período e estado filtrados, total no centro. */
+const absenteismoChartView = computed(() => {
+  const view = kpiChartViews.value.find((v) => v.card.id === "absenteismo");
+  if (!view) return null;
+  const chart = dashboard.cockpitChartFor("absenteismo");
+  return {
+    ...view,
+    card: { ...view.card, kind: "pie", title: chart.title, sub: chart.sub, valueFormat: "count" },
+    entries: [],
+    barData: [],
+    pieData: chart.data,
+    pieCenter: chart.center
+  };
+});
 const ticketChartView = computed(() => kpiChartViews.value.find((v) => v.card.id === "ticket_medio") || null);
 const ticketChartRef = ref(null);
+const absenteismoChartRef = ref(null);
 
 /* % do faturamento (Custo médio por colaborador ÷ faturamento médio × 100):
    KPI ao lado do gráfico de Custo de folha de salário, com o botão do
@@ -613,6 +628,10 @@ function onSelectKpi(id) {
       ticketChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (id === "absenteismo") {
+      absenteismoChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (id === "horas_regional") {
       regionalChartRef.value?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -704,6 +723,7 @@ onUnmounted(() => {
    hydrateState só mostra a tela de carregamento quando realmente há algo a
    baixar — antes ela piscava a cada visita mesmo com tudo já carregado. */
 onActivated(() => {
+  warmApi();
   hydrateState(filters.current).catch(() => {});
   sidebarHidden.value = activeTab.value === "cockpit";
 });
@@ -1011,13 +1031,13 @@ watch(activeTab, (tab) => {
       </div>
 
       <!-- ===== ABSENTEÍSMO (ao lado do Custo médio por colaborador) ===== -->
-      <div v-if="absenteismoChartView" class="min-w-0">
+      <div v-if="absenteismoChartView" ref="absenteismoChartRef" class="min-w-0">
         <KpiChartCard
           stacked
           class="h-full"
           :card="absenteismoChartView.card"
-          :entries="absenteismoChartView.entries"
-          :bar-data="absenteismoChartView.barData"
+          :pie-data="absenteismoChartView.pieData"
+          :pie-center="absenteismoChartView.pieCenter"
           :show-values="showValues"
           :data-indicator-card="absenteismoChartView.card.id"
         />

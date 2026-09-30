@@ -5,20 +5,15 @@ import {
   googleSheetsEnabled,
   readIdRows,
   readRowsByNumber,
+  sheetGid,
   updateValues
 } from "../db/googleSheets";
 import type { SheetRow } from "../db/sheets";
 import { invalidateCachedSheet } from "../db/cache";
 import { ENTITIES, ESTADO_TODOS, tableName } from "../db/tables";
-import type { ColumnDef, Estado, EstadoFiltro, EntityDef } from "../db/tables";
-import { buildCreatePayload, buildUpdatePayload, buildUpsertPayload } from "../utils/validation";
+import type { Estado, EstadoFiltro, EntityDef } from "../db/tables";
+import { buildUpsertPayload } from "../utils/validation";
 import type { Bindings } from "../types";
-
-type Filters = Record<string, string>;
-
-function findColumn(entity: EntityDef, name: string): ColumnDef | undefined {
-  return entity.columns.find((column) => column.name === name);
-}
 
 // Coluna que guarda o estado dentro da aba compartilhada (ex.: "estado_sigla").
 function stateColumn(entity: EntityDef): string | null {
@@ -35,104 +30,6 @@ function matchesEstado(entity: EntityDef, row: SheetRow, estado: EstadoFiltro): 
   return row[column] === estado;
 }
 
-function matchesFilters(entity: EntityDef, row: SheetRow, filters: Filters): boolean {
-  for (const filter of entity.filters) {
-    const value = filters[filter.param];
-    if (value === undefined || value === "") continue;
-    const cell = row[filter.column];
-
-    if (filter.kind === "isnull") {
-      const isNull = cell === null || cell === undefined;
-      if (isNull !== (value === "true")) return false;
-      continue;
-    }
-    if (filter.kind === "ilike") {
-      if (!String(cell ?? "").toLowerCase().includes(value.toLowerCase())) return false;
-      continue;
-    }
-
-    const numeric = findColumn(entity, filter.column)?.type === "number";
-    if (filter.kind === "gte") {
-      if (cell === null || cell === undefined) return false;
-      if (numeric ? Number(cell) < Number(value) : String(cell) < value) return false;
-      continue;
-    }
-    if (filter.kind === "lte") {
-      if (cell === null || cell === undefined) return false;
-      if (numeric ? Number(cell) > Number(value) : String(cell) > value) return false;
-      continue;
-    }
-    // eq
-    if (String(cell ?? "") !== value) return false;
-  }
-  return true;
-}
-
-function matchesSearch(entity: EntityDef, row: SheetRow, search?: string): boolean {
-  if (!search || !entity.search.length) return true;
-  const needle = search.toLowerCase();
-  return entity.search.some((column) => String(row[column] ?? "").toLowerCase().includes(needle));
-}
-
-type OrderPart = { column: string; desc: boolean };
-
-// "mes_referencia desc" / "data desc, criado_em desc" -> partes ordenáveis em memória.
-function parseOrderBy(orderBy: string): OrderPart[] {
-  return orderBy
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const desc = /\sdesc$/i.test(part);
-      const column = part.replace(/\s+(asc|desc)$/i, "").trim();
-      return { column, desc };
-    });
-}
-
-function compareValues(a: unknown, b: unknown): number {
-  if (a === null || a === undefined) return b === null || b === undefined ? 0 : -1;
-  if (b === null || b === undefined) return 1;
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  const [sa, sb] = [String(a), String(b)];
-  return sa < sb ? -1 : sa > sb ? 1 : 0;
-}
-
-// `id` como último critério de desempate — mesmo papel do "order by ..., id"
-// do serviço original: garante uma ordem estável entre páginas.
-function sortRows(rows: SheetRow[], orderBy: string): SheetRow[] {
-  const parts = [...parseOrderBy(orderBy), { column: "id", desc: false }];
-  return [...rows].sort((a, b) => {
-    for (const part of parts) {
-      const cmp = compareValues(a[part.column], b[part.column]);
-      if (cmp !== 0) return part.desc ? -cmp : cmp;
-    }
-    return 0;
-  });
-}
-
-export async function listRecords(
-  env: Bindings,
-  entityKey: string,
-  estado: EstadoFiltro,
-  options: { page: number; limit: number; filters: Filters; search?: string }
-) {
-  const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey);
-  const { rows } = await readTable(env, table, entity.columns);
-
-  const filtered = rows.filter(
-    (row) =>
-      matchesEstado(entity, row, estado) &&
-      matchesFilters(entity, row, options.filters) &&
-      matchesSearch(entity, row, options.search)
-  );
-  const sorted = sortRows(filtered, entity.orderBy);
-
-  const offset = (options.page - 1) * options.limit;
-  const data = sorted.slice(offset, offset + options.limit);
-  return { data, total: filtered.length };
-}
-
 export async function listAllRecords(
   env: Bindings,
   entityKey: string,
@@ -145,8 +42,8 @@ export async function listAllRecords(
   return rows.filter((row) => matchesEstado(entity, row, estado));
 }
 
-// Várias entidades (todos os estados) numa única ida ao Apps Script — usado
-// pela carga inicial do frontend. Entidade cuja aba não existe vai em `errors`.
+// Várias entidades (todos os estados) numa única ida à planilha — usado pela
+// carga inicial do frontend. Entidade cuja aba não existe vai em `errors`.
 export async function listManyTables(env: Bindings, entityKeys: string[], clientSignal?: AbortSignal) {
   const keys = entityKeys.filter((key) => key in ENTITIES);
   const read = await readTables(
@@ -164,80 +61,24 @@ export async function listManyTables(env: Bindings, entityKeys: string[], client
   return { tables, errors };
 }
 
-export async function getRecord(env: Bindings, entityKey: string, estado: Estado, id: string) {
-  const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey);
-  const { rowById } = await readTable(env, table, entity.columns);
-  const row = rowById.get(id) ?? null;
-  // Isolamento entre estados: agora que a aba é compartilhada, um id de outro
-  // estado não pode "vazar" pela rota /:estado/:id.
-  if (row && !matchesEstado(entity, row, estado)) return null;
-  return row;
+// Payload "completo": traz todas as colunas graváveis da entidade (o frontend
+// sempre manda a linha inteira). Nesse caso a linha atual não precisa ser lida
+// para mesclar — o payload já é a linha nova.
+function isFullPayload(entity: EntityDef, payload: Record<string, unknown>): boolean {
+  return entity.columns.every((column) => column.readOnly || column.name in payload);
 }
 
-export async function createRecord(
-  env: Bindings,
-  entityKey: string,
-  estado: Estado,
-  body: Record<string, unknown>
-) {
-  const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey);
-  const payload = buildCreatePayload(entity, body, estado);
-  if (!payload.id) payload.id = crypto.randomUUID();
-  if (entity.hasUpdatedAt) payload.criado_em = new Date().toISOString();
-
-  await appendRows(env, table, entity.columns, [payload]);
-  return payload;
-}
-
-export async function updateRecord(
-  env: Bindings,
-  entityKey: string,
-  estado: Estado,
-  id: string,
-  body: Record<string, unknown>,
-  full: boolean
-) {
-  const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey);
-  const payload = buildUpdatePayload(entity, body, estado, full);
-
-  const { rowById } = await readTable(env, table, entity.columns);
-  const current = rowById.get(id);
-  // Isolamento entre estados (ver getRecord): não deixa editar um id de outro estado.
-  if (!current || !matchesEstado(entity, current, estado)) return null;
-
-  const merged: SheetRow = { ...current, ...payload, id };
-  if (entity.hasUpdatedAt) merged.atualizado_em = new Date().toISOString();
-
-  const updated = await updateRows(env, table, entity.columns, [merged]);
-  if (!updated) return null; // a linha sumiu entre a leitura acima e a gravação
-  return merged;
-}
-
-export async function deleteRecord(
-  env: Bindings,
-  entityKey: string,
-  estado: Estado,
-  id: string
-) {
-  const entity = ENTITIES[entityKey];
-  const table = tableName(entityKey);
-  const { rowById } = await readTable(env, table, entity.columns);
-  const current = rowById.get(id);
-  if (!current || !matchesEstado(entity, current, estado)) return false;
-
-  const deleted = await deleteRows(env, table, [id]);
-  return deleted > 0;
-}
-
-// Caminho rápido do lote pela API do Google Sheets: lê só a coluna de ids e as
-// linhas afetadas (em vez da aba inteira), e grava em poucas chamadas. Mesmas
-// regras do caminho pelo Apps Script (bulkWrite abaixo): o último upsert por id
-// vence, id existente vira atualização (mesmo vindo de outro estado) e só se
-// apaga o que pertence ao estado informado.
-async function bulkWriteViaSheetsApi(
+// Caminho rápido do lote pela API do Google Sheets. Cada ida ao Google custa
+// ~0,3–0,4 s, então o objetivo é o menor número de chamadas:
+//  - lote só de linhas NOVAS (o front marca `_new`: id acabou de ser gerado no
+//    navegador): acrescenta direto, sem ler nada;
+//  - senão, lê ids e estados numa chamada só (e já busca o gid da aba em
+//    paralelo quando há exclusão) e grava em uma chamada por tipo de operação;
+//  - a linha inteira só é lida quando um payload parcial precisa ser mesclado.
+// Mesmas regras do caminho pelo Apps Script (bulkWrite abaixo): o último upsert
+// por id vence, id existente vira atualização (mesmo vindo de outro estado) e
+// só se apaga o que pertence ao estado informado.
+export async function bulkWriteViaSheetsApi(
   env: Bindings,
   entityKey: string,
   estado: Estado,
@@ -249,58 +90,74 @@ async function bulkWriteViaSheetsApi(
   const columns = entity.columns;
 
   const byId = new Map<string, Record<string, unknown>>();
+  let allNew = upserts.length > 0;
   for (const item of upserts) {
     if (!item || typeof item !== "object") continue;
+    if ((item as Record<string, unknown>)._new !== true) allNew = false;
     const payload = buildUpsertPayload(entity, item as Record<string, unknown>, estado);
-    if (!payload.id) payload.id = crypto.randomUUID();
+    if (!payload.id) {
+      payload.id = crypto.randomUUID();
+      allNew = false;
+    }
     byId.set(String(payload.id), payload);
   }
   const deleteIds = [
     ...new Set(deletes.filter((v) => v !== null && v !== undefined).map((v) => String(v)).filter(Boolean))
   ];
 
-  const idRows = await readIdRows(env, table);
+  // Atalho: só linhas novas e nada a apagar — uma única chamada (append).
+  if (allNew && !deleteIds.length && [...byId.values()].every((p) => isFullPayload(entity, p))) {
+    const rows = [...byId.values()].map((payload) => rowToValues(columns, payload));
+    await appendValues(env, table, rows);
+    await invalidateCachedSheet(env, table);
+    return { upserts: rows.length, deletes: 0 };
+  }
 
-  // Linhas atuais só dos ids que já existem (mescla de upsert e checagem de estado do delete).
-  const wanted = new Set<string>();
-  byId.forEach((_, id) => idRows.has(id) && wanted.add(id));
-  deleteIds.forEach((id) => idRows.has(id) && wanted.add(id));
-  const rowNumbers = [...wanted].map((id) => idRows.get(id) as number);
-  const raw = await readRowsByNumber(env, table, columns.length, rowNumbers);
-  const currentById = new Map<string, SheetRow>();
-  wanted.forEach((id) => currentById.set(id, valuesToRow(columns, raw.get(idRows.get(id) as number) ?? [])));
+  const stateName = stateColumn(entity);
+  const stateIndex = stateName ? columns.findIndex((c) => c.name === stateName) : -1;
 
-  const now = entity.hasUpdatedAt ? new Date().toISOString() : null;
+  // ids + estados numa chamada; o gid (só para apagar) vem em paralelo.
+  const gidPromise = deleteIds.length ? sheetGid(env, table) : undefined;
+  gidPromise?.catch(() => {}); // erro real aparece em deleteRowNumbers
+  const idRows = await readIdRows(env, table, stateIndex);
+
+  // Só lê linhas inteiras para mesclar quando o payload é parcial.
+  const partialIds = [...byId.entries()]
+    .filter(([id, payload]) => idRows.has(id) && !isFullPayload(entity, payload))
+    .map(([id]) => id);
+  const partialRaw = await readRowsByNumber(
+    env,
+    table,
+    columns.length,
+    partialIds.map((id) => (idRows.get(id) as { row: number }).row)
+  );
+
   const toAppend: unknown[][] = [];
   const toUpdate: { row: number; values: unknown[] }[] = [];
   byId.forEach((payload, id) => {
-    const current = currentById.get(id);
-    if (current) {
-      const merged: SheetRow = { ...current, ...payload, id };
-      if (now) merged.atualizado_em = now;
-      toUpdate.push({ row: idRows.get(id) as number, values: rowToValues(columns, merged) });
-    } else {
-      const created: SheetRow = { ...payload, id };
-      if (now) created.criado_em = now;
-      toAppend.push(rowToValues(columns, created));
+    const found = idRows.get(id);
+    if (!found) {
+      toAppend.push(rowToValues(columns, { ...payload, id }));
+      return;
     }
+    const current = isFullPayload(entity, payload) ? {} : valuesToRow(columns, partialRaw.get(found.row) ?? []);
+    toUpdate.push({ row: found.row, values: rowToValues(columns, { ...current, ...payload, id }) });
   });
 
-  const deleteRows = deleteIds
-    .filter((id) => {
-      const current = currentById.get(id);
-      return current && matchesEstado(entity, current, estado);
-    })
-    .map((id) => idRows.get(id) as number);
+  // Só apaga o registro que pertence ao estado informado.
+  const deleteRowsList = deleteIds
+    .map((id) => idRows.get(id))
+    .filter((found): found is { row: number; state: string } => !!found && (stateIndex < 0 || found.state === estado))
+    .map((found) => found.row);
 
   // Acrescentar e atualizar não deslocam linhas existentes; apagar vai por último.
   await Promise.all([appendValues(env, table, toAppend), updateValues(env, table, columns.length, toUpdate)]);
-  await deleteRowNumbers(env, table, deleteRows);
+  await deleteRowNumbers(env, table, deleteRowsList, gidPromise);
 
-  if (toAppend.length || toUpdate.length || deleteRows.length) {
+  if (toAppend.length || toUpdate.length || deleteRowsList.length) {
     await invalidateCachedSheet(env, table);
   }
-  return { upserts: toAppend.length + toUpdate.length, deletes: deleteRows.length };
+  return { upserts: toAppend.length + toUpdate.length, deletes: deleteRowsList.length };
 }
 
 // Escrita em lote (upsert/delete) usada pela sincronização do frontend.
@@ -313,6 +170,12 @@ export async function bulkWrite(
 ) {
   if (googleSheetsEnabled(env)) {
     try {
+      // Com o Durable Object, as gravações da mesma aba entram numa fila única
+      // (uma de cada vez, mesmo vindas de servidores diferentes).
+      if (env.SHEET_WRITER) {
+        const stub = env.SHEET_WRITER.get(env.SHEET_WRITER.idFromName(tableName(entityKey)));
+        return await stub.bulk(entityKey, estado, upserts, deletes);
+      }
       return await bulkWriteViaSheetsApi(env, entityKey, estado, upserts, deletes);
     } catch (err) {
       // Reenviar é seguro: o lote é por id (id que já existe vira atualização).
@@ -335,7 +198,6 @@ export async function bulkWrite(
 
   const toAppend: SheetRow[] = [];
   const toUpdate: SheetRow[] = [];
-  const now = entity.hasUpdatedAt ? new Date().toISOString() : null;
 
   byId.forEach((payload, id) => {
     const current = rowById.get(id);
@@ -344,15 +206,8 @@ export async function bulkWrite(
     // lugar. Antes virava uma linha nova com o mesmo id — o registro ficava
     // duplicado, e o "apagar do estado antigo" que o front mandava em paralelo
     // podia acabar apagando a linha nova (o Code.gs apaga a última com o id).
-    if (current) {
-      const merged: SheetRow = { ...current, ...payload, id };
-      if (now) merged.atualizado_em = now;
-      toUpdate.push(merged);
-    } else {
-      const created: SheetRow = { ...payload, id };
-      if (now) created.criado_em = now;
-      toAppend.push(created);
-    }
+    if (current) toUpdate.push({ ...current, ...payload, id });
+    else toAppend.push({ ...payload, id });
   });
 
   // skipInvalidate: as três escritas abaixo são na MESMA aba — invalidar o

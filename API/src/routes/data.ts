@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
 import { ENTITIES, ESTADO_TODOS, parseStateTable } from "../db/tables";
 import { bulkWrite, listAllRecords, listManyTables } from "../services/records";
+import { googleSheetsEnabled, warmSheetsApi } from "../db/googleSheets";
 import { fail, ok, readJsonBody } from "../utils/http";
 import type { AppEnv } from "../types";
 
@@ -11,7 +12,7 @@ import type { AppEnv } from "../types";
 const data = new Hono<AppEnv>();
 
 // Carga em lote: GET /api/data/_batch?tables=vagas,turnover,... (sem "tables" =
-// todas as entidades). Uma única chamada ao Apps Script para todas as abas.
+// todas as entidades). Uma única chamada à planilha para todas as abas.
 data.get("/_batch", requireAuth(), async (c) => {
   const requested = (c.req.query("tables") ?? "")
     .split(",")
@@ -19,6 +20,19 @@ data.get("/_batch", requireAuth(), async (c) => {
     .filter(Boolean);
   const keys = requested.length ? requested : Object.keys(ENTITIES);
   return ok(c, await listManyTables(c.env, keys, c.req.raw.signal));
+});
+
+// Aquecimento: o front chama ao abrir telas de lançamento para a primeira
+// gravação não pagar o "acordar" do servidor (login no Google, gid das abas).
+data.get("/_warm", requireAuth(), async (c) => {
+  if (googleSheetsEnabled(c.env)) {
+    try {
+      await warmSheetsApi(c.env, "absenteismo");
+    } catch {
+      /* só aquecimento: a gravação de verdade trata o erro */
+    }
+  }
+  return ok(c, { warm: true });
 });
 
 data.get("/:table", requireAuth(), async (c) => {

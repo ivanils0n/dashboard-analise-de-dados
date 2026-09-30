@@ -1,9 +1,15 @@
 /* Exportação via SheetJS (xlsx/csv). Sem importação por planilha: todo o
    lançamento de dados é feito à mão nos modais (ver LaunchModal.vue). */
 
-import * as XLSX from "xlsx";
-import { getEntriesFor, getBranches, getVacancies, getTurnovers, getPermanencias, getHeadcounts } from "./store";
-import { todayISO } from "./utils";
+/* O SheetJS (~280 kB) só é baixado quando o usuário exporta algo — não entra no
+   carregamento da dashboard. */
+let xlsxModule = null;
+async function loadXLSX() {
+  if (!xlsxModule) xlsxModule = await import("xlsx");
+  return xlsxModule;
+}
+import { getEntriesFor, getOcorrencias, getBranches, getVacancies, getTurnovers, getPermanencias, getHeadcounts } from "./store";
+import { todayISO, formatDate } from "./utils";
 
 /* Previne "formula injection": texto iniciado com = + - @ vira texto puro
    (prefixo ') para nunca executar fórmula em planilha. */
@@ -169,14 +175,38 @@ function custoFolhaRows(list) {
   return rows;
 }
 
-const ABSENTEISMO_HEADER = ["Competência", "Valor", "Estado"];
+const ABSENTEISMO_HEADER = [
+  "Data",
+  "Colaborador",
+  "Função",
+  "Filial",
+  "Estado",
+  "Motivo",
+  "Advertência",
+  "Acidente de trabalho",
+  "Observação"
+];
 
+/* Ocorrências lançadas no Mapa de Absenteísmo, da mais recente para a mais antiga. */
 function absenteismoRows(list) {
   const rows = [ABSENTEISMO_HEADER];
-  (list || []).forEach((e) => {
-    const m = e.meta || {};
-    rows.push([m.competencia || (e.date ? String(e.date).slice(0, 7) : ""), Number(e.value) || 0, m.estado || ""]);
-  });
+  (list || [])
+    .slice()
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .forEach((e) => {
+      const m = e.meta || {};
+      rows.push([
+        e.date ? formatDate(e.date) : "",
+        m.colaborador || "",
+        m.setor || "",
+        m.filial || "",
+        m.estado || "",
+        m.motivo && m.motivo !== "Presente" ? m.motivo : "",
+        m.advertencia ? "Sim" : "",
+        m.acidente ? "Sim" : "",
+        m.observacao || ""
+      ]);
+    });
   return rows;
 }
 
@@ -192,7 +222,7 @@ function allTables() {
     { name: "Diárias", rows: diariasRows(getEntriesFor("custo_diaria")), cols: [12, 28, 20, 20, 26, 14, 10] },
     { name: "Treinamentos", rows: treinamentosRows(getEntriesFor("treinamento")), cols: [14, 28, 20, 20, 26, 14, 20, 10] },
     { name: "Custo de Folha", rows: custoFolhaRows(getEntriesFor("custo_total")), cols: [14, 22, 30, 14, 14, 10] },
-    { name: "Absenteísmo", rows: absenteismoRows(getEntriesFor("absenteismo")), cols: [14, 14, 10] }
+    { name: "Absenteísmo", rows: absenteismoRows(getOcorrencias()), cols: [12, 30, 22, 14, 8, 18, 12, 18, 30] }
   ].filter((t) => t.rows.length > 1); // pula tabelas sem nenhum registro lançado
 }
 
@@ -201,7 +231,8 @@ function colsToWch(cols) {
 }
 
 /* "Baixar em XLSX": um único arquivo, uma aba por tabela carregada. */
-export function toXLSX() {
+export async function toXLSX() {
+  const XLSX = await loadXLSX();
   const workbook = XLSX.utils.book_new();
   allTables().forEach(({ name, rows, cols }) => {
     const sheet = XLSX.utils.aoa_to_sheet(safeRows(rows));
@@ -213,7 +244,8 @@ export function toXLSX() {
 
 /* "Baixar em CSV": CSV não suporta múltiplas abas num único arquivo, então
    baixa um .csv por tabela carregada (um download por tabela). */
-export function toCSV() {
+export async function toCSV() {
+  const XLSX = await loadXLSX();
   const date = todayISO();
   allTables().forEach(({ name, rows, cols }) => {
     const workbook = XLSX.utils.book_new();
@@ -231,7 +263,8 @@ export function toCSV() {
 
 /* ---------- Exportações por tela (botão "Exportar" de cada modal) ---------- */
 
-export function exportVagas(list) {
+export async function exportVagas(list) {
+  const XLSX = await loadXLSX();
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(safeRows(vagasRows(list)));
   sheet["!cols"] = colsToWch([28, 16, 18, 20, 14, 10, 14, 12, 14]);
@@ -239,7 +272,8 @@ export function exportVagas(list) {
   XLSX.writeFile(workbook, `gente-gestao-vagas_${todayISO()}.xlsx`);
 }
 
-export function exportTurnover(list, filename) {
+export async function exportTurnover(list, filename) {
+  const XLSX = await loadXLSX();
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(safeRows(turnoverRows(list)));
   sheet["!cols"] = colsToWch([20, 16, 12, 12, 10, 10]);
@@ -247,7 +281,8 @@ export function exportTurnover(list, filename) {
   XLSX.writeFile(workbook, `gente-gestao-${filename || "turnover"}_${todayISO()}.xlsx`);
 }
 
-export function exportPermanencia(list) {
+export async function exportPermanencia(list) {
+  const XLSX = await loadXLSX();
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(safeRows(permanenciaRows(list)));
   sheet["!cols"] = colsToWch([28, 18, 18, 10]);
@@ -255,10 +290,39 @@ export function exportPermanencia(list) {
   XLSX.writeFile(workbook, `gente-gestao-permanencia_${todayISO()}.xlsx`);
 }
 
-export function exportHeadcount(list) {
+export async function exportHeadcount(list) {
+  const XLSX = await loadXLSX();
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet(safeRows(headcountRows(list)));
   sheet["!cols"] = colsToWch([12, 28, 14, 22, 16, 18, 10, 12]);
   XLSX.utils.book_append_sheet(workbook, sheet, "Headcount");
   XLSX.writeFile(workbook, `gente-gestao-headcount_${todayISO()}.xlsx`);
+}
+
+/* Exporta uma lista de ocorrências de absenteísmo (já achatadas, como nos
+   modais de análise) — uma linha por ocorrência, da mais recente para a mais antiga. */
+export async function exportOcorrencias(list, filename = "absenteismo") {
+  const XLSX = await loadXLSX();
+  const rows = [
+    ["Data", "Colaborador", "Função", "Filial", "Estado", "Motivo", "Dias de ausência", "Advertência", "Acidente de trabalho", "Observação"]
+  ];
+  (list || []).forEach((o) => {
+    rows.push([
+      o.date ? formatDate(o.date) : "",
+      o.colaborador || "",
+      o.setor || "",
+      o.filial || "",
+      o.estado || "",
+      o.motivo && o.motivo !== "Presente" ? o.motivo : "",
+      Number(o.dias) || 0,
+      o.advertencia ? "Sim" : "",
+      o.acidente ? "Sim" : "",
+      o.observacao || ""
+    ]);
+  });
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet(safeRows(rows));
+  sheet["!cols"] = colsToWch([12, 30, 22, 14, 8, 16, 10, 12, 18, 30]);
+  XLSX.utils.book_append_sheet(workbook, sheet, "Absenteísmo");
+  XLSX.writeFile(workbook, `gente-gestao-${filename}_${todayISO()}.xlsx`);
 }

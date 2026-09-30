@@ -18,14 +18,7 @@ export function normalizeEstado(value: string | undefined | null): Estado | null
   return (ESTADOS as readonly string[]).includes(upper) ? (upper as Estado) : null;
 }
 
-export function normalizeEstadoFiltro(value: string | undefined | null): EstadoFiltro | null {
-  if (!value) return null;
-  if (value.toUpperCase() === ESTADO_TODOS) return ESTADO_TODOS;
-  return normalizeEstado(value);
-}
-
 export type ColumnType = "text" | "number" | "boolean" | "date" | "timestamptz" | "json";
-export type FilterKind = "eq" | "ilike" | "gte" | "lte" | "isnull";
 
 export type ColumnDef = {
   name: string;
@@ -37,37 +30,16 @@ export type ColumnDef = {
   stateRef?: boolean;
 };
 
-export type FilterDef = {
-  param: string;
-  column: string;
-  kind: FilterKind;
-};
-
 export type EntityDef = {
   key: string;
   label: string;
   columns: ColumnDef[];
-  filters: FilterDef[];
-  search: string[];
-  orderBy: string;
-  hasUpdatedAt?: boolean;
 };
 
 export const ENTITIES: Record<string, EntityDef> = {
   vagas: {
     key: "vagas",
     label: "Vagas",
-    orderBy: "aberta_em desc",
-    search: ["nome"],
-    filters: [
-      { param: "tipo_contratacao", column: "tipo_contratacao", kind: "eq" },
-      { param: "filial", column: "filial", kind: "eq" },
-      { param: "recrutador", column: "recrutador", kind: "eq" },
-      { param: "aberta", column: "fechada_em", kind: "isnull" },
-      // Filtro por período de abertura (também disponível a quem consome a API).
-      { param: "data_de", column: "aberta_em", kind: "gte" },
-      { param: "data_ate", column: "aberta_em", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "nome", type: "text", required: true },
@@ -85,12 +57,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   headcount: {
     key: "headcount",
     label: "Headcount",
-    orderBy: "mes_referente desc",
-    search: ["codigo", "colaborador", "funcao"],
-    filters: [
-      { param: "data_de", column: "mes_referente", kind: "gte" },
-      { param: "data_ate", column: "mes_referente", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "codigo", type: "text" },
@@ -110,12 +76,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   turnover: {
     key: "turnover",
     label: "Turnover",
-    orderBy: "mes_referencia desc",
-    search: ["filial"],
-    filters: [
-      { param: "data_de", column: "mes_referencia", kind: "gte" },
-      { param: "data_ate", column: "mes_referencia", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       // Sem FK pra Filiais: texto livre (nome/sigla), como diarias/treinamentos.
@@ -130,13 +90,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   permanencia: {
     key: "permanencia",
     label: "Tempo médio de permanência",
-    orderBy: "data_demissao desc",
-    search: ["colaborador"],
-    filters: [
-      { param: "filial", column: "filial", kind: "eq" },
-      { param: "data_de", column: "data_demissao", kind: "gte" },
-      { param: "data_ate", column: "data_demissao", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "colaborador", type: "text", required: true },
@@ -155,12 +108,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   rescisoes: {
     key: "rescisoes",
     label: "Rescisões",
-    orderBy: "mes_referencia desc",
-    search: ["colaborador"],
-    filters: [
-      { param: "data_de", column: "mes_referencia", kind: "gte" },
-      { param: "data_ate", column: "mes_referencia", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "empresa", type: "text" },
@@ -185,9 +132,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   filiais: {
     key: "filiais",
     label: "Filiais",
-    orderBy: "nome asc",
-    search: ["nome", "abreviado", "cnpj"],
-    filters: [{ param: "gerente", column: "gerente", kind: "ilike" }],
     columns: [
       { name: "id", type: "text" },
       { name: "cnpj", type: "text", required: true },
@@ -203,12 +147,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   diarias: {
     key: "diarias",
     label: "Diárias",
-    orderBy: "competencia desc",
-    search: ["nome_colaborador"],
-    filters: [
-      { param: "data_de", column: "competencia", kind: "gte" },
-      { param: "data_ate", column: "competencia", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "nome_colaborador", type: "text", required: true },
@@ -225,12 +163,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   treinamentos: {
     key: "treinamentos",
     label: "Treinamentos",
-    orderBy: "competencia desc",
-    search: ["nome_colaborador"],
-    filters: [
-      { param: "data_de", column: "competencia", kind: "gte" },
-      { param: "data_ate", column: "competencia", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "nome_colaborador", type: "text", required: true },
@@ -252,13 +184,6 @@ export const ENTITIES: Record<string, EntityDef> = {
   custo_folha: {
     key: "custo_folha",
     label: "Custo de folha de salário",
-    orderBy: "competencia desc",
-    search: ["razao_social", "filial_cnpj"],
-    filters: [
-      { param: "cnpj", column: "filial_cnpj", kind: "eq" },
-      { param: "data_de", column: "competencia", kind: "gte" },
-      { param: "data_ate", column: "competencia", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       // Sem FK pra Filiais: guarda CNPJ e razão social direto, do mesmo jeito
@@ -274,19 +199,12 @@ export const ENTITIES: Record<string, EntityDef> = {
   absenteismo: {
     key: "absenteismo",
     label: "Absenteísmo",
-    orderBy: "competencia desc",
-    search: [],
-    filters: [
-      { param: "data_de", column: "competencia", kind: "gte" },
-      { param: "data_ate", column: "competencia", kind: "lte" }
-    ],
     columns: [
       { name: "id", type: "text" },
       { name: "competencia", type: "date", required: true },
-      { name: "valor", type: "number", notNull: true, required: true },
       { name: "estado_sigla", type: "text", stateRef: true },
-      // Mapa de absenteísmo: uma linha por colaborador e dia (valor = 0). Linhas
-      // com "colaborador" vazio continuam sendo o lançamento mensal de sempre.
+      // Mapa de absenteísmo: uma linha por colaborador e dia. `competencia` é o
+      // 1º dia do mês da ocorrência (base do filtro por mês); `data` é o dia.
       { name: "colaborador", type: "text" },
       { name: "setor", type: "text" },
       { name: "filial", type: "text" },

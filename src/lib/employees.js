@@ -744,6 +744,18 @@ function computeHeadcountMovements(rows, range) {
 
 /* Lista o quadro do mês `mesReferencia` (formato "YYYY-MM").
    Sem mês informado, devolve todos os registros (sem filtro de mês) — usado pela busca por código na importação. */
+/* Meses (YYYY-MM) com Headcount lançado no estado, em ordem crescente. */
+export function headcountMonths(state) {
+  const idx = headcountIndex.value;
+  if (isAllStates(state)) return [...idx.byYm.keys()].filter(Boolean).sort();
+  const prefix = `${normUpper(state)}|`;
+  const out = [];
+  idx.byStateYm.forEach((_, key) => {
+    if (key.startsWith(prefix) && key.length > prefix.length) out.push(key.slice(prefix.length));
+  });
+  return out.sort();
+}
+
 export function listHeadcountRecords(state, mesReferencia, { incluirDesligados = false } = {}) {
   let rows = rowsOf(state);
   if (mesReferencia) {

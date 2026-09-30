@@ -2,7 +2,7 @@
 /* Aviso exibido por cima de um gráfico sem dados para desenhar (lista vazia
    ou todos os valores zerados/vazios) — em vez de eixos vazios ou uma rosca
    em branco. Usado pelos componentes de gráfico (BarChart, PieChart,
-   LineChart, AbsenteismoBar); o contêiner do gráfico precisa ser `relative`. */
+   LineChart); o contêiner do gráfico precisa ser `relative`. */
 defineProps({
   title: { type: String, default: "Sem dados para exibir" },
   text: { type: String, default: "Não há informações lançadas para o período e o estado filtrados." }

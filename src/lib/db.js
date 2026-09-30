@@ -8,9 +8,9 @@ import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./store";
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
-import { mapWithConcurrency, formatDate } from "./utils";
+import { mapWithConcurrency, formatDate, normalizeMotivo } from "./utils";
 
-const FLUSH_DELAY_MS = 300; // agrupa escritas por até 0,3 s antes de enviar (edições em sequência viram um lote só)
+const FLUSH_DELAY_MS = 150; // agrupa escritas por até 0,15 s antes de enviar (edições em sequência viram um lote só)
 const RETRY_DELAY_MS = 1200; // base do recuo entre novas tentativas após falha
 
 /* Teto de requisições simultâneas para a API (Worker → Apps Script), que
@@ -93,22 +93,22 @@ function custoFolhaToRow(entry) {
   };
 }
 
+/* Ocorrência do Mapa de Absenteísmo: uma linha por colaborador e dia. `competencia`
+   é o 1º dia do mês da ocorrência (base do filtro por mês); `data` é o dia. */
 function absenteismoToRow(entry) {
   const meta = entry.meta || {};
   return {
     id: entry.id,
-    competencia: meta.colaborador ? `${String(entry.date).slice(0, 7)}-01` : entry.date,
-    valor: Number(entry.value) || 0,
+    competencia: `${String(entry.date).slice(0, 7)}-01`,
     estado_sigla: meta.estado || null,
-    // Ocorrência do mapa (colaborador + dia); vazio no lançamento mensal.
     colaborador: meta.colaborador || null,
     setor: meta.setor || null,
-    filial: meta.colaborador ? meta.filial || null : null,
-    data: meta.colaborador ? entry.date : null,
-    motivo: meta.colaborador ? meta.motivo || null : null,
-    observacao: meta.colaborador ? meta.observacao || null : null,
-    advertencia: meta.colaborador ? !!meta.advertencia : false,
-    acidente_trabalho: meta.colaborador ? !!meta.acidente : false
+    filial: meta.filial || null,
+    data: entry.date,
+    motivo: meta.motivo || null,
+    observacao: meta.observacao || null,
+    advertencia: !!meta.advertencia,
+    acidente_trabalho: !!meta.acidente
   };
 }
 
@@ -225,6 +225,7 @@ function _enqueue(table, id, op) {
 }
 
 function _schedule(delay = FLUSH_DELAY_MS) {
+  warmApi(); // acorda a API em paralelo à espera do envio (no máx. 1x a cada 4 min)
   if (_flushTimer) return;
   _flushTimer = setTimeout(() => {
     _flushTimer = null;
@@ -244,7 +245,7 @@ function _isRetriable(err) {
 function _requeue(table, ops) {
   if (!_queue[table]) _queue[table] = new Map();
   ops.forEach((op, id) => {
-    if (!_queue[table].has(id)) _queue[table].set(id, op);
+    if (!_queue[table].has(id)) _queue[table].set(id, { ...op, retried: true });
   });
 }
 
@@ -272,7 +273,10 @@ async function _flushNow(keepalive) {
     const upserts = [];
     const deletes = [];
     ops.forEach((op) => {
-      if (op.type === "upsert") upserts.push(op.row);
+      /* `_new`: lançamento criado agora, com id gerado aqui (1ª tentativa). O
+         servidor acrescenta direto, sem ler a planilha. Numa nova tentativa
+         (op.retried) o marcador some: o servidor confere se o id já existe. */
+      if (op.type === "upsert") upserts.push(op.created && !op.retried ? { ...op.row, _new: true } : op.row);
       else deletes.push(op.id);
     });
     const body = { upserts, deletes };
@@ -385,32 +389,32 @@ export function registerRemote() {
       const physicalTable = stateTable(table, estado);
       ids.forEach((id) => _enqueue(physicalTable, id, { type: "delete", id, label: labels ? labels[id] : undefined }));
     },
-    vacancySaved(vacancy) {
-      _enqueue(stateTable("vagas", vacancy.estado), vacancy.id, { type: "upsert", row: vacancyToRow(vacancy) });
+    vacancySaved(vacancy, isNew) {
+      _enqueue(stateTable("vagas", vacancy.estado), vacancy.id, { type: "upsert", row: vacancyToRow(vacancy), created: !!isNew });
     },
     vacancyRemoved(id, estado) {
       _enqueue(stateTable("vagas", estado), id, { type: "delete", id });
     },
-    turnoverSaved(turnover) {
-      _enqueue(stateTable("turnover", turnover.estado), turnover.id, { type: "upsert", row: turnoverToRow(turnover) });
+    turnoverSaved(turnover, isNew) {
+      _enqueue(stateTable("turnover", turnover.estado), turnover.id, { type: "upsert", row: turnoverToRow(turnover), created: !!isNew });
     },
     turnoverRemoved(id, estado) {
       _enqueue(stateTable("turnover", estado), id, { type: "delete", id });
     },
-    permanenciaSaved(record) {
-      _enqueue(stateTable("permanencia", record.estado), record.id, { type: "upsert", row: permanenciaToRow(record) });
+    permanenciaSaved(record, isNew) {
+      _enqueue(stateTable("permanencia", record.estado), record.id, { type: "upsert", row: permanenciaToRow(record), created: !!isNew });
     },
     permanenciaRemoved(id, estado) {
       _enqueue(stateTable("permanencia", estado), id, { type: "delete", id });
     },
-    headcountSaved(record) {
-      _enqueue(stateTable("headcount", record.estado), record.id, { type: "upsert", row: headcountToRow(record) });
+    headcountSaved(record, isNew) {
+      _enqueue(stateTable("headcount", record.estado), record.id, { type: "upsert", row: headcountToRow(record), created: !!isNew });
     },
     headcountRemoved(id, estado) {
       _enqueue(stateTable("headcount", estado), id, { type: "delete", id });
     },
-    branchSaved(branch) {
-      _enqueue(stateTable("filiais", branch.estado), branch.id, { type: "upsert", row: branchToRow(branch) });
+    branchSaved(branch, isNew) {
+      _enqueue(stateTable("filiais", branch.estado), branch.id, { type: "upsert", row: branchToRow(branch), created: !!isNew });
     },
     branchRemoved(id, estado) {
       _enqueue(stateTable("filiais", estado), id, { type: "delete", id });
@@ -481,31 +485,36 @@ function mapRemoteCustoFolha(row, impliedState) {
 
 function mapRemoteAbsenteismo(row, impliedState) {
   if (row.colaborador) {
-    // Ocorrência do mapa: date = o dia (não o mês da competência).
-    const truthy = (v) => v === true || /^(true|sim|1)$/i.test(String(v ?? "").trim());
+    // Ocorrência do mapa: date = o dia; competencia = o mês (YYYY-MM) usado no filtro.
+    const truthy = (v) => v === true || /^(true|sim|s|1|x)$/i.test(String(v ?? "").trim());
     /* Linhas antigas guardavam Advertência/Acidente como motivo: viram marcação. */
-    const legacyAdv = row.motivo === "Advertência";
-    const legacyAci = row.motivo === "Acidente de Trabalho";
+    const motivo = normalizeMotivo(row.motivo);
+    const legacyAdv = motivo === "Advertência";
+    const legacyAci = motivo === "Acidente de Trabalho";
+    const date = row.data ? String(row.data).slice(0, 10) : String(row.competencia || "").slice(0, 10);
     return {
       id: row.id,
-      date: row.data ? String(row.data).slice(0, 10) : String(row.competencia || "").slice(0, 10),
+      date,
       value: 0,
       meta: {
         estado: row.estado_sigla || impliedState || null,
-        colaborador: up(row.colaborador),
+        competencia: row.competencia ? String(row.competencia).slice(0, 7) : date.slice(0, 7),
+        // Espaços repetidos não impedem o casamento com o nome do Headcount (a chave é nameKey).
+        colaborador: String(up(row.colaborador)).replace(/\s+/g, " ").trim(),
         setor: up(row.setor) || null,
         filial: up(row.filial) || null,
-        motivo: legacyAdv || legacyAci ? "Presente" : row.motivo || null,
+        motivo: legacyAdv || legacyAci ? "Presente" : motivo,
         observacao: row.observacao || null,
         advertencia: truthy(row.advertencia) || legacyAdv,
         acidente: truthy(row.acidente_trabalho) || legacyAci
       }
     };
   }
+  // Linha sem colaborador (lançamento mensal antigo): não é ocorrência, fica de fora dos KPIs e do mapa.
   return {
     id: row.id,
     date: row.competencia,
-    value: Number(row.valor) || 0,
+    value: 0,
     meta: { estado: row.estado_sigla || impliedState || null }
   };
 }
@@ -1022,4 +1031,14 @@ if (typeof window !== "undefined") {
     if (document.visibilityState === "hidden") flush({ keepalive: true });
   });
   window.addEventListener("pagehide", () => flush({ keepalive: true }));
+}
+
+/* Aquecimento da API (login no Google e gid das abas) para a primeira gravação
+   da tela não pagar o "acordar" do servidor. Falha em silêncio. */
+let _lastWarm = 0;
+export function warmApi() {
+  const now = Date.now();
+  if (now - _lastWarm < 4 * 60 * 1000) return;
+  _lastWarm = now;
+  apiFetch("/api/data/_warm").catch(() => {});
 }

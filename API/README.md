@@ -6,7 +6,8 @@ do Google Sheets como banco de dados, em vez do Postgres/CockroachDB do
 nem banco com `../backend` — os dois podem rodar ao mesmo tempo sem conflito.
 
 ```
-Frontend → Cloudflare Worker → Hono → Google Apps Script (Web App) → Planilha
+Frontend → Cloudflare Worker → Hono → API do Google Sheets → Planilha
+                                   ↘ (reserva) Google Apps Script → Planilha
 ```
 
 Pensado para times que preferem editar os dados diretamente na planilha em
@@ -14,14 +15,47 @@ vez de (ou além de) usar as telas do dashboard.
 
 ## Como o acesso à planilha funciona
 
-Não usamos a API oficial do Google Sheets nem uma service account do Google
-Cloud (evita ter que criar projeto/chave lá). Em vez disso, um pequeno script
-do **Google Apps Script** (`apps-script/Code.gs`) fica vinculado à própria
-planilha, publicado como "Web App": ele roda com a identidade de quem o
-publicou (a pessoa dona da planilha), então já tem acesso a ela sem
-autenticação adicional. O Worker chama essa URL enviando um segredo
-combinado (`APPS_SCRIPT_SECRET`) — sem ele, ninguém com a URL consegue
-ler/gravar nada.
+**Caminho principal: API oficial do Google Sheets (v4) com conta de serviço.**
+O Worker assina um JWT com a chave da conta de serviço, troca por um token de
+acesso (guardado em memória por ~1 h) e chama a API direto
+(`src/db/googleSheets.ts`). Leitura da planilha inteira em ~1 s e cada gravação
+em ~1 s (o Apps Script levava de 2 a 3 s por chamada). A planilha precisa estar
+compartilhada, como **Editor**, com o e-mail da conta de serviço.
+
+- **Leituras**: uma única chamada `values:batchGet` para todas as abas que não
+  estão no cache (`readSheetsRaw`).
+- **Gravações em lote** (`POST /api/data/:tabela`): lê só a coluna de ids da
+  aba, mais as linhas/células estritamente necessárias (linha inteira só para
+  mesclar um payload parcial; só o estado para conferir um apagamento), e grava
+  com `values:append`, `values:batchUpdate` e `deleteDimension`.
+- **Fila de gravação por aba (Durable Object `SheetWriter`,
+  `src/db/sheetWriter.ts`)**: a API do Sheets não tem lock — uma gravação
+  localiza a linha pelo número lido um instante antes, e se outra pessoa apagar
+  uma linha acima nesse intervalo, os números deslocam e a alteração cai na
+  linha errada (medido: 4 de 5 tentativas de "apagar + alterar ao mesmo tempo"
+  corrompiam uma linha sem a fila). O Durable Object recebe todas as gravações
+  em lote de uma aba e as executa uma de cada vez (o Apps Script tinha o
+  `LockService` para isso). Com a fila, 0 problemas em 11 corridas de teste.
+  É um Durable Object SQLite (disponível no plano gratuito), declarado em
+  `wrangler.jsonc`; a migração `v1` é aplicada no primeiro `wrangler deploy`.
+  Sem o binding, as gravações rodam direto (sem serialização).
+- Sem as variáveis `GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY` e
+  `GOOGLE_SHEET_ID`, ou se uma chamada à API falhar, o Worker **cai
+  automaticamente no Apps Script** (abaixo). Reenviar é seguro: o lote é por id
+  (id que já existe vira atualização).
+
+**Reserva e manutenção: Google Apps Script** (`apps-script/Code.gs`), publicado
+como Web App e vinculado à própria planilha. Ele ainda faz três coisas:
+
+1. Um **gatilho de tempo** (a cada 10 min) que atualiza o cache na KV do
+   Cloudflare — é o que faz edições feitas à mão na planilha aparecerem no
+   dashboard.
+2. O caminho de **reserva** de leitura/escrita, quando a API do Sheets não está
+   disponível.
+3. A ação `setup` (criar abas/cabeçalhos), usada por `npm run seed`.
+
+O Worker chama o Web App enviando um segredo combinado (`APPS_SCRIPT_SECRET`) —
+sem ele, ninguém com a URL consegue ler/gravar nada.
 
 ## Diferenças em relação ao `../backend`
 
@@ -37,10 +71,8 @@ ler/gravar nada.
   normalmente nas próximas leituras da API, mas não passam por nenhum log —
   não há como saber quem mudou o quê fora do próprio Google Sheets (Histórico
   de versões do Sheets cobre isso, se precisar).
-- **Latência**: cada chamada do Worker passa pelo Apps Script (que tem um
-  "cold start" próprio) antes de chegar na planilha — um pouco mais lento que
-  falar direto com a API do Google, mas imperceptível para uso normal do
-  dashboard.
+- **Latência**: com a API do Sheets, leitura completa ~1 s e gravação ~1 s. No
+  caminho de reserva (Apps Script) cada chamada leva de 2 a 3 s (cold start).
 - Cotas do Apps Script (contas pessoais do Google): 6 min de execução por
   chamada e um total diário de tempo de execução — bem acima do que este uso
   consome.
@@ -53,16 +85,20 @@ API/
 │   └── Code.gs           # publicado manualmente no editor do Apps Script (não faz parte do deploy do Worker)
 ├── src/
 │   ├── index.ts          # app Hono, CORS, tratamento de erro, montagem das rotas
-│   ├── routes/           # iguais ao ../backend (auth, records, data, users, estados)
-│   ├── middleware/       # requireAuth, rate limit de login — iguais ao ../backend
+│   ├── routes/           # auth, users, data (lote) e cache (refresh manual)
+│   ├── middleware/       # requireAuth, rate limit de login
 │   ├── services/         # regras de negócio, reescritas para ler/gravar na planilha
 │   ├── db/
-│   │   ├── sheets.ts     # cliente do Apps Script (chama a Web App, converte valores)
+│   │   ├── googleSheets.ts # cliente da API do Google Sheets (conta de serviço)
+│   │   ├── sheetWriter.ts  # Durable Object: fila de gravação por aba (evita corrida entre usuários)
+│   │   ├── sheets.ts     # leitura/escrita da planilha (API do Sheets, com reserva no Apps Script) e conversão de valores
+│   │   ├── cache.ts      # cache das abas na KV do Cloudflare
 │   │   └── tables.ts     # metadados das "tabelas" (entidades, colunas, aba "usuarios")
-│   ├── utils/            # jwt, password, http, errors, validation, pagination — iguais
-│   └── types/            # Bindings agora aponta para a URL/segredo do Apps Script
+│   ├── utils/            # jwt, password, http, errors, validation, pagination
+│   └── types/            # Bindings (segredos e variáveis do Worker)
 ├── scripts/
-│   └── seed-sheet.mjs    # cria as abas + cabeçalhos na planilha e o admin inicial
+│   ├── seed-sheet.mjs          # cria as abas + cabeçalhos na planilha e o admin inicial
+│   └── set-google-secrets.mjs  # cadastra a chave da conta de serviço como segredo do Worker
 ├── wrangler.jsonc
 ├── .dev.vars.example
 ├── package.json
@@ -99,6 +135,17 @@ o arquivo não atualiza a Web App já publicada.
 | `APPS_SCRIPT_SECRET` | sim | O mesmo valor colocado em `SHARED_SECRET` nas Propriedades do script |
 | `JWT_SECRET` | sim | Segredo para assinar os JWT (diferente do `APPS_SCRIPT_SECRET`) |
 | `CORS_ORIGIN` | não | Origens permitidas, separadas por vírgula. Sem ela, usa `*` |
+| `GOOGLE_CLIENT_EMAIL` | não* | E-mail da conta de serviço do Google (termina em `.iam.gserviceaccount.com`) |
+| `GOOGLE_PRIVATE_KEY` | não* | Chave privada da conta de serviço (campo `private_key` do JSON baixado) |
+| `GOOGLE_SHEET_ID` | não* | ID da planilha (trecho da URL entre `/d/` e `/edit`); em produção já vem do `wrangler.jsonc` |
+
+\* Opcionais: sem as três o Worker usa só o Apps Script, bem mais lento. Para
+ativar a API do Sheets: crie uma conta de serviço no Google Cloud (Google Sheets
+API ativada), baixe a chave JSON, **compartilhe a planilha como Editor** com o
+e-mail dela e cadastre os segredos — em produção com
+`node scripts/set-google-secrets.mjs "C:\\caminho\\chave.json"` (envia sem
+mostrar a chave); no desenvolvimento local, em `.dev.vars` (ver
+`.dev.vars.example`). Nunca versione o arquivo JSON.
 
 Desenvolvimento local:
 
@@ -141,6 +188,7 @@ npm run dev        # wrangler dev (http://127.0.0.1:8787)
 npm run typecheck  # tsc --noEmit
 npm run deploy     # publica o Worker
 npm run seed        # cria abas/cabeçalhos + admin inicial na planilha configurada
+node scripts/set-google-secrets.mjs "<chave.json>"   # segredos da conta de serviço no Cloudflare
 ```
 
 ## Modelo de dados na planilha
@@ -152,9 +200,8 @@ pela coluna `estado_sigla`; o Worker filtra por estado em memória depois de
 ler a aba (ver `matchesEstado` em `src/services/records.ts`). Isso substituiu
 o modelo antigo de uma aba por `entidade_estado` (`vagas_ro`, `vagas_am`, ...),
 que chegava a 22 abas — a consolidação reduz o número de abas e permite ler
-os 3 estados de uma vez (rota/tabela sem sufixo de estado, ex.:
-`GET /api/data/vagas` ou `GET /api/vagas/todos`) em vez de uma chamada ao
-Apps Script por estado.
+os 3 estados de uma vez (tabela sem sufixo de estado, ex.:
+`GET /api/data/vagas`) em vez de uma chamada por estado.
 
 Não existem mais `colaboradores` nem `departamentos` — o cadastro de quem
 trabalha onde passou a vir só da importação mensal em `headcount`
@@ -173,34 +220,32 @@ reinterpretar datas/números ao digitar ou colar dados). Editar uma linha
 existente ou apagá-la diretamente na planilha é seguro — a API localiza cada
 registro pelo `id`, não pela posição da linha.
 
-Migrando uma planilha antiga:
-1. `npm run seed` — cria todas as abas novas com o cabeçalho certo.
-2. `npm run migrate:consolidate` — junta `vagas_ro/am/pa` etc. (se ainda
-   existirem por estado) nas abas únicas por entidade, gravando `estado_sigla`.
-3. `npm run migrate:restructure` — copia os dados da antiga `lancamentos`
-   (ou `lancamentos_ro/am/pa`) para `diarias`/`treinamentos`/`custo_folha`/
-   `absenteismo`/`meses_incompletos`.
+As migrações de planilhas antigas (abas por estado, `lancamentos`) já foram
+concluídas e seus scripts foram removidos; para uma planilha nova basta
+`npm run seed`.
 
-Confira os dados na planilha antes de apagar qualquer coisa. Só então:
-`npm run migrate:consolidate -- --delete-old` (abas antigas por estado) e
-`npm run migrate:restructure -- --delete-old` (apaga `lancamentos`,
-`colaboradores` e `departamentos`, com ou sem sufixo de estado).
+## Rotas, autenticação e perfis
 
-## Formato das respostas, autenticação e perfis
+- `POST /api/auth/login` → JWT de 6h em `Authorization: Bearer <token>`;
+  `GET /api/auth/me`, `POST /api/auth/change-name` e `/change-password`.
+- `GET /api/data/_batch?tables=...` e `GET /api/data/:tabela` — leitura das
+  abas (uma chamada para várias tabelas).
+- `POST /api/data/:tabela` (ex.: `absenteismo_ro`) — gravação em lote
+  (`{ upserts, deletes }`), só para `admin` e `analista`.
+- `POST /api/cache/refresh` — recarrega o cache (só `admin`).
+- `/api/users` — gestão de usuários (só `admin`).
 
-Iguais ao `../backend` — mesmo formato de resposta (`success`/`data`/`error`,
-paginação, erros), mesmo fluxo de login (`POST /api/auth/login` → JWT de 6h em
-`Authorization: Bearer <token>`) e os mesmos três perfis (`admin`, `analista`,
-`visitante`, com a mesma matriz de permissões). Veja `../backend/README.md`
-para a referência completa das rotas — aqui só o que muda:
-
-- Não existem as rotas `/api/registro-alteracoes` e `/api/delta/*`.
-- `senha_hash` nunca é retornado, como antes.
+Formato de resposta `success`/`data`/`error`, com os perfis `admin`, `analista`
+e `visitante`. `senha_hash` nunca é retornado. Não existem as rotas
+`/api/registro-alteracoes` e `/api/delta/*`.
 
 ## Segurança
 
 - `APPS_SCRIPT_SECRET` e `JWT_SECRET` nunca aparecem em respostas nem em logs.
 - Sem o `APPS_SCRIPT_SECRET` correto, o Apps Script recusa qualquer leitura
   ou escrita — mesmo alguém com a URL da Web App não acessa a planilha.
-- Erros internos do Apps Script viram `500` genérico.
+- A chave da conta de serviço (`GOOGLE_PRIVATE_KEY`) dá acesso de edição à
+  planilha: fica só nos segredos do Worker / `.dev.vars` (ignorado pelo git),
+  nunca no repositório nem em respostas.
+- Erros internos viram `500` genérico.
 - CORS configurável por `CORS_ORIGIN`.

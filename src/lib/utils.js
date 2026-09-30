@@ -191,6 +191,37 @@ export function normalizeText(value) {
     .toLowerCase();
 }
 
+/* Chave para comparar nomes de colaborador: sem acento, caixa ou espaços
+   repetidos ("José  da Silva" == "JOSE DA SILVA"). */
+export function nameKey(value) {
+  return normalizeText(value).replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+/* Motivo de ocorrência digitado à mão na planilha ("falta", "Meio Periodo",
+   "DECLARACAO"...) → nome canônico usado pelo app. Motivo desconhecido volta
+   como veio (aparece no mapa como "?" em vez de sumir). */
+const MOTIVO_CANONICO = {
+  falta: "Falta",
+  faltas: "Falta",
+  atestado: "Atestado",
+  atestados: "Atestado",
+  declaracao: "Declaração",
+  declaracoes: "Declaração",
+  "meio expediente": "Meio Expediente",
+  "meio periodo": "Meio Expediente",
+  "meio dia": "Meio Expediente",
+  presente: "Presente",
+  advertencia: "Advertência",
+  "acidente de trabalho": "Acidente de Trabalho",
+  acidente: "Acidente de Trabalho"
+};
+export function normalizeMotivo(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const key = normalizeText(raw).replace(/[\s_-]+/g, " ").trim();
+  return MOTIVO_CANONICO[key] || raw;
+}
+
 /* Texto livre exibido em modais e gráficos (nome, filial, tema, gerente...):
    força maiúsculas mesmo quando o dado vem de fora dos formulários da tela
    (edição direta na planilha, importações antigas) — os formulários já
