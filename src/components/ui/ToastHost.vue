@@ -39,7 +39,10 @@ const toneOf = (type) => TONES[type] || TONES.success;
           <svg v-else class="h-6 w-6 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <path :d="toneOf(t.type).icon" :fill="toneOf(t.type).color" />
           </svg>
-          <p class="min-w-0 flex-1 text-[15px] leading-snug text-zinc-600 dark:text-zinc-200">{{ t.message }}</p>
+          <p
+            class="min-w-0 flex-1 text-[15px] leading-snug"
+            :class="t.type === 'error' ? 'font-medium text-red-600 dark:text-red-400' : 'text-zinc-600 dark:text-zinc-200'"
+          >{{ t.message }}</p>
           <button
             type="button"
             class="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"

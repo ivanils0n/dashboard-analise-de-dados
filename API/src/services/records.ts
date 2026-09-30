@@ -1,4 +1,12 @@
-import { appendRows, deleteRows, readTable, readTables, updateRows } from "../db/sheets";
+import { appendRows, deleteRows, readTable, readTables, rowToValues, updateRows, valuesToRow } from "../db/sheets";
+import {
+  appendValues,
+  deleteRowNumbers,
+  googleSheetsEnabled,
+  readIdRows,
+  readRowsByNumber,
+  updateValues
+} from "../db/googleSheets";
 import type { SheetRow } from "../db/sheets";
 import { invalidateCachedSheet } from "../db/cache";
 import { ENTITIES, ESTADO_TODOS, tableName } from "../db/tables";
@@ -224,6 +232,77 @@ export async function deleteRecord(
   return deleted > 0;
 }
 
+// Caminho rápido do lote pela API do Google Sheets: lê só a coluna de ids e as
+// linhas afetadas (em vez da aba inteira), e grava em poucas chamadas. Mesmas
+// regras do caminho pelo Apps Script (bulkWrite abaixo): o último upsert por id
+// vence, id existente vira atualização (mesmo vindo de outro estado) e só se
+// apaga o que pertence ao estado informado.
+async function bulkWriteViaSheetsApi(
+  env: Bindings,
+  entityKey: string,
+  estado: Estado,
+  upserts: unknown[],
+  deletes: unknown[]
+) {
+  const entity = ENTITIES[entityKey];
+  const table = tableName(entityKey);
+  const columns = entity.columns;
+
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const item of upserts) {
+    if (!item || typeof item !== "object") continue;
+    const payload = buildUpsertPayload(entity, item as Record<string, unknown>, estado);
+    if (!payload.id) payload.id = crypto.randomUUID();
+    byId.set(String(payload.id), payload);
+  }
+  const deleteIds = [
+    ...new Set(deletes.filter((v) => v !== null && v !== undefined).map((v) => String(v)).filter(Boolean))
+  ];
+
+  const idRows = await readIdRows(env, table);
+
+  // Linhas atuais só dos ids que já existem (mescla de upsert e checagem de estado do delete).
+  const wanted = new Set<string>();
+  byId.forEach((_, id) => idRows.has(id) && wanted.add(id));
+  deleteIds.forEach((id) => idRows.has(id) && wanted.add(id));
+  const rowNumbers = [...wanted].map((id) => idRows.get(id) as number);
+  const raw = await readRowsByNumber(env, table, columns.length, rowNumbers);
+  const currentById = new Map<string, SheetRow>();
+  wanted.forEach((id) => currentById.set(id, valuesToRow(columns, raw.get(idRows.get(id) as number) ?? [])));
+
+  const now = entity.hasUpdatedAt ? new Date().toISOString() : null;
+  const toAppend: unknown[][] = [];
+  const toUpdate: { row: number; values: unknown[] }[] = [];
+  byId.forEach((payload, id) => {
+    const current = currentById.get(id);
+    if (current) {
+      const merged: SheetRow = { ...current, ...payload, id };
+      if (now) merged.atualizado_em = now;
+      toUpdate.push({ row: idRows.get(id) as number, values: rowToValues(columns, merged) });
+    } else {
+      const created: SheetRow = { ...payload, id };
+      if (now) created.criado_em = now;
+      toAppend.push(rowToValues(columns, created));
+    }
+  });
+
+  const deleteRows = deleteIds
+    .filter((id) => {
+      const current = currentById.get(id);
+      return current && matchesEstado(entity, current, estado);
+    })
+    .map((id) => idRows.get(id) as number);
+
+  // Acrescentar e atualizar não deslocam linhas existentes; apagar vai por último.
+  await Promise.all([appendValues(env, table, toAppend), updateValues(env, table, columns.length, toUpdate)]);
+  await deleteRowNumbers(env, table, deleteRows);
+
+  if (toAppend.length || toUpdate.length || deleteRows.length) {
+    await invalidateCachedSheet(env, table);
+  }
+  return { upserts: toAppend.length + toUpdate.length, deletes: deleteRows.length };
+}
+
 // Escrita em lote (upsert/delete) usada pela sincronização do frontend.
 export async function bulkWrite(
   env: Bindings,
@@ -232,6 +311,15 @@ export async function bulkWrite(
   upserts: unknown[],
   deletes: unknown[]
 ) {
+  if (googleSheetsEnabled(env)) {
+    try {
+      return await bulkWriteViaSheetsApi(env, entityKey, estado, upserts, deletes);
+    } catch (err) {
+      // Reenviar é seguro: o lote é por id (id que já existe vira atualização).
+      console.error("[sheets-api] lote falhou, usando Apps Script:", err);
+    }
+  }
+
   const entity = ENTITIES[entityKey];
   const table = tableName(entityKey);
   const { rowById } = await readTable(env, table, entity.columns);

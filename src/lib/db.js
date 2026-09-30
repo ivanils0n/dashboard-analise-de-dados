@@ -8,9 +8,10 @@ import { DataCache } from "./cache";
 import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./store";
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
-import { mapWithConcurrency } from "./utils";
+import { mapWithConcurrency, formatDate } from "./utils";
 
-const FLUSH_DELAY_MS = 1200; // agrupa escritas por até 1,2 s antes de enviar
+const FLUSH_DELAY_MS = 300; // agrupa escritas por até 0,3 s antes de enviar (edições em sequência viram um lote só)
+const RETRY_DELAY_MS = 1200; // base do recuo entre novas tentativas após falha
 
 /* Teto de requisições simultâneas para a API (Worker → Apps Script), que
    aceita no máximo 30 execuções ao mesmo tempo por usuário — folga
@@ -96,9 +97,18 @@ function absenteismoToRow(entry) {
   const meta = entry.meta || {};
   return {
     id: entry.id,
-    competencia: entry.date,
+    competencia: meta.colaborador ? `${String(entry.date).slice(0, 7)}-01` : entry.date,
     valor: Number(entry.value) || 0,
-    estado_sigla: meta.estado || null
+    estado_sigla: meta.estado || null,
+    // Ocorrência do mapa (colaborador + dia); vazio no lançamento mensal.
+    colaborador: meta.colaborador || null,
+    setor: meta.setor || null,
+    filial: meta.colaborador ? meta.filial || null : null,
+    data: meta.colaborador ? entry.date : null,
+    motivo: meta.colaborador ? meta.motivo || null : null,
+    observacao: meta.colaborador ? meta.observacao || null : null,
+    advertencia: meta.colaborador ? !!meta.advertencia : false,
+    acidente_trabalho: meta.colaborador ? !!meta.acidente : false
   };
 }
 
@@ -178,8 +188,22 @@ let _flushChain = Promise.resolve();
    anterior na memória do próximo. */
 let _epoch = 0;
 
+/* Rótulo "15/08/2026 — Maria" de uma operação de ocorrência do mapa (data +
+   primeiro nome), usado para dizer qual lançamento falhou. */
+function _opLabel(op) {
+  const info = op.type === "upsert" ? { date: op.row.data, colaborador: op.row.colaborador } : op.label;
+  if (!info || !info.colaborador) return null;
+  const first = String(info.colaborador).trim().split(/\s+/)[0].toLowerCase();
+  const name = first.charAt(0).toUpperCase() + first.slice(1);
+  return `${formatDate(info.date)} — ${name}`;
+}
+
 function _enqueue(table, id, op) {
   if (!_queue[table]) _queue[table] = new Map();
+  /* Lançamento novo ainda na fila e editado antes do envio continua sendo um
+     lançamento novo (não "alterado") para a notificação. */
+  const pending = _queue[table].get(id);
+  if (pending && pending.created && op.type === "upsert") op = { ...op, created: true, updated: false };
   _queue[table].set(id, op);
   _schedule();
   /* Espelha a edição no cache local: sem isso um F5 restaurava a versão do
@@ -267,6 +291,7 @@ async function _flushNow(keepalive) {
 
   let willRetry = false;
   let dropped = 0;
+  const failedLaunches = [];
   errors.forEach((error, i) => {
     if (!error) return;
     const { table, ops } = jobs[i];
@@ -279,13 +304,17 @@ async function _flushNow(keepalive) {
       _requeue(table, ops);
       willRetry = true;
     } else if (epoch === _epoch) {
-      dropped += ops.size;
+      ops.forEach((op) => {
+        const label = splitTable(table).base === "absenteismo" ? _opLabel(op) : null;
+        if (label) failedLaunches.push(label);
+        else dropped++;
+      });
     }
   });
 
   if (willRetry) {
     _flushRetries += 1;
-    _schedule(FLUSH_DELAY_MS * 2 ** _flushRetries);
+    _schedule(RETRY_DELAY_MS * 2 ** _flushRetries);
   } else {
     _flushRetries = 0;
   }
@@ -293,6 +322,34 @@ async function _flushNow(keepalive) {
     useToast().show(
       `Não foi possível salvar ${dropped} alteração(ões) no servidor. Recarregue os dados e refaça, se necessário.`
     );
+  }
+
+  /* Lançamento do mapa que não foi gravado: diz qual (data e primeiro nome). */
+  failedLaunches.slice(0, 3).forEach((label) => {
+    useToast().show(`Não foi possível gravar o lançamento de ${label}. Ele não foi salvo na planilha.`, "error");
+  });
+  if (failedLaunches.length > 3) {
+    useToast().show(`E mais ${failedLaunches.length - 3} lançamentos não foram gravados na planilha.`, "error");
+  }
+
+  /* Confirma na tela o que de fato chegou à planilha (só depois de a API
+     responder com sucesso), para os lançamentos de absenteísmo. */
+  if (epoch === _epoch) {
+    let saved = 0;
+    let changed = 0;
+    let removed = 0;
+    jobs.forEach((job, i) => {
+      if (errors[i] || splitTable(job.table).base !== "absenteismo") return;
+      job.ops.forEach((op) => {
+        if (op.type !== "upsert") removed++;
+        else if (op.updated) changed++;
+        else saved++;
+      });
+    });
+    const toast = useToast();
+    if (saved) toast.show(saved === 1 ? "Lançamento gravado na planilha." : `${saved} lançamentos gravados na planilha.`, "success");
+    if (changed) toast.show(changed === 1 ? "Registro alterado na planilha." : `${changed} registros alterados na planilha.`, "success");
+    if (removed) toast.show(removed === 1 ? "Lançamento removido da planilha." : `${removed} lançamentos removidos da planilha.`, "success");
   }
 }
 
@@ -316,17 +373,17 @@ export function registerRemote() {
     entryAdded(indicatorId, entry) {
       const { table, toRow } = entryTableMeta(indicatorId);
       const estado = entry.meta ? entry.meta.estado : null;
-      _enqueue(stateTable(table, estado), entry.id, { type: "upsert", row: toRow(entry) });
+      _enqueue(stateTable(table, estado), entry.id, { type: "upsert", row: toRow(entry), created: true });
     },
     entryUpdated(indicatorId, entry) {
       const { table, toRow } = entryTableMeta(indicatorId);
       const estado = entry.meta ? entry.meta.estado : null;
-      _enqueue(stateTable(table, estado), entry.id, { type: "upsert", row: toRow(entry) });
+      _enqueue(stateTable(table, estado), entry.id, { type: "upsert", row: toRow(entry), updated: true });
     },
-    entriesRemoved(indicatorId, ids, estado) {
+    entriesRemoved(indicatorId, ids, estado, labels) {
       const { table } = entryTableMeta(indicatorId);
       const physicalTable = stateTable(table, estado);
-      ids.forEach((id) => _enqueue(physicalTable, id, { type: "delete", id }));
+      ids.forEach((id) => _enqueue(physicalTable, id, { type: "delete", id, label: labels ? labels[id] : undefined }));
     },
     vacancySaved(vacancy) {
       _enqueue(stateTable("vagas", vacancy.estado), vacancy.id, { type: "upsert", row: vacancyToRow(vacancy) });
@@ -423,6 +480,28 @@ function mapRemoteCustoFolha(row, impliedState) {
 }
 
 function mapRemoteAbsenteismo(row, impliedState) {
+  if (row.colaborador) {
+    // Ocorrência do mapa: date = o dia (não o mês da competência).
+    const truthy = (v) => v === true || /^(true|sim|1)$/i.test(String(v ?? "").trim());
+    /* Linhas antigas guardavam Advertência/Acidente como motivo: viram marcação. */
+    const legacyAdv = row.motivo === "Advertência";
+    const legacyAci = row.motivo === "Acidente de Trabalho";
+    return {
+      id: row.id,
+      date: row.data ? String(row.data).slice(0, 10) : String(row.competencia || "").slice(0, 10),
+      value: 0,
+      meta: {
+        estado: row.estado_sigla || impliedState || null,
+        colaborador: up(row.colaborador),
+        setor: up(row.setor) || null,
+        filial: up(row.filial) || null,
+        motivo: legacyAdv || legacyAci ? "Presente" : row.motivo || null,
+        observacao: row.observacao || null,
+        advertencia: truthy(row.advertencia) || legacyAdv,
+        acidente: truthy(row.acidente_trabalho) || legacyAci
+      }
+    };
+  }
   return {
     id: row.id,
     date: row.competencia,

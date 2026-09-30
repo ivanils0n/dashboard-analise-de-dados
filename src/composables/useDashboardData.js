@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, STATES } from "@/lib/config";
-import { getEntriesFor, getAllEntries, getBranches } from "@/lib/store";
+import { getEntriesFor, getAllEntries, getBranches, getOcorrencias } from "@/lib/store";
+import { TIPOS, isOcorrenciaAusencia } from "@/lib/absenteismo";
 import {
   computedSnapshot,
   listVacancies,
@@ -119,9 +120,54 @@ export function useDashboardData(filter) {
      seta desses indicadores comparava com lançamentos-snapshot antigos (bases
      e períodos diferentes do valor atual), então podia apontar o sentido
      errado. */
+  /* Ocorrências de ausência (sem "Presente") do Mapa de Absenteísmo no estado e
+     período informados. */
+  function absenteismoOcorrencias(st, range, filiais = []) {
+    const uf = String(st || "").trim().toUpperCase();
+    const all = !uf || uf === "TODOS";
+    const filialKeys = (filiais || []).map((f) => String(f).trim().toUpperCase());
+    return getOcorrencias().filter(
+      (o) =>
+        isOcorrenciaAusencia(o.meta) &&
+        (!filialKeys.length || filialKeys.includes(String(o.meta.filial || "").trim().toUpperCase())) &&
+        !(range && range.start && o.date < range.start) &&
+        !(range && range.end && o.date > range.end) &&
+        (all || String(o.meta.estado || "").trim().toUpperCase() === uf)
+    );
+  }
+
+  /* Uma barra por tipo de ocorrência, com o total de cada um no período e
+     estado filtrados (gráfico central do Absenteísmo). */
+  function absenteismoBarByMotivo(filiais = []) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const list = absenteismoOcorrencias(currentState(), range, filiais);
+    return TIPOS.map((t) => {
+      const value = list.filter((o) => t.has(o.meta)).length;
+      return {
+        label: t.plural,
+        value,
+        color: t.hex,
+        tooltipValue: `${value} ${value === 1 ? "ocorrência" : "ocorrências"}`
+      };
+    });
+  }
+
+  /* Filiais com ocorrência no período e estado filtrados (opções do filtro). */
+  function absenteismoFiliais() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const set = new Set();
+    absenteismoOcorrencias(currentState(), range).forEach((o) => {
+      const f = String(o.meta.filial || "").trim().toUpperCase();
+      if (f) set.add(f);
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }
+
   function computedValue(ind, range) {
     const st = currentState();
     switch (ind.id) {
+      case "absenteismo":
+        return absenteismoOcorrencias(st, range).length;
       case "tempo_contratacao":
         return hiringAvgFor(range);
       case "headcount":
@@ -910,6 +956,17 @@ export function useDashboardData(filter) {
           valueFormat: "currency"
         };
       }
+      if (ind.id === "absenteismo") {
+        return {
+          id: "absenteismo",
+          kind: "bar",
+          title: "Absenteísmo",
+          sub: "Total de cada ocorrência no período filtrado",
+          unit: ind.unit,
+          valueFormat: "",
+          showTrend: false
+        };
+      }
       if (ind.id === "custo_diaria") {
         return {
           id: "custo_diaria",
@@ -1136,7 +1193,7 @@ export function useDashboardData(filter) {
      selecionado; Panorama atual foi desativado). Mesma regra de agregação
      usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
      centralizada aqui para reaproveitar no Painel. */
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = []) {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = []) {
     if (!kpiId) {
       /* Panorama atual (desativado):
       return {
@@ -1311,6 +1368,23 @@ export function useDashboardData(filter) {
         valueFormat: "currency"
       };
     }
+    if (kpiId === "absenteismo") {
+      /* Pizza: participação de cada tipo de ocorrência; o total fica no centro. */
+      const rows = absenteismoBarByMotivo(absenteismoFilial);
+      /* Total de ocorrencias (nao a soma das fatias: Advertencia e Acidente
+         sao marcacoes e podem acompanhar outro motivo). */
+      const range = filter.start ? { start: filter.start, end: filter.end } : null;
+      const total = absenteismoOcorrencias(currentState(), range, absenteismoFilial).length;
+      return {
+        id: "absenteismo",
+        kind: "pie",
+        title: "Absenteísmo",
+        sub: "Total de cada ocorrência no período filtrado",
+        data: rows.filter((r) => r.value > 0).map((r) => ({ label: r.label, value: r.value, color: r.color })),
+        center: { value: String(total), caption: total === 1 ? "Ocorrência" : "Ocorrências" },
+        valueFormat: "count"
+      };
+    }
     if (kpiId === "custo_diaria") {
       return {
         id: "custo_diaria",
@@ -1343,6 +1417,8 @@ export function useDashboardData(filter) {
   }
 
   return {
+    absenteismoBarByMotivo,
+    absenteismoFiliais,
     filteredEntries,
     diariaDailySeries,
     treinamentoBarByFilial,

@@ -14,3 +14,10 @@ JWT_SECRET=troque-por-uma-string-aleatoria-bem-longa
 # Origens permitidas no CORS, separadas por vírgula (opcional).
 # Em produção já vem do wrangler.jsonc; use aqui para sobrescrever no dev.
 # CORS_ORIGIN=http://localhost:5173
+
+# (Opcional) Gravação direta pela API do Google Sheets com uma conta de serviço —
+# bem mais rápida que o Apps Script. Sem estas variáveis, o Worker grava só pelo
+# Apps Script. A planilha precisa estar compartilhada (Editor) com o e-mail abaixo.
+# GOOGLE_CLIENT_EMAIL=nome@projeto.iam.gserviceaccount.com
+# GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+# GOOGLE_SHEET_ID=id-da-planilha (em produção já vem do wrangler.jsonc)

@@ -6,6 +6,11 @@ export type Bindings = {
   // Segredo combinado enviado em toda chamada ao Apps Script (Propriedades do script lá).
   APPS_SCRIPT_SECRET: string;
   JWT_SECRET: string;
+  // Gravação direta pela API do Google Sheets (opcional; ver db/googleSheets.ts).
+  // Sem estas três, o Worker segue gravando só pelo Apps Script.
+  GOOGLE_CLIENT_EMAIL?: string;
+  GOOGLE_PRIVATE_KEY?: string;
+  GOOGLE_SHEET_ID?: string;
   CORS_ORIGIN?: string;
   LOGIN_LIMITER?: RateLimit;
   // Cache das abas da planilha (dados + usuários) — ver db/cache.ts.

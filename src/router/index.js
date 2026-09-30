@@ -12,7 +12,8 @@ const views = {
   usuarios: () => import("@/views/UsuariosView.vue"),
   rescisoes: () => import("@/views/RescisoesView.vue"),
   treinamentos: () => import("@/views/TreinamentosView.vue"),
-  vagas: () => import("@/views/VagasView.vue")
+  vagas: () => import("@/views/VagasView.vue"),
+  absenteismo: () => import("@/views/AbsenteismoView.vue")
 };
 
 const routes = [
@@ -55,6 +56,12 @@ const routes = [
         path: "vagas",
         name: "vagas",
         component: views.vagas,
+        meta: { requiresAuth: true }
+      },
+      {
+        path: "absenteismo",
+        name: "absenteismo",
+        component: views.absenteismo,
         meta: { requiresAuth: true }
       },
       {

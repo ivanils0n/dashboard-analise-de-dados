@@ -59,10 +59,16 @@ function entryList(indicatorId) {
 
 const PUBLIC_ENTRY_INDICATORS = Object.keys(ENTRY_LISTS);
 
+/* A lista "absenteismo" guarda dois tipos de linha: o lançamento mensal e as
+   ocorrências do mapa (uma por colaborador e dia, com meta.colaborador). O
+   KPI/histórico mensal só enxerga o primeiro tipo; o mapa só o segundo. */
+const isOcorrencia = (e) => !!(e.meta && e.meta.colaborador);
+
 export function getAllEntries() {
   const all = {};
   PUBLIC_ENTRY_INDICATORS.forEach((indicatorId) => {
-    all[indicatorId] = data[ENTRY_LISTS[indicatorId]];
+    const list = data[ENTRY_LISTS[indicatorId]];
+    all[indicatorId] = indicatorId === "absenteismo" ? list.filter((e) => !isOcorrencia(e)) : list;
   });
   return all;
 }
@@ -76,6 +82,7 @@ export function getEntriesFor(indicatorId, state) {
   const key = ENTRY_LISTS[indicatorId];
   if (!key) return [];
   let list = (data[key] || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
+  if (indicatorId === "absenteismo") list = list.filter((e) => !isOcorrencia(e));
   if (state && state !== "todos") {
     const target = String(state).trim().toUpperCase();
     list = list.filter(
@@ -162,6 +169,55 @@ export function removeEntries(rows) {
     const key = entryList(indicatorId);
     data[key] = data[key].filter((e) => e.id !== entry.id);
   });
+}
+
+/* Ocorrências do mapa de absenteísmo: { id, date (YYYY-MM-DD), meta: { colaborador,
+   setor, motivo, observacao, estado } }. Reaproveitam a lista e o caminho de
+   escrita do indicador "absenteismo" (mesma aba, colunas extras). */
+export function getOcorrencias() {
+  return data.absenteismo.filter(isOcorrencia);
+}
+
+/* Cria ou atualiza a ocorrência do colaborador naquele dia (no máximo uma por
+   colaborador/dia). Devolve a entrada gravada. */
+export function saveOcorrencia({ date, colaborador, setor, filial, motivo, observacao, estado, advertencia, acidente }) {
+  const existing = data.absenteismo.find(
+    (e) => isOcorrencia(e) && e.date === date && e.meta.colaborador === colaborador
+  );
+  const meta = {
+    colaborador,
+    setor: setor || null,
+    filial: filial || null,
+    motivo,
+    observacao: observacao || null,
+    estado: estado || null,
+    advertencia: !!advertencia,
+    acidente: !!acidente
+  };
+  if (existing) {
+    const updated = { ...existing, meta };
+    const idx = data.absenteismo.indexOf(existing);
+    data.absenteismo[idx] = updated;
+    if (ok()) remote.entryUpdated("absenteismo", updated);
+    return updated;
+  }
+  const entry = { id: createId(), date, value: 0, meta };
+  data.absenteismo.push(entry);
+  if (ok()) remote.entryAdded("absenteismo", entry);
+  return entry;
+}
+
+export function removeOcorrencia(date, colaborador) {
+  const existing = data.absenteismo.find(
+    (e) => isOcorrencia(e) && e.date === date && e.meta.colaborador === colaborador
+  );
+  if (!existing) return;
+  data.absenteismo = data.absenteismo.filter((e) => e.id !== existing.id);
+  if (ok()) {
+    remote.entriesRemoved("absenteismo", [existing.id], existing.meta.estado, {
+      [existing.id]: { date: existing.date, colaborador }
+    });
+  }
 }
 
 export function getVacancies() {

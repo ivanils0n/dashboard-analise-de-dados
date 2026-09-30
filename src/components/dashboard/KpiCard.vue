@@ -72,7 +72,7 @@ const contextHint = computed(() => {
     case "custo_contratacao":
       return `${CONTEXT_ACTION_LABEL}: histórico de vagas`;
     case "absenteismo":
-      return `${CONTEXT_ACTION_LABEL}: lançamentos mensais`;
+      return `${CONTEXT_ACTION_LABEL}: informações de absenteísmo`;
     case "turnover":
     case "turnover_experiencia":
     case "tempo_permanencia":

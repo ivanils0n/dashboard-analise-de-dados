@@ -92,6 +92,13 @@ watch(headcountFilialOptions, (opts) => {
   headcountFilialFilter.value = headcountFilialFilter.value.filter((v) => opts.includes(v));
 });
 
+/* Absenteísmo: filial(is) marcada(s) no filtro do gráfico ([] = todas). */
+const absenteismoFilialFilter = ref([]);
+const absenteismoFilialOptions = computed(() => props.dashboard.absenteismoFiliais());
+watch(absenteismoFilialOptions, (opts) => {
+  absenteismoFilialFilter.value = absenteismoFilialFilter.value.filter((v) => opts.includes(v));
+});
+
 /* Headcount: "bar" (barras por estado) ou "pie" (pizza Masculino x Feminino). */
 const headcountView = ref("bar");
 
@@ -133,7 +140,8 @@ const centerChart = computed(() =>
     rescisaoMode.value,
     rescisaoFilters.value,
     rescisaoView.value,
-    headcountFuncaoFilter.value
+    headcountFuncaoFilter.value,
+    absenteismoFilialFilter.value
   )
 );
 
@@ -374,7 +382,7 @@ function onPermanenciaDetailEdit(recordId) {
 /* Linha de tendência (MM2): fica de fora dos gráficos de barras deitadas
    (Treinamento, Tempo médio de contratação, Tempo médio de permanência e
    Custo médio da diária). */
-const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio", "horas_regional", "rescisoes"];
+const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio", "horas_regional", "rescisoes", "absenteismo"];
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
 /* Gráficos de barras deitadas (uma linha por filial/vaga/colaborador, com
@@ -548,6 +556,15 @@ function goNextKpi() {
                   label="Gerente imediato"
                   all-label="Todos os gerentes imediatos"
                   title="Filtrar Rescisões por gerente imediato"
+                />
+                <MultiSelectFilter
+                  v-if="centerChart.id === 'absenteismo'"
+                  v-model="absenteismoFilialFilter"
+                  :options="absenteismoFilialOptions"
+                  label="Filial"
+                  all-label="Todas as filiais"
+                  plural-label="filiais"
+                  title="Filtrar Absenteísmo por uma ou mais filiais"
                 />
                 <MultiSelectFilter
                   v-if="centerChart.id === 'headcount'"
@@ -833,6 +850,15 @@ function goNextKpi() {
             label="Gerente imediato"
             all-label="Todos os gerentes imediatos"
             title="Filtrar Rescisões por gerente imediato"
+          />
+          <MultiSelectFilter
+            v-if="centerChart.id === 'absenteismo'"
+            v-model="absenteismoFilialFilter"
+            :options="absenteismoFilialOptions"
+            label="Filial"
+            all-label="Todas as filiais"
+            plural-label="filiais"
+            title="Filtrar Absenteísmo por uma ou mais filiais"
           />
           <MultiSelectFilter
             v-if="centerChart.id === 'headcount'"

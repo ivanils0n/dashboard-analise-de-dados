@@ -5,7 +5,9 @@ defineProps({
   title: { type: String, required: true },
   subtitle: { type: String, default: "" },
   maxWidth: { type: String, default: "max-w-2xl" },
-  fullscreen: { type: Boolean, default: false }
+  fullscreen: { type: Boolean, default: false },
+  /* Título centralizado e maior (ex.: modal que mostra só a data). */
+  centered: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["close"]);
@@ -36,8 +38,14 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
         :aria-label="title"
       >
         <div class="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-100 px-4 py-3 sm:px-6 sm:py-4 dark:border-zinc-800">
-          <div>
-            <h2 class="text-base font-bold text-zinc-900 sm:text-lg dark:text-zinc-100">{{ title }}</h2>
+          <span v-if="centered" class="w-10 shrink-0 sm:w-8" aria-hidden="true"></span>
+          <div :class="centered && 'min-w-0 flex-1 text-center'">
+            <h2
+              class="font-bold text-zinc-900 dark:text-zinc-100"
+              :class="centered ? 'text-xl sm:text-2xl' : 'text-base sm:text-lg'"
+            >
+              {{ title }}
+            </h2>
             <p v-if="subtitle" class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{{ subtitle }}</p>
           </div>
           <div v-if="$slots.actions" class="ml-auto flex min-w-0 items-center">

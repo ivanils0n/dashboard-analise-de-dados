@@ -7,6 +7,13 @@ import {
   readManyCachedSheets,
   writeCachedSheets
 } from "./cache";
+import {
+  appendValues,
+  deleteRowNumbers,
+  googleSheetsEnabled,
+  readIdRows,
+  updateValues
+} from "./googleSheets";
 
 // Cliente para a "API" da planilha: um Google Apps Script publicado como Web
 // App (ver apps-script/Code.gs), vinculado à própria planilha. Sem service
@@ -293,11 +300,11 @@ function fromCellValue(column: ColumnDef | undefined, raw: unknown): unknown {
   return String(raw);
 }
 
-function rowToValues(columns: ColumnDef[], row: SheetRow): unknown[] {
+export function rowToValues(columns: ColumnDef[], row: SheetRow): unknown[] {
   return columns.map((column) => toCellValue(column, row[column.name]));
 }
 
-function valuesToRow(columns: ColumnDef[], values: unknown[]): SheetRow {
+export function valuesToRow(columns: ColumnDef[], values: unknown[]): SheetRow {
   const row: SheetRow = {};
   columns.forEach((column, index) => {
     row[column.name] = fromCellValue(column, values[index]);
@@ -432,10 +439,17 @@ export async function appendRows(
   options?: WriteOptions
 ): Promise<void> {
   if (!rows.length) return;
-  await callAppsScript(env, "append", {
-    sheet: sheetName,
-    values: rows.map((row) => rowToValues(columns, row))
-  });
+  const values = rows.map((row) => rowToValues(columns, row));
+  let done = false;
+  if (googleSheetsEnabled(env)) {
+    try {
+      await appendValues(env, sheetName, values);
+      done = true;
+    } catch (err) {
+      console.error("[sheets-api] append falhou, usando Apps Script:", err);
+    }
+  }
+  if (!done) await callAppsScript(env, "append", { sheet: sheetName, values });
   // Sem isso, quem lê essa aba continuaria vendo a versão de antes da
   // gravação até a próxima atualização do cache — a próxima leitura busca de novo.
   if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
@@ -455,15 +469,31 @@ export async function updateRows(
   options?: WriteOptions
 ): Promise<number> {
   if (!rows.length) return 0;
-  const result = await callAppsScript<{ updated: number }>(env, "update", {
-    sheet: sheetName,
-    updates: rows.map((row) => ({
-      id: row.id,
-      values: rowToValues(columns, row)
-    }))
-  });
+  let updated: number | null = null;
+  if (googleSheetsEnabled(env)) {
+    try {
+      const ids = await readIdRows(env, sheetName);
+      const updates = rows
+        .filter((row) => ids.has(String(row.id)))
+        .map((row) => ({ row: ids.get(String(row.id)) as number, values: rowToValues(columns, row) }));
+      await updateValues(env, sheetName, columns.length, updates);
+      updated = updates.length;
+    } catch (err) {
+      console.error("[sheets-api] update falhou, usando Apps Script:", err);
+    }
+  }
+  if (updated === null) {
+    const result = await callAppsScript<{ updated: number }>(env, "update", {
+      sheet: sheetName,
+      updates: rows.map((row) => ({
+        id: row.id,
+        values: rowToValues(columns, row)
+      }))
+    });
+    updated = result.updated;
+  }
   if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
-  return result.updated;
+  return updated;
 }
 
 // Mesma ideia de updateRows acima: devolve o total realmente apagado pelo
@@ -475,10 +505,24 @@ export async function deleteRows(
   options?: WriteOptions
 ): Promise<number> {
   if (!ids.length) return 0;
-  const result = await callAppsScript<{ deleted: number }>(env, "delete", {
-    sheet: sheetName,
-    ids: [...new Set(ids)]
-  });
+  let deleted: number | null = null;
+  if (googleSheetsEnabled(env)) {
+    try {
+      const idRows = await readIdRows(env, sheetName);
+      const rowNumbers = [...new Set(ids)].map((id) => idRows.get(String(id))).filter((n): n is number => !!n);
+      await deleteRowNumbers(env, sheetName, rowNumbers);
+      deleted = rowNumbers.length;
+    } catch (err) {
+      console.error("[sheets-api] delete falhou, usando Apps Script:", err);
+    }
+  }
+  if (deleted === null) {
+    const result = await callAppsScript<{ deleted: number }>(env, "delete", {
+      sheet: sheetName,
+      ids: [...new Set(ids)]
+    });
+    deleted = result.deleted;
+  }
   if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
-  return result.deleted;
+  return deleted;
 }

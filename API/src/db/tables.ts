@@ -284,7 +284,19 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "id", type: "text" },
       { name: "competencia", type: "date", required: true },
       { name: "valor", type: "number", notNull: true, required: true },
-      { name: "estado_sigla", type: "text", stateRef: true }
+      { name: "estado_sigla", type: "text", stateRef: true },
+      // Mapa de absenteísmo: uma linha por colaborador e dia (valor = 0). Linhas
+      // com "colaborador" vazio continuam sendo o lançamento mensal de sempre.
+      { name: "colaborador", type: "text" },
+      { name: "setor", type: "text" },
+      { name: "filial", type: "text" },
+      { name: "data", type: "date" },
+      // "Presente" = dia sem ocorrência, mas com observação registrada.
+      { name: "motivo", type: "text", values: ["Falta", "Atestado", "Declaração", "Meio Expediente", "Presente"] },
+      { name: "observacao", type: "text" },
+      // Marcações independentes do motivo (caixas de seleção do lançamento).
+      { name: "advertencia", type: "boolean" },
+      { name: "acidente_trabalho", type: "boolean" }
     ]
   }
 };

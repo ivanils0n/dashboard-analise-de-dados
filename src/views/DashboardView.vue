@@ -17,6 +17,7 @@ import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
+import AbsenteismoAnaliseModal from "@/components/dashboard/AbsenteismoAnaliseModal.vue";
 import HeadcountAnaliseModal from "@/components/dashboard/HeadcountAnaliseModal.vue";
 import DashboardTour from "@/components/dashboard/DashboardTour.vue";
 import LaunchModal from "@/components/dashboard/LaunchModal.vue";
@@ -83,8 +84,7 @@ const editVacancyTarget = ref(null);
 const diariaEntriesOpen = ref(false);
 const treinamentoEntriesOpen = ref(false);
 const custosEntriesOpen = ref(false);
-const mensalEntriesOpen = ref(false);
-const mensalEntriesIndicatorId = ref(null);
+const absenteismoAnaliseOpen = ref(false);
 const vacanciesOpen = ref(false);
 const vacancyIndicatorId = ref("tempo_contratacao");
 /* Filial pré-selecionada no modal de Vagas (clique numa barra do custo). */
@@ -325,14 +325,6 @@ const custosColumns = [
   { label: "%", meta: "percent", percent: true }
 ];
 
-/* Colunas do modal de registros dos indicadores "mensal" (Absenteísmo,
-   Tempo de permanência, Retenção). */
-const mensalColumns = [
-  { label: "Mês", month: true },
-  { label: "Estado", meta: "estado" },
-  { label: "Valor", value: true }
-];
-
 const scrollRef = ref(null);
 
 /* Gráficos por indicador: os que dividem a linha (2 por linha) vêm primeiro,
@@ -447,6 +439,7 @@ function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
     if (card.id === "custo_diaria") return dashboard.custoDiariaBarByColaborador();
+  if (card.id === "absenteismo") return dashboard.absenteismoBarByMotivo();
   return [];
 }
 
@@ -587,7 +580,6 @@ function onEntriesEdit({ indicatorId, entry }) {
   diariaEntriesOpen.value = false;
   treinamentoEntriesOpen.value = false;
   custosEntriesOpen.value = false;
-  mensalEntriesOpen.value = false;
   editTarget.value = { indicatorId, entry };
   editVacancyTarget.value = null;
   launchOpen.value = true;
@@ -662,8 +654,7 @@ function onKpiContext(id) {
   } else if (id === "treinamento") treinamentoEntriesOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
   else if (id === "absenteismo") {
-    mensalEntriesIndicatorId.value = id;
-    mensalEntriesOpen.value = true;
+    absenteismoAnaliseOpen.value = true;
   } else if (id === "turnover") {
     turnoverAnaliseOpen.value = true;
   } else if (id === "tempo_permanencia") {
@@ -1446,14 +1437,11 @@ watch(activeTab, (tab) => {
       @close="custosEntriesOpen = false"
       @edit="onEntriesEdit"
     />
-    <IndicatorEntriesModal
-      v-if="mensalEntriesOpen"
-      :open="mensalEntriesOpen"
-      :indicator-id="mensalEntriesIndicatorId"
-      :title="`${getIndicatorById(mensalEntriesIndicatorId)?.name || ''} — Lançamentos`"
-      :columns="mensalColumns"
-      @close="mensalEntriesOpen = false"
-      @edit="onEntriesEdit"
+    <AbsenteismoAnaliseModal
+      v-if="absenteismoAnaliseOpen"
+      :open="absenteismoAnaliseOpen"
+      :estado="filters.current"
+      @close="absenteismoAnaliseOpen = false"
     />
 
 

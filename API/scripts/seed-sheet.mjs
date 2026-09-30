@@ -88,7 +88,7 @@ const ENTITY_COLUMNS = {
     "competencia", "horas", "estado_sigla"
   ],
   custo_folha: ["id", "filial_cnpj", "razao_social", "percent", "competencia", "valor", "estado_sigla"],
-  absenteismo: ["id", "competencia", "valor", "estado_sigla"]
+  absenteismo: ["id", "competencia", "valor", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];
 

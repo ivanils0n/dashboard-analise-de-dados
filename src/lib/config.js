@@ -43,15 +43,16 @@ export const INDICATORS = [
   {
     id: "absenteismo",
     name: "Absenteísmo",
-    desc: "Faltas, atestados e acidentes, importados mensalmente",
-    calc: "Soma das ocorrências (faltas, atestados e acidentes) no período",
+    desc: "Faltas, atestados, declarações, meio período, advertências e acidentes de trabalho lançados no Mapa de Absenteísmo",
+    calc: "Total de ocorrências lançadas no Mapa de Absenteísmo no período",
     type: "number",
     unit: "ocorrências",
     decimals: 0,
     higherIsBetter: false,
-    computed: false,
-    manual: true,
-    form: "mensal"
+    /* Contado ao vivo a partir das ocorrências do Mapa de Absenteísmo (aba
+       "absenteismo"); não tem mais lançamento mensal próprio. */
+    computed: true,
+    manual: false
   },
   {
     id: "tempo_contratacao",
