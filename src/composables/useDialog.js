@@ -10,8 +10,6 @@ const state = reactive({
   _resolve: null
 });
 
-/* Dialog.confirm({ title, message, confirmText, cancelText, danger })
-   -> Promise<boolean> — substitui o confirm() nativo. */
 export function useDialog() {
   function confirm(options = {}) {
     return new Promise((resolve) => {

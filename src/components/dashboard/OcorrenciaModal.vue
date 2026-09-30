@@ -4,13 +4,10 @@ import Modal from "@/components/ui/Modal.vue";
 import { MOTIVOS, FLAGS } from "@/lib/absenteismo";
 import { formatDate } from "@/lib/utils";
 
-/* Lançamento de uma ocorrência (colaborador + dia) do mapa de absenteísmo.
-   "Presente" limpa o dia; os demais motivos gravam/atualizam a ocorrência. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   colaborador: { type: String, default: "" },
   date: { type: String, default: "" },
-  /* Ocorrência já lançada nesse dia (ou null). */
   current: { type: Object, default: null }
 });
 const emit = defineEmits(["close", "save", "clear"]);
@@ -20,15 +17,11 @@ const inputCls =
 
 const motivo = ref("");
 
-/* Lista de motivos própria (em vez do <select> nativo) para centralizar as
-   opções e deixar a seta logo à direita do texto. "" = Presente. */
 const listOpen = ref(false);
 const triggerRef = ref(null);
 const listStyle = ref({});
 const ROW_PX = 28;
 
-/* A lista é desenhada no <body> (fora do modal), posicionada sobre o botão: assim
-   pode passar da borda do modal e até da tela (abre para cima se faltar espaço). */
 function toggleList() {
   if (listOpen.value) {
     listOpen.value = false;
@@ -52,7 +45,6 @@ function pick(value) {
   listOpen.value = false;
 }
 const observacao = ref("");
-/* Marcacoes independentes do motivo: { advertencia, acidente } => boolean. */
 const marks = ref({ advertencia: false, acidente: false });
 
 watch(
@@ -75,7 +67,6 @@ function submit() {
     emit("clear");
     return;
   }
-  /* Sem motivo mas com observação ou marcação: dia "Presente" com anotação. */
   emit("save", {
     motivo: motivo.value || "Presente",
     observacao: obs,

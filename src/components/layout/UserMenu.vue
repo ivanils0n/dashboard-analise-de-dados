@@ -6,14 +6,13 @@ import { authState, getProfile, logout, changeName, changePassword, PERFIL_LABEL
 import { useToast } from "@/composables/useToast";
 import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 
-/* `compact`: só o avatar (sidebar recolhida). */
 defineProps({ compact: { type: Boolean, default: false } });
 
 const router = useRouter();
 const { show: toast } = useToast();
 
 const open = ref(false);
-const modalMode = ref(null); // "name" | "password" | null
+const modalMode = ref(null);
 
 const nameInput = ref("");
 const passwordCurrent = ref("");
@@ -58,8 +57,6 @@ function closeModal() {
   modalMode.value = null;
 }
 
-/* Fechar sem salvar (×, Esc, Cancelar) com campos alterados: pergunta antes de
-   descartar. Depois de salvar usa closeModal() direto. */
 const unsaved = useUnsavedGuard(() => ({
   nome: nameInput.value,
   atual: passwordCurrent.value,

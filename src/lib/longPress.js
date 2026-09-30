@@ -1,20 +1,8 @@
-/* Toque longo = "botão direito" no iPhone/iPad.
-
-   O dashboard usa o evento `contextmenu` (botão direito) para ações
-   secundárias: informações do KPI, editar direto a partir da barra do
-   gráfico, etc. No Android, segurar o dedo já dispara `contextmenu`; no iOS
-   (Safari e app instalado) não dispara nada. Aqui o toque longo parado sobre
-   um elemento vira um `contextmenu` sintético nesse elemento, com as
-   coordenadas do dedo — os mesmos handlers de sempre (inclusive os dos
-   gráficos, que localizam a barra/fatia pelo ponto) funcionam sem mudança.
-   O toque que virou "botão direito" não gera o clique normal ao soltar. */
-
 const LONG_PRESS_MS = 550;
 const MOVE_TOLERANCE_PX = 10;
 
 function isIOS() {
   const ua = navigator.userAgent || "";
-  /* iPadOS se apresenta como Mac: distingue pelo toque. */
   return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
@@ -71,7 +59,6 @@ export function installLongPressContextMenu() {
 
   const recentlyFired = () => Date.now() - firedAt < 800;
 
-  /* Soltar o dedo depois do "botão direito": sem o clique normal. */
   document.addEventListener(
     "touchend",
     (e) => {
@@ -93,8 +80,6 @@ export function installLongPressContextMenu() {
   );
 }
 
-/* Nome da ação "botão direito" para as dicas na tela: em telas de toque
-   (celular/tablet) é o toque longo. */
 export const CONTEXT_ACTION_LABEL =
   typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches
     ? "Toque e segure"

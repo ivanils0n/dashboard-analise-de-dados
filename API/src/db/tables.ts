@@ -1,14 +1,6 @@
-// Metadados das tabelas por estado (fonte: sql/schema.sql).
-// Usados para validar entradas e montar queries sempre com nomes/colunas da allowlist.
-
 export const ESTADOS = ["RO", "AM", "PA"] as const;
 export type Estado = (typeof ESTADOS)[number];
 
-// Sentinela usado nas rotas de leitura para "sem filtro de estado" — desde a
-// consolidação das abas (uma só por entidade, com a coluna estado_sigla
-// distinguindo RO/AM/PA), isso permite ler os 3 estados numa única chamada ao
-// Apps Script em vez de 3. Nunca aceito em escrita (criar/editar sem saber o
-// estado seria ambíguo).
 export const ESTADO_TODOS = "TODOS" as const;
 export type EstadoFiltro = Estado | typeof ESTADO_TODOS;
 
@@ -47,7 +39,6 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "fechada_em", type: "timestamptz" },
       { name: "salario", type: "number" },
       { name: "tipo_contratacao", type: "text", values: ["clt", "pj"] },
-      // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/headcount.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true },
       { name: "recrutador", type: "text" },
@@ -66,9 +57,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "genero", type: "text", values: ["masculino", "feminino"] },
       { name: "data_desligamento", type: "date" },
       { name: "mes_referente", type: "date", required: true },
-      // Razão social/empresa (texto livre), separada da filial/unidade.
       { name: "empresa", type: "text" },
-      // Sem FK pra Filiais: texto livre (nome abreviado), como turnover/diarias/treinamentos.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
@@ -78,7 +67,6 @@ export const ENTITIES: Record<string, EntityDef> = {
     label: "Turnover",
     columns: [
       { name: "id", type: "text" },
-      // Sem FK pra Filiais: texto livre (nome/sigla), como diarias/treinamentos.
       { name: "filial", type: "text" },
       { name: "mes_referencia", type: "date", required: true },
       { name: "admitidos", type: "number", notNull: true },
@@ -95,16 +83,10 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "colaborador", type: "text", required: true },
       { name: "data_admissao", type: "date", required: true },
       { name: "data_demissao", type: "date", required: true },
-      // Sem FK pra Filiais: texto livre (nome abreviado), como vagas/turnover/headcount.
       { name: "filial", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
-  // Aba alimentada direto na planilha (somente leitura no app). A ordem das
-  // colunas abaixo É a ordem das colunas da aba (o Apps Script lê por posição,
-  // não pelo nome do cabeçalho): id, empresa, estado, colaborador, filial,
-  // função, admissão, gerente imediato, regional (coluna I), motivo, justificativa apurada,
-  // ponderações, último dia do aviso, valor da rescisão, GRRF/consignado e 40%.
   rescisoes: {
     key: "rescisoes",
     label: "Rescisões",
@@ -125,7 +107,6 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "valor_rescisao", type: "number" },
       { name: "grrf_consig", type: "number" },
       { name: "multa_40", type: "number" },
-      // Coluna Q: mês a que as informações se referem (base do filtro de período).
       { name: "mes_referencia", type: "date" }
     ]
   },
@@ -141,9 +122,6 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
-  // Substituem a antiga tabela genérica "lancamentos" (indicador_id + meta
-  // json): cada indicador manual agora tem colunas tipadas próprias. Custo de
-  // contratação não tem aba — é calculado ao vivo a partir de "vagas".
   diarias: {
     key: "diarias",
     label: "Diárias",
@@ -167,16 +145,11 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "id", type: "text" },
       { name: "nome_colaborador", type: "text", required: true },
       { name: "cargo", type: "text" },
-      // Sem coluna própria de sigla: o gráfico por filial (useDashboardData.js
-      // -> treinamentoFilialLabel) agrupa comparando este texto com o
-      // cadastro de Filiais.
       { name: "filial", type: "text" },
       { name: "gerente_regional", type: "text" },
       { name: "tema", type: "text" },
       { name: "modalidade", type: "text", values: ["Presencial", "Online"] },
       { name: "competencia", type: "date", required: true },
-      // Única fonte de carga horária (antes havia "value" + "meta.cargaHoraria"
-      // redundantes — ver comentário no frontend/useDashboardData.js).
       { name: "horas", type: "number", notNull: true, required: true },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
@@ -186,8 +159,6 @@ export const ENTITIES: Record<string, EntityDef> = {
     label: "Custo de folha de salário",
     columns: [
       { name: "id", type: "text" },
-      // Sem FK pra Filiais: guarda CNPJ e razão social direto, do mesmo jeito
-      // que o modal de Custo de Folha já busca/mostra (ver LaunchModal.vue).
       { name: "filial_cnpj", type: "text", required: true },
       { name: "razao_social", type: "text", required: true },
       { name: "percent", type: "number" },
@@ -203,16 +174,12 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "id", type: "text" },
       { name: "competencia", type: "date", required: true },
       { name: "estado_sigla", type: "text", stateRef: true },
-      // Mapa de absenteísmo: uma linha por colaborador e dia. `competencia` é o
-      // 1º dia do mês da ocorrência (base do filtro por mês); `data` é o dia.
       { name: "colaborador", type: "text" },
       { name: "setor", type: "text" },
       { name: "filial", type: "text" },
       { name: "data", type: "date" },
-      // "Presente" = dia sem ocorrência, mas com observação registrada.
       { name: "motivo", type: "text", values: ["Falta", "Atestado", "Declaração", "Meio Expediente", "Presente"] },
       { name: "observacao", type: "text" },
-      // Marcações independentes do motivo (caixas de seleção do lançamento).
       { name: "advertencia", type: "boolean" },
       { name: "acidente_trabalho", type: "boolean" }
     ]
@@ -221,19 +188,10 @@ export const ENTITIES: Record<string, EntityDef> = {
 
 export const ENTITY_KEYS = Object.keys(ENTITIES);
 
-// Uma aba por entidade (não mais uma por entidade x estado): quem separa RO/AM/PA
-// agora é a coluna estado_sigla dentro da própria aba, não o nome dela.
 export function tableName(entityKey: string): string {
   return entityKey;
 }
 
-// Valida os nomes usados pelo endpoint em lote (sincronização do frontend):
-// "vagas_ro" (um estado) ou "vagas" puro (todos os estados, só para leitura —
-// ver ESTADO_TODOS em routes/data.ts). Checa o nome inteiro contra ENTITIES
-// antes de tentar separar um sufixo de estado — necessário porque algumas
-// chaves de entidade já têm "_" no nome (ex.: "custo_folha"), então uma regex
-// genérica não dá pra distinguir "custo_folha" de "custo_folha_ro" sem
-// primeiro validar contra a lista real de entidades.
 export function parseStateTable(
   table: string
 ): { entityKey: string; estado: EstadoFiltro } | null {
@@ -245,7 +203,6 @@ export function parseStateTable(
   return { entityKey, estado: normalizeEstado(match[2]) as Estado };
 }
 
-// Aba "usuarios" — não é um recurso por estado, então fica fora de ENTITIES.
 export const USERS_SHEET = "usuarios";
 export const USERS_COLUMNS: ColumnDef[] = [
   { name: "id", type: "text" },

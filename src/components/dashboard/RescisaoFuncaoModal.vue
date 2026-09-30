@@ -5,12 +5,9 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { rescisaoAmount } from "@/lib/employees";
 
-/* Detalhe de uma função no gráfico de Rescisões (clique na barra): totais do
-   período e cada rescisão da função, com os dados da aba "rescisoes". */
 const props = defineProps({
   open: { type: Boolean, default: false },
   funcao: { type: String, default: "" },
-  /* true = o detalhe é de um estado (fatia da pizza), não de uma função. */
   porEstado: { type: Boolean, default: false },
   records: { type: Array, default: () => [] }
 });

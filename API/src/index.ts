@@ -10,8 +10,6 @@ import cacheRoutes from "./routes/cache";
 
 const app = new Hono<AppEnv>();
 
-// CORS configurável por CORS_ORIGIN (lista separada por vírgula).
-// Sem a variável, libera "*" (a autenticação usa Bearer token, não cookies).
 app.use(
   "*",
   cors({
@@ -44,8 +42,6 @@ app.route("/api/cache", cacheRoutes);
 app.notFound((c) => c.json({ success: false, error: { message: "Rota não encontrada." } }, 404));
 
 app.onError((err, c) => {
-  // Erros controlados devolvem a mensagem; o resto vira 500 genérico
-  // (evita vazar detalhes internos da planilha).
   if (err instanceof ApiError) {
     return c.json(
       { success: false, error: { message: err.message, code: err.code } },
@@ -57,7 +53,6 @@ app.onError((err, c) => {
   return c.json({ success: false, error: { message: "Erro interno do servidor." } }, 500);
 });
 
-// Classe do Durable Object (fila de gravação por aba) — o Cloudflare a procura aqui.
 export { SheetWriter } from "./db/sheetWriter";
 
 export default app;

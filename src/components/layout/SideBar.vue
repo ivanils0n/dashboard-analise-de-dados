@@ -8,18 +8,10 @@ import DashboardTabs from "./DashboardTabs.vue";
 import { useTheme } from "@/composables/useTheme";
 import { sidebarCollapsed, sidebarEffectiveCollapsed as collapsedTarget } from "@/composables/useSidebar";
 
-/* Sidebar esquerda (antiga TopBar + navegação): logo, páginas, abas Visão
-   Geral/Painel, filtro de estado, tema e conta. Em celulares (abaixo de md)
-   vira um cabeçalho compacto (menu, logo, tema, conta e as abas do Dashboard)
-   com a navegação num menu lateral deslizante. */
 const route = useRoute();
 const router = useRouter();
 const { isDark, toggle } = useTheme();
 
-/* `collapsedTarget` define a LARGURA da sidebar (anima em 200 ms). `collapsed`
-   é o estado do CONTEÚDO (textos/rótulos): ao recolher muda na hora (os textos
-   somem antes de a barra encolher); ao expandir só muda quando a largura já
-   terminou de crescer — senão os textos apareciam antes da barra abrir. */
 const SIDEBAR_TRANSITION_MS = 200;
 const collapsed = ref(collapsedTarget.value);
 let expandTimer = null;
@@ -55,7 +47,6 @@ const items = [
   }
 ];
 
-/* Grupo "Detalhado": páginas com o detalhamento linha a linha de um KPI. */
 const detailItems = [
   {
     name: "rescisoes",
@@ -83,20 +74,15 @@ const detailItems = [
   }
 ];
 
-/* O visitante só vê o Dashboard (sem navegação); os demais não-admin não
-   veem Usuários. */
 const visibleItems = computed(() =>
   isAdmin.value ? items : isVisitor.value ? [] : items.filter((i) => i.name !== "usuarios")
 );
 
 const visibleDetailItems = computed(() => (isVisitor.value ? [] : detailItems));
 
-/* Reativo: a sidebar persiste entre rotas (layout aninhado), então os
-   controles visíveis dependem da rota ATUAL, não da inicial. */
 const showStateFilter = computed(() => route.name === "filiais");
 const showDashboardTabs = computed(() => route.name === "dashboard");
 
-/* Menu lateral do celular: fecha ao navegar, com Esc e ao tocar fora. */
 const drawerOpen = ref(false);
 watch(
   () => route.fullPath,
@@ -119,7 +105,6 @@ const drawerSections = computed(() =>
 </script>
 
 <template>
-  <!-- ===== Celular: cabeçalho compacto + menu lateral ===== -->
   <header class="safe-top safe-x sticky top-0 z-40 border-b border-zinc-800 bg-[#0a0a0a] md:hidden">
     <div class="flex items-center gap-2 px-3 py-2">
       <button
@@ -208,14 +193,11 @@ const drawerSections = computed(() =>
     </Transition>
   </header>
 
-  <!-- ===== Tablet/computador: sidebar ===== -->
   <aside
     class="z-30 hidden w-full flex-wrap md:flex items-center gap-3 border-b border-zinc-800 bg-[#0a0a0a] px-4 py-3 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:shrink-0 md:flex-col md:flex-nowrap md:items-stretch md:gap-0 md:self-start md:border-b-0 md:border-r"
     :class="collapsedTarget ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4'"
     aria-label="Painel de controle"
   >
-    <!-- Cantos arredondados "para fora": a cor da sidebar escorre em curva para
-         o conteúdo no topo e na base (raio invertido). Só visual. -->
     <span class="sidebar-flare sidebar-flare-top" aria-hidden="true"></span>
     <span class="sidebar-flare sidebar-flare-bottom" aria-hidden="true"></span>
     <div class="flex items-center gap-2 md:pb-4" :class="collapsed ? 'md:justify-center' : 'md:justify-between'">
@@ -328,8 +310,6 @@ const drawerSections = computed(() =>
 </template>
 
 <style scoped>
-/* Raio invertido nos cantos externos da sidebar (topo e base): um quadrado
-   colado na borda direita, com um quarto de círculo transparente. */
 .sidebar-flare {
   position: absolute;
   left: 100%;

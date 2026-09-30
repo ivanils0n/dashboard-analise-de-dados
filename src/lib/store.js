@@ -1,5 +1,3 @@
-/* Store de dados reativa (Vue 3): fonte consumida pela UI, espelhada na API
-   (Google Sheets) via adaptador "remote" (write-through em lote com debounce). */
 import { reactive } from "vue";
 import { createId, compareDateAsc, nameKey } from "./utils";
 
@@ -9,13 +7,9 @@ export function emptyData() {
     vacancies: [],
     turnovers: [],
     permanencias: [],
-    // Aba "rescisoes": alimentada direto na planilha, só leitura no app.
     rescisoes: [],
     headcounts: [],
     branches: [],
-    // Substituem a antiga tabela genérica "lancamentos" (indicador_id + meta
-    // json): cada indicador manual (Diária, Treinamento, Custo de folha,
-    // Absenteísmo) agora tem lista própria, no mesmo padrão das acima.
     diarias: [],
     treinamentos: [],
     custoFolha: [],
@@ -25,12 +19,10 @@ export function emptyData() {
 
 const data = reactive(emptyData());
 
-/* Acesso reativo aos dados por qualquer componente */
 export function useData() {
   return data;
 }
 
-/* Adaptador de escrita na API (registrado pelo db.js) */
 let remote = null;
 
 export function bindRemote(adapter) {
@@ -39,11 +31,6 @@ export function bindRemote(adapter) {
 
 const ok = () => remote != null;
 
-/* indicador_id (usado pelos formulários desde a época da tabela genérica
-   "lancamentos") -> lista dedicada no store. Mantém a API pública de sempre
-   (getEntriesFor/addEntry/... com Entry = {id, date, value, meta}) para que
-   metrics.js, useDashboardData.js e os modais de indicador não precisem
-   saber que a origem do dado mudou de um dicionário genérico pra 4 tabelas. */
 const ENTRY_LISTS = {
   custo_diaria: "diarias",
   treinamento: "treinamentos",
@@ -59,9 +46,6 @@ function entryList(indicatorId) {
 
 const PUBLIC_ENTRY_INDICATORS = Object.keys(ENTRY_LISTS);
 
-/* A lista "absenteismo" guarda dois tipos de linha: o lançamento mensal e as
-   ocorrências do mapa (uma por colaborador e dia, com meta.colaborador). O
-   KPI/histórico mensal só enxerga o primeiro tipo; o mapa só o segundo. */
 const isOcorrencia = (e) => !!(e.meta && e.meta.colaborador);
 
 export function getAllEntries() {
@@ -74,11 +58,7 @@ export function getAllEntries() {
 }
 
 export function getEntriesFor(indicatorId, state) {
-  // Tolerante a indicadores sem lançamento próprio (ex.: "headcount",
-  // "turnover" — calculados, não vêm de uma lista de entries): o dashboard
   // chama isso genericamente para TODO indicador em INDICATORS, esperando
-  // lista vazia de volta, não uma exceção. Só addEntry/updateEntry/... (a
-  // escrita) devem falhar alto num indicatorId desconhecido — ver entryList.
   const key = ENTRY_LISTS[indicatorId];
   if (!key) return [];
   let list = (data[key] || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
@@ -115,10 +95,6 @@ export function removeEntry(indicatorId, entryId) {
   if (entry && ok()) remote.entriesRemoved(indicatorId, [entryId], estado);
 }
 
-/* `patch.state` funciona como em addEntry: vira `meta.estado` (os formulários
-   montam o payload igual para criar e editar). Sem essa conversão a edição
-   descartava o estado do lançamento e ele sumia dos filtros por estado.
-   Sem `state` no patch, o meta segue como veio. */
 export function updateEntry(indicatorId, entryId, patch) {
   const key = entryList(indicatorId);
   const idx = data[key].findIndex((e) => e.id === entryId);
@@ -132,18 +108,9 @@ export function updateEntry(indicatorId, entryId, patch) {
   data[key][idx] = updated;
   data[key].sort((a, b) => compareDateAsc(a.date, b.date));
   if (!ok()) return;
-  /* Mudar de estado não precisa de exclusão no estado antigo: o servidor
-     acha o id em qualquer estado e só troca o estado_sigla da linha (ver
-     bulkWrite no backend). Mandar as duas requisições em paralelo podia
-     apagar a linha errada. O envio usa `updated` — após o sort, `idx` já
-     pode apontar para outro lançamento. */
   remote.entryUpdated(indicatorId, updated);
 }
 
-/* Exclusão em lote de lançamentos. `rows` é um array de
-   { indicatorId, entry }. Remove todos de uma vez e enfileira as exclusões
-   remotas agrupadas por (indicatorId, estado) — cada indicador tem sua
-   própria tabela física, então o agrupamento não pode ser só por estado. */
 export function removeEntries(rows) {
   if (!rows || !rows.length) return;
   const removable = rows.filter(({ indicatorId, entry }) => {
@@ -171,15 +138,10 @@ export function removeEntries(rows) {
   });
 }
 
-/* Ocorrências do mapa de absenteísmo: { id, date (YYYY-MM-DD), meta: { colaborador,
-   setor, motivo, observacao, estado } }. Reaproveitam a lista e o caminho de
-   escrita do indicador "absenteismo" (mesma aba, colunas extras). */
 export function getOcorrencias() {
   return data.absenteismo.filter(isOcorrencia);
 }
 
-/* Cria ou atualiza a ocorrência do colaborador naquele dia (no máximo uma por
-   colaborador/dia). Devolve a entrada gravada. */
 export function saveOcorrencia({ date, colaborador, setor, filial, motivo, observacao, estado, advertencia, acidente }) {
   const existing = data.absenteismo.find(
     (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
@@ -351,10 +313,6 @@ export function replaceFromCache(cached) {
   Object.assign(data, d);
 }
 
-/* Junta itens novos a uma lista sem duplicar ids. Usa um Set dos ids já
-   presentes (O(n)) — a versão anterior fazia `some` para cada item, ou seja
-   O(n²), o que travava a tela na carga inicial de históricos grandes. Devolve
-   a lista resultante (nova), ou null quando nada foi acrescentado. */
 function mergeNewItems(current, incoming) {
   if (!incoming || !incoming.length) return null;
   const known = new Set(current.map((x) => x.id));

@@ -1,13 +1,9 @@
 import { reactive } from "vue";
 
 const TOAST_DURATION = 3500;
-/* Máximo de notificações empilhadas ao mesmo tempo; passando disso, a mais
-   antiga sai. */
 const MAX_TOASTS = 5;
 
 const state = reactive({
-  /* [{ id, message, type, duration }] — a mais antiga primeiro (fica em cima);
-     as novas entram embaixo. */
   items: []
 });
 

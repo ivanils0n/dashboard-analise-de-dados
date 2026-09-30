@@ -45,31 +45,17 @@ import { aggregateEntries, diariaDivisor, employeeNameKey } from "@/lib/metrics"
 import { useFilters } from "@/composables/useFilters";
 import { faturamento } from "@/composables/useFaturamento";
 
-/* Centraliza o cálculo dos dados exibidos no dashboard a partir do
-   filtro de período (reactive { start, end }) e do estado selecionado.
-   Todos os totais são calculados diretamente sobre os lançamentos. */
 export function useDashboardData(filter) {
   const { state } = useFilters();
 
-  /* Estado forçado temporariamente por kpiValueByEstado, para reaproveitar
-     exatamente as regras de cada KPI calculando um estado por vez. Só vale
-     durante a chamada (síncrona), nunca fica ligado. */
   let stateOverride = null;
 
   function currentState() {
-    /* Lê `revision` além de `current`: garante recomputação a cada troca de
-       estado mesmo que o valor se repita (ex.: RO -> todos -> RO). */
     void state.revision;
     const current = state.current;
     return stateOverride || current;
   }
 
-  /* Tempo médio de contratação: média das vagas ABERTAS dentro do período
-     filtrado (data de abertura no intervalo) — a mesma regra do gráfico de
-     barras do indicador. A lista completa de vagas do estado já está em
-     memória (carregada em lib/db), então o cálculo é local e instantâneo:
-     antes cada troca de filtro fazia uma chamada extra à API e travava a
-     tela inteira com a sobreposição de carregamento. */
   function hiringAvgFor(range) {
     const start = (range && range.start) || null;
     const end = (range && range.end) || null;
@@ -81,8 +67,6 @@ export function useDashboardData(filter) {
     return averageHiringDays(inRange);
   }
 
-  /* Mês civil anterior a um período { start, end } que seja um mês fechado
-     (null nos demais casos). */
   function monthBefore(range) {
     const ym = range && range.start ? singleMonthOfRange(range.start, range.end) : null;
     if (!ym) return null;
@@ -90,12 +74,6 @@ export function useDashboardData(filter) {
     return { start: firstDayOfYm(prevYm), end: lastDayOfYm(prevYm) };
   }
 
-  /* Custo médio por colaborador = custo de folha de salário ÷ Headcount, no estado e período
-     (mês) filtrados. O custo é a soma dos lançamentos de "Custo de folha de
-     salário" (custo_total) do período; o Headcount é o quadro reconstruído no
-     mês (headcountCountInRange). Sem custo lançado ou sem colaboradores o
-     ticket não existe (null → "—"), em vez de virar 0. `uf` permite calcular
-     um estado específico (gráfico/mapa por estado). */
   function ticketMedioParts(uf, range) {
     const start = (range && range.start) || null;
     const end = (range && range.end) || null;
@@ -115,18 +93,10 @@ export function useDashboardData(filter) {
     return folha / headcount;
   }
 
-  /* Valor dos indicadores "computed" para QUALQUER período — regra única usada
-     tanto para o valor atual quanto para o mês anterior da seta ▲/▼. Antes a
-     seta desses indicadores comparava com lançamentos-snapshot antigos (bases
-     e períodos diferentes do valor atual), então podia apontar o sentido
-     errado. */
-  /* Ocorrências de ausência (sem "Presente") do Mapa de Absenteísmo no estado e
-     período informados. */
   function absenteismoOcorrencias(st, range, filiais = []) {
     const uf = String(st || "").trim().toUpperCase();
     const all = !uf || uf === "TODOS";
     const filialKeys = (filiais || []).map((f) => String(f).trim().toUpperCase());
-    /* O filtro por mês usa a competência (mês) da ocorrência, não o dia. */
     const fromYm = range && range.start ? String(range.start).slice(0, 7) : null;
     const toYm = range && range.end ? String(range.end).slice(0, 7) : null;
     return getOcorrencias().filter(
@@ -139,8 +109,6 @@ export function useDashboardData(filter) {
     );
   }
 
-  /* Uma barra por tipo de ocorrência, com o total de cada um no período e
-     estado filtrados (gráfico central do Absenteísmo). */
   function absenteismoBarByMotivo(filiais = []) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const list = absenteismoOcorrencias(currentState(), range, filiais);
@@ -155,7 +123,6 @@ export function useDashboardData(filter) {
     });
   }
 
-  /* Filiais com ocorrência no período e estado filtrados (opções do filtro). */
   function absenteismoFiliais() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const set = new Set();
@@ -175,8 +142,6 @@ export function useDashboardData(filter) {
         return hiringAvgFor(range);
       case "headcount":
         return headcountCountInRange(st, range);
-      /* Turnover é uma taxa (%), não a contagem bruta de desligamentos — ver
-         turnoverRateStats em lib/employees.js. */
       case "turnover":
         return turnoverRateStats(st, range).turnoverPct;
       case "tempo_permanencia":
@@ -187,8 +152,6 @@ export function useDashboardData(filter) {
         return ticketMedioFor(st, range);
       case "horas_regional":
         return treinamentoRegionaisCount(st, range);
-      /* Card de Rescisões: total (rescisão + GRRF/consig + 40%); sem nenhuma
-         rescisão no período fica "—" em vez de R$ 0. */
       case "rescisoes":
         return listRescisoes(st, range).length ? rescisoesTotal(st, range, "total") : null;
       default:
@@ -222,19 +185,6 @@ export function useDashboardData(filter) {
     });
   }
 
-  /* Custo de contratação passou a refletir só o salário das vagas (lançamento
-     automático de syncVacancyCost, meta.source "vaga") — lançamentos manuais
-     feitos pela aba "Custo" do Lançamento (por colaborador) continuam sendo
-     gravados e aparecem na tabela de Lançamentos, mas não entram mais na
-     média do KPI. Só contam as vagas FECHADAS (a data do lançamento passa a ser
-     a do fechamento): vaga aberta ainda não tem custo de contratação definido,
-     tanto no KPI quanto no gráfico.
-
-     O cálculo parte das próprias VAGAS (fonte real), não dos lançamentos de
-     custo que syncVacancyCost grava: esses podem ficar duplicados, com valor/
-     data desatualizados ou órfãos, e distorciam a média. Cada vaga fechada com
-     salário informado (> 0) vira um "lançamento" — valor = salário atual e data
-     = dia do fechamento — e a média é a soma dos salários ÷ quantidade de vagas. */
   function costVacancyEntries(st = currentState()) {
     return listVacancies(st)
       .filter((v) => v.closeAt && Number(v.salario) > 0)
@@ -263,8 +213,6 @@ export function useDashboardData(filter) {
     return filterByRange(withPeriod);
   }
 
-  /* Série diária das diárias: soma o valor pago por dia (vários lançamentos
-     podem ocorrer na mesma data). */
   function diariaDailySeries() {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
@@ -272,23 +220,14 @@ export function useDashboardData(filter) {
     return aggregateByDay(filterByRange(all));
   }
 
-  /* Valor de um indicador para uma lista de lançamentos (regra única de
-     agregação, centralizada em lib/metrics.js). */
   function aggregateList(ind, list) {
     return aggregateEntries(ind, list);
   }
 
-  /* Headcount por estado para o card de barras: três barras por estado —
-     Masculino, Feminino e o total (soma de todos os colaboradores do mês
-     filtrado, inclusive sem gênero informado). `value` é o total. */
   function headcountBarByState(filiais = [], empresas = [], funcoes = []) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
-    /* Respeita o filtro de estado: com um estado selecionado, só a barra dele. */
     const st = currentState();
     let states = st && st !== "todos" ? [st] : STATES;
-    /* Com filiais e/ou empresas escolhidas, só os estados onde alguma delas
-       tem colaborador — sem isto, estados sem nenhum colaborador da seleção
-       ainda apareciam com barra zerada, espalhando o gráfico à toa. */
     if (filiais.length) states = states.filter((s) => headcountFilialOptions(s).some((f) => filiais.includes(f)));
     if (empresas.length) states = states.filter((s) => headcountEmpresaOptions(s).some((e) => empresas.includes(e)));
     if (funcoes.length) states = states.filter((s) => headcountFuncaoOptions(s).some((f) => funcoes.includes(f)));
@@ -306,9 +245,6 @@ export function useDashboardData(filter) {
     }).sort((a, b) => b.value - a.value);
   }
 
-  /* Custo médio por colaborador por estado (uma fatia por estado) para a pizza
-     do KPI — mesma regra do card (ticketMedioFor), no período filtrado.
-     Estados sem custo de folha ou sem colaboradores ficam de fora. */
   function ticketMedioBarByState() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return STATES.map((s) => ({ label: s, value: ticketMedioFor(s, range) }))
@@ -317,22 +253,12 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Centro da pizza do Custo médio por colaborador: a média geral dos três
-     estados (folha total ÷ headcount total), independente do filtro de estado —
-     a pizza sempre compara os estados. */
   function ticketMedioPieCenter() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const value = ticketMedioFor("todos", range);
     return value === null ? null : { value: formatCurrency(value), caption: "Média geral" };
   }
 
-  /* % do faturamento = Custo médio por colaborador ÷ Faturamento médio por
-     colaborador × 100, no estado e período filtrados. O faturamento (especulativo,
-     informado no cabeçalho do gráfico) é dividido pelo mesmo Headcount do custo
-     médio para virar "faturamento médio por colaborador". null quando não há
-     faturamento informado — o KPI só aparece se houver. Se faltar dado no
-     mês/estado filtrados (folha ou colaboradores), os valores que dependem dele
-     vêm null e `motivo` diz o que falta (em vez de o KPI sumir sem explicação). */
   function ticketMedioFaturamento() {
     const total = faturamento.value;
     if (!total) return null;
@@ -347,10 +273,6 @@ export function useDashboardData(filter) {
     return { custo, faturamento: total, faturamentoMedio, headcount, pct, motivo };
   }
 
-  /* Vagas abertas no período filtrado (data de abertura dentro do range) para
-     o gráfico de barras do Painel e da Visão geral (Tempo médio de
-     contratação): uma barra por vaga, com os dias decorridos até o
-     fechamento — ou até hoje, se ainda estiver aberta. */
   function vacanciesBarByOpen(statusFilter, recrutadorFilter) {
     let vacs = listVacancies(currentState()).filter((v) => v.openAt);
     if (statusFilter === "abertas") vacs = vacs.filter((v) => !v.closeAt);
@@ -359,25 +281,18 @@ export function useDashboardData(filter) {
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
     return inRange
       .map((v) => ({ v, days: daysBetween(v.openAt, v.closeAt || todayISO()) }))
-      /* Mesma regra da média (averageHiringDays): data ilegível ou invertida
-         não vira barra de 0/negativo. */
       .filter(({ days }) => days !== null && Number.isFinite(days) && days >= 0)
       .map(({ v, days }) => {
         return {
           label: upperText(v.name || "Vaga"),
           value: Number(days.toFixed(1)),
           tooltipValue: `${days.toFixed(1)} dias${v.closeAt ? "" : " (em aberto)"}`,
-          /* Identifica a vaga por trás da barra (nomes podem se repetir) —
-             usado ao clicar na barra para abrir o detalhe da vaga certa. */
           vacancyId: v.id
         };
       })
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Recrutadores que aparecem nas vagas abertas no período filtrado (para o
-     filtro do gráfico de Tempo médio de contratação no Painel), em ordem
-     alfabética — mesma ideia de treinamentoGerentesRegionais, abaixo. */
   function headcountFiliais(empresas = []) {
     return headcountFilialOptions(currentState(), empresas);
   }
@@ -400,14 +315,6 @@ export function useDashboardData(filter) {
     return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
   }
 
-  /* Rótulo (filial) que agrupa um treinamento: localiza a filial do cadastro
-     pela sigla (ignorando caixa, espaços e zeros à esquerda: "PVH05" = "PVH 5"),
-     depois pelo nome, e por fim por "contém"; sem nenhuma batida, usa o
-     próprio texto digitado. */
-  /* Resultado por (estado, texto) reaproveitado dentro da mesma passada de
-     cálculo: com centenas de lançamentos e poucas filiais distintas, a busca
-     no cadastro (várias varreduras de filiais por lançamento) se repetia à toa.
-     Descartado ao fim da passada, então nunca fica desatualizado. */
   let filialLabelCache = null;
 
   function treinamentoFilialLabel(meta) {
@@ -440,10 +347,6 @@ export function useDashboardData(filter) {
     return match ? String(match.shortName || match.name).toUpperCase() : text;
   }
 
-  /* Agregação para o gráfico de barras do Treinamento: soma a carga horária
-     por filial (loja) no período filtrado. `gerenteRegional`, quando
-     informado (filtro do Painel), restringe aos lançamentos daquele gerente
-     antes de somar — ver treinamentoGerentesRegionais. */
   function treinamentoBarByFilial(gerenteRegional) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
@@ -465,9 +368,6 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Quantidade de gerentes regionais distintos nos lançamentos de Treinamento
-     do estado e período (valor do KPI "Regional Treinamentos"; as horas de cada
-     um ficam só no gráfico). `range` null = sem filtro de período. */
   function treinamentoRegionaisCount(st, range) {
     const start = range && range.start;
     const end = range && range.end;
@@ -480,8 +380,6 @@ export function useDashboardData(filter) {
     return set.size;
   }
 
-  /* Horas de Treinamento por gerente regional no período filtrado (uma barra
-     por regional; lançamentos sem gerente ficam em "SEM REGIONAL"). */
   function horasPorRegional() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
@@ -495,8 +393,6 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Gerentes regionais que aparecem nos lançamentos de Treinamento do período
-     filtrado (para o filtro do gráfico no Painel), em ordem alfabética. */
   function treinamentoGerentesRegionais() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
@@ -508,10 +404,6 @@ export function useDashboardData(filter) {
     return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
   }
 
-  /* Lançamentos de treinamento de uma filial (usados ao clicar na barra).
-     `gerenteRegional`, quando informado, restringe ao mesmo filtro aplicado
-     na barra (ver treinamentoBarByFilial) — sem isso o card abriria com mais
-     lançamentos do que os somados na barra clicada. */
   function treinamentoFilialEntries(label, gerenteRegional) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
@@ -522,8 +414,6 @@ export function useDashboardData(filter) {
     return entries.filter((e) => treinamentoFilialLabel(e.meta) === label);
   }
 
-  /* Lançamentos de treinamento de um gerente regional (barra clicada no gráfico
-     Regional Treinamentos); "SEM REGIONAL" = lançamentos sem gerente. */
   function treinamentoRegionalEntries(label) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
@@ -532,10 +422,6 @@ export function useDashboardData(filter) {
     );
   }
 
-  /* Treinamentos agrupados por gerente regional no período filtrado (card do
-     KPI "Regional Treinamentos"): por regional, o total de horas, a
-     quantidade de colaboradores e a lista dos treinamentos. Mais horas
-     primeiro. */
   function treinamentoRegionalGroups() {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
@@ -569,9 +455,6 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.horas - a.horas);
   }
 
-  /* Agregação para o gráfico de barras dos Custos Totais: soma os custos
-     lançados por filial (razão social) no período filtrado. Sem FK pra
-     Filiais: o nome vem gravado no próprio lançamento (meta.razaoSocial). */
   function custosBarByFilial() {
     const ind = getIndicatorById("custo_total");
     if (!ind) return [];
@@ -590,11 +473,6 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Dados do gráfico de linha do Custo médio de contratação: o salário de cada
-     vaga (um lançamento por vaga, ver syncVacancyCost em employees.js) vira um
-     ponto, em ordem cronológica, rotulado com a função (o nome da vaga é o
-     próprio nome da função, ex.: "ANALISTA DE RH"). `vacancyId` abre o detalhe
-     da vaga ao clicar; lançamentos sem vaga vinculada não têm clique. */
   function custoContratacaoBarByFuncao() {
     const ind = getIndicatorById("custo_contratacao");
     if (!ind) return [];
@@ -614,12 +492,6 @@ export function useDashboardData(filter) {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  /* Custo médio de contratação por filial, no período filtrado (pizza): uma
-     fatia por filial com a média dos salários das vagas fechadas, maior custo
-     primeiro. Só as 8 primeiras ganham fatia própria; o resto vira "OUTRAS"
-     (key "__outras__", com as filiais agrupadas em `items` — abre um modal
-     com elas). key = filial (ou "__sem_filial__", mesma constante do modal de
-     Vagas), usada ao clicar na fatia. */
   const PIE_MAX_FILIAIS = 8;
   function custoContratacaoMedioPorFilial() {
     const byFilial = new Map();
@@ -646,8 +518,6 @@ export function useDashboardData(filter) {
     return [...rows.slice(0, PIE_MAX_FILIAIS), { key: "__outras__", label: "OUTRAS", value: sum / count, count, sum, items: rest }];
   }
 
-  /* Custo mensal de admissões = custo médio de contratação × admissões; sem
-     vagas fechadas no período não há média (null). */
   function custoAdmissaoMensal(admissoes) {
     const list = filterByRange(costVacancyEntries());
     if (!list.length) return null;
@@ -655,7 +525,6 @@ export function useDashboardData(filter) {
     return avg * (Number(admissoes) || 0);
   }
 
-  /* Centro da pizza: custo médio geral (todas as vagas fechadas do período). */
   function custoContratacaoPieCenter() {
     const list = filterByRange(costVacancyEntries());
     if (!list.length) return null;
@@ -663,8 +532,6 @@ export function useDashboardData(filter) {
     return { value: formatCurrency(avg), caption: "Média geral" };
   }
 
-  /* Agregação para o gráfico de barras do Custo médio da diária geral: soma
-     o valor pago por colaborador no período filtrado. */
   function diariaBarEntries() {
     const ind = getIndicatorById("custo_diaria");
     if (!ind) return [];
@@ -675,17 +542,11 @@ export function useDashboardData(filter) {
     return upperText((entry.meta && entry.meta.employeeName) || "Sem colaborador");
   }
 
-  /* Diárias de um colaborador (a barra clicada), as mesmas que compõem o valor
-     da barra — usadas no modal de detalhe. */
   function custoDiariaEntriesByColaborador(label) {
     const key = employeeNameKey(label);
     return diariaBarEntries().filter((e) => employeeNameKey(diariaColaboradorName(e)) === key);
   }
 
-  /* Resumo do gráfico de barras da diária (Painel): total pago, colaboradores
-     distintos e média — sobre a mesma lista das barras (`diariaBarEntries`) e
-     com a mesma regra do KPI (total ÷ colaboradores, ver aggregateEntries), então
-     os três números sempre batem com o gráfico e com o card. */
   function custoDiariaSummary() {
     const ind = getIndicatorById("custo_diaria");
     const list = diariaBarEntries();
@@ -697,8 +558,6 @@ export function useDashboardData(filter) {
   }
 
   function custoDiariaBarByColaborador() {
-    /* Nomes iguais (sem acento/caixa/espaços) viram um só colaborador; o
-       rótulo é a primeira grafia encontrada. */
     const byColaborador = new Map();
     diariaBarEntries().forEach((e) => {
       const nome = diariaColaboradorName(e);
@@ -715,37 +574,18 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Fonte única do "valor atual" de um indicador: usada tanto pelos KPIs
-     quanto pelo Panorama atual — ambos precisam mostrar exatamente o mesmo
-     número. */
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
-      /* Todos os "computed" seguem o filtro de período (mês) ativo — ver
-         computedValue. Headcount conta os ativos do mês referente filtrado
-         (inMonth em lib/employees.js); Tempo médio de contratação usa as vagas abertas no
-         período. */
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       return computedValue(ind, range);
     }
     return aggregateList(ind, filteredEntries(ind));
   }
 
-  /* Mês civil anterior ao mês selecionado no filtro — usado tanto pela seta
-     de variação (▲/▼) dos cards (comparar mês com o mês anterior) quanto pelo
-     cálculo do Turnover (%), que precisa do headcount/admissões do mês
-     anterior inteiro. O filtro do dashboard é sempre um mês fechado agora,
-     então isso NUNCA pode ser "duração igual em dias": meses têm tamanhos
-     diferentes (28–31 dias) — um filtro de março (31 dias) subtraindo 31 dias
-     não cai no 1º de fevereiro, cai em janeiro; um filtro de fevereiro (28)
-     só pega os últimos 28 dias de janeiro, perdendo os 3 primeiros. */
   function previousMonthRange() {
     return monthBefore(filter.start ? { start: filter.start, end: filter.end } : null);
   }
 
-  /* Valor de um KPI em cada estado (para o mapa do Painel): com o filtro em
-     "todos" traz RO, AM e PA; com um estado escolhido, só ele. Usa as mesmas
-     regras do card do KPI (indicatorCurrentValue), trocando o estado por vez.
-     Sem KPI selecionado, o Painel mostra Custo de folha de salário. */
   function kpiValueByEstado(kpiId) {
     const ind = getIndicatorById(kpiId || "custo_total");
     if (!ind) return [];
@@ -756,8 +596,6 @@ export function useDashboardData(filter) {
     return ufs.map((uf) => {
       stateOverride = uf;
       try {
-        /* Custo médio da diária geral: o mapa mostra o valor TOTAL pago no
-           estado (soma das diárias do período), não a média do card. */
         if (ind.id === "custo_diaria") {
           const list = diariaBarEntries();
           const total = list.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
@@ -789,10 +627,6 @@ export function useDashboardData(filter) {
     });
   }
 
-  /* ---------- KPIs ---------- */
-
-  /* Regional Treinamentos não tem KPI próprio: virou uma visão do gráfico de
-     Treinamento (botão Filial | Regional ao lado do título, no Painel). */
   const kpis = computed(() => {
     return INDICATORS.filter((ind) => ind.id !== "horas_regional").map((ind) => {
       const entries = filteredEntries(ind);
@@ -801,18 +635,12 @@ export function useDashboardData(filter) {
       let prev = null;
       const prevMonthRangeForDelta = filter.start ? previousMonthRange() : null;
       if (ind.computed) {
-        /* Mesmo cálculo do valor atual, aplicado ao mês anterior. */
         prev = prevMonthRangeForDelta ? computedValue(ind, prevMonthRangeForDelta) : null;
       } else if (prevMonthRangeForDelta && allEntries.length) {
-        /* Mês civil anterior, imediatamente antes do mês filtrado — não
-           "tudo desde sempre" (comparar set/2026 contra anos de histórico
-           acumulado quase sempre dava seta de queda, mesmo num mês normal). */
         const range = prevMonthRangeForDelta;
         const before = allEntries.filter((e) => e.date >= range.start && e.date <= range.end);
         prev = before.length ? aggregateList(ind, before) : null;
       } else if (!filter.start && entries.length > 1) {
-        /* Sem início de período: o "anterior" é a agregação de tudo menos o
-           último lançamento (respeitando soma/média/último do indicador). */
         prev = aggregateList(ind, entries.slice(0, -1));
       }
 
@@ -822,12 +650,6 @@ export function useDashboardData(filter) {
         delta = { diff, up: diff > 0, down: diff < 0 };
       }
 
-      /* Indicadores "computed" (headcount, turnover, retenção, tempo de
-         permanência/contratação) não têm lançamentos manuais: `entries` é o
-         histórico de snapshots diários recalculados automaticamente (um por
-         dia em que o dashboard foi aberto), não algo que o usuário lançou.
-         Rotular isso como "N lançamentos" é enganoso — o card não exibe
-         contagem nenhuma para esses indicadores. */
       const totalCount = entries.length;
       const countText = ind.computed
         ? ""
@@ -835,10 +657,6 @@ export function useDashboardData(filter) {
           ? "1 lançamento"
           : `${totalCount} lançamentos`;
 
-      /* Card especial do Turnover: exibe a taxa total (`totalPct`, mesma do
-         KPI); a pizza (`pieData`) segue com a taxa de Entrada
-         (admissões/headcount médio) e a de Saída (desligamentos/headcount
-         médio), cada fatia já em %. */
       if (ind.id === "turnover") {
         const range = filter.start ? { start: filter.start, end: filter.end } : null;
         const stats = turnoverRateStats(currentState(), range);
@@ -870,9 +688,6 @@ export function useDashboardData(filter) {
         entries
       };
 
-      /* Tempo médio de contratação: quantidade de vagas abertas/fechadas — só
-         as abertas no período filtrado (mesma regra do card/gráfico, ver
-         hiringAvgFor e o modal de Vagas). */
       if (ind.id === "tempo_contratacao") {
         const vacs = listVacancies(currentState()).filter((v) => {
           if (!v.openAt) return false;
@@ -895,10 +710,6 @@ export function useDashboardData(filter) {
     selectedId.value = id;
   }
 
-  /* ---------- Faixa de gráficos por indicador ----------
-     "Custos Totais", "Treinamento", "Tempo médio de contratação" e "Tempo
-     médio de permanência" saem desta faixa e ganham gráfico próprio abaixo
-     do Panorama (o KPI/card continua selecionável). */
   const kpiChartCards = computed(() => {
     const visible = INDICATORS.filter(
       (ind) =>
@@ -995,11 +806,6 @@ export function useDashboardData(filter) {
     ];
   }
 
-  /* Uma barra por colaborador desligado (registros do modal de Tempo médio
-     de permanência), no período filtrado pela Data de demissão — nome do
-     colaborador no rótulo e dias entre admissão e demissão como valor.
-     Cada barra carrega o id do registro (permanenciaId), usado ao clicar
-     para abrir o detalhe certo. */
   function turnoverTenureBarByEmployee() {
     const list = listPermanenciaRecords(currentState())
       .filter((p) => p.dataAdmissao && p.dataDemissao)
@@ -1009,8 +815,6 @@ export function useDashboardData(filter) {
         value: daysBetween(p.dataAdmissao, p.dataDemissao),
         permanenciaId: p.id
       }))
-      /* Mesma regra da média (turnoverAvgTenureDays): datas inválidas ou
-         invertidas ficam de fora. */
       .filter((p) => p.value !== null && Number.isFinite(p.value) && p.value >= 0);
     return filterByRange(list)
       .map((p) => ({
@@ -1022,9 +826,6 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
-  /* Rescisões por função no período filtrado (mês de referência). `mode`:
-     "liquido" = só o valor da rescisão; "total" = valor da rescisão + GRRF/
-     consignado + 40%. */
   function rescisoesBarByFuncao(mode = "total", filters) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return rescisoesByFuncao(currentState(), range, mode, filters).map((r) => ({
@@ -1034,7 +835,6 @@ export function useDashboardData(filter) {
     }));
   }
 
-  /* Rescisões por estado (fatias da pizza) no período filtrado. */
   function rescisoesPieByEstado(mode = "total", filters) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return rescisoesByEstado(currentState(), range, mode, filters).map((r) => ({
@@ -1043,13 +843,11 @@ export function useDashboardData(filter) {
     }));
   }
 
-  /* Opções dos filtros de filial e gerente imediato do gráfico de Rescisões. */
   function rescisoesFilterOptions() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return rescisaoFilterOptions(currentState(), range);
   }
 
-  /* Rescisões do estado (fatia clicada da pizza) no período filtrado. */
   function rescisoesEntriesByEstado(label, filters) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return listRescisoes(currentState(), range, filters).filter(
@@ -1057,33 +855,20 @@ export function useDashboardData(filter) {
     );
   }
 
-  /* Rescisões da função (barra clicada) no estado e período filtrados — as
-     mesmas somadas na barra. */
   function rescisoesEntriesByFuncao(label, filters) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return listRescisoes(currentState(), range, filters).filter((r) => rescisaoFuncaoLabel(r) === label);
   }
 
-  /* Detalhamento da Retenção no período filtrado — mesmos números usados
-     pelo KPI (ver indicatorCurrentValue), só que aqui expostos individual-
-     mente (headcount inicial/final e novas contratações) para a tabela do
-     gráfico, em vez de só a taxa final. Headcount inicial/final vêm de
-     `headcountCountInRange` (ativos do mês referente) no mês anterior e no
-     mês filtrado, respectivamente; novas contratações são as admissões do
-     Headcount no mês filtrado. */
   function retentionBreakdown() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const stats = retentionRate(currentState(), range, previousMonthRange());
-    /* Sem nenhum dos três números o cálculo não tem sentido (vira "—") — a
-       tabela avisa qual deles falta lançar em vez de só mostrar zero. */
     const missing = [];
     if (!stats.headcountInicial) missing.push("Headcount inicial");
     if (!stats.headcountFinal) missing.push("Headcount final");
     if (!stats.novasContratacoes) missing.push("Novas contratações");
     return { ...stats, missing };
   }
-
-  /* ---------- Panorama (barras) ---------- */
 
   const panorama = computed(() => {
     return INDICATORS.filter(
@@ -1098,10 +883,6 @@ export function useDashboardData(filter) {
     )
       .map((ind) => {
         const value = indicatorCurrentValue(ind);
-        /* Os rótulos dos KPIs de Tempo médio de contratação e Tempo médio de
-           permanência já mostram o valor arredondado (ver decimals no
-           config); sem isto a barra do Panorama desenhava o número cru
-           (ex.: "16.333333333333332") em vez do mesmo valor do KPI. */
         const displayValue =
           (ind.id === "tempo_contratacao" || ind.id === "tempo_permanencia") && value !== null
             ? Number(value.toFixed(ind.decimals ?? 1))
@@ -1111,9 +892,6 @@ export function useDashboardData(filter) {
             label: ind.name,
             value: displayValue,
             tooltipValue: value === null ? "sem dados" : formatValue(ind, value),
-            /* Antes só "custo_total" ganhava este formato — "custo_diaria"
-               (mesmo tipo "currency") caía no rótulo padrão e desenhava o
-               número cru (ex.: "25048.370000000003") em vez de moeda. */
             format: ind.type === "currency" ? "currency" : null
           }
         ];
@@ -1125,8 +903,6 @@ export function useDashboardData(filter) {
         return b.value - a.value;
       });
   });
-
-  /* ---------- Tabela de lançamentos ---------- */
 
   function tableRows(query) {
     const q = normalizeText(query).trim();
@@ -1141,8 +917,6 @@ export function useDashboardData(filter) {
       if (filter.end && e.date > filter.end) return false;
       return true;
     };
-    /* A busca é aplicada ANTES da ordenação: ordenar só o que sobrou é bem
-       mais barato do que ordenar tudo e descartar depois. */
     const nameMatches = new Map();
     const matchesQuery = (e, ind) => {
       if (!q) return true;
@@ -1162,8 +936,6 @@ export function useDashboardData(filter) {
     };
     INDICATORS.forEach((ind) => collect(all[ind.id], ind));
 
-    // Ordenação cronológica decrescente: o lançamento mais recente no topo.
-    // Desempate por id (criações mais novas primeiro) para o mesmo dia.
     rows.sort(
       (a, b) =>
         compareDateDesc(a.entry.date, b.entry.date) ||
@@ -1188,26 +960,10 @@ export function useDashboardData(filter) {
     return formatValue(ind, entry.value);
   }
 
-  /* ---------- Painel: gráfico central por KPI selecionado ---------- */
   const COCKPIT_AVG_TYPES = ["percent", "days", "months"];
 
-  /* Monta os dados do gráfico grande do Painel a partir do KPI selecionado
-     (ou o gráfico padrão — Custo de folha de salário — quando nenhum está
-     selecionado; Panorama atual foi desativado). Mesma regra de agregação
-     usada nos cards de "Evolução por indicador" (ver KpiChartCard.vue),
-     centralizada aqui para reaproveitar no Painel. */
   function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = []) {
     if (!kpiId) {
-      /* Panorama atual (desativado):
-      return {
-        id: null,
-        kind: "bar",
-        title: "Panorama atual",
-        sub: "Último valor por indicador",
-        data: panorama.value,
-        valueFormat: ""
-      };
-      */
       return {
         id: null,
         kind: "bar",
@@ -1221,8 +977,6 @@ export function useDashboardData(filter) {
     }
 
     if (kpiId === "turnover") {
-      /* `summary`: quantidades de admissões e demissões (e ativos) do período e
-         estado filtrados, exibidas ao lado da pizza no Painel. */
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       const stats = turnoverRateStats(currentState(), range);
       return {
@@ -1238,15 +992,12 @@ export function useDashboardData(filter) {
           totalPct: stats.turnoverPct,
           entradaPct: stats.turnoverEntradaPct,
           saidaPct: stats.turnoverSaidaPct,
-          /* Custo de admissões: custo médio de contratação (média dos salários
-             das vagas fechadas no período/estado) × admissões do Headcount. */
           custoAdmissaoMensal: custoAdmissaoMensal(stats.admissoes)
         },
         valueFormat: ""
       };
     }
     if (kpiId === "headcount" && headcountView === "pie") {
-      /* Pizza: total de Masculino x Feminino nos estados/filial/mês filtrados. */
       const rows = headcountBarByState(headcountFilial, headcountEmpresa, headcountFuncao);
       const sum = (i) => rows.reduce((acc, r) => acc + (r.series[i].value || 0), 0);
       return {
@@ -1372,10 +1123,7 @@ export function useDashboardData(filter) {
       };
     }
     if (kpiId === "absenteismo") {
-      /* Pizza: participação de cada tipo de ocorrência; o total fica no centro. */
       const rows = absenteismoBarByMotivo(absenteismoFilial);
-      /* Total de ocorrencias (nao a soma das fatias: Advertencia e Acidente
-         sao marcacoes e podem acompanhar outro motivo). */
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       const total = absenteismoOcorrencias(currentState(), range, absenteismoFilial).length;
       return {

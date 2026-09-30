@@ -10,10 +10,6 @@ import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatDate, ymLabel } from "@/lib/utils";
 
-/* Análise de Turnover em tela cheia (botão direito no KPI de Turnover):
-   Entrada vs Saída (mesma fonte do KPI) e taxas de Entrada/Saída/Turnover por
-   função e por gênero. Tudo vem do Headcount (admissões, desligamentos e
-   quadro ativo), no período e estado filtrados. */
 defineProps({
   open: { type: Boolean, default: false }
 });
@@ -23,8 +19,6 @@ const emit = defineEmits(["close"]);
 const { state } = useFilters();
 const PERCENT = { type: "percent", decimals: 1 };
 
-/* Filtro de estado próprio do modal: abre no estado do filtro global, mas
-   trocar aqui não altera o resto do dashboard. */
 const estadoSel = ref(!state.current || state.current === "todos" ? "todos" : state.current);
 const estadoOptions = [{ id: "todos", label: "Todos" }, ...STATES.map((s) => ({ id: s, label: s }))];
 
@@ -54,9 +48,6 @@ function norm(v, fallback) {
 
 const pct = (n, ativos) => (ativos ? (n / ativos) * 100 : 0);
 
-/* Agrupa ativos, admissões e desligamentos por uma chave (função ou gênero) e
-   calcula as taxas sobre os ativos do próprio grupo: Entrada = admissões ÷
-   ativos, Saída = desligamentos ÷ ativos, Turnover = média dos dois. */
 function groupBy(keyOf, rng = range.value) {
   const map = new Map();
   const bump = (list, field) =>
@@ -86,7 +77,6 @@ const funcaoRows = computed(() =>
   )
 );
 
-/* Verde = Entrada, vermelho = Saída (azul/rosa ficam só para gênero). */
 const COR_ENTRADA = "#16a34a";
 const COR_SAIDA = "#dc2626";
 
@@ -109,7 +99,6 @@ const generoRows = computed(() =>
   })
 );
 
-/* Categorias Entrada/Saída (%), uma série por gênero. */
 const generoData = computed(() => {
   const rows = generoRows.value;
   return [
@@ -120,9 +109,6 @@ const generoData = computed(() => {
 
 const fmtPct = (v) => formatValue(PERCENT, v);
 
-/* ---------- Turnover em período de experiência (até 90 dias) ----------
-   Desligamentos do período cuja Data de desligamento caiu em até 90 dias
-   depois da Data de admissão. */
 const DIAS_EXPERIENCIA = 90;
 
 function diasDeCasa(h) {
@@ -168,7 +154,6 @@ function onExperienciaClick(sliceIndex) {
   };
 }
 
-/* ---------- Clique numa barra/fatia: detalhe do grupo ---------- */
 const grupo = ref(null);
 
 function openGrupo({ title, entrada, keyOf, key, row }) {
@@ -197,21 +182,18 @@ function openGrupo({ title, entrada, keyOf, key, row }) {
   };
 }
 
-/* datasetIndex 0 = Entrada, 1 = Saída (ordem das séries por função). */
 function onFuncaoClick({ index, datasetIndex }) {
   const row = funcaoRows.value[index];
   if (!row) return;
   openGrupo({ entrada: datasetIndex === 0, keyOf: funcaoKey, key: row.label, row });
 }
 
-/* Categoria (index) 0 = Entrada, 1 = Saída; a série (datasetIndex) é o gênero. */
 function onGeneroClick({ index, datasetIndex }) {
   const row = generoRows.value[datasetIndex];
   if (!row) return;
   openGrupo({ entrada: index === 0, keyOf: generoKey, key: row.label, row });
 }
 
-/* Fatia 0 = Entrada, 1 = Saída; fora da fatia (centro) não abre nada. */
 function onPieClick(sliceIndex) {
   if (sliceIndex !== 0 && sliceIndex !== 1) return;
   openGrupo({ entrada: sliceIndex === 0 });
@@ -268,7 +250,6 @@ const STATUS_FILIAL = {
 
 const fmtDelta = (d) => `${d > 0 ? "+" : ""}${d.toFixed(1).replace(".", ",")} p.p.`;
 
-/* Frases-resumo geradas dos números acima. */
 const filialInsights = computed(() => {
   const rows = filialRows.value;
   const list = [];
@@ -318,7 +299,6 @@ const tables = computed(() => [
   { title: "Por gênero", col: "Gênero", rows: generoRows.value }
 ]);
 
-/* Admissões e desligamentos do período, mais recentes primeiro. */
 const lancamentos = computed(() => {
   const map = (list, entrada) =>
     list.map((h) => ({
@@ -335,7 +315,6 @@ const lancamentos = computed(() => {
   );
 });
 
-/* Cartões de indicadores: barra colorida no topo + valor + apoio. */
 const totals = computed(() => [
   {
     label: "Turnover geral",
@@ -371,7 +350,6 @@ const totals = computed(() => [
 <template>
   <Modal title="Análise de Turnover" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
     <template #actions>
-      <!-- Filtro de estado (só deste modal) -->
       <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
         <button
           v-for="o in estadoOptions"
@@ -390,7 +368,6 @@ const totals = computed(() => [
     </template>
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
       <div class="mx-auto flex max-w-7xl flex-col gap-6">
-        <!-- Indicadores -->
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="t in totals"
@@ -404,7 +381,6 @@ const totals = computed(() => [
           </div>
         </div>
 
-        <!-- Visão geral -->
         <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
@@ -459,7 +435,6 @@ const totals = computed(() => [
           </section>
         </div>
 
-        <!-- Por função -->
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por função</h3>
@@ -472,7 +447,6 @@ const totals = computed(() => [
           </div>
         </section>
 
-        <!-- Filiais críticas -->
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Filiais críticas</h3>
@@ -539,7 +513,6 @@ const totals = computed(() => [
           <p v-else class="px-5 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">Sem filiais com quadro ativo no período.</p>
         </section>
 
-        <!-- Detalhamento -->
         <div class="grid items-start gap-5 xl:grid-cols-2">
           <section
             v-for="t in tables"

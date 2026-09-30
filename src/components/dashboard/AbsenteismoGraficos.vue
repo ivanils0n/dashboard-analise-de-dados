@@ -5,8 +5,6 @@ import PieChart from "@/components/charts/PieChart.vue";
 import { TIPOS, countBy } from "@/lib/absenteismo";
 import { STATE_NAMES } from "@/lib/config";
 
-/* Gráficos do mapa de absenteísmo (mês e estado filtrados): ocorrências por
-   colaborador, ranking por filial, motivos e estados. */
 const props = defineProps({
   ocorrencias: { type: Array, default: () => [] }
 });
@@ -21,7 +19,6 @@ const only = (tipo) => {
   return t ? props.ocorrencias.filter((o) => t.has(o)) : props.ocorrencias;
 };
 
-/* Nomes longos são abreviados com reticências para caberem no eixo do gráfico. */
 const shortName = (name) => (name.length > 22 ? `${name.slice(0, 21).trimEnd()}…` : name);
 const porColaborador = computed(() =>
   countBy(only(motivoColaborador.value), (o) => o.colaborador).map((d) => ({ ...d, label: shortName(d.label) }))

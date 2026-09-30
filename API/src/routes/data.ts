@@ -6,13 +6,8 @@ import { googleSheetsEnabled, warmSheetsApi } from "../db/googleSheets";
 import { fail, ok, readJsonBody } from "../utils/http";
 import type { AppEnv } from "../types";
 
-// Endpoint em lote usado pela sincronização do frontend (delta sync).
-// Recebe o nome da tabela no formato "colaboradores_ro" (um estado) ou
-// "colaboradores" puro (todos os estados — só leitura, ver parseStateTable).
 const data = new Hono<AppEnv>();
 
-// Carga em lote: GET /api/data/_batch?tables=vagas,turnover,... (sem "tables" =
-// todas as entidades). Uma única chamada à planilha para todas as abas.
 data.get("/_batch", requireAuth(), async (c) => {
   const requested = (c.req.query("tables") ?? "")
     .split(",")
@@ -22,14 +17,11 @@ data.get("/_batch", requireAuth(), async (c) => {
   return ok(c, await listManyTables(c.env, keys, c.req.raw.signal));
 });
 
-// Aquecimento: o front chama ao abrir telas de lançamento para a primeira
-// gravação não pagar o "acordar" do servidor (login no Google, gid das abas).
 data.get("/_warm", requireAuth(), async (c) => {
   if (googleSheetsEnabled(c.env)) {
     try {
       await warmSheetsApi(c.env, "absenteismo");
     } catch {
-      /* só aquecimento: a gravação de verdade trata o erro */
     }
   }
   return ok(c, { warm: true });
@@ -47,7 +39,6 @@ data.post("/:table", requireAuth(["admin", "analista"]), async (c) => {
   const parsed = parseStateTable(c.req.param("table"));
   if (!parsed) return fail(c, 404, "Tabela inválida.", "invalid_table");
   if (parsed.estado === ESTADO_TODOS) {
-    // Escrever sem saber o estado é ambíguo (não dá pra gravar estado_sigla).
     return fail(c, 400, "Informe o estado (ex.: colaboradores_ro) para gravar.", "invalid_state");
   }
 

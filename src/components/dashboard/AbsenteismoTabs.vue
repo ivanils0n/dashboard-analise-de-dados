@@ -1,5 +1,4 @@
 <script setup>
-/* Alternador Mapa | Gráficos da página de absenteísmo. */
 defineProps({ modelValue: { type: String, default: "mapa" } });
 const emit = defineEmits(["update:modelValue"]);
 

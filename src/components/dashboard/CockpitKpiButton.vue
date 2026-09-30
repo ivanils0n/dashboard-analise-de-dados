@@ -4,10 +4,6 @@ import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue } from "@/lib/utils";
 import { useCountUp } from "@/composables/useCountUp";
 
-/* KPI selecionável do Painel — mesma linguagem visual dos cards da Visão geral
-   (ícone centralizado, nome embaixo, valor em destaque, "R$" acima do valor em
-   moeda, Turnover com a taxa total), só que compacto: sem gráfico
-   de linha, pois o gráfico do KPI aparece grande no centro do Painel. */
 const props = defineProps({
   kpi: { type: Object, required: true },
   selected: { type: Boolean, default: false }
@@ -19,7 +15,6 @@ const PERCENT = { type: "percent", decimals: 1 };
 
 const hasValue = computed(() => props.kpi.current !== null && props.kpi.current !== undefined);
 
-/* Turnover (pizza): mostra a taxa total. */
 const isPie = computed(() => props.kpi.kind === "pie");
 const animatedPct = useCountUp(() => props.kpi.totalPct);
 const pieText = computed(() => formatValue(PERCENT, animatedPct.value));

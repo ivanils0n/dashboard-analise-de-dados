@@ -12,18 +12,12 @@ import {
   yearOptions
 } from "@/lib/utils";
 
-/* Filtro de período: um único mês fixo (ex.: "Ago/2026"), não mais um
-   intervalo de dias. `range` continua sendo um objeto reativo { start, end }
-   (compatibilidade com o resto do app, que filtra por data) — só que agora
-   sempre corresponde exatamente ao 1º e ao último dia do mês escolhido. */
 const props = defineProps({
   range: { type: Object, required: true },
   title: { type: String, default: "Mês" },
   align: { type: String, default: "right" }
 });
 
-/* "apply" avisa que o usuário aplicou um período — mesmo quando é o mesmo mês
-   já filtrado (nesse caso o `range` não muda e nenhum watcher dispararia). */
 const emit = defineEmits(["apply"]);
 
 const open = ref(false);

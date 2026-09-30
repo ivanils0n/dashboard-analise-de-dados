@@ -13,10 +13,6 @@ import { beginLoading, endLoading } from "@/composables/useLoading";
 import { monthYm } from "@/lib/utils";
 import { useMonthOcorrencias } from "@/lib/absenteismo";
 
-/* Página do Mapa de Absenteísmo: colaboradores do Headcount no mês filtrado
-   (mesmo filtro de período do dashboard) x dias do mês, com o lançamento da
-   ocorrência de cada dia; os KPIs ficam abaixo, e a aba Gráficos mostra as
-   ocorrências do mês. */
 /* Altura fixa (tela toda): quem rola é a tabela do mapa (ou a área dos gráficos), nunca a
    página — assim o toque no celular não disputa rolagem com a página. 7rem = cabeçalho do
    celular + margens do layout; a partir de md a barra lateral substitui o cabeçalho.
@@ -59,7 +55,6 @@ onActivated(() => {
     <template v-if="tab === 'graficos'">
       <AbsenteismoTabs v-model="tab" />
       <div class="min-h-0 flex-1 overflow-y-auto pb-2">
-        <!-- No celular os KPIs ficam aqui (no mapa eles tirariam espaço da tabela). -->
         <div class="mb-3 md:hidden"><AbsenteismoKpis :ocorrencias="ocorrencias" /></div>
         <AbsenteismoGraficos :ocorrencias="ocorrencias" />
       </div>

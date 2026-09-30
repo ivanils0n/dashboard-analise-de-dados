@@ -1,8 +1,6 @@
 <script setup>
 import { computed } from "vue";
 
-/* Ícone de cada KPI (traço, 24×24). O conteúdo é estático e definido aqui, por
-   isso é seguro injetar via v-html. Ids sem ícone caem no gráfico de barras. */
 const props = defineProps({
   id: { type: String, default: "" },
   size: { type: Number, default: 18 }
@@ -13,7 +11,6 @@ const ICONS = {
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   turnover:
     '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
-  /* "Geral" do Turnover: mesmo ícone (entrada/saída combinadas). */
   geral:
     '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
   absenteismo:
@@ -39,11 +36,8 @@ const ICONS = {
     '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
   faturamento_pct:
     '<line x1="19" x2="5" y1="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
-  /* Custo médio por colaborador: pessoa com uma moeda ($) no canto. */
-  /* Regional Treinamentos: grupo de pessoas. */
   horas_regional:
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-  /* Rescisões: documento com uma linha riscada (desligamento). */
   rescisoes:
     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/>',
   ticket_medio:

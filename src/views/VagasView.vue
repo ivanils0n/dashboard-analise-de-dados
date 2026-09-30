@@ -10,9 +10,6 @@ import { beginLoading, endLoading } from "@/composables/useLoading";
 import { listVacancies } from "@/lib/employees";
 import { formatCurrency, formatDate, normalizeText, ymLabel, daysBetween, todayISO } from "@/lib/utils";
 
-/* Página detalhada de Vagas: uma vaga por linha (aba "vagas"), com pesquisa e
-   filtros de estado, mês de abertura, situação, filial, recrutador e tipo de
-   contratação. */
 const { state: filters } = useFilters();
 
 onActivated(() => {
@@ -23,15 +20,12 @@ onActivated(() => {
 });
 
 const search = ref("");
-/* Todos os filtros abaixo aceitam vários valores ([] = sem filtro). */
 const meses = ref([]);
 const situacoes = ref([]);
 const filiais = ref([]);
 const recrutadores = ref([]);
 const tipos = ref([]);
 
-/* Uma linha "achatada" por vaga do estado escolhido. `dias`: da abertura até o
-   fechamento (ou até hoje, se aberta) — null se as datas forem inválidas. */
 const base = computed(() => {
   void filters.revision;
   const hoje = todayISO();
@@ -66,7 +60,6 @@ const filialOptions = computed(() => uniqueSorted("filial"));
 const recrutadorOptions = computed(() => uniqueSorted("recrutador"));
 const tipoOptions = computed(() => uniqueSorted("tipo"));
 
-/* Valor marcado que deixou de existir (troca de estado) sai da seleção. */
 function prune(selected, options) {
   if (selected.value.some((v) => !options.includes(v))) {
     selected.value = selected.value.filter((v) => options.includes(v));
@@ -80,8 +73,6 @@ watch([mesOptions, situacaoOptions, filialOptions, recrutadorOptions, tipoOption
   prune(tipos, tipoOptions.value);
 });
 
-/* O filtro de mês já abre no mês anterior ao atual. Vale só na primeira vez que
-   há dados — e só se esse mês existir neles; depois disso a escolha é do usuário. */
 function previousYm() {
   const d = new Date();
   d.setDate(1);

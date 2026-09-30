@@ -7,7 +7,6 @@ import { syncAll } from "./lib/employees";
 import { isAuthenticated, getProfile, startAuthPolling } from "./lib/auth";
 import { installLongPressContextMenu } from "./lib/longPress";
 
-/* iPhone/iPad: toque longo vira "botão direito" (ver lib/longPress.js). */
 installLongPressContextMenu();
 
 if (import.meta.env.PROD) {
@@ -16,9 +15,6 @@ if (import.meta.env.PROD) {
   } catch (e) {}
 }
 
-/* PWA: registra o service worker (public/sw.js) só no build de produção — no
-   dev ele guardaria arquivos do Vite em cache e atrapalharia o hot reload.
-   Depois do carregamento, para não disputar rede com os dados iniciais. */
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch((err) => {
@@ -52,7 +48,6 @@ const upperDirective = {
       try {
         target.setSelectionRange(pos, pos);
       } catch (err) {
-        /* noop */
       }
       target.dispatchEvent(new Event("input", { bubbles: true }));
     };
@@ -70,20 +65,14 @@ const upperDirective = {
 bootstrap().then(() => {
   const app = createApp(App);
   app.directive("upper", upperDirective);
-  /* Expõe erros de render/computed no console com um rótulo claro, para
-     facilitar o diagnóstico (o Vue, em produção, os engole silenciosamente). */
   app.config.errorHandler = (err, instance, info) => {
     console.error("[GG] Erro na aplicação:", info, err);
   };
   app.use(router);
   app.mount("#app");
 
-  /* Baixa os chunks das demais abas em tempo ocioso para tornar a troca
-     entre elas instantânea. */
   prefetchRoutes();
 
-  /* Remove a tela de loading estática exibida enquanto os dados iniciais
-     eram carregados (ver index.html). */
   const loading = document.getElementById("app-loading");
   if (loading) loading.remove();
 });

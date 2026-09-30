@@ -11,8 +11,6 @@ const props = defineProps({
   height: { type: String, default: "h-56" }
 });
 
-/* Sem nada para desenhar (lista vazia ou todos os valores zerados/vazios):
-   mostra o aviso ChartEmpty por cima do gráfico. */
 const isEmpty = computed(() => !props.entries.length);
 
 const canvas = ref(null);
@@ -35,12 +33,10 @@ function unmountChart() {
 onMounted(mountChart);
 onBeforeUnmount(unmountChart);
 
-/* Ao voltar de uma aba mantida em cache (KeepAlive), reajusta o canvas. */
 onActivated(() => {
   if (chart) chart.resize();
 });
 
-/* Recria o gráfico com a paleta do tema quando o modo claro/escuro muda */
 watch(isDark, () => {
   unmountChart();
   mountChart();

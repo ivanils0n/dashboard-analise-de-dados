@@ -1,5 +1,3 @@
-// Domínio de Filiais.
-
 import { getBranches, upsertBranch, deleteBranch } from "./store";
 import { createId, sameState } from "./utils";
 

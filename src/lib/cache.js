@@ -1,16 +1,10 @@
-/* Cópia local (sessionStorage) por item: ggd:<tabela>:<id> = JSON do registro.
-   sessionStorage evita persistir PII em disco. É só reserva: o boot sempre
-   baixa do servidor e só usa esta cópia se o download falhar (ver lib/db.js). */
-
 import { sessionStore, localStore } from "./utils";
 
 const PREFIX = "ggd:";
 const LEGACY_KEY = "gg-data-cache";
-// Resíduo da versão que dava validade de 5 min à cópia local.
 const LEGACY_LOADED_AT_KEY = "gg-data-loaded-at";
 
 export const DataCache = {
-  /* ---- Itens ---- */
   keyFor(tabela, id) {
     return PREFIX + tabela + ":" + id;
   },
@@ -24,10 +18,6 @@ export const DataCache = {
     }
   },
 
-  /* Devolve false quando o navegador recusou a gravação (cota cheia) — quem
-     chama descarta o cache inteiro. Não usa safeSetItem: ele abre espaço
-     apagando os OUTROS itens do cache e devolve true, o que deixava um cache
-     parcial que o próximo boot restaurava como se estivesse completo. */
   setItem(tabela, id, data) {
     try {
       sessionStore.setItem(this.keyFor(tabela, id), JSON.stringify(data));
@@ -49,7 +39,6 @@ export const DataCache = {
     } catch (e) {}
   },
 
-  /* ---- Varredura ---- */
   keys() {
     const out = [];
     for (let i = 0; i < sessionStore.length; i++) {
@@ -59,8 +48,6 @@ export const DataCache = {
     return out;
   },
 
-  /* Apaga todos os itens das tabelas informadas numa varredura só (em vez de
-     uma varredura do sessionStorage inteiro por tabela). */
   removeTables(tabelas) {
     const prefixes = tabelas.map((tabela) => PREFIX + tabela + ":");
     this.keys()
@@ -72,7 +59,6 @@ export const DataCache = {
     this.keys().forEach((k) => sessionStore.removeItem(k));
   },
 
-  // Remove resíduos legados (ggd:* e gg-data-cache em localStorage, validade antiga).
   removeLegacy() {
     try {
       sessionStore.removeItem(LEGACY_LOADED_AT_KEY);

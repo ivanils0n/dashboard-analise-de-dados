@@ -9,23 +9,16 @@ import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, ymLabel } from "@/lib/utils";
 
-/* Análise de Headcount em tela cheia (botão direito no KPI de Headcount):
-   evolução do quadro e composição dos colaboradores ativos (gênero, empresa,
-   tempo de casa, função e filial), no mês e estado do filtro. */
 defineProps({
   open: { type: Boolean, default: false }
 });
 
-/* "colaboradores": abre a lista de colaboradores (genero: "" | "masculino" |
-   "feminino") — hospedada na Visão geral. */
 const emit = defineEmits(["close", "colaboradores"]);
 
 const { state } = useFilters();
 const PERCENT = { type: "percent", decimals: 1 };
 const fmtPct = (v) => formatValue(PERCENT, v);
 
-/* Filtro de estado próprio do modal: abre no estado do filtro global, mas
-   trocar aqui não altera o resto do dashboard. */
 const estadoSel = ref(!state.current || state.current === "todos" ? "todos" : state.current);
 const estadoOptions = [{ id: "todos", label: "Todos" }, ...STATES.map((s) => ({ id: s, label: s }))];
 
@@ -46,7 +39,6 @@ const quadro = computed(() => headcountActiveInRange(estadoSel.value, range.valu
 const total = computed(() => quadro.value.length);
 const movements = computed(() => headcountMovements(estadoSel.value, range.value));
 
-/* ---------- Cartões ---------- */
 function addMonths(ym, delta) {
   const [y, m] = ym.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
@@ -57,7 +49,6 @@ const GENERO_LABEL = { masculino: "Masculino", feminino: "Feminino" };
 const GENERO_COR = { Masculino: "#0284c7", Feminino: "#db2777", "Não informado": "#a1a1aa" };
 const generoKey = (h) => GENERO_LABEL[String(h.genero || "").trim().toLowerCase()] || "Não informado";
 
-/* Data de referência do tempo de casa: fim do mês filtrado (ou hoje). */
 const dataReferencia = computed(() => {
   const [y, m] = ymAtual.value.split("-").map(Number);
   return y && m ? new Date(y, m, 0) : new Date();
@@ -114,9 +105,6 @@ const cards = computed(() => {
   ];
 });
 
-/* ---------- Evolução do quadro (de janeiro até o mês filtrado) ----------
-   Ano do mês filtrado (ou o atual, sem filtro de mês), do início do ano até
-   esse mês. */
 const anoEvolucao = computed(() => Number((ymAtual.value || new Date().toISOString().slice(0, 7)).slice(0, 4)));
 const evolucao = computed(() => {
   const fim = ymAtual.value || new Date().toISOString().slice(0, 7);
@@ -127,7 +115,6 @@ const evolucao = computed(() => {
   }));
 });
 
-/* ---------- Composição do quadro ---------- */
 const quadroGenero = computed(() => {
   const counts = new Map();
   quadro.value.forEach((h) => counts.set(generoKey(h), (counts.get(generoKey(h)) || 0) + 1));
@@ -171,7 +158,6 @@ const quadroTempoCasa = computed(() => {
   return rows;
 });
 
-/* ---------- Por filial ---------- */
 const filialRows = computed(() => {
   const map = new Map();
   quadro.value.forEach((h) => {
@@ -198,8 +184,6 @@ const filialRows = computed(() => {
     .sort((a, b) => b.ativos - a.ativos || a.nome.localeCompare(b.nome, "pt-BR"));
 });
 
-/* Fatia 0 = Masculino, 1 = Feminino; a lista de colaboradores abre no estado
-   escolhido aqui pela Visão geral (que a hospeda). */
 function onGeneroClick(sliceIndex) {
   const slice = quadroGenero.value[sliceIndex];
   const genero = slice ? { Masculino: "masculino", Feminino: "feminino" }[slice.label] || "" : "";
@@ -218,7 +202,6 @@ function onGeneroClick(sliceIndex) {
         >
           Ver colaboradores
         </button>
-        <!-- Filtro de estado (só deste modal) -->
         <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
           <button
             v-for="o in estadoOptions"
@@ -239,7 +222,6 @@ function onGeneroClick(sliceIndex) {
 
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
       <div class="mx-auto flex max-w-7xl flex-col gap-6">
-        <!-- Indicadores -->
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="c in cards"
@@ -253,7 +235,6 @@ function onGeneroClick(sliceIndex) {
           </div>
         </div>
 
-        <!-- Evolução -->
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Evolução do quadro</h3>
@@ -266,7 +247,6 @@ function onGeneroClick(sliceIndex) {
           </div>
         </section>
 
-        <!-- Composição do quadro -->
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Composição do quadro</h3>
@@ -299,7 +279,6 @@ function onGeneroClick(sliceIndex) {
           <p v-else class="px-5 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">Sem quadro ativo no período.</p>
         </section>
 
-        <!-- Por função -->
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por função</h3>
@@ -310,7 +289,6 @@ function onGeneroClick(sliceIndex) {
           </div>
         </section>
 
-        <!-- Por filial -->
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por filial</h3>

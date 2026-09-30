@@ -1,4 +1,3 @@
-// Erro controlado da API: a mensagem pode ser mostrada ao cliente.
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;

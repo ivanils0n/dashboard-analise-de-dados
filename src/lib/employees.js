@@ -1,8 +1,3 @@
-/* Vagas, Turnover, Permanência e Headcount: cálculos e CRUD desses 4
-   indicadores. "tempo_contratacao" e "custo_contratacao" são derivados ao
-   vivo das vagas (sem gravar snapshot); Headcount, Retenção e Tempo de
-   permanência são lançamento manual mensal/por planilha. */
-
 
 import {
   useData,
@@ -28,16 +23,11 @@ import { computed, toRaw } from "vue";
 import { createId, nowLocalISO, daysBetween, sameState } from "./utils";
 import { flush } from "./db";
 
-/* Restringe uma lista ao estado escolhido ("todos"/vazio = sem filtro; nesse
-   caso devolve a própria lista, sem cópia). */
 function filterByState(list, state) {
   if (!state || state === "todos") return list;
   return list.filter((x) => sameState(x.estado, state));
 }
 
-/* Chave de comparação de nomes abreviados de filial: ignora caixa, acentos,
-   espaços/pontuação e zeros à esquerda de cada número.
-   Ex.: "pvh5", "PVH 5", "pvh05", "Pvh-05" → mesma chave ("pvh5"). */
 const _branchKeyCache = new Map();
 export function normalizeBranchKey(value) {
   const raw = String(value ?? "");
@@ -55,10 +45,6 @@ export function normalizeBranchKey(value) {
   return key;
 }
 
-/* Distância de edição entre duas strings (Damerau-Levenshtein simplificada):
-   inserção, remoção, troca de uma letra e troca de duas letras vizinhas
-   contam 1 cada — "gm" → "gmi" = 1 (letra faltando), "phv" → "pvh" = 1
-   (letras trocadas), "pvx" → "pvh" = 1 (letra errada). */
 function editDistance(a, b) {
   const rows = a.length + 1;
   const cols = b.length + 1;
@@ -80,11 +66,6 @@ function editDistance(a, b) {
   return d[rows - 1][cols - 1];
 }
 
-/* Filial mais parecida quando não há correspondência exata: as letras podem
-   ter uma letra a mais/a menos, errada ou trocada de lugar, mas o NÚMERO é o
-   definidor — "pvh 1" nunca casa com "pvh 11". Sem número no texto, casa só
-   se uma única filial for a mais próxima. Empate entre filiais diferentes =
-   ambíguo (null), para não associar à filial errada. */
 function fuzzyBranch(key, list) {
   const letters = key.replace(/\d/g, "");
   const digits = key.replace(/\D/g, "");
@@ -110,15 +91,6 @@ function fuzzyBranch(key, list) {
   return best && !tie ? best : null;
 }
 
-/* Localiza a filial pelo nome abreviado (shortName), tolerando as variações
-   acima e, sem correspondência exata, letras faltando/erradas/trocadas (ver
-   fuzzyBranch). Quando `estado` é informado, exige que a filial pertença a ele —
-   evita cruzar com uma filial de outro estado que reaproveite o mesmo nome
-   abreviado. Devolve a filial ou null. */
-/* Resultados por (estado, texto): o casamento aproximado roda milhares de vezes
-   a cada troca de filtro, sempre com poucos textos distintos. O cache vale
-   dentro de uma mesma passada síncrona e é descartado se o cadastro de filiais
-   mudou (assinatura). */
 let _branchLookup = { sig: "", map: new Map(), fresh: false };
 
 function branchLookupCache(all) {
@@ -147,9 +119,6 @@ export function findBranchByShortName(text, estado) {
   return found;
 }
 
-/* Chave canônica da filial de um lançamento: a do cadastro quando a filial é
-   reconhecida (inclusive com erro de digitação), senão a do próprio texto.
-   Dois lançamentos "PVH1" e "phv 1" ficam com a mesma chave. */
 export function branchKeyFor(text, estado) {
   const key = normalizeBranchKey(text);
   if (!key) return "";
@@ -157,24 +126,13 @@ export function branchKeyFor(text, estado) {
   return b ? normalizeBranchKey(b.shortName) : key;
 }
 
-/* Converte valor monetário opcional em número (null quando vazio). */
 export function moneyOrNull(value) {
   if (value === undefined || value === null || value === "") return null;
   const num = Number(value);
   return isNaN(num) ? null : num;
 }
 
-/* ---------- Cálculos ---------- */
-
-/* Média dos dias entre abertura e fechamento de uma lista de vagas — só as
-   já fechadas contam (vagas ainda abertas não têm um tempo de contratação
-   definitivo ainda). Pura (sem depender do store), reaproveitada tanto pelo
-   snapshot diário local (avgHiringDays) quanto pelo card do dashboard, que a
-   aplica às vagas do período filtrado (ver useDashboardData). */
 export function averageHiringDays(list) {
-  /* Só datas válidas e em ordem (fechamento depois da abertura): uma data
-     ilegível virava 0 dia e uma invertida virava dias negativos, e ambas
-     entravam na média puxando o resultado. */
   const days = (list || [])
     .filter((v) => v.openAt && v.closeAt)
     .map((v) => daysBetween(v.openAt, v.closeAt))
@@ -183,19 +141,10 @@ export function averageHiringDays(list) {
   return days.reduce((sum, d) => sum + d, 0) / days.length;
 }
 
-/* Tempo médio de contratação a partir das vagas já carregadas no store,
-   sem filtro de período — usado só pelo snapshot diário (syncVacancyIndicator).
-   O card do dashboard filtra as vagas pelo período antes de usar
-   averageHiringDays (ver useDashboardData). */
 export function avgHiringDays(state) {
   return averageHiringDays(listVacancies(state));
 }
 
-/* Indicadores "computed" exibidos no dashboard — "tempo_contratacao" do card
-   é calculado sobre as vagas do período (ver useDashboardData.js), não por
-   este snapshot local.
-   Headcount, Retenção e Tempo de permanência não entram mais aqui: viraram
-   lançamento manual mensal (form "mensal"). */
 export function computedSnapshot(indId, state) {
   switch (indId) {
     case "headcount":
@@ -207,18 +156,9 @@ export function computedSnapshot(indId, state) {
   }
 }
 
-/* "tempo_contratacao" e "custo_contratacao" já são calculados ao vivo a
-   partir de "vagas" (ver useDashboardData.js — hiringAvgFor/costVacancyEntries),
-   sem depender de nenhum snapshot gravado. syncAll() não tem mais nada pra
-   recalcular, mas fica como no-op: é chamada em vários pontos do app (boot,
-   troca de estado, fechamento de vaga) e removê-la exigiria tocar em todos
-   esses pontos sem ganho nenhum. */
 export function syncAll() {}
 
-/* ---------- Vagas (Tempo médio de contratação) ---------- */
-
 export function listVacancies(state) {
-  /* Tolerante a vagas sem data de abertura (dados legados/importados). */
   return filterByState(getVacancies(), state)
     .slice()
     .sort((a, b) => String(b.openAt || "").localeCompare(String(a.openAt || "")));
@@ -275,8 +215,6 @@ export function updateVacancy(
   return updated;
 }
 
-/* Fecha a vaga. Sem `closeDate`, usa o momento atual; com data (YYYY-MM-DD),
-   encerra a vaga às 00:00 do dia informado. */
 export function closeVacancy(id, closeDate = null) {
   const vacancy = getVacancyById(id);
   if (!vacancy || vacancy.closeAt) return null;
@@ -285,23 +223,16 @@ export function closeVacancy(id, closeDate = null) {
   return updated;
 }
 
-/* Exclusões e edições não recarregam mais o dashboard: o registro sai/muda
-   na memória local na hora e a alteração é enviada à planilha já (flush, sem
-   esperar o debounce da fila). O servidor invalida o cache da aba a cada
-   gravação, então quem carregar o dashboard depois já recebe a versão nova.
-   Se o envio falhar de vez, flush avisa com um toast (ver db.js). */
 export async function deleteVacancyRecord(id) {
   deleteVacancy(id);
   await flush();
 }
 
-/* Exclusão em lote. */
 export async function deleteVacancies(ids) {
   (ids || []).forEach((id) => deleteVacancy(id));
   await flush();
 }
 
-/* Fechamento em lote: fecha as vagas ainda abertas. */
 export function closeVacancies(ids, closeDate = null) {
   (ids || []).forEach((id) => {
     const v = getVacancyById(id);
@@ -326,28 +257,20 @@ function dateWithinRange(dateVal, range) {
   return true;
 }
 
-/* ---------- Rescisões (aba "rescisoes", só leitura) ----------
-   Valor de uma rescisão: "liquido" = só o valor da rescisão; "total" = valor
-   da rescisão + GRRF/consignado + multa de 40%. */
 export function rescisaoAmount(r, mode) {
   const base = Number(r.valorRescisao) || 0;
   if (mode !== "total") return base;
   return base + (Number(r.grrfConsig) || 0) + (Number(r.multa40) || 0);
 }
 
-/* Rescisões do estado, no período (pelo mês de referência, coluna P). Sem
-   período = todas; com período, rescisão sem mês fica de fora. */
 export function listRescisoes(state, range, filters) {
   let list = filterByState(getRescisoes(), state);
   if (range) list = list.filter((r) => dateWithinRange(r.mesReferencia, range));
-  /* `filters` { filial, gerente }: "" / ausente = sem filtro. */
   if (filters && filters.filial) list = list.filter((r) => r.filial === filters.filial);
   if (filters && filters.gerente) list = list.filter((r) => r.gerenteImediato === filters.gerente);
   return list;
 }
 
-/* Filiais e gerentes imediatos das rescisões do estado/período, em ordem
-   alfabética (opções dos filtros do gráfico). */
 export function rescisaoFilterOptions(state, range) {
   const filiais = new Set();
   const gerentes = new Set();
@@ -367,8 +290,6 @@ export function rescisoesTotal(state, range, mode, filters) {
   return listRescisoes(state, range, filters).reduce((sum, r) => sum + rescisaoAmount(r, mode), 0);
 }
 
-/* Uma linha por função (maior valor primeiro): valor no modo escolhido e
-   quantidade de rescisões. */
 export function rescisoesByFuncao(state, range, mode, filters) {
   const groups = new Map();
   listRescisoes(state, range, filters).forEach((r) => {
@@ -381,8 +302,6 @@ export function rescisoesByFuncao(state, range, mode, filters) {
   return [...groups.values()].sort((a, b) => b.value - a.value);
 }
 
-/* Uma linha por estado (maior valor primeiro): valor no modo escolhido e
-   quantidade de rescisões — base da pizza de Rescisões por estado. */
 export function rescisoesByEstado(state, range, mode, filters) {
   const groups = new Map();
   listRescisoes(state, range, filters).forEach((r) => {
@@ -395,24 +314,12 @@ export function rescisoesByEstado(state, range, mode, filters) {
   return [...groups.values()].sort((a, b) => b.value - a.value);
 }
 
-/* ---------- Turnover (lançamento manual por quantidade) ----------
-   Não depende mais de colaboradores individuais: cada lançamento é só uma
-   quantidade de admitidos e demitidos por filial num mês de referência
-   (lançado à mão ou importado por planilha). O valor não aparece na Equipe —
-   é puramente visual no KPI de Turnover e alimenta o cálculo de outros KPIs
-   (Turnover %, Retenção). Calculado sob demanda, como "tempo_contratacao" é
-   para vagas. */
-
 export function listTurnoverEntries(state) {
   return filterByState(getTurnovers(), state)
     .slice()
     .sort((a, b) => String(b.mesReferencia || "").localeCompare(String(a.mesReferencia || "")));
 }
 
-/* Compara um mês "YYYY-MM" com um período { start, end } (datas
-   "YYYY-MM-DD"), reduzindo o período ao mês correspondente antes de
-   comparar — evita a comparação lexicográfica errada entre "2026-01" e
-   "2026-01-15" que dateWithinRange faria com um mês "solto". */
 function monthWithinRange(ym, range) {
   if (!ym) return false;
   if (!range) return true;
@@ -423,14 +330,7 @@ function monthWithinRange(ym, range) {
   return true;
 }
 
-/* Admitidos/demitidos/ativos (todos do Headcount) do período filtrado —
-   base do Turnover (%) e das Novas contratações da Retenção. `ativos` é a
-   quantidade de colaboradores ativos no período, lançada junto (substitui o
-   Headcount no cálculo do Turnover — ver turnoverRateStats). `range` null
-   soma o total já lançado. */
 export function turnoverQuantitiesInRange(state, range) {
-  /* Tudo vem do Headcount: admitidos (Data de admissão), demitidos (Data de
-     desligamento) e ativos (quadro ativo do mês referente). */
   const { admissoes, demissoes } = headcountMovements(state, range);
   return {
     admitidos: admissoes.length,
@@ -470,23 +370,15 @@ export function updateTurnoverEntry(id, { filial, mesReferencia, admitidos, demi
   return updated;
 }
 
-/* Envia a exclusão já, sem recarregar — ver deleteVacancyRecord acima. */
 export async function deleteTurnoverEntry(id) {
   deleteTurnover(id);
   await flush();
 }
 
-/* Exclusão em lote (aba Histórico do Lançamento). */
 export async function deleteTurnoverEntries(ids) {
   (ids || []).forEach((id) => deleteTurnover(id));
   await flush();
 }
-
-/* ---------- Tempo médio de permanência (lançamento manual por planilha) ----------
-   Registro próprio, independente do Turnover: colaborador, Data de admissão
-   e Data de demissão, importados por planilha (modal dedicado). Usado só
-   para o KPI "Tempo médio de permanência" — não conta admissão/demissão no
-   Turnover nem no Headcount. */
 
 export function listPermanenciaRecords(state) {
   return filterByState(getPermanencias(), state)
@@ -494,14 +386,9 @@ export function listPermanenciaRecords(state) {
     .sort((a, b) => String(b.dataDemissao || "").localeCompare(String(a.dataDemissao || "")));
 }
 
-/* Média de dias entre Data de admissão e Data de demissão dos registros de
-   permanência — só entram registros com as duas datas preenchidas. Filtrado
-   no período pela data de demissão. */
 export function turnoverAvgTenureDays(state, range) {
   let list = filterByState(getPermanencias(), state).filter((p) => p.dataAdmissao && p.dataDemissao);
   if (range) list = list.filter((p) => dateWithinRange(p.dataDemissao, range));
-  /* Mesma regra do tempo de contratação: datas inválidas ou invertidas ficam
-     fora da média em vez de virar 0 ou dias negativos. */
   const days = list
     .map((p) => daysBetween(p.dataAdmissao, p.dataDemissao))
     .filter((d) => d !== null && Number.isFinite(d) && d >= 0);
@@ -537,35 +424,18 @@ export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDem
   return updated;
 }
 
-/* Envia a exclusão já, sem recarregar — ver deleteVacancyRecord acima. */
 export async function deletePermanenciaRecord(id) {
   deletePermanencia(id);
   await flush();
 }
 
-/* Exclusão em lote (modal de Tempo médio de permanência). */
 export async function deletePermanenciaRecords(ids) {
   (ids || []).forEach((id) => deletePermanencia(id));
   await flush();
 }
 
-/* ---------- Headcount (quadro mensal de colaboradores) ----------
-   Cada linha é um colaborador no quadro de um mês: código, colaborador,
-   função, data de admissão, gênero, data de desligamento (se
-   houver) e "mes_referente". O filtro por mês usa SÓ o mês referente — o quadro
-   do mês é o conjunto de linhas com aquele mês referente (a admissão não
-   filtra mais). Admissões = linhas com Data de admissão no mês; demissões =
-   linhas com Data de desligamento no mês (ver headcountMovements). */
-
-/* Mês ("YYYY-MM") de uma data em ISO (2026-09-01, com ou sem hora) ou em
-   formato brasileiro (1/9/2026, 01-09-26, 09/2026); "" se ilegível. Antes o
-   mês era só `slice(0, 7)` do texto: uma data digitada como "1/9/2026" virava
-   "1/9/202", que no comparador de texto fica ANTES de qualquer "2026-.." e
-   fazia o colaborador contar em todos os meses, inclusive antes da admissão. */
 const _ymCache = new Map();
 function toYm(value) {
-  /* Memo por texto: o quadro repete as mesmas poucas datas em milhares de
-     linhas, e cada troca de filtro relia todas com as regex abaixo. */
   const cached = _ymCache.get(value);
   if (cached !== undefined) return cached;
   const ym = parseYm(value);
@@ -592,23 +462,11 @@ function parseYm(value) {
   return "";
 }
 
-/* Ativo no mês `ym`: sem Data de desligamento, ou desligado só depois dele. */
 export function isHeadcountAtivo(h, ym) {
   const desligYm = toYm(h.dataDesligamento);
   return !desligYm || !ym || desligYm > ym;
 }
 
-/* ---------- Índice do Headcount ----------
-   O quadro tem milhares de linhas (um colaborador por mês referente) e cada
-   troca de filtro pedia dezenas de varreduras completas dele (KPIs do mês e do
-   mês anterior, mapa por estado, barras por estado x filial/empresa/função,
-   Turnover, Retenção, Custo médio...), cada uma relendo campos pelo proxy
-   reativo e convertendo datas de novo. O índice é montado UMA vez por mudança
-   nos dados (computed: recalcula quando uma linha é incluída, trocada ou
-   excluída) com os campos já normalizados e as linhas agrupadas por estado e
-   por mês referente. As regras de contagem continuam as mesmas; só deixam de
-   varrer a lista inteira. `h` é o próprio registro (o mesmo objeto de
-   getHeadcounts()), devolvido a quem lista colaboradores. */
 const EMPTY_ROWS = Object.freeze([]);
 
 function normUpper(v) {
@@ -645,8 +503,6 @@ const headcountIndex = computed(() => {
     push(byYm, row.ym, row);
     push(byStateYm, `${row.estado}|${row.ym}`, row);
   }
-  /* Opções de filtro (empresa/função) por estado, montadas sob demanda e
-     descartadas junto com o índice quando os dados mudam. */
   return { all, byState, byYm, byStateYm, options: new Map() };
 });
 
@@ -654,53 +510,39 @@ function isAllStates(state) {
   return !state || state === "todos";
 }
 
-/* Linhas do estado (todas as linhas com "todos"/vazio) — mesma regra de
-   filterByState/sameState (compara sem caixa e sem espaços). */
 function rowsOf(state) {
   const idx = headcountIndex.value;
   if (isAllStates(state)) return idx.all;
   return idx.byState.get(normUpper(state)) || EMPTY_ROWS;
 }
 
-/* Linhas do estado com aquele mês referente (ativas ou não). */
 function monthRowsOf(state, ym) {
   const idx = headcountIndex.value;
   if (isAllStates(state)) return idx.byYm.get(ym) || EMPTY_ROWS;
   return idx.byStateYm.get(`${normUpper(state)}|${ym}`) || EMPTY_ROWS;
 }
 
-/* Linha ATIVA do quadro do mês `ym` — pelo mês referente, sem desligamento
-   até o mês (mesma regra de isHeadcountAtivo). */
 function rowAtivoInMonth(row, ym) {
   return row.ym === ym && (!row.desligYm || row.desligYm > ym);
 }
 
-/* Linhas ativas do quadro do mês `ym` no estado. */
 function activeRowsOf(state, ym) {
   return monthRowsOf(state, ym).filter((row) => rowAtivoInMonth(row, ym));
 }
 
-/* Mês do período usado pelas contagens do quadro ("" = sem mês). */
 function rangeYm(range) {
   return range ? String(range.end || range.start || "").slice(0, 7) : "";
 }
 
-/* Chave de identidade do colaborador (o mesmo aparece em vários meses do
-   quadro): admissão/desligamento são contados uma vez por pessoa. */
 function personKey(h) {
   return `${h.estado || ""}|${String(h.codigo || h.colaborador || "").trim().toUpperCase()}|${String(h.dataAdmissao || "").slice(0, 10)}`;
 }
 
-/* Admissões (Data de admissão) e demissões (Data de desligamento) do Headcount
-   dentro do período — linhas, sem repetir a mesma pessoa. `range` null = tudo. */
 let _movementsCache = new Map();
 let _movementsFresh = false;
 let _movementsIndex = null;
 
 export function headcountMovements(state, range) {
-  /* Vários KPIs (Turnover, Retenção, cards) pedem o mesmo período na mesma
-     passada de cálculo: reaproveita o resultado até o fim dela (ou até os
-     dados mudarem — índice novo). */
   const idx = headcountIndex.value;
   if (!_movementsFresh || _movementsIndex !== idx) {
     _movementsCache = new Map();
@@ -742,9 +584,6 @@ function computeHeadcountMovements(rows, range) {
   return { admissoes, demissoes };
 }
 
-/* Lista o quadro do mês `mesReferencia` (formato "YYYY-MM").
-   Sem mês informado, devolve todos os registros (sem filtro de mês) — usado pela busca por código na importação. */
-/* Meses (YYYY-MM) com Headcount lançado no estado, em ordem crescente. */
 export function headcountMonths(state) {
   const idx = headcountIndex.value;
   if (isAllStates(state)) return [...idx.byYm.keys()].filter(Boolean).sort();
@@ -771,32 +610,20 @@ export function headcountCount(state, mesReferencia) {
   return mesReferencia ? activeRowsOf(state, mesReferencia).length : rowsOf(state).length;
 }
 
-/* Contagem do quadro do mês do período — `range` null cai no total de
-   registros já lançados. */
 export function headcountCountInRange(state, range) {
   const ym = rangeYm(range);
   if (!ym) return rowsOf(state).length;
   return activeRowsOf(state, ym).length;
 }
 
-/* Colaboradores (registros) que compõem a contagem acima — mesma regra de
-   headcountCountInRange, para quem precisa agrupar o quadro ativo (função,
-   gênero). */
 export function headcountActiveInRange(state, range) {
   const ym = rangeYm(range);
   const rows = ym ? activeRowsOf(state, ym) : rowsOf(state);
   return rows.map((row) => row.h);
 }
 
-/* Filiais (nome abreviado lançado) que têm colaborador no estado, sem
-   repetição (mesma chave normalizada) e em ordem alfabética — opções do
-   filtro de filial do gráfico de Headcount. `empresas`: quando informado
-   (filtro de empresa marcado), só considera colaboradores dessas empresas —
-   assim o filtro de filial só lista as filiais da(s) empresa(s) filtrada(s). */
 export function headcountFilialOptions(state, empresas = []) {
   const seen = new Map();
-  /* Milhares de linhas, poucas combinações filial+estado: cada combinação é
-     resolvida uma vez só (o resultado depende só dela). */
   const tried = new Set();
   rowsOf(state).forEach((row) => {
     if (empresas.length && !empresas.includes(row.empresa)) return;
@@ -812,8 +639,6 @@ export function headcountFilialOptions(state, empresas = []) {
   return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
-/* Valores distintos de um campo já normalizado (empresa/função) no estado,
-   em ordem alfabética — memorizados no índice até os dados mudarem. */
 function distinctOptions(state, field) {
   const idx = headcountIndex.value;
   const cacheKey = `${field}|${isAllStates(state) ? "todos" : normUpper(state)}`;
@@ -829,22 +654,14 @@ function distinctOptions(state, field) {
   return result.slice();
 }
 
-/* Empresas (campo livre "empresa" do Headcount) que aparecem no estado, sem
-   repetição — opções do filtro de empresa do gráfico de Headcount. */
 export function headcountEmpresaOptions(state) {
   return distinctOptions(state, "empresa");
 }
 
-/* Funções (campo "funcao" do Headcount) que aparecem no estado, sem
-   repetição — opções do filtro de função do gráfico de Headcount. */
 export function headcountFuncaoOptions(state) {
   return distinctOptions(state, "funcao");
 }
 
-/* Quadro do período por gênero — mesmo mês de headcountCountInRange.
-   "total" conta todos os colaboradores (inclusive sem gênero informado).
-   `filiais`/`empresas`/`funcoes`: listas de valores marcados no filtro
-   (multi-seleção); vazio = sem filtro. */
 export function headcountGenderCountInRange(state, range, filiais = [], empresas = [], funcoes = []) {
   const ym = rangeYm(range);
   let rows = ym ? activeRowsOf(state, ym) : rowsOf(state);
@@ -870,7 +687,6 @@ export function headcountGenderCountInRange(state, range, filiais = [], empresas
     const set = new Set(empresas.map((e) => normUpper(e)));
     rows = rows.filter((row) => set.has(row.empresa));
   }
-  /* Aceita maiúsculas/minúsculas (dados vindos da planilha). */
   let masculino = 0;
   let feminino = 0;
   rows.forEach((row) => {
@@ -933,26 +749,16 @@ export function updateHeadcountRecord(
   return updated;
 }
 
-/* Envia a exclusão já, sem recarregar — ver deleteVacancyRecord acima. */
 export async function deleteHeadcountRecord(id) {
   deleteHeadcount(id);
   await flush();
 }
 
-/* Exclusão em lote (aba Histórico do Lançamento). */
 export async function deleteHeadcountRecords(ids) {
   (ids || []).forEach((id) => deleteHeadcount(id));
   await flush();
 }
 
-/* ---------- Cálculo do Turnover (%) e Turnover de Saída (%) ----------
-   Turnover(%)           = (((admissões + demissões) / 2) / ativos) * 100
-   Turnover de Saída(%)  = (demissões / ativos) * 100
-
-   Admissões, demissões e ativos vêm todos diretamente da quantidade lançada
-   (ou importada) por filial no mês filtrado (`range`) — ver
-   turnoverQuantitiesInRange. "Ativos" substitui o Headcount no cálculo: o
-   Turnover não depende mais do quadro lançado no KPI de Headcount. */
 export function turnoverRateStats(state, range) {
   const { admitidos: admissoes, demitidos: desligamentos, ativos: headcountAtual } = turnoverQuantitiesInRange(
     state,
@@ -971,23 +777,11 @@ export function turnoverRateStats(state, range) {
   };
 }
 
-/* ---------- Cálculo da Retenção (%) ----------
-   Retenção(%) = ((Headcount final - Novas contratações) / Headcount inicial) × 100
-
-   Headcount final    = quadro do mês filtrado (linhas com esse mês referente).
-   Headcount inicial  = quadro do mês anterior (`prevRange`); sem quadro no mês
-                         anterior, reconstrói: final − novas contratações +
-                         demissões.
-   Novas contratações = admissões do Headcount no mês filtrado (Data de admissão).
-   Demissões          = linhas do Headcount com Data de desligamento no mês
-                         (informativo — não entra na fórmula). */
 export function retentionRate(state, range, prevRange) {
   const headcountFinal = headcountCountInRange(state, range);
   const { admitidos: novasContratacoes, demitidos: demissoes } = turnoverQuantitiesInRange(state, range);
   const anterior = headcountCountInRange(state, prevRange);
   const headcountInicial = anterior || Math.max(headcountFinal - novasContratacoes + demissoes, 0);
-  /* Sem quadro lançado no mês filtrado (headcount final 0) a taxa não existe
-     ("—"), como no Turnover — antes virava 0%, parecendo que ninguém ficou. */
   const retencaoPct =
     headcountFinal && headcountInicial ? ((headcountFinal - novasContratacoes) / headcountInicial) * 100 : null;
   return {
@@ -999,9 +793,6 @@ export function retentionRate(state, range, prevRange) {
   };
 }
 
-/* Linhas do detalhamento de Admissões/Demissões: uma por mês e filial, com
-   admitidos/demitidos e "ativos" (quadro ativo do mês final do período — o
-   mesmo de headcountCountInRange) do Headcount. Mais recentes primeiro. */
 export function turnoverEntriesInRange(state, range) {
   const { admissoes, demissoes } = headcountMovements(state, range);
   const groups = new Map();

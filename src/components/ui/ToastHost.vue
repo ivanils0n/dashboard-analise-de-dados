@@ -1,9 +1,6 @@
 <script setup>
 import { useToast } from "@/composables/useToast";
 
-/* Notificações no canto inferior direito, empilhadas: cada uma é um cartão
-   claro com ícone do tipo, mensagem, botão de fechar e barra de progresso do
-   tempo restante. A mais antiga fica em cima; as novas entram embaixo. */
 const { state, hide } = useToast();
 
 const TONES = {
@@ -78,8 +75,6 @@ const toneOf = (type) => TONES[type] || TONES.success;
     transform: scaleX(0);
   }
 }
-/* Entrada: desliza da direita. Saída: desliza para a direita encolhendo e
-   sumindo; as demais descem suavemente para ocupar o espaço (toast-move). */
 .toast-enter-active {
   transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }

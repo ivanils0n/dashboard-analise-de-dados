@@ -11,8 +11,6 @@ import { beginLoading, endLoading } from "@/composables/useLoading";
 import { listRescisoes, rescisaoAmount } from "@/lib/employees";
 import { formatCurrency, formatDate, normalizeText, ymLabel } from "@/lib/utils";
 
-/* Página detalhada de Rescisões: todas as colunas da aba "rescisoes", com
-   pesquisa e filtros de estado, mês, empresa, filial, gerente imediato e motivo. */
 const { state: filters } = useFilters();
 
 onActivated(() => {
@@ -23,7 +21,6 @@ onActivated(() => {
 });
 
 const search = ref("");
-/* Todos os filtros abaixo aceitam vários valores ([] = sem filtro). */
 const meses = ref([]);
 const empresas = ref([]);
 const filiais = ref([]);
@@ -31,7 +28,6 @@ const gerentes = ref([]);
 const regionais = ref([]);
 const motivos = ref([]);
 
-/* Rescisões do estado escolhido, base das opções dos filtros. */
 const base = computed(() => {
   void filters.revision;
   return listRescisoes(filters.current);
@@ -54,7 +50,6 @@ const gerenteOptions = computed(() => uniqueSorted("gerenteImediato"));
 const regionalOptions = computed(() => uniqueSorted("regional"));
 const motivoOptions = computed(() => uniqueSorted("motivo"));
 
-/* Valor marcado que deixou de existir (troca de estado) sai da seleção. */
 function prune(selected, options) {
   if (selected.value.some((v) => !options.includes(v))) {
     selected.value = selected.value.filter((v) => options.includes(v));
@@ -69,9 +64,6 @@ watch([mesOptions, empresaOptions, filialOptions, gerenteOptions, regionalOption
   prune(motivos, motivoOptions.value);
 });
 
-/* O filtro de mês já abre no mês anterior ao atual (ex.: em setembro, agosto).
-   Vale só na primeira vez que há dados — e só se esse mês existir neles; depois
-   disso a escolha é do usuário (inclusive limpar). */
 function previousYm() {
   const d = new Date();
   d.setDate(1);
@@ -150,8 +142,6 @@ const date = (v) => (v ? formatDate(v) : "—");
 const money = (v) => formatCurrency(v);
 const mesLabel = (v) => (v ? ymLabel(String(v).slice(0, 7)) : "—");
 
-/* Colunas na mesma ordem da aba. `clamp`: texto longo, mostra até 3 linhas com
-   "..." e expande ao clicar (ver ExpandableText). */
 const columns = [
   { label: "Empresa", get: (r) => text(r.empresa) },
   { label: "Estado", get: (r) => text(r.estado) },

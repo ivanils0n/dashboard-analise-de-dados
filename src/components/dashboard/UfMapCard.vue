@@ -3,23 +3,13 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { UF_MAP } from "@/lib/ufShapes";
 import { STATE_NAMES } from "@/lib/config";
 
-/* Mapa dos estados atendidos (RO, AM e PA). `states`: [{ uf, text, sub, filled }]
-   — `text` é o valor já formatado do KPI naquele estado, `sub` um detalhe (ex.:
-   nº de vagas) e `filled` diz se há dado (colore o estado). Com o filtro em
-   "todos" chegam os três; com um estado escolhido, só ele (o mapa amplia esse
-   estado). */
 const props = defineProps({
   states: { type: Array, default: () => [] },
   title: { type: String, default: "Mapa por estado" },
   subtitle: { type: String, default: "" },
-  /* false: o mapa vira só um filtro de estado — sem valores na lista nem no
-     tooltip. */
   showValues: { type: Boolean, default: true }
 });
 
-/* Clique (ou Enter/Espaço) num estado: pede ao dashboard para filtrar por ele.
-   Com um só estado no mapa (já filtrado), clicar nele de novo volta para
-   "todos". */
 const emit = defineEmits(["select"]);
 
 const single = computed(() => props.states.length === 1);
@@ -36,9 +26,6 @@ const targetViewBox = computed(() =>
   single.value ? UF_MAP.states[props.states[0].uf]?.viewBox || UF_MAP.viewBox : UF_MAP.viewBox
 );
 
-/* Ao escolher um estado (ou voltar para todos) o mapa faz um zoom animado, em
-   vez de trocar o enquadramento de uma vez. `view` guarda o quadro exibido
-   [x, y, largura, altura, fator da sigla] e é interpolado até o alvo. */
 const ZOOM_MS = 480;
 const parseBox = (box) => box.split(/\s+/).map(Number);
 const targetFrame = () => [...parseBox(targetViewBox.value), single.value ? 0.09 : 0.045];
@@ -77,7 +64,6 @@ onBeforeUnmount(stopZoom);
 
 const viewBox = computed(() => view.value.slice(0, 4).map((n) => +n.toFixed(2)).join(" "));
 
-/* Sigla com tamanho proporcional à largura do viewBox exibido. */
 const fontSize = computed(() => Math.round((view.value[2] || 1000) * view.value[4]));
 
 const shapes = computed(() =>
@@ -86,7 +72,6 @@ const shapes = computed(() =>
     .filter((s) => s.shape)
 );
 
-/* Estado sob o cursor/foco (desenha a cópia ampliada; ver template). */
 const hoverUf = ref(null);
 const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.value) || null);
 </script>
@@ -146,8 +131,6 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
           </text>
         </g>
         </TransitionGroup>
-        <!-- Estado sob o cursor: cópia ampliada desenhada por cima dos demais
-             (SVG não tem z-index) — cresce com um "pop" e ganha sombra. -->
         <g v-if="hoverShape" :key="hoverShape.uf" class="uf-hover pointer-events-none" aria-hidden="true">
           <path
             :d="hoverShape.shape.d"
@@ -191,7 +174,6 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
 </template>
 
 <style scoped>
-/* Hover no estado: "pop" com escala + sombra (só transform e filter na cópia). */
 @keyframes uf-hover-pop {
   from { transform: scale(1); }
   to { transform: scale(1.14); }
@@ -207,8 +189,6 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
     animation: none;
   }
 }
-/* Estados que entram/saem ao filtrar: fade + pequeno "pop" a partir do centro
-   do próprio estado (mesma linguagem dos modais). */
 .uf-shape {
   transform-box: fill-box;
   transform-origin: center;

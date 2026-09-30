@@ -3,12 +3,6 @@ import { computed } from "vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue } from "@/lib/utils";
 
-/* KPI de Custo de admissões, à direita do gráfico de Turnover no Painel,
-   acima do card de Admissões (renderizado por TurnoverSummaryCards com
-   `show-cost`): custo mensal = custo médio de contratação (média dos salários
-   das vagas fechadas no período e estado filtrados) × admissões do Headcount.
-   O custo anual é o mensal × 12.
-   `summary`: { custoAdmissaoMensal } — ver cockpitChartFor em useDashboardData.js. */
 const props = defineProps({
   summary: { type: Object, required: true }
 });

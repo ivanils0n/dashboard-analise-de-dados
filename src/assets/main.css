@@ -10,7 +10,6 @@
   --color-ice: #eef3f9;
 }
 
-/* Barra de rolagem discreta (páginas de tabelas e faixas horizontais) */
 ::-webkit-scrollbar {
   width: 12px;
   height: 14px;
@@ -28,7 +27,6 @@
   background-color: rgb(148 163 184 / 0.8);
 }
 
-/* Firefox: cores consistentes para a barra de rolagem */
 html {
   scrollbar-color: rgb(148 163 184 / 0.55) transparent;
 }
@@ -42,7 +40,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Animação da tela de carregamento inicial */
 @keyframes gg-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -51,7 +48,6 @@ body {
   animation: gg-fade-in 0.25s ease-out both;
 }
 
-/* Transição entre as abas (views). Curta para não atrasar a navegação. */
 .page-enter-active,
 .page-leave-active {
   transition: opacity 0.16s cubic-bezier(0.22, 1, 0.36, 1), transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
@@ -73,11 +69,6 @@ body {
   animation: gg-slide-up 0.22s ease-out both;
 }
 
-/* Janelas modais no estilo macOS: abre com um leve "pop" (escala + fade com
-   pequeno overshoot) e fecha encolhendo rápido. Usar <Transition name="mac-modal"
-   appear :duration="{ enter: 320, leave: 170 }"> no overlay; o painel recebe a
-   classe .mac-panel. As animações usam fill-mode "backwards" no enter para não
-   deixar um transform residual (que quebraria elementos fixed/dropdowns dentro). */
 @keyframes gg-mac-overlay-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -118,8 +109,6 @@ body {
   }
 }
 
-/* Cards de KPI: entrada em cascata (--i = posição) e hover com leve elevação.
-   Só transform/opacity/box-shadow — nada que force layout. */
 @keyframes gg-kpi-in {
   from { opacity: 0; transform: translateY(14px) scale(0.98); }
   to { opacity: 1; transform: none; }
@@ -133,8 +122,6 @@ body {
   isolation: isolate;
   transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s ease;
 }
-/* A sombra do hover fica numa camada própria e só anima a opacidade: animar
-   box-shadow direto força repintura a cada quadro (travava com muitos cards). */
 .kpi-card::after {
   content: "";
   position: absolute;
@@ -160,7 +147,6 @@ body {
   transform: scale(0.98);
 }
 
-/* Reduzir movimento: desliga animações e transições decorativas. */
 @media (prefers-reduced-motion: reduce) {
   .kpi-enter,
   .slide-up,
@@ -179,10 +165,6 @@ body {
   }
 }
 
-/* Tabelas com barra de rolagem horizontal "fixa" (barra falsa abaixo da tabela,
-   sincronizada por JS — só dá para arrastar com mouse): em celular/tablet e
-   aparelhos de toque a própria tabela rola na horizontal com o dedo e a barra
-   falsa some. */
 @media (max-width: 767px), (hover: none), (pointer: coarse) {
   .tbl-scroll-x {
     overflow-x: auto !important;
@@ -194,7 +176,6 @@ body {
   }
 }
 
-/* Pulso discreto usado para destacar um card na faixa de gráficos */
 @keyframes gg-flash {
   0% { box-shadow: 0 0 0 0 rgb(232 175 62 / 0.45); }
   100% { box-shadow: 0 0 0 14px rgb(232 175 62 / 0); }
@@ -203,25 +184,16 @@ body {
   animation: gg-flash 1.4s ease-out 2;
 }
 
-/* ---------- Smartphones (Android e iOS) ---------- */
-
-/* Sem o "flash" cinza do toque (Android/iOS) e sem o ajuste automático do
-   tamanho do texto ao girar o aparelho. */
 html {
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
-/* Como app instalado a página não "estica" além do topo/fim (efeito elástico),
-   que no iOS revelava o fundo branco por trás do cabeçalho escuro. */
 body {
   overscroll-behavior-y: none;
 }
 
-/* iOS dá zoom na página ao focar um campo com texto menor que 16px (e não
-   volta sozinho). Nos celulares os campos ficam com 16px — regra fora das
-   camadas do Tailwind, então vale por cima de text-sm/text-xs dos campos. */
 @media (max-width: 767px) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   select,
@@ -230,9 +202,6 @@ body {
   }
 }
 
-/* Gráficos e botões de KPI usam o toque longo como "botão direito" (ver
-   lib/longPress.js): sem o menu nativo de copiar/salvar imagem do iOS e sem
-   selecionar texto ao segurar o dedo. */
 canvas,
 .no-callout {
   -webkit-touch-callout: none;
@@ -240,7 +209,6 @@ canvas,
   user-select: none;
 }
 
-/* Áreas seguras do iPhone (notch, barra inferior) com viewport-fit=cover. */
 .safe-top {
   padding-top: env(safe-area-inset-top);
 }

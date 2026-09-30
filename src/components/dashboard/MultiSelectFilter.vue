@@ -1,20 +1,14 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 
-/* Filtro em dropdown com seleção múltipla (caixas de marcar), no mesmo visual
-   do GerenteRegionalFilter. `modelValue`: lista dos valores marcados
-   ([] = sem filtro). Rótulos acima de `maxLabel` caracteres são cortados com
-   "..." (o texto completo fica no tooltip). */
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   options: { type: Array, default: () => [] },
   label: { type: String, default: "Filtro" },
   allLabel: { type: String, default: "Todos" },
-  /* Texto do botão quando há mais de um item marcado: "{n} motivos". */
   pluralLabel: { type: String, default: "selecionados" },
   title: { type: String, default: "" },
   maxLabel: { type: Number, default: 40 },
-  /* Converte o valor da opção no texto exibido (ex.: "2026-08" -> "ago/2026"). */
   formatOption: { type: Function, default: (v) => v }
 });
 
@@ -24,10 +18,6 @@ const open = ref(false);
 const root = ref(null);
 const panel = ref(null);
 
-/* Posição do painel: abre abaixo e alinhado à esquerda do botão; se passar da
-   borda do container que corta/rola o conteúdo (ex.: corpo de um modal) ou da
-   janela, alinha pela direita e/ou abre para cima — sem isto o painel gerava
-   rolagem desnecessária no modal. */
 const alignRight = ref(false);
 const dropUp = ref(false);
 

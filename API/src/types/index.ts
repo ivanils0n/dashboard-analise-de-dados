@@ -1,22 +1,15 @@
 export type Perfil = "admin" | "analista" | "visitante";
 
 export type Bindings = {
-  // URL do Google Apps Script publicado como Web App (ver apps-script/Code.gs).
   APPS_SCRIPT_URL: string;
-  // Segredo combinado enviado em toda chamada ao Apps Script (Propriedades do script lá).
   APPS_SCRIPT_SECRET: string;
   JWT_SECRET: string;
-  // Gravação direta pela API do Google Sheets (opcional; ver db/googleSheets.ts).
-  // Sem estas três, o Worker segue gravando só pelo Apps Script.
   GOOGLE_CLIENT_EMAIL?: string;
   GOOGLE_PRIVATE_KEY?: string;
   GOOGLE_SHEET_ID?: string;
   CORS_ORIGIN?: string;
   LOGIN_LIMITER?: RateLimit;
-  // Cache das abas da planilha (dados + usuários) — ver db/cache.ts.
   CACHE: KVNamespace;
-  // Fila de gravação por aba (Durable Object) — ver db/sheetWriter.ts. Opcional:
-  // sem ele as gravações em lote rodam direto, sem serialização entre servidores.
   SHEET_WRITER?: DurableObjectNamespace<import("../db/sheetWriter").SheetWriter>;
 };
 

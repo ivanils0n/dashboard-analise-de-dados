@@ -2,10 +2,6 @@
 import { computed } from "vue";
 import { TIPOS } from "@/lib/absenteismo";
 
-/* KPIs do mapa: total de ocorrencias do mes por tipo (Faltas, Atestados,
-   Declaracoes, Meio periodo, Advertencias e Acidentes de trabalho), com a
-   participacao de cada um no total. Advertencia e Acidente sao marcacoes:
-   podem acompanhar qualquer motivo. */
 const props = defineProps({
   ocorrencias: { type: Array, default: () => [] }
 });
@@ -25,7 +21,6 @@ const cards = computed(() => {
   });
 });
 
-/* Advertência e Acidente acompanham um motivo: a soma dos cards pode passar do total. */
 const somaCards = computed(() => cards.value.reduce((s, c) => s + c.count, 0));
 const sobreposicao = computed(() => somaCards.value - props.ocorrencias.length);
 </script>

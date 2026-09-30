@@ -8,14 +8,8 @@ import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatDate, ymLabel } from "@/lib/utils";
 
-/* Detalhe de Admissões ou Demissões do Turnover (cards ao lado da pizza no
-   Painel): mostra os lançamentos por empresa e mês que compõem o número, no
-   período e estado filtrados. O total daqui é sempre o do card (mesma fonte:
-   turnoverQuantitiesInRange). */
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* "geral" | "admissoes" | "demissoes" — "geral" não destaca nenhum dos
-     dois lados (mostra Admissões, Demissões e a taxa combinada juntos). */
   kind: { type: String, default: "geral" }
 });
 
@@ -25,9 +19,6 @@ const { state } = useFilters();
 
 const isGeral = computed(() => props.kind === "geral");
 const isAdmissao = computed(() => props.kind.startsWith("admissoes"));
-/* Cards de Admissões/Demissões: lista os colaboradores (Headcount) em vez das
-   empresas. A pizza ("admissoes-empresas"/"demissoes-empresas") e "geral"
-   seguem com a tabela por empresa. */
 const isColaboradores = computed(() => props.kind === "admissoes" || props.kind === "demissoes");
 const rateLabel = computed(() => (isGeral.value ? "Geral" : isAdmissao.value ? "Entrada" : "Saída"));
 const PERCENT = { type: "percent", decimals: 1 };
@@ -36,18 +27,12 @@ const range = computed(() =>
   dateFilter.start ? { start: dateFilter.start, end: dateFilter.end } : null
 );
 
-/* Cada linha traz Admissões e Demissões lado a lado (mesmo lançamento traz
-   os dois números) — o card de destaque acima segue mostrando o total do
-   kind selecionado (Admissões, Demissões ou a taxa combinada em "geral"). */
 const rows = computed(() =>
   turnoverEntriesInRange(state.current, range.value).map((t) => {
     const admissoes = Number(t.admitidos) || 0;
     const demissoes = Number(t.demitidos) || 0;
     const ativos = Number(t.ativos) || 0;
     const quantidade = isGeral.value ? (admissoes + demissoes) / 2 : isAdmissao.value ? admissoes : demissoes;
-    /* `t.filial` é lançado como o nome abreviado da filial (ex.: "PVH 5") —
-       busca o cadastro em Filiais para exibir o nome completo; sem
-       correspondência, mostra o texto lançado mesmo. */
     const branch = t.filial ? findBranchByShortName(t.filial, t.estado) : null;
     return {
       id: t.id,
@@ -63,8 +48,6 @@ const rows = computed(() =>
   })
 );
 
-/* Colaboradores que entraram (Data de admissão) ou saíram (Data de
-   desligamento) no período — mesma fonte dos cards (headcountMovements). */
 const colaboradores = computed(() => {
   if (!isColaboradores.value) return [];
   const mov = headcountMovements(state.current, range.value);
@@ -86,15 +69,10 @@ const colaboradores = computed(() => {
 
 const totalAtivos = computed(() => rows.value.reduce((sum, r) => sum + r.ativos, 0));
 
-/* Totais dos dois lados sempre visíveis no card de destaque — o do kind
-   selecionado (Admissões ou Demissões, conforme o card/gráfico clicado) em
-   maior destaque, mesmo padrão da tabela. */
 const totalAdmissoes = computed(() => rows.value.reduce((sum, r) => sum + r.admissoes, 0));
 const totalDemissoes = computed(() => rows.value.reduce((sum, r) => sum + r.demissoes, 0));
 const entradaTaxa = computed(() => (totalAtivos.value ? (totalAdmissoes.value / totalAtivos.value) * 100 : null));
 const saidaTaxa = computed(() => (totalAtivos.value ? (totalDemissoes.value / totalAtivos.value) * 100 : null));
-/* Turnover geral (%) = ((Admissões + Demissões) / 2) / Ativos — mesma fórmula
-   de turnoverRateStats em lib/employees.js (fonte do KPI e do centro da pizza). */
 const geralTaxa = computed(() =>
   totalAtivos.value ? ((totalAdmissoes.value + totalDemissoes.value) / 2 / totalAtivos.value) * 100 : null
 );

@@ -1,5 +1,3 @@
-/* Indicadores e constantes de Gente & Gestão. */
-
 export const INDICATORS = [
   {
     id: "headcount",
@@ -10,9 +8,6 @@ export const INDICATORS = [
     unit: "colaboradores",
     decimals: 0,
     higherIsBetter: true,
-    /* Quadro mensal: o filtro por mês do dashboard conta as linhas cujo
-       "mes_referente" é o mês filtrado (ver inMonth em lib/employees.js);
-       a Data de admissão não filtra mais. */
     computed: true,
     manual: true,
     form: "headcount"
@@ -26,16 +21,6 @@ export const INDICATORS = [
     unit: "%",
     decimals: 1,
     higherIsBetter: false,
-    /* Não depende mais de colaboradores nem da aba Equipe: o usuário lança (ou
-       importa por planilha) a quantidade de admitidos, demitidos e ativos por
-       filial no mês — puramente visual no KPI, mas usada no cálculo de
-       Turnover (%) e Retenção (ver turnoverRateStats/retentionRate em
-       lib/employees.js). "Ativos" substitui o Headcount no cálculo — o
-       Turnover não depende mais do quadro lançado no KPI de Headcount. A
-       pizza do card funde Turnover de Entrada e Turnover de Saída num único
-       gráfico (Entrada = admitidos; Saída = demitidos), em vez de dois KPIs
-       separados. `manual: true` é o que faz aparecer no seletor do
-       LaunchModal. */
     computed: true,
     manual: true,
     form: "turnover"
@@ -49,8 +34,6 @@ export const INDICATORS = [
     unit: "ocorrências",
     decimals: 0,
     higherIsBetter: false,
-    /* Contado ao vivo a partir das ocorrências do Mapa de Absenteísmo (aba
-       "absenteismo"); não tem mais lançamento mensal próprio. */
     computed: true,
     manual: false
   },
@@ -63,11 +46,6 @@ export const INDICATORS = [
     unit: "dias",
     decimals: 1,
     higherIsBetter: false,
-    /* Calculado sob demanda (ver avgHiringDays em lib/employees.js), como os
-       demais indicadores "computed" — assim o valor do card sempre reflete
-       o dia atual, sem depender do filtro de período escolhido. `manual`
-       continua true: é o que faz o indicador aparecer no seletor do
-       LaunchModal, que abre o formulário de vagas (form "vaga"). */
     computed: true,
     manual: true,
     form: "vaga"
@@ -81,10 +59,6 @@ export const INDICATORS = [
     unit: "R$",
     decimals: 2,
     higherIsBetter: false,
-    /* Calculado ao vivo a partir de "vagas" (ver costVacancyEntries em
-       useDashboardData.js) — não existe mais lançamento manual por
-       colaborador nem gravação automática por vaga. `manual: false` tira o
-       indicador do seletor do LaunchModal. */
     computed: false,
     manual: false
   },
@@ -97,30 +71,9 @@ export const INDICATORS = [
     unit: "dias",
     decimals: 1,
     higherIsBetter: true,
-    /* Registro independente do Turnover (que virou só quantidade): tem seu
-       próprio modal (PermanenciaModal.vue), com lançamento manual e
-       importação por planilha (ver turnoverAvgTenureDays em
-       lib/employees.js). `manual: false` tira o indicador do seletor do
-       LaunchModal — o botão direito no KPI abre o modal dedicado em vez do
-       Lançamento. */
     computed: true,
     manual: false
   },
-  /* Turnover (Exp) desativado — indicador comentado, não aparece mais no
-     dashboard nem no seletor do LaunchModal.
-  {
-    id: "turnover_experiencia",
-    name: "Turnover (Exp)",
-    desc: "Desligamentos em período de experiência, lançados manualmente",
-    type: "number",
-    unit: "desligamentos",
-    decimals: 0,
-    higherIsBetter: false,
-    computed: true,
-    manual: true,
-    form: "turnover_exp"
-  },
-  */
   {
     id: "retencao",
     name: "Retenção",
@@ -130,11 +83,6 @@ export const INDICATORS = [
     unit: "%",
     decimals: 1,
     higherIsBetter: true,
-    /* Deixou de ser lançamento manual mensal: agora vem direto do quadro do
-       Headcount (Headcount inicial/final pelo mês referente) e das
-       admissões do mês pela Data de admissão (ver
-       retentionRate em lib/employees.js). `manual: false` tira o indicador
-       do seletor do LaunchModal — não existe mais formulário próprio. */
     computed: true,
     manual: false
   },
@@ -186,9 +134,6 @@ export const INDICATORS = [
     unit: "R$",
     decimals: 2,
     higherIsBetter: false,
-    /* Calculado a partir de dois outros KPIs (custo_total e headcount), sem
-       lançamento próprio: `manual: false` tira o indicador do seletor do
-       LaunchModal (ver ticketMedioFor em composables/useDashboardData.js). */
     computed: true,
     manual: false
   },
@@ -201,8 +146,6 @@ export const INDICATORS = [
     unit: "regionais",
     decimals: 0,
     higherIsBetter: true,
-    /* Derivado dos lançamentos de Treinamento (gerente regional de cada um),
-       sem lançamento próprio: `manual: false` tira do seletor do LaunchModal. */
     computed: true,
     manual: false
   },
@@ -215,9 +158,6 @@ export const INDICATORS = [
     unit: "R$",
     decimals: 2,
     higherIsBetter: false,
-    /* Alimentado direto na aba "rescisoes" (sem lançamento no app): `manual:
-       false` tira do seletor do LaunchModal. O card mostra o total; o gráfico
-       alterna entre líquido e total (ver rescisoesByFuncao em lib/employees.js). */
     computed: true,
     manual: false
   }
@@ -227,10 +167,6 @@ export const MANUAL_INDICATORS = INDICATORS.filter((i) => i.manual);
 
 export const STATES = ["RO", "AM", "PA"];
 export const DEFAULT_STATE = "RO";
-/* Estado inicial do filtro global (ao lado do usuário/menu) ao abrir o
-   dashboard. Separado de DEFAULT_STATE porque este último também é usado
-   como estado concreto de fallback (formulários, criação de registros) —
-   nesses casos "todos" não seria um estado válido. */
 export const DEFAULT_FILTER_STATE = "todos";
 
 export const STATE_NAMES = { RO: "Rondônia", AM: "Amazonas", PA: "Pará" };
@@ -239,7 +175,6 @@ export function getIndicatorById(id) {
   return INDICATORS.find((ind) => ind.id === id) || null;
 }
 
-/* Modalidades do lançamento de treinamento. */
 export const MODALIDADE_OPTIONS = [
   { value: "presencial", label: "Presencial" },
   { value: "online", label: "Online" }

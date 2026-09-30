@@ -1,10 +1,6 @@
 <script setup>
 import { computed } from "vue";
 
-/* Card "table" da Retenção: { headcountInicial, headcountFinal,
-   novasContratacoes, retencaoPct, missing }. Cada valor cai em "—" quando
-   ainda não há dado suficiente (ex.: sem headcount inicial cadastrado).
-   `large` aumenta a tipografia para o modo tela cheia. */
 const props = defineProps({
   tableData: { type: Object, default: null },
   large: { type: Boolean, default: false }

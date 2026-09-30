@@ -20,13 +20,8 @@ import { formatDate, ymLabel, normalizeText, nameKey } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
 
-/* Mapa de absenteísmo: colaboradores nas linhas, dias do mês filtrado nas
-   colunas. Clicar numa célula abre o lançamento da ocorrência daquele dia.
-   Funciona em celular e tablet: a tabela rola na horizontal (com botões para
-   andar de semana em semana) e a coluna do colaborador fica fixa. */
 const props = defineProps({
   estado: { type: String, default: "todos" },
-  /* Mês de referência (YYYY-MM): o mês filtrado no dashboard. */
   ym: { type: String, required: true }
 });
 
@@ -45,12 +40,8 @@ const days = computed(() => monthDays(period.value));
 const employees = computed(() => monthEmployees(props.estado, props.ym, period.value));
 const index = useOcorrenciaIndex();
 
-/* Mês de Headcount usado para listar os colaboradores (o anterior, se o mês
-   filtrado ainda não tem Headcount). */
 const headcountInfo = computed(() => headcountMonthFor(props.estado, props.ym));
 
-/* Ocorrências do mês cujo colaborador não está na lista do mapa (nome diferente
-   do Headcount, ou sem Headcount): não aparecem no mapa, mas contam nos KPIs. */
 const orphans = computed(() => {
   const keys = new Set(employees.value.map((e) => e.key));
   const uf = String(props.estado || "").toUpperCase();
@@ -80,7 +71,6 @@ watch(filiais, (opts) => {
   if (filial.value && !opts.includes(filial.value)) filial.value = "";
 });
 
-/* Busca com atraso: refiltrar milhares de linhas a cada tecla travava a digitação. */
 const searchDebounced = ref("");
 let searchTimer = null;
 watch(search, (v) => {
@@ -101,24 +91,16 @@ const rows = computed(() => {
 
 const isDesligado = (emp, iso) => !!emp.desligamento && iso >= emp.desligamento;
 
-/* Rolagem virtual: com milhares de colaboradores só as linhas visíveis (mais uma
-   folga) existem no DOM; o resto vira dois espaçadores com a altura delas. */
 const ROW_H = 40;
 const OVERSCAN = 6;
-/* A janela só avança de CHUNK em CHUNK linhas: menos re-renderizações durante a rolagem. */
 const CHUNK = 3;
 const scroller = ref(null);
-/* Linha no topo da área visível: só muda ao cruzar uma linha (não a cada pixel),
-   então o mapa não é re-renderizado a cada quadro de rolagem. */
 const scrollRow = ref(0);
 const viewH = ref(480);
-/* Posição horizontal: habilita/desabilita os botões de andar pelos dias. */
 const scrollX = ref(0);
 const maxScrollX = ref(0);
 let raf = 0;
 
-/* Mede largura rolável e altura visível. Lê o layout, por isso só roda ao
-   redimensionar ou quando os dados mudam — nunca a cada quadro de rolagem. */
 function measureX() {
   const el = scroller.value;
   if (!el) return;
@@ -127,8 +109,6 @@ function measureX() {
   viewH.value = el.clientHeight || viewH.value;
 }
 
-/* Por quadro de rolagem só lê scrollTop/scrollLeft (baratos) e atualiza o estado
-   quando a linha (ou a posição horizontal) realmente mudou. */
 function onScroll() {
   if (raf) return;
   raf = requestAnimationFrame(() => {
@@ -141,7 +121,6 @@ function onScroll() {
   });
 }
 
-/* A tabela ocupa o espaço que sobra na página: acompanha o tamanho real. */
 let observer = null;
 onMounted(() => {
   if (typeof ResizeObserver === "undefined") return;
@@ -164,7 +143,6 @@ watch([() => props.ym, () => props.estado, setor, filial, searchDebounced], () =
   scrollRow.value = 0;
   if (scroller.value) scroller.value.scrollTop = 0;
 });
-/* Mês novo: volta para o início dos dias. Dias/linhas mudaram: remede a largura. */
 watch(
   () => props.ym,
   () => {
@@ -181,8 +159,6 @@ const range = computed(() => {
 });
 const visibleRows = computed(() => rows.value.slice(range.value.first, range.value.last));
 
-/* Modelo das linhas visíveis: cada célula calculada uma única vez por renderização
-   (antes o mesmo cálculo era repetido várias vezes por célula no template). */
 const visibleModel = computed(() => {
   const ds = days.value;
   const idx = index.value;
@@ -191,13 +167,11 @@ const visibleModel = computed(() => {
       const o = idx.get(`${emp.key}|${d.iso}`);
       return { d, info: o ? cellInfo(o.meta) : null, obs: (o && o.meta.observacao) || "", desl: isDesligado(emp, d.iso) };
     });
-    /* Assinatura do conteúdo da linha: o v-memo do template só refaz a linha quando ela muda. */
     const sig = cells.map((c) => (c.info ? `${c.info.primary.letter}${c.info.flags.map((f) => f.key[0]).join("")}${c.obs}` : c.desl ? "x" : "")).join("|");
     return { emp, cells, sig };
   });
 });
 
-/* Andar pelos dias: uma semana por toque nas setas; "Hoje" centraliza o dia atual. */
 const canLeft = computed(() => scrollX.value > 4);
 const canRight = computed(() => scrollX.value < maxScrollX.value - 4);
 
@@ -219,8 +193,7 @@ function scrollToToday() {
   el.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
 }
 
-/* Lançamento */
-const editing = ref(null); // { emp, iso }
+const editing = ref(null);
 const editingCurrent = computed(() =>
   editing.value ? index.value.get(`${editing.value.emp.key}|${editing.value.iso}`) || null : null
 );
@@ -237,7 +210,6 @@ function openCell(emp, iso) {
   editing.value = { emp, iso };
 }
 
-/* Um único tratador de clique para a tabela toda (em vez de ~1.000 botões). */
 function onBodyClick(e) {
   const td = e.target.closest("td[data-d]");
   const tr = td && td.closest("tr[data-k]");
@@ -271,7 +243,6 @@ function onClear() {
 
 <template>
   <div class="flex min-h-0 flex-col gap-3">
-    <!-- Filtros. Celular: busca + abas na 1ª linha, setor e filial (metade cada) na 2ª. -->
     <div class="flex flex-wrap items-center gap-2">
       <input
         v-model="search"
@@ -291,7 +262,6 @@ function onClear() {
       <div class="order-2 sm:order-4"><slot name="after-filters" /></div>
     </div>
 
-    <!-- Legenda: uma linha que rola na horizontal no celular/tablet; quebra em linhas no desktop. -->
     <div
       class="-mx-1 flex shrink-0 items-center gap-x-4 gap-y-1 overflow-x-auto whitespace-nowrap px-1 pb-1 text-[11px] font-medium text-zinc-500 lg:flex-wrap lg:overflow-visible lg:whitespace-normal dark:text-zinc-400"
     >
@@ -313,7 +283,6 @@ function onClear() {
       </span>
     </div>
 
-    <!-- Avisos: mês sem Headcount e ocorrências sem colaborador correspondente. -->
     <p
       v-if="headcountInfo.fallback"
       class="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
@@ -334,7 +303,6 @@ function onClear() {
       v-if="rows.length"
       class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
     >
-      <!-- Barra de navegação pelos dias (útil no toque, onde a barra de rolagem some). -->
       <div class="flex shrink-0 items-center gap-2 border-b border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
         <span class="min-w-0 flex-1 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
           {{ ymLabel(ym) }} · {{ rows.length }} colaboradores · {{ canRight ? "deslize para ver todos os dias" : "fim do mês" }}
@@ -367,7 +335,6 @@ function onClear() {
         </button>
       </div>
 
-      <!-- overflow-x-scroll: a barra horizontal fica sempre visível (mais espessa, para o toque). -->
       <div
         ref="scroller"
         class="min-h-0 flex-1 overflow-x-scroll overflow-y-auto overscroll-contain [scrollbar-color:#d4d4d8_transparent] dark:[scrollbar-color:#52525b_transparent] [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-600 [&::-webkit-scrollbar-track]:bg-transparent"

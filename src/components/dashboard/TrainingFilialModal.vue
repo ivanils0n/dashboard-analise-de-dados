@@ -12,8 +12,6 @@ import { formatHoursClock, normalizeText } from "@/lib/utils";
 const props = defineProps({
   open: { type: Boolean, default: false },
   filial: { type: String, default: "" },
-  /* Título alternativo (ex.: "Regional Treinamentos — NOME"); vazio = título
-     padrão da filial. */
   title: { type: String, default: "" },
   entries: { type: Array, default: () => [] }
 });
@@ -26,13 +24,8 @@ const canEdit = canEditData();
 
 const search = ref("");
 
-/* Coluna Filial só no card da regional (várias filiais na mesma lista); no
-   card de uma filial específica seria repetição. */
 const showFilial = computed(() => !!props.title);
 
-/* `entries` é uma foto tirada ao abrir o modal: os lançamentos excluídos aqui
-   saem da lista por este controle local (o store já os removeu, e os KPIs e
-   gráficos se atualizam sozinhos). */
 const removedIds = ref(new Set());
 const liveEntries = computed(() => props.entries.filter((e) => !removedIds.value.has(e.id)));
 
@@ -44,7 +37,6 @@ function employeeName(entry) {
   return (entry.meta && entry.meta.employeeName) || "Sem colaborador";
 }
 
-/* Soma as horas por colaborador (um colaborador pode ter vários treinamentos). */
 const rows = computed(() => {
   const byEmployee = new Map();
   liveEntries.value.forEach((e) => {
@@ -65,16 +57,12 @@ const rows = computed(() => {
   return [...byEmployee.values()].map((r) => ({ ...r, filial: [...r.filiais].join(", "), tema: [...r.temas].join(", "), modalidade: [...r.modalidades].join(", ") })).sort((a, b) => b.horas - a.horas);
 });
 
-/* Busca por nome/cargo/gerente regional (ignora maiúsculas/minúsculas e acentos). */
 const filteredRows = computed(() => {
   const q = normalizeText(search.value).trim();
   if (!q) return rows.value;
   return rows.value.filter((r) => normalizeText(`${r.name} ${r.cargo || ""} ${r.gerenteRegional || ""} ${r.filial || ""} ${r.tema || ""} ${r.modalidade || ""}`).includes(q));
 });
 
-/* ---------- Seleção múltipla / exclusão em lote ----------
-   Cada linha é um colaborador: excluir os selecionados remove todos os
-   treinamentos deles que compõem esta lista (filial e período filtrados). */
 const selectedNames = ref(new Set());
 
 const allVisibleSelected = computed(

@@ -1,7 +1,3 @@
-/* Camada de dados: download completo via API (Cloudflare Worker, que responde
-   do cache dele) a cada carregamento de página, escritas em fila com
-   debounce, sessão/purga via resetLocalState. A cópia por item no
-   sessionStorage é só reserva, usada se o download falhar. */
 import { STATES, DEFAULT_STATE, DEFAULT_FILTER_STATE } from "./config";
 import { apiFetch } from "./api";
 import { DataCache } from "./cache";
@@ -10,24 +6,15 @@ import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
 import { mapWithConcurrency, formatDate, normalizeMotivo } from "./utils";
 
-const FLUSH_DELAY_MS = 150; // agrupa escritas por até 0,15 s antes de enviar (edições em sequência viram um lote só)
-const RETRY_DELAY_MS = 1200; // base do recuo entre novas tentativas após falha
+const FLUSH_DELAY_MS = 150;
+const RETRY_DELAY_MS = 1200;
 
-/* Teto de requisições simultâneas para a API (Worker → Apps Script), que
-   aceita no máximo 30 execuções ao mesmo tempo por usuário — folga
-   deliberada abaixo disso pra sobrar espaço pra escritas concorrentes e
-   outras abas/usuários batendo na mesma planilha. Acima do limite, a próxima
-   requisição só sai quando alguma anterior termina (ver mapWithConcurrency
-   em utils.js), em vez de todas de uma vez — é isso que evita o status
-   "canceled" quando o total de chamadas cresce. */
 const MAX_CONCURRENT_REQUESTS = 28;
-const MAX_FLUSH_RETRIES = 3; // tentativas extras após falha de rede/servidor
+const MAX_FLUSH_RETRIES = 3;
 
-/* Corrige timestamps "hora local" para a planilha sem duplicar fuso.
-   Valores que já vêm do banco com fuso (Z ou ±HH:MM) são preservados. */
 function envTimestamp(localIso) {
   if (!localIso) return null;
-  if (!/T/.test(localIso)) return localIso; // data simples (YYYY-MM-DD)
+  if (!/T/.test(localIso)) return localIso;
   if (/[zZ]$/.test(localIso) || /[+-]\d{2}:\d{2}$/.test(localIso)) return localIso;
   const date = new Date(localIso);
   if (isNaN(date.getTime())) return localIso;
@@ -44,9 +31,6 @@ function stateTable(base, state) {
   return map[state] || `${base}_ro`;
 }
 
-/* Conversores Entry ({id, date, value, meta}) -> linha da planilha, um por
-   indicador que antes vivia na tabela genérica "lancamentos". `entry.meta`
-   sempre carrega `estado` (ver _withState em store.js). */
 function diariaToRow(entry) {
   const meta = entry.meta || {};
   return {
@@ -74,7 +58,6 @@ function treinamentoToRow(entry) {
     tema: meta.tema || null,
     modalidade: meta.modalidade || null,
     competencia: entry.date,
-    // Única fonte de carga horária (a "cargaHoraria" em meta era cópia redundante).
     horas: Number(entry.value) || 0,
     estado_sigla: meta.estado || null
   };
@@ -93,8 +76,6 @@ function custoFolhaToRow(entry) {
   };
 }
 
-/* Ocorrência do Mapa de Absenteísmo: uma linha por colaborador e dia. `competencia`
-   é o 1º dia do mês da ocorrência (base do filtro por mês); `data` é o dia. */
 function absenteismoToRow(entry) {
   const meta = entry.meta || {};
   return {
@@ -182,14 +163,8 @@ let _flushTimer = null;
 let _flushRetries = 0;
 let _flushChain = Promise.resolve();
 
-/* Incrementa a cada logout/login (resetLocalState). Respostas de requisições
-   iniciadas por uma sessão anterior comparam a época e se descartam — sem
-   isso, um download em andamento no logout despejava dados do usuário
-   anterior na memória do próximo. */
 let _epoch = 0;
 
-/* Rótulo "15/08/2026 — Maria" de uma operação de ocorrência do mapa (data +
-   primeiro nome), usado para dizer qual lançamento falhou. */
 function _opLabel(op) {
   const info = op.type === "upsert" ? { date: op.row.data, colaborador: op.row.colaborador } : op.label;
   if (!info || !info.colaborador) return null;
@@ -200,21 +175,13 @@ function _opLabel(op) {
 
 function _enqueue(table, id, op) {
   if (!_queue[table]) _queue[table] = new Map();
-  /* Lançamento novo ainda na fila e editado antes do envio continua sendo um
-     lançamento novo (não "alterado") para a notificação. */
   const pending = _queue[table].get(id);
   if (pending && pending.created && op.type === "upsert") op = { ...op, created: true, updated: false };
   _queue[table].set(id, op);
   _schedule();
-  /* Espelha a edição no cache local: sem isso um F5 restaurava a versão do
-     último download, e o que o próprio usuário tinha acabado de lançar
-     sumia da tela. Se o navegador recusar (cota), descarta o cache inteiro
-     — o próximo boot baixa tudo de novo em vez de restaurar dado parcial. */
   const cached =
     op.type === "upsert" ? DataCache.setItem(table, id, op.row) : (DataCache.removeItem(table, id), true);
   if (!cached) DataCache.resetAll();
-  /* Registro que mudou de estado: a cópia antiga fica em outra "tabela" do
-     cache local (vagas_ro → vagas_am) e voltaria no próximo F5. */
   if (op.type === "upsert") {
     const { base } = splitTable(table);
     STATES.forEach((s) => {
@@ -225,7 +192,7 @@ function _enqueue(table, id, op) {
 }
 
 function _schedule(delay = FLUSH_DELAY_MS) {
-  warmApi(); // acorda a API em paralelo à espera do envio (no máx. 1x a cada 4 min)
+  warmApi();
   if (_flushTimer) return;
   _flushTimer = setTimeout(() => {
     _flushTimer = null;
@@ -233,15 +200,11 @@ function _schedule(delay = FLUSH_DELAY_MS) {
   }, delay);
 }
 
-/* Falha de rede (sem status), timeout (0), 408/429 e 5xx merecem nova
-   tentativa; 4xx (validação, permissão, sessão) não melhora repetindo. */
 function _isRetriable(err) {
   const status = err && err.status;
   return !status || status >= 500 || status === 429 || status === 408;
 }
 
-/* Devolve à fila as operações de uma tabela que falharam, sem sobrescrever
-   uma operação mais nova para o mesmo registro. */
 function _requeue(table, ops) {
   if (!_queue[table]) _queue[table] = new Map();
   ops.forEach((op, id) => {
@@ -249,12 +212,8 @@ function _requeue(table, ops) {
   });
 }
 
-/* Limite do corpo de uma requisição `keepalive` (usada ao fechar a aba) é
-   64 KB; acima disso o navegador rejeita a requisição. */
 const KEEPALIVE_MAX_BYTES = 60000;
 
-/* Envios são serializados: dois flushes simultâneos poderiam entregar
-   "editar X" e "excluir X" fora de ordem ao servidor. */
 export function flush({ keepalive = false } = {}) {
   _flushChain = _flushChain.then(() => _flushNow(keepalive)).catch(() => {});
   return _flushChain;
@@ -273,9 +232,6 @@ async function _flushNow(keepalive) {
     const upserts = [];
     const deletes = [];
     ops.forEach((op) => {
-      /* `_new`: lançamento criado agora, com id gerado aqui (1ª tentativa). O
-         servidor acrescenta direto, sem ler a planilha. Numa nova tentativa
-         (op.retried) o marcador some: o servidor confere se o id já existe. */
       if (op.type === "upsert") upserts.push(op.created && !op.retried ? { ...op.row, _new: true } : op.row);
       else deletes.push(op.id);
     });
@@ -302,8 +258,6 @@ async function _flushNow(keepalive) {
     const status = error.status || error.code;
     console.error(`[API] ${table}`, status ? `(${status}) ` : "", error.message || error);
 
-    /* Só devolve à fila se a sessão é a mesma: escritas do usuário anterior
-       nunca podem ser reenviadas com o token do próximo. */
     if (epoch === _epoch && _isRetriable(error) && _flushRetries < MAX_FLUSH_RETRIES) {
       _requeue(table, ops);
       willRetry = true;
@@ -328,7 +282,6 @@ async function _flushNow(keepalive) {
     );
   }
 
-  /* Lançamento do mapa que não foi gravado: diz qual (data e primeiro nome). */
   failedLaunches.slice(0, 3).forEach((label) => {
     useToast().show(`Não foi possível gravar o lançamento de ${label}. Ele não foi salvo na planilha.`, "error");
   });
@@ -336,8 +289,6 @@ async function _flushNow(keepalive) {
     useToast().show(`E mais ${failedLaunches.length - 3} lançamentos não foram gravados na planilha.`, "error");
   }
 
-  /* Confirma na tela o que de fato chegou à planilha (só depois de a API
-     responder com sucesso), para os lançamentos de absenteísmo. */
   if (epoch === _epoch) {
     let saved = 0;
     let changed = 0;
@@ -357,8 +308,6 @@ async function _flushNow(keepalive) {
   }
 }
 
-// indicador_id (do formulário) -> { table (aba física), toRow }. Substitui a
-// antiga tabela genérica "lancamentos": cada indicador manual tem aba própria.
 const ENTRY_TABLE_META = {
   custo_diaria: { table: "diarias", toRow: diariaToRow },
   treinamento: { table: "treinamentos", toRow: treinamentoToRow },
@@ -422,12 +371,6 @@ export function registerRemote() {
   });
 }
 
-/* Conversores linha da planilha -> Entry ({id, date, value, meta}), um por
-   tabela dedicada. Mantêm exatamente a forma que metrics.js/useDashboardData.js
-   e os modais de indicador já esperavam da antiga "lancamentos" — só a
-   origem do dado mudou. */
-/* Textos descritivos vindos da planilha (nomes, filial, função...) sempre em
-   maiúsculas na tela, mesmo que tenham sido digitados em minúsculas. */
 function up(v) {
   return v == null ? v : String(v).toUpperCase();
 }
@@ -466,9 +409,6 @@ function mapRemoteTreinamento(row, impliedState) {
   };
 }
 
-// Sem FK pra Filiais: guarda CNPJ e razão social direto na linha (mesmo
-// jeito que o modal de Custo de Folha busca/mostra — ver submitCustosTotal
-// em LaunchModal.vue), sem depender do cadastro de Filiais pra exibir.
 function mapRemoteCustoFolha(row, impliedState) {
   return {
     id: row.id,
@@ -485,9 +425,7 @@ function mapRemoteCustoFolha(row, impliedState) {
 
 function mapRemoteAbsenteismo(row, impliedState) {
   if (row.colaborador) {
-    // Ocorrência do mapa: date = o dia; competencia = o mês (YYYY-MM) usado no filtro.
     const truthy = (v) => v === true || /^(true|sim|s|1|x)$/i.test(String(v ?? "").trim());
-    /* Linhas antigas guardavam Advertência/Acidente como motivo: viram marcação. */
     const motivo = normalizeMotivo(row.motivo);
     const legacyAdv = motivo === "Advertência";
     const legacyAci = motivo === "Acidente de Trabalho";
@@ -499,7 +437,6 @@ function mapRemoteAbsenteismo(row, impliedState) {
       meta: {
         estado: row.estado_sigla || impliedState || null,
         competencia: row.competencia ? String(row.competencia).slice(0, 7) : date.slice(0, 7),
-        // Espaços repetidos não impedem o casamento com o nome do Headcount (a chave é nameKey).
         colaborador: String(up(row.colaborador)).replace(/\s+/g, " ").trim(),
         setor: up(row.setor) || null,
         filial: up(row.filial) || null,
@@ -510,7 +447,6 @@ function mapRemoteAbsenteismo(row, impliedState) {
       }
     };
   }
-  // Linha sem colaborador (lançamento mensal antigo): não é ocorrência, fica de fora dos KPIs e do mapa.
   return {
     id: row.id,
     date: row.competencia,
@@ -557,16 +493,12 @@ function mapRemotePermanencia(row, impliedState) {
   };
 }
 
-/* Motivo da rescisão: maiúsculo, sem acento e com espaços normalizados, para que
-   "DEMISSÃO" e "DEMISSAO" (ou espaços a mais) virem o mesmo motivo. */
 function motivoKey(v) {
   if (v == null) return null;
   const t = String(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
   return t || null;
 }
 
-/* Aba "rescisoes" (somente leitura). Os três valores são números; célula vazia
-   vira 0 para que a soma do gráfico nunca vire NaN. */
 function mapRemoteRescisao(row, impliedState) {
   const num = (v) => (v != null && Number.isFinite(Number(v)) ? Number(v) : 0);
   return {
@@ -593,8 +525,6 @@ function mapRemoteRescisao(row, impliedState) {
 function mapRemoteHeadcount(row, impliedState) {
   return {
     id: row.id,
-    // Sem isto o código nunca chegava à tela, e editar o registro gravava
-    // vazio por cima do código que estava na planilha (headcountToRow).
     codigo: row.codigo != null ? String(row.codigo) : null,
     colaborador: up(row.colaborador) ?? "",
     funcao: row.funcao != null ? up(row.funcao) : null,
@@ -619,12 +549,6 @@ function mapRemoteBranch(row, impliedState) {
   };
 }
 
-/* Tabelas de dados por estado (nome-base → lista do store + mapeador de linha).
-   Fonte única para restaurar do cache, aplicar delta e hidratar — antes cada
-   um desses caminhos repetia a mesma cadeia de if/else. Desde que
-   diarias/treinamentos/custo_folha/absenteismo ganharam abas próprias (no
-   lugar da antiga "lancamentos" genérica), todas as tabelas passam por aqui
-   uniformemente — nenhuma precisa mais de tratamento especial. */
 const TABLE_KINDS = {
   vagas: { key: "vacancies", map: mapRemoteVacancy },
   turnover: { key: "turnovers", map: mapRemoteTurnover },
@@ -639,9 +563,6 @@ const TABLE_KINDS = {
 };
 const DATA_TABLES = Object.keys(TABLE_KINDS);
 
-/* "vagas_ro" → { base: "vagas", estado: "RO" }. Divide no ÚLTIMO "_" —
-   necessário porque algumas chaves de tabela já têm "_" no nome
-   (ex.: "custo_folha_ro" → base "custo_folha", não "custo"). */
 function splitTable(tabela) {
   const i = tabela.lastIndexOf("_");
   return i > 0
@@ -668,7 +589,6 @@ function statesOf(state) {
   return state === "todos" ? STATES.slice() : [state || DEFAULT_STATE];
 }
 
-// Coloca uma linha do banco no payload do store.
 function addRowToPayload(payload, tabela, row, estado) {
   const { base } = splitTable(tabela);
   const kind = TABLE_KINDS[base];
@@ -677,12 +597,8 @@ function addRowToPayload(payload, tabela, row, estado) {
 
 const _loadedStates = {};
 
-/* Marcado quando o navegador recusa uma gravação do cache local (cota cheia):
-   o cache fica incompleto e não pode receber a versão do delta. */
 let _cacheDirty = false;
 
-/* Grava linhas no cache local; para na primeira recusa e marca o cache como
-   incompleto (ver _cacheDirty). */
 function persistRows(tabela, rows) {
   for (let i = 0; i < rows.length; i++) {
     if (!DataCache.setItem(tabela, rows[i].id, rows[i])) {
@@ -693,8 +609,6 @@ function persistRows(tabela, rows) {
   return true;
 }
 
-/* Baixa os dados dos estados informados, exibindo a tela de carregamento
-   enquanto houver rede. */
 export async function hydrate(state) {
   const states = statesOf(state);
   if (states.every((s) => _loadedStates[s])) return true;
@@ -718,21 +632,10 @@ function bucketByEstado(rows) {
   return buckets;
 }
 
-/* Tabelas já carregadas nesta sessão (os 3 estados de uma vez — ver
-   bucketByEstado): fonte única do que falta baixar, tanto na carga normal
-   quanto num retry após erro parcial. Zerado em clearLoadedTracking (logout,
-   "Recarregar Dados"). */
 const _tablesLoaded = new Set();
 
-/* Tentativas extras só para as tabelas que falharem — as que já vieram
-   certas não são rebaixadas junto. */
 const MAX_TABLE_RETRIES = 2;
 
-/* Uma única chamada para todas as tabelas (/api/data/_batch): o Worker lê as
-   abas numa execução só do Apps Script, em vez de uma execução (com partida a
-   frio) por tabela. Devolve o mesmo formato de fetchOneTable, uma entrada por
-   base; se o lote inteiro falhar (ex.: Worker ainda sem a rota), devolve null
-   e quem chama cai no download tabela a tabela. */
 async function fetchTablesBatch(bases) {
   try {
     const res = await apiFetch(`/api/data/_batch?tables=${encodeURIComponent(bases.join(","))}`);
@@ -759,22 +662,16 @@ async function fetchOneTable(base) {
   }
 }
 
-/* Busca as tabelas informadas — sempre sem sufixo de estado (cada tabela
-   volta com os 3 estados juntos numa única chamada, ver bucketByEstado) — e
-   grava em cache/memória as que vierem certas. Devolve as que falharam, sem
-   descartar o que já deu certo nesta rodada. */
 async function fetchTablesOnce(bases) {
   const epoch = _epoch;
   const results =
     (await fetchTablesBatch(bases)) || (await mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable));
-  if (epoch !== _epoch) return { failed: bases }; // logout/login no meio do download
+  if (epoch !== _epoch) return { failed: bases };
 
   const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };
   const failed = [];
   let persisted = true;
 
-  // Substitui a cópia local das tabelas que vieram certas (em vez de só gravar
-  // por cima): sem isso, um registro apagado no servidor ficava na reserva.
   DataCache.removeTables(
     results.filter((r) => !r.error).flatMap(({ base }) => STATES.map((s) => `${base}_${s.toLowerCase()}`))
   );
@@ -802,17 +699,6 @@ async function fetchTablesOnce(bases) {
   return { failed };
 }
 
-/* Baixa todas as tabelas que ainda faltam, uma chamada por tabela (sem
-   sufixo de estado — nunca "diarias_ro"/"diarias_am"/"diarias_pa" em
-   chamadas separadas, só "diarias" trazendo os 3 estados de uma vez).
-   Chamar por estado multiplicava as requisições simultâneas ao Worker/Apps
-   Script (que tem limite de execuções concorrentes — ver sheets.ts) e
-   causava falhas intermitentes com status "canceled" em 1 ou 2 tabelas por
-   vez, mesmo com a maioria carregando normalmente. Quando alguma tabela
-   falha, tenta de novo só ela (até MAX_TABLE_RETRIES vezes) — nada que já
-   carregou certo é rebaixado. Uma única promise compartilhada: chamadas
-   concorrentes (vários componentes pedindo dados ao mesmo tempo) esperam a
-   mesma operação em vez de disparar downloads paralelos redundantes. */
 let _hydrateAllPromise = null;
 
 function hydrateAllTables() {
@@ -823,9 +709,6 @@ function hydrateAllTables() {
     let attempt = 0;
     while (pending.length && attempt <= MAX_TABLE_RETRIES) {
       if (attempt > 0) {
-        // Pequena espera antes de tentar de novo: dá um respiro ao Worker/Apps
-        // Script quando o erro foi por limite de execuções concorrentes, em
-        // vez de bater na mesma trava imediatamente.
         console.warn(`[API] Tentando de novo (${attempt}/${MAX_TABLE_RETRIES}): ${pending.join(", ")}.`);
         await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
       }
@@ -857,7 +740,6 @@ async function _hydrateStates(states) {
 
   if (ok) {
     if (_cacheDirty) {
-      // Cópia local incompleta (cota cheia): descarta — não serve de reserva.
       DataCache.resetAll();
       _cacheDirty = false;
     }
@@ -869,9 +751,6 @@ async function _hydrateStates(states) {
   return ok;
 }
 
-/* Carrega estado(s) que ainda não estão em memória (o boot já carrega os 3,
-   então isto só baixa algo se o boot tiver falhado). Pedidos simultâneos dos
-   mesmos estados compartilham a mesma operação. */
 const _hydrating = new Map();
 
 export function hydrateState(next) {
@@ -920,13 +799,10 @@ function loadLocalIntoMemory() {
   clearLoadedTracking();
   STATES.forEach((s) => {
     const suffix = s.toLowerCase();
-    // Qualquer tabela vista pra esse estado já basta pra considerá-lo carregado.
     if (DATA_TABLES.some((base) => tablesSeen[`${base}_${suffix}`])) {
       _loadedStates[s] = true;
     }
   });
-  // Mesma ideia por tabela: evita rebaixar via rede o que já veio do cache
-  // (ver hydrateAllTables).
   DATA_TABLES.forEach((base) => {
     if (STATES.some((s) => tablesSeen[`${base}_${s.toLowerCase()}`])) {
       _tablesLoaded.add(base);
@@ -952,7 +828,6 @@ async function hydrateOnBoot(state) {
   const ok = await hydrate(state);
   if (ok) return true;
 
-  // Servidor fora do ar: usa a última cópia que deu certo, se houver.
   if (loadLocalIntoMemory()) {
     console.warn("[API] Falha ao baixar os dados — usando a cópia local do sessionStorage.");
     return true;
@@ -960,13 +835,6 @@ async function hydrateOnBoot(state) {
   return false;
 }
 
-/* Boot: chamado pelo main.js antes da montagem do app. Só hidrata quando já
-   há sessão autenticada (sem ela a API responde 401).
-   Usa o mesmo estado padrão do filtro do dashboard (DEFAULT_FILTER_STATE)
-   — antes hidratava sempre "RO" (DEFAULT_STATE) aqui e, logo em seguida, o
-   onMounted do Dashboard carregava os demais estados do filtro "todos"
-   separadamente: duas rodadas de carregamento em vez de uma, com "RO"
-   sendo baixado de novo a cada boot mesmo quando o filtro real era outro. */
 export async function bootstrapData(authed) {
   registerRemote();
   if (!authed) {
@@ -976,9 +844,6 @@ export async function bootstrapData(authed) {
   await hydrateOnBoot(DEFAULT_FILTER_STATE);
 }
 
-/* Descarta escritas locais ainda pendentes (fila com debounce). Usado no
-   logout/expiração: sem isso, edições do usuário anterior poderiam ser
-   enviadas ao banco com a sessão do próximo usuário. */
 export function discardPendingWrites() {
   if (_flushTimer) {
     clearTimeout(_flushTimer);
@@ -988,8 +853,6 @@ export function discardPendingWrites() {
   Object.keys(_queue).forEach((k) => _queue[k].clear());
 }
 
-/* Purga completa de dados sensíveis ao encerrar a sessão:
-   fila de escrita + memória reativa + cache em sessionStorage. */
 export function resetLocalState() {
   _epoch += 1;
   discardPendingWrites();
@@ -999,14 +862,7 @@ export function resetLocalState() {
   DataCache.resetAll();
 }
 
-/* "Recarregar Dados": limpa cache e memória, remove resíduos antigos do
-   localStorage e busca os dados atualizados direto do banco. Recarrega os
-   MESMOS estados que estavam em memória (antes só o estado padrão era
-   baixado — com o filtro em "Todos Estados" a tela ficava só com RO). A
-   sessão (gg-auth) vive em sessionStorage e é preservada (as chaves ggd:* são
-   as únicas apagadas). */
 export async function reloadData() {
-  // Edições ainda na fila entram no servidor ANTES de baixar de novo.
   await flush();
 
   const previous = STATES.filter((s) => _loadedStates[s]);
@@ -1024,8 +880,6 @@ export async function reloadData() {
   }
 }
 
-/* Garante que escritas pendentes não se percam ao sair da página. `keepalive`
-   deixa o navegador concluir o envio mesmo com a aba sendo fechada. */
 if (typeof window !== "undefined") {
   window.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flush({ keepalive: true });
@@ -1033,8 +887,6 @@ if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => flush({ keepalive: true }));
 }
 
-/* Aquecimento da API (login no Google e gid das abas) para a primeira gravação
-   da tela não pagar o "acordar" do servidor. Falha em silêncio. */
 let _lastWarm = 0;
 export function warmApi() {
   const now = Date.now();

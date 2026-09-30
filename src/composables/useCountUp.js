@@ -1,8 +1,5 @@
 import { ref, watch, onBeforeUnmount } from "vue";
 
-/* Anima um número até o valor alvo (contagem crescente nos KPIs). Usa
-   requestAnimationFrame e só mexe em uma ref numérica — sem layout extra.
-   Com "reduzir movimento" ativo, ou valor não numérico, troca direto. */
 const reducedMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia &&

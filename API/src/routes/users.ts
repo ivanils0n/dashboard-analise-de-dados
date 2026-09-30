@@ -7,7 +7,6 @@ import type { AppEnv } from "../types";
 
 const users = new Hono<AppEnv>();
 
-// Toda a gestão de usuários é exclusiva do perfil admin.
 users.use("*", requireAuth(["admin"]));
 
 users.get("/", async (c) => {

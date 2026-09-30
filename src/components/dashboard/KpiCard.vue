@@ -10,14 +10,11 @@ const props = defineProps({
   kpi: { type: Object, required: true },
   selected: { type: Boolean, default: false },
   showValues: { type: Boolean, default: false },
-  /* Posição na faixa: escalona a entrada dos cards (ver .kpi-enter). */
   index: { type: Number, default: 0 }
 });
 
 const emit = defineEmits(["select", "context"]);
 
-/* Para indicadores onde "menor é melhor" (ex.: Absenteísmo), um aumento
-   é ruim (vermelho) e uma queda é boa (verde). */
 const goodWhenUp = computed(() => props.kpi.higherIsBetter !== false);
 
 const deltaLabel = computed(() => {
@@ -39,11 +36,9 @@ const deltaTone = computed(() => {
 const indicator = computed(() => ({ type: props.kpi.type, decimals: props.kpi.decimals ?? 1 }));
 const hasValue = computed(() => props.kpi.current !== null && props.kpi.current !== undefined);
 
-/* Moeda: o "R$" sai do número e é exibido em cima dele (ver template). */
 const currencyPrefix = computed(() =>
   props.kpi.type === "currency" && hasValue.value ? "R$" : ""
 );
-/* Valor exibido: conta até o atual quando ele muda (filtro, mês, etc.). */
 const animatedCurrent = useCountUp(() => {
   const v = props.kpi.current;
   return hasValue.value && Number.isFinite(Number(v)) ? Number(v) : v;
@@ -54,8 +49,6 @@ const valueText = computed(() => {
   return currencyPrefix.value ? text.replace(/^R\$\s*/, "") : text;
 });
 
-/* Dica de interação (clique direito; toque longo no celular) para KPIs com
-   modal de detalhe. */
 const contextHint = computed(() => {
   switch (props.kpi.id) {
     case "headcount":
@@ -116,19 +109,12 @@ function onKeydown(e) {
       <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ kpi.name }}</span>
     </div>
 
-    <!-- Turnover: a taxa total (a pizza Entrada/Saída fica no gráfico da página). -->
     <div v-if="kpi.kind === 'pie'" class="flex flex-1 flex-col items-center justify-center px-1 py-6">
       <p class="text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
         {{ formatValue({ type: "percent", decimals: 1 }, kpi.totalPct) }}
       </p>
     </div>
 
-    <!-- Indicadores lançados por mês (um único ponto no filtro atual): apenas
-         o total, centralizado (sem mini gráfico, que precisa de mais de um
-         ponto para mostrar tendência). Headcount e Turnover (Exp) também
-         entram aqui: contam registros da própria tabela (headcount/turnover),
-         não lançamentos genéricos — kpi.entries sempre viria vazio para eles,
-         então o mini gráfico de linha nunca teria dado para desenhar. -->
     <div
       v-else-if="[
         'headcount',
@@ -156,7 +142,6 @@ function onKeydown(e) {
       <span class="mt-1 text-xs text-zinc-400">{{ kpi.countText }}</span>
     </div>
 
-    <!-- Padrão: mini gráfico de linha -->
     <div v-else>
       <MiniLineChart :entries="kpi.entries" :show-values="showValues" />
       <p class="mt-2 break-words text-center text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">

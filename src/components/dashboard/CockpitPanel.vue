@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, nextTick, onMounted } from "vue";
+import { computed, ref, watch, nextTick } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
@@ -8,7 +8,7 @@ import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vu
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
-import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
+import HiringStatusSelect from "@/components/dashboard/HiringStatusSelect.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
 import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
@@ -26,10 +26,6 @@ import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue"
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatCurrency, formatHoursClock } from "@/lib/utils";
 
-/* `dashboard` é o objeto retornado por useDashboardData (refs/computed +
-   funções) — repassado inteiro para reaproveitar exatamente os mesmos dados
-   da aba "Visão geral" sem duplicar cálculo. O Painel segue o filtro de
-   período/estado global (definido na Visão geral), sem filtro próprio. */
 const props = defineProps({
   dashboard: { type: Object, required: true },
   showValues: { type: Boolean, default: false }
@@ -40,28 +36,18 @@ const emit = defineEmits(["edit-vacancy", "edit-permanencia", "kpi-context", "cu
 const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
 
-/* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
-   contratação, quando ele é o gráfico central. */
 const hiringStatusFilter = ref("fechadas");
 
-/* Filtro por Gerente regional do gráfico de Treinamento, quando ele é o
-   gráfico central — "" (vazio) = todos os gerentes. */
 const treinamentoGerenteFilter = ref("");
 const treinamentoGerenteOptions = computed(() => props.dashboard.treinamentoGerentesRegionais());
-/* Se o gerente selecionado deixar de aparecer nas opções (filtros do
-   dashboard mudaram), volta para "Todos". */
 watch(treinamentoGerenteOptions, (opts) => {
   if (treinamentoGerenteFilter.value && !opts.includes(treinamentoGerenteFilter.value)) {
     treinamentoGerenteFilter.value = "";
   }
 });
 
-/* Treinamento: "filial" (horas por filial) ou "regional" (horas por gerente
-   regional — antigo KPI Regional Treinamentos). */
 const treinamentoView = ref("filial");
 
-/* Filtro por Recrutador do gráfico de Tempo médio de contratação, quando ele
-   é o gráfico central — "" (vazio) = todos os recrutadores. */
 const hiringRecrutadorFilter = ref("");
 const hiringRecrutadorOptions = computed(() => props.dashboard.vagasRecrutadores());
 watch(hiringRecrutadorOptions, (opts) => {
@@ -70,16 +56,12 @@ watch(hiringRecrutadorOptions, (opts) => {
   }
 });
 
-/* Filtros (multi-seleção) por Filial e Empresa do gráfico de Headcount —
-   [] = todas. Com empresa(s) marcada(s), o filtro de filial só lista as
-   filiais dessa(s) empresa(s) (ver headcountFilialOptions). */
 const headcountEmpresaFilter = ref([]);
 const headcountEmpresaOptions = computed(() => props.dashboard.headcountEmpresas());
 watch(headcountEmpresaOptions, (opts) => {
   headcountEmpresaFilter.value = headcountEmpresaFilter.value.filter((v) => opts.includes(v));
 });
 
-/* Filtro (multi-seleção) por Função do gráfico de Headcount — [] = todas. */
 const headcountFuncaoFilter = ref([]);
 const headcountFuncaoOptions = computed(() => props.dashboard.headcountFuncoes());
 watch(headcountFuncaoOptions, (opts) => {
@@ -92,23 +74,18 @@ watch(headcountFilialOptions, (opts) => {
   headcountFilialFilter.value = headcountFilialFilter.value.filter((v) => opts.includes(v));
 });
 
-/* Absenteísmo: filial(is) marcada(s) no filtro do gráfico ([] = todas). */
 const absenteismoFilialFilter = ref([]);
 const absenteismoFilialOptions = computed(() => props.dashboard.absenteismoFiliais());
 watch(absenteismoFilialOptions, (opts) => {
   absenteismoFilialFilter.value = absenteismoFilialFilter.value.filter((v) => opts.includes(v));
 });
 
-/* Headcount: "bar" (barras por estado) ou "pie" (pizza Masculino x Feminino). */
 const headcountView = ref("bar");
 
-/* Rescisões: "total" (rescisão + GRRF/consig + 40%) ou "liquido" (só a rescisão). */
 const rescisaoMode = ref("total");
 
-/* Rescisões: "funcao" (barras por função) ou "estado" (pizza por estado). */
 const rescisaoView = ref("funcao");
 
-/* Filtros de filial e gerente imediato do gráfico de Rescisões ("" = todos). */
 const rescisaoFilial = ref("");
 const rescisaoGerente = ref("");
 const rescisaoOptions = computed(() => props.dashboard.rescisoesFilterOptions());
@@ -118,16 +95,11 @@ watch(rescisaoOptions, (opts) => {
   if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
 });
 
-/* Clique numa barra do gráfico de Rescisões: card com as rescisões da função. */
 const rescisaoFuncaoOpen = ref(false);
 const rescisaoFuncaoName = ref("");
 const rescisaoFuncaoRows = ref([]);
 const rescisaoPorEstado = ref(false);
 
-/* Painel central: Custo de folha de salário (padrão) quando nada está
-   selecionado — Panorama atual foi desativado —, ou o gráfico do KPI clicado
-   (linha mensal, barras por filial/estado ou pizza de turnover — ver
-   cockpitChartFor em useDashboardData.js). */
 const centerChart = computed(() =>
   props.dashboard.cockpitChartFor(
     selectedKpiId.value === "treinamento" && treinamentoView.value === "regional" ? "horas_regional" : selectedKpiId.value,
@@ -145,18 +117,12 @@ const centerChart = computed(() =>
   )
 );
 
-/* Soma das horas do gráfico de Treinamento, exibida como KPI só quando um
-   gerente regional está filtrado (com "Todos" o total já é óbvio pela soma
-   visual das barras, e a faixa central fica livre para o filtro de status/
-   diária de outros KPIs). */
 const treinamentoSummaryItems = computed(() => {
   if (centerChart.value.id !== "treinamento" || !treinamentoGerenteFilter.value) return [];
   const total = centerChart.value.data.reduce((sum, row) => sum + (Number(row.value) || 0), 0);
   return [{ label: "Total de horas", value: formatHoursClock(total), accent: true }];
 });
 
-/* Tempo médio de contratação: com um recrutador filtrado, mostra as vagas dele
-   no período (total, abertas e fechadas — independente do filtro de status). */
 const hiringSummaryItems = computed(() => {
   if (centerChart.value.id !== "tempo_contratacao") return [];
   const rows = props.dashboard.vacanciesBarByOpen("todas", hiringRecrutadorFilter.value);
@@ -168,8 +134,6 @@ const hiringSummaryItems = computed(() => {
   ];
 });
 
-/* Custo médio da diária: Total, Colaboradores e Média do período filtrado,
-   exibidos acima das barras (ver custoDiariaSummary em useDashboardData.js). */
 const diariaSummaryItems = computed(() => {
   const s = centerChart.value.id === "custo_diaria" ? centerChart.value.summary : null;
   if (!s) return [];
@@ -180,42 +144,20 @@ const diariaSummaryItems = computed(() => {
   ];
 });
 
-/* Números-resumo do gráfico central (Total/Colaboradores/Média da diária,
-   Vagas do Tempo de contratação, Total de horas do Treinamento): não ficam mais
-   no cabeçalho do gráfico — são levados (Teleport) para a linha do filtro de
-   mês, no cabeçalho da tela (#cockpit-kpi-slot em DashboardView). Só teleporta
-   depois de montado, quando o destino já está no documento. */
-const topSummaryItems = computed(() =>
-  centerChart.value.id === "tempo_contratacao"
-    ? hiringSummaryItems.value
-    : treinamentoSummaryItems.value.length
-      ? treinamentoSummaryItems.value
-      : diariaSummaryItems.value
-);
-const slotReady = ref(false);
-onMounted(() => {
-  slotReady.value = !!document.getElementById("cockpit-kpi-slot");
+const cardSummaryItems = computed(() => {
+  const id = centerChart.value.id;
+  if (id === "tempo_contratacao") return hiringSummaryItems.value;
+  if (id === "custo_diaria") return diariaSummaryItems.value;
+  return [];
 });
+const summaryInCard = computed(() => cardSummaryItems.value.length > 0);
 
-/* KPIs distribuídos em "C" ao redor do gráfico central: faixa superior,
-   coluna à esquerda e faixa inferior (o lado direito fica aberto para o mapa e
-   os Indicadores). A divisão é uniforme entre as três partes. */
-const topKpis = computed(() => kpis.value.slice(0, Math.ceil(kpis.value.length / 3)));
-const leftKpis = computed(() => {
-  const rest = kpis.value.length - topKpis.value.length;
-  const start = topKpis.value.length;
-  return kpis.value.slice(start, start + Math.ceil(rest / 2));
-});
-const bottomKpis = computed(() => kpis.value.slice(topKpis.value.length + leftKpis.value.length));
+const topKpis = computed(() => kpis.value.slice(0, 6));
+const bottomKpis = computed(() => kpis.value.slice(6));
 
-/* Mapa abaixo dos Indicadores: mostra o KPI selecionado (ou o padrão, Custo de
-   folha de salário) em cada estado — RO, AM e PA com o filtro em "todos", só o
-   estado escolhido nos demais casos. Clicar num estado filtra por ele; clicar
-   de novo volta para "todos". */
 const { setState, state: filters } = useFilters();
 const mapStates = computed(() => props.dashboard.kpiValueByEstado(selectedKpiId.value));
 
-/* Taxa total de Turnover no centro da pizza (Painel e tela cheia). */
 const pieCenter = computed(() => {
   const chart = centerChart.value;
   if (chart.id === "turnover" && chart.summary) {
@@ -225,12 +167,10 @@ const pieCenter = computed(() => {
 });
 
 function select(id) {
-  props.dashboard.selectKpi(selectedKpiId.value === id ? null : id);
+  if (selectedKpiId.value === id) return;
+  props.dashboard.selectKpi(id);
 }
 
-/* Ao selecionar um KPI (por qualquer caminho: botões, lista ou navegação da
-   tela cheia), a lista Indicadores rola até ele e o destaca. Rola só a própria
-   lista (não a página). */
 const indicatorListRef = ref(null);
 const indicatorItems = new Map();
 
@@ -248,29 +188,21 @@ watch(selectedKpiId, async (id) => {
   list.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 });
 
-/* Turnover (pizza): mostra a taxa total em %. */
 function indicatorValueText(kpi) {
   if (kpi.kind === "pie") return formatValue({ type: "percent", decimals: 1 }, kpi.totalPct);
   if (kpi.current === null || kpi.current === undefined) return "—";
   return formatValue({ type: kpi.type, decimals: kpi.decimals ?? 1 }, kpi.current);
 }
 
-/* Clique numa barra do gráfico de Treinamento (por filial): abre o modal
-   com os colaboradores, horas e total daquela filial — mesmo modal usado
-   na Visão geral. */
 const treinamentoFilialOpen = ref(false);
 const treinamentoFilialLabel = ref("");
 const treinamentoFilialRows = ref([]);
 const treinamentoModalTitle = ref("");
 
-/* Clique numa barra do gráfico de Custo médio da diária: abre o detalhe do
-   colaborador (dados e diárias do período). */
 const diariaColabOpen = ref(false);
 const diariaColabName = ref("");
 const diariaColabRows = ref([]);
 
-/* Clique numa barra do gráfico de Headcount (uma por estado): abre o modal
-   com os colaboradores do estado da barra no mês filtrado. */
 const headcountEstadoOpen = ref(false);
 const headcountEstadoSigla = ref("");
 const headcountGenero = ref("");
@@ -278,7 +210,6 @@ const headcountGenero = ref("");
 function onCenterBarClick({ index, label, datasetIndex }) {
   if (centerChart.value.id === "headcount") {
     if (!label) return;
-    /* Séries do gráfico: 0 = Masculino, 1 = Feminino, 2 = Total (geral). */
     headcountGenero.value = ["masculino", "feminino"][datasetIndex] || "";
     headcountEstadoSigla.value = label;
     headcountEstadoOpen.value = true;
@@ -329,21 +260,13 @@ function onCenterBarClick({ index, label, datasetIndex }) {
     permanenciaDetailOpen.value = true;
     return;
   }
-  /* Demais gráficos de barra (ex.: Absenteísmo, Custo de folha de salário)
-     não têm modal próprio no Painel: reaproveita o mesmo modal de
-     informações do botão direito no KPI (hospedado na Visão geral).
-     Sem KPI selecionado o gráfico central é o de Custo de folha (id null). */
   emit("kpi-context", centerChart.value.id || "custo_total");
 }
 
-/* Botão direito no KPI (faixas ao redor do gráfico ou lista de
-   Indicadores): mesmo modal de informações da Visão geral. */
 function onKpiContext(id) {
   emit("kpi-context", id);
 }
 
-/* Botão direito na barra de Tempo médio de contratação ou de permanência:
-   edita direto, sem passar pelo modal de detalhe. */
 function onCenterBarContext({ index }) {
   if (centerChart.value.id === "tempo_contratacao") {
     const row = centerChart.value.data[index];
@@ -358,9 +281,6 @@ function onCenterBarContext({ index }) {
   }
 }
 
-/* Clique numa barra do gráfico de Tempo médio de contratação: abre o
-   detalhe da vaga; "Editar" ali repassa para a Visão geral (que hospeda o
-   modal de edição). */
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
 const vacancyDetailFallback = ref(null);
@@ -370,7 +290,6 @@ function onVacancyDetailEdit(vacancyId) {
   emit("edit-vacancy", vacancyId);
 }
 
-/* Mesma ideia para o gráfico de Tempo médio de permanência. */
 const permanenciaDetailOpen = ref(false);
 const permanenciaDetailId = ref(null);
 
@@ -379,30 +298,16 @@ function onPermanenciaDetailEdit(recordId) {
   emit("edit-permanencia", recordId);
 }
 
-/* Linha de tendência (MM2): fica de fora dos gráficos de barras deitadas
-   (Treinamento, Tempo médio de contratação, Tempo médio de permanência e
-   Custo médio da diária). */
 const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio", "horas_regional", "rescisoes", "absenteismo"];
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
-/* Gráficos de barras deitadas (uma linha por filial/vaga/colaborador, com
-   rolagem). */
 const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "rescisoes"];
 const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.value.id));
 
-/* Pizza e Retenção (tabela): no celular empilham conteúdo (pizza + cards) e
-   ficam com a altura do conteúdo em vez da caixa fixa das barras. */
 const stackedOnPhone = computed(() => centerChart.value.kind === "pie" || centerChart.value.kind === "table");
 
-/* Clique na pizza do Turnover: mesmo modal de Admissões/Demissões dos cards
-   ao lado (openTurnoverDetail, abaixo) — a fatia clicada decide qual
-   (0 = Entrada/Admissões, 1 = Saída/Demissões, ver chartPieData em
-   useDashboardData.js); fora de uma fatia (ex.: buraco central), cai em
-   Admissões. Mesmo comportamento da pizza na Visão geral (ver
-   onTurnoverChartInfo em KpiChartCard.vue). */
 function onPieClick(sliceIndex) {
   if (centerChart.value.id === "headcount") {
-    /* Fatia 0 = Masculino, 1 = Feminino; fora de uma fatia (centro) = geral. */
     headcountGenero.value = ["masculino", "feminino"][sliceIndex] || "";
     headcountEstadoSigla.value = filters.current;
     headcountEstadoOpen.value = true;
@@ -414,7 +319,6 @@ function onPieClick(sliceIndex) {
     return;
   }
   if (centerChart.value.id === "rescisoes") {
-    /* Fatia clicada = um estado; fora de uma fatia (centro) não abre nada. */
     const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
     if (!row) return;
     rescisaoFuncaoName.value = row.label;
@@ -428,9 +332,6 @@ function onPieClick(sliceIndex) {
   openTurnoverDetail(sliceIndex === 1 ? "demissoes-empresas" : "admissoes-empresas");
 }
 
-/* Clique num card de Admissões/Demissões ao lado da pizza: abre o detalhe dos
-   lançamentos que compõem o número. Da tela cheia, fecha o modal do gráfico
-   antes para não ficar por baixo. */
 const turnoverDetailOpen = ref(false);
 const turnoverDetailKind = ref("admissoes");
 
@@ -440,8 +341,6 @@ function openTurnoverDetail(kind) {
   turnoverDetailOpen.value = true;
 }
 
-/* Tela cheia do gráfico central, com navegação entre os KPIs sem precisar
-   fechar o modal. Índice 0 do ciclo é sempre o gráfico padrão (id null). */
 const fullscreenOpen = ref(false);
 const navIds = computed(() => [null, ...kpis.value.map((k) => k.id)]);
 
@@ -461,15 +360,8 @@ function goNextKpi() {
 
 <template>
   <div class="mt-2">
-    <Teleport v-if="slotReady && topSummaryItems.length" to="#cockpit-kpi-slot">
-      <SummaryTiles :items="topSummaryItems" compact />
-    </Teleport>
-    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-      <div data-tour="cockpit-main">
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-[200px_minmax(0,1fr)]">
-          <!-- Celular: todos os KPIs no topo, em colunas de 3 que se arrastam
-               para o lado (a próxima coluna aparece na borda, indicando que há
-               mais). O "C" ao redor do gráfico volta a partir de md. -->
+    <div data-tour="cockpit-main">
+      <div class="flex flex-col gap-4">
           <div class="grid auto-cols-[82%] grid-flow-col grid-rows-3 gap-2 overflow-x-auto overscroll-x-contain pb-1 snap-x snap-mandatory [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden" aria-label="Indicadores">
             <CockpitKpiButton
               v-for="kpi in kpis"
@@ -482,8 +374,6 @@ function goNextKpi() {
             />
           </div>
 
-          <!-- Tablet (md até lg): todos os KPIs juntos no topo, em uma única
-               grade; o "C" ao redor do gráfico só a partir de lg. -->
           <div class="hidden gap-2 md:grid md:grid-cols-3 lg:hidden" aria-label="Indicadores">
             <CockpitKpiButton
               v-for="kpi in kpis"
@@ -496,8 +386,7 @@ function goNextKpi() {
             />
           </div>
 
-          <!-- KPIs acima do gráfico (parte superior do "C"). -->
-          <div class="hidden grid-cols-2 gap-2 lg:col-span-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': topKpis.length }">
+          <div class="hidden grid-cols-2 gap-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': topKpis.length }">
             <CockpitKpiButton
               v-for="kpi in topKpis"
               :key="kpi.id"
@@ -509,54 +398,56 @@ function goNextKpi() {
             />
           </div>
 
-          <!-- KPIs à esquerda do gráfico (mesmo estilo dos cards da Visão geral). -->
-          <div class="hidden gap-2 lg:flex lg:flex-col">
-            <CockpitKpiButton
-              v-for="kpi in leftKpis"
-              :key="kpi.id"
-              class="!w-full lg:flex-1"
-              :kpi="kpi"
-              :selected="selectedKpiId === kpi.id"
-              @select="select"
-              @context="onKpiContext"
-            />
-          </div>
-
-          <!-- Gráfico central -->
-          <section data-tour="cockpit-chart" class="flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <!-- Cabeçalho em linha que quebra: com zoom maior (tela "menor") o
-                 título, os botões e os filtros descem em vez de se espremer. -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[280px_minmax(0,1fr)_280px]">
+          <section data-tour="cockpit-chart" class="order-first flex min-w-0 md:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 lg:h-[540px] flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <div class="min-w-0">
+              <div class="min-w-0" :class="summaryInCard ? 'basis-full' : ['treinamento', 'rescisoes'].includes(centerChart.id) ? 'flex-1' : ''">
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
+                  <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
+                    <HiringStatusSelect v-model="hiringStatusFilter" />
+                    <GerenteRegionalFilter
+                      v-model="hiringRecrutadorFilter"
+                      :options="hiringRecrutadorOptions"
+                      label="Recrutador"
+                      all-label="Todos os recrutadores"
+                      title="Filtrar Tempo médio de contratação por recrutador"
+                    />
+                  </div>
                   <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
                   <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
                   <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
+                  <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
+                  <div v-if="centerChart.id === 'rescisoes'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
+                    <GerenteRegionalFilter
+                      v-model="rescisaoFilial"
+                      :options="rescisaoOptions.filiais"
+                      label="Filial"
+                      all-label="Todas as filiais"
+                      title="Filtrar Rescisões por filial"
+                    />
+                    <GerenteRegionalFilter
+                      v-model="rescisaoGerente"
+                      :options="rescisaoOptions.gerentes"
+                      label="Gerente imediato"
+                      all-label="Todos os gerentes imediatos"
+                      title="Filtrar Rescisões por gerente imediato"
+                    />
+                  </div>
+                  <div v-if="centerChart.id === 'treinamento'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
+                    <SummaryTiles v-if="treinamentoSummaryItems.length" :items="treinamentoSummaryItems" compact />
+                    <GerenteRegionalFilter
+                      v-model="treinamentoGerenteFilter"
+                      :options="treinamentoGerenteOptions"
+                    />
+                  </div>
                 </div>
                 <span class="text-xs text-zinc-400 dark:text-zinc-400">{{ centerChart.sub }}</span>
               </div>
-              <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center justify-start gap-2 sm:justify-center">
-                <HiringStatusPills v-model="hiringStatusFilter" />
-              </div>
-              <div class="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:ml-auto sm:justify-end">
-                <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
-                <GerenteRegionalFilter
-                  v-if="centerChart.id === 'rescisoes'"
-                  v-model="rescisaoFilial"
-                  :options="rescisaoOptions.filiais"
-                  label="Filial"
-                  all-label="Todas as filiais"
-                  title="Filtrar Rescisões por filial"
-                />
-                <GerenteRegionalFilter
-                  v-if="centerChart.id === 'rescisoes'"
-                  v-model="rescisaoGerente"
-                  :options="rescisaoOptions.gerentes"
-                  label="Gerente imediato"
-                  all-label="Todos os gerentes imediatos"
-                  title="Filtrar Rescisões por gerente imediato"
-                />
+              <div
+                class="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:ml-auto sm:justify-end"
+                :class="summaryInCard ? 'sm:relative sm:w-full sm:!justify-center' : ''"
+              >
                 <MultiSelectFilter
                   v-if="centerChart.id === 'absenteismo'"
                   v-model="absenteismoFilialFilter"
@@ -593,24 +484,13 @@ function goNextKpi() {
                   plural-label="funções"
                   title="Filtrar Headcount por uma ou mais funções"
                 />
-                <GerenteRegionalFilter
-                  v-if="centerChart.id === 'treinamento'"
-                  v-model="treinamentoGerenteFilter"
-                  :options="treinamentoGerenteOptions"
-                />
-                <GerenteRegionalFilter
-                  v-if="centerChart.id === 'tempo_contratacao'"
-                  v-model="hiringRecrutadorFilter"
-                  :options="hiringRecrutadorOptions"
-                  label="Recrutador"
-                  all-label="Todos os recrutadores"
-                  title="Filtrar Tempo médio de contratação por recrutador"
-                />
+                <SummaryTiles v-if="summaryInCard" :items="cardSummaryItems" compact />
                 <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
                 <FaturamentoButton v-if="centerChart.faturamentoEnabled" />
                 <button
                   type="button"
                   class="icon-btn-sm"
+                  :class="summaryInCard ? 'sm:absolute sm:right-0 sm:top-1/2 sm:-translate-y-1/2' : ''"
                   title="Tela cheia"
                   aria-label="Ver gráfico em tela cheia"
                   @click="fullscreenOpen = true"
@@ -624,22 +504,15 @@ function goNextKpi() {
                 </button>
               </div>
             </div>
-            <!-- Em telas largas a área do gráfico ocupa o restante da altura da
-                 seção, que acompanha a altura da coluna vertical de KPIs
-                 (grid estica os dois); abaixo de lg usa altura fixa. No
-                 celular, pizza (com os cards embaixo) e Retenção crescem com o
-                 conteúdo — numa altura fixa os cards vazavam para fora. -->
-            <div class="relative lg:h-auto lg:min-h-[420px] lg:flex-1" :class="stackedOnPhone ? '' : 'h-[360px] sm:h-[480px]'">
+            <div class="relative lg:h-auto lg:min-h-0 lg:flex-1" :class="stackedOnPhone ? '' : 'h-[360px] sm:h-[480px]'">
             <div class="h-full lg:absolute lg:inset-0">
-            <!-- Pizza: as colunas laterais de 180px só existem com os cards de
-                 resumo (Turnover) e só a partir de lg; sem eles (e em tablet) a
-                 pizza usa a largura toda, com os cards embaixo. -->
             <div
               v-if="centerChart.kind === 'pie'"
               class="grid gap-4 lg:h-full lg:grid-rows-1"
               :class="centerChart.summary ? 'lg:grid-cols-[180px_minmax(0,1fr)_180px]' : 'lg:grid-cols-1'"
             >
               <PieChart
+                :key="centerChart.id"
                 class="min-h-0 min-w-0 lg:row-start-1"
                 :class="centerChart.summary ? 'lg:col-start-2' : ''"
                 :data="centerChart.data"
@@ -656,14 +529,28 @@ function goNextKpi() {
             </div>
             <RetentionPanel v-else-if="centerChart.kind === 'table'" :data="centerChart.data" />
             <BarChart
-              v-else
+              v-else-if="centerChart.id === 'tempo_contratacao'"
               :data="centerChart.data"
               :show-values="showValues"
               :show-trend="showTrend"
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
               :horizontal="isHorizontalChart"
-              :align-top="centerChart.id === 'tempo_contratacao'"
+              align-top
+              fluid
+              bars-clickable
+              @bar-click="onCenterBarClick"
+              @bar-contextmenu="onCenterBarContext"
+            />
+            <BarChart
+              v-else
+              :data="centerChart.data"
+              :show-values="showValues"
+              :show-trend="showTrend"
+              :animate-trend="!centerChart.id || centerChart.id === 'custo_total'"
+              :value-format="centerChart.valueFormat"
+              :variant="centerChart.variant || 'bar'"
+              :horizontal="isHorizontalChart"
               fluid
               bars-clickable
               @bar-click="onCenterBarClick"
@@ -678,40 +565,16 @@ function goNextKpi() {
             />
           </section>
 
-          <!-- KPIs abaixo do gráfico: ocupam as duas colunas da grade, começando
-               na mesma borda esquerda dos KPIs laterais (colunas de no mínimo
-               200px, mesmo espaçamento) e se esticam até a borda direita do
-               gráfico central. -->
-          <div class="hidden grid-cols-2 gap-2 lg:col-span-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
-            <CockpitKpiButton
-              v-for="kpi in bottomKpis"
-              :key="kpi.id"
-              class="!w-full"
-              :kpi="kpi"
-              :selected="selectedKpiId === kpi.id"
-              @select="select"
-              @context="onKpiContext"
-            />
-          </div>
-        </div>
-      </div>
-
-      <!-- Mapa do KPI selecionado + indicadores (coluna da direita) -->
-      <!-- Tablet (md até xl): mapa e Indicadores lado a lado; em telas largas
-           voltam a empilhar na coluna da direita. -->
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:flex xl:flex-col">
       <UfMapCard
         data-tour="cockpit-map"
+        class="xl:col-start-1 xl:row-start-1"
         title="Mapa por estado"
         :subtitle="centerChart.id === 'custo_diaria' ? `${centerChart.title} — valor total` : centerChart.title"
         :states="mapStates"
         @select="setState"
       />
 
-      <!-- Em telas largas o card Indicadores desce até o fim da faixa de KPIs
-           inferior (a coluna estica junto com a coluna da esquerda); a lista
-           ocupa o espaço restante e rola dentro dele, sem aumentar a linha. -->
-      <aside data-tour="cockpit-indicators" class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-[12rem] xl:flex-1">
+      <aside data-tour="cockpit-indicators" class="flex flex-col xl:col-start-3 xl:row-start-1 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-[12rem] xl:flex-1">
         <h2 class="mb-2 text-center text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
         <div class="xl:relative xl:min-h-0 xl:flex-1">
         <ul
@@ -738,6 +601,19 @@ function goNextKpi() {
         </ul>
         </div>
       </aside>
+          </div>
+
+          <div class="hidden grid-cols-2 gap-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
+            <CockpitKpiButton
+              v-for="kpi in bottomKpis"
+              :key="kpi.id"
+              class="!w-full"
+              :kpi="kpi"
+              :selected="selectedKpiId === kpi.id"
+              @select="select"
+              @context="onKpiContext"
+            />
+          </div>
       </div>
     </div>
 
@@ -809,6 +685,18 @@ function goNextKpi() {
       :subtitle="centerChart.sub"
       @close="fullscreenOpen = false"
     >
+      <template v-if="centerChart.id === 'tempo_contratacao'" #actions>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <HiringStatusSelect v-model="hiringStatusFilter" />
+          <GerenteRegionalFilter
+            v-model="hiringRecrutadorFilter"
+            :options="hiringRecrutadorOptions"
+            label="Recrutador"
+            all-label="Todos os recrutadores"
+            title="Filtrar Tempo médio de contratação por recrutador"
+          />
+        </div>
+      </template>
       <div class="flex h-full flex-col gap-4">
         <div class="flex flex-wrap items-center justify-center gap-3">
           <button
@@ -823,7 +711,6 @@ function goNextKpi() {
             </svg>
           </button>
           <template v-if="centerChart.id === 'tempo_contratacao'">
-            <HiringStatusPills v-model="hiringStatusFilter" />
             <SummaryTiles v-if="hiringSummaryItems.length" :items="hiringSummaryItems" compact />
           </template>
           <SummaryTiles v-else-if="treinamentoSummaryItems.length" :items="treinamentoSummaryItems" compact />
@@ -892,14 +779,6 @@ function goNextKpi() {
             v-model="treinamentoGerenteFilter"
             :options="treinamentoGerenteOptions"
           />
-          <GerenteRegionalFilter
-            v-if="centerChart.id === 'tempo_contratacao'"
-            v-model="hiringRecrutadorFilter"
-            :options="hiringRecrutadorOptions"
-            label="Recrutador"
-            all-label="Todos os recrutadores"
-            title="Filtrar Tempo médio de contratação por recrutador"
-          />
           <FaturamentoShareChip v-if="centerChart.faturamentoEnabled && centerChart.faturamento" :data="centerChart.faturamento" />
           <button
             type="button"
@@ -920,6 +799,7 @@ function goNextKpi() {
             :class="centerChart.summary ? 'md:grid-cols-[180px_minmax(0,1fr)_180px]' : 'md:grid-cols-1'"
           >
             <PieChart
+              :key="centerChart.id"
               class="min-h-0 min-w-0 md:row-start-1"
               :class="centerChart.summary ? 'md:col-start-2' : ''"
               :data="centerChart.data"

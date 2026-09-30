@@ -4,11 +4,6 @@ import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { formatHoursClock, formatDate, normalizeText } from "@/lib/utils";
 
-/* Card do KPI "Regional Treinamentos" (clique direito): cada gerente regional
-   com o total de horas e a lista dos treinamentos dele no período filtrado.
-   `groups`: [{ regional, horas, colaboradores, treinamentos: [{ id, data,
-   colaborador, cargo, filial, tema, modalidade, horas }] }] — ver
-   treinamentoRegionalGroups em useDashboardData.js. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   groups: { type: Array, default: () => [] }

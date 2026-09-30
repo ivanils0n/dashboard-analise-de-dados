@@ -1,6 +1,4 @@
 <script setup>
-/* Alterna o gráfico de Rescisões entre valor líquido (só a rescisão) e total
-   (rescisão + GRRF/consig + 40%). v-model: "liquido" | "total". */
 defineProps({
   modelValue: { type: String, default: "total" }
 });

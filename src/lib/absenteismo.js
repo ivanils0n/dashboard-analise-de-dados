@@ -1,12 +1,8 @@
-/* Mapa de absenteísmo: colaboradores x dias do mês filtrado com a
-   ocorrência de cada dia. Os colaboradores vêm do Headcount; as ocorrências
-   ficam na aba "absenteismo" (ver getOcorrencias/saveOcorrencia em store.js). */
 import { computed } from "vue";
 import { getOcorrencias } from "./store";
 import { listHeadcountRecords, headcountMonths } from "./employees";
 import { normalizeText, nameKey } from "./utils";
 
-/* Motivos lançáveis. "Presente" sem observação nem marcação apaga o dia. */
 export const MOTIVOS = [
   { value: "Falta", label: "Falta", letter: "F", chip: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300", dot: "bg-red-400", hex: "#f87171" },
   { value: "Atestado", label: "Atestado", letter: "A", chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", dot: "bg-emerald-400", hex: "#34d399" },
@@ -14,8 +10,6 @@ export const MOTIVOS = [
   { value: "Meio Expediente", label: "Meio período", letter: "M", chip: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300", dot: "bg-sky-400", hex: "#38bdf8" }
 ];
 
-/* "Presente" com observação: o dia não tem ocorrência, mas guarda uma anotação.
-   Aparece como um ponto discreto na célula. */
 export const PRESENTE = {
   value: "Presente",
   label: "Presente c/ obs.",
@@ -24,9 +18,6 @@ export const PRESENTE = {
   dot: "bg-zinc-400"
 };
 
-/* Marcações independentes do motivo (caixas de seleção do lançamento): uma
-   ocorrência pode ter um motivo (ex.: Atestado) e também Advertência e/ou
-   Acidente de trabalho. Gravadas nas colunas advertencia e acidente_trabalho. */
 export const FLAGS = [
   { key: "advertencia", value: "Advertência", label: "Advertência", plural: "Advertências", letter: "V", chip: "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300", dot: "bg-orange-400", hex: "#fb923c" },
   { key: "acidente", value: "Acidente de Trabalho", label: "Acidente de trabalho", plural: "Acidentes de trabalho", short: "Acid. de trabalho", letter: "T", chip: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300", dot: "bg-violet-400", hex: "#a78bfa" }
@@ -34,25 +25,17 @@ export const FLAGS = [
 
 const MOTIVO_PLURAL = { Falta: "Faltas", Atestado: "Atestados", Declaração: "Declarações", "Meio Expediente": "Meio período" };
 
-/* Tipos de ocorrência contados nos KPIs e gráficos: os quatro motivos mais as
-   duas marcações. `has(item)` diz se uma ocorrência (com motivo/advertencia/
-   acidente) é daquele tipo — uma mesma ocorrência pode ser de mais de um. */
 export const TIPOS = [
   ...MOTIVOS.map((m) => ({ ...m, plural: MOTIVO_PLURAL[m.value] || m.label, has: (o) => o.motivo === m.value })),
   ...FLAGS.map((f) => ({ ...f, has: (o) => !!o[f.key] }))
 ];
 
-/* Ocorrência de ausência: tem motivo (≠ Presente) ou alguma marcação. */
 export const isOcorrenciaAusencia = (o) => (o.motivo && o.motivo !== "Presente") || !!o.advertencia || !!o.acidente;
 
-/* Como a célula do mapa se apresenta: `primary` (chip principal) e `flags`
-   (marcações extras, desenhadas como pontos no canto). */
 export function cellInfo(meta) {
   if (!meta) return null;
   const flags = FLAGS.filter((f) => meta[f.key]);
   let motivo = meta.motivo && meta.motivo !== PRESENTE.value ? motivoOf(meta.motivo) : null;
-  /* Motivo que o app não conhece (digitado à mão na planilha): aparece como "?" em
-     vez de a ocorrência sumir do mapa. */
   if (!motivo && meta.motivo && meta.motivo !== PRESENTE.value) motivo = { ...DESCONHECIDO, label: meta.motivo };
   const primary = motivo || flags[0] || (meta.motivo === PRESENTE.value ? PRESENTE : null);
   return primary ? { primary, flags: flags.filter((f) => f !== primary) } : null;
@@ -78,7 +61,6 @@ export function isoOf(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/* Dias do mês de referência `ym` (YYYY-MM): do dia 1 ao último. */
 export function monthRange(ym) {
   const [y, m] = String(ym).split("-").map(Number);
   return { start: new Date(y, m - 1, 1), end: new Date(y, m, 0) };
@@ -98,10 +80,6 @@ export function monthDays({ start, end }) {
   return days;
 }
 
-/* Mês de Headcount usado para listar os colaboradores de `ym`: o próprio mês ou,
-   se ele ainda não tem Headcount lançado, o mais recente anterior (o mês corrente
-   costuma ter ocorrências antes de o Headcount dele ser importado). Sem nenhum
-   anterior, o mais antigo disponível. */
 export function headcountMonthFor(state, ym) {
   const months = headcountMonths(state);
   if (!months.length || months.includes(ym)) return { ym, fallback: false };
@@ -109,8 +87,6 @@ export function headcountMonthFor(state, ym) {
   return { ym: before.length ? before[before.length - 1] : months[0], fallback: true };
 }
 
-/* Colaboradores do mês de referência `ym`, vindos do Headcount (um por nome),
-   exceto quem foi desligado antes do início do mês. `setor` é a função. */
 export function monthEmployees(state, ym, period) {
   const startIso = isoOf(period.start);
   const byName = new Map();
@@ -134,7 +110,6 @@ export function monthEmployees(state, ym, period) {
     .sort((a, b) => collator.compare(a.nome, b.nome));
 }
 
-/* Ocorrências indexadas por `nome|YYYY-MM-DD` (reativo: recalcula ao lançar). */
 export function useOcorrenciaIndex() {
   return computed(() => {
     const map = new Map();
@@ -143,15 +118,10 @@ export function useOcorrenciaIndex() {
   });
 }
 
-/* Mês (YYYY-MM) de uma ocorrência: a coluna `competencia` da planilha; sem ela,
-   o mês do dia (`data`). É por aqui que as ocorrências entram no filtro por mês. */
 export function competenciaYm(meta, date) {
   return (meta && meta.competencia) || String(date || "").slice(0, 7);
 }
 
-/* Ocorrências de ausência (sem "Presente" puro) cuja competência é o mês `ym` e
-   do estado escolhido, já achatadas para os KPIs e gráficos. `ym` e `estado`
-   são refs/getters. */
 export function useMonthOcorrencias(ym, estado) {
   return computed(() => {
     const month = ym.value;
@@ -176,7 +146,6 @@ export function useMonthOcorrencias(ym, estado) {
   });
 }
 
-/* Conta itens por chave (ordem decrescente, empate por nome). */
 export function countBy(list, keyOf) {
   const map = new Map();
   list.forEach((item) => {

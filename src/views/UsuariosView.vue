@@ -31,7 +31,6 @@ async function load() {
   loading.value = true;
   beginLoading("Carregando usuários...");
   try {
-    // Sem limit a API devolve só os 50 primeiros (ver utils/pagination.ts).
     const response = await apiFetch("/api/users?limit=500");
     users.value = (response.data || []).filter((u) => u.perfil);
   } catch (err) {
@@ -102,14 +101,11 @@ async function handleDelete(id) {
   }
 }
 
-/* Recarrega ao entrar na aba (e no primeiro acesso), já que a view fica em
-   cache pelo KeepAlive. */
 onActivated(load);
 </script>
 
 <template>
   <div>
-    <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Usuários</h1>
@@ -126,7 +122,6 @@ onActivated(load);
       <Badge tone="accent">{{ users.length === 1 ? "1 usuário" : `${users.length} usuários` }}</Badge>
     </div>
 
-    <!-- ===== LISTA ===== -->
     <section class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div class="border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
         <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Usuários cadastrados</h2>

@@ -5,17 +5,12 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import { findBranchByShortName } from "@/lib/employees";
 import { formatDate } from "@/lib/utils";
 
-/* Detalhe de uma barra/fatia da Análise de Turnover: cartões-resumo do grupo
-   (função, gênero ou geral) e os colaboradores que entraram ou saíram. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: "" },
   subtitle: { type: String, default: "" },
-  /* [{ label, value }] */
   cards: { type: Array, default: () => [] },
-  /* Registros do Headcount (admissões ou desligamentos). */
   items: { type: Array, default: () => [] },
-  /* true = lista de entradas (Data de admissão); false = saídas (desligamento). */
   entrada: { type: Boolean, default: true }
 });
 
@@ -36,7 +31,6 @@ const rows = computed(() =>
         estado: h.estado || "",
         admissao: h.dataAdmissao || "",
         desligamento: h.dataDesligamento || "",
-        /* Ordena pela data do lado listado (entrada = admissão). */
         data: (props.entrada ? h.dataAdmissao : h.dataDesligamento) || ""
       };
     })

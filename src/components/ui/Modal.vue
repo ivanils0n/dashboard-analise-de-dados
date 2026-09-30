@@ -6,7 +6,6 @@ defineProps({
   subtitle: { type: String, default: "" },
   maxWidth: { type: String, default: "max-w-2xl" },
   fullscreen: { type: Boolean, default: false },
-  /* Título centralizado e maior (ex.: modal que mostra só a data). */
   centered: { type: Boolean, default: false }
 });
 

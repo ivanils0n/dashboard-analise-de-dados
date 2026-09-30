@@ -79,8 +79,6 @@ const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
 
-/* Quando preenchido, o modal está editando um lançamento existente
-   (custo_diaria, treinamento ou custo_total). */
 const editingEntryId = ref(null);
 
 const indicatorId = ref(MANUAL_INDICATORS[0].id);
@@ -90,7 +88,6 @@ const indicatorOptions = computed(() => MANUAL_INDICATORS);
 
 const indicator = computed(() => getIndicatorById(indicatorId.value));
 
-/* ---------- Vaga (Tempo médio de contratação) ---------- */
 const vaga = reactive({
   nome: "",
   abertura: "",
@@ -103,7 +100,6 @@ const vaga = reactive({
 });
 const editingVacancyId = ref(null);
 
-/* Datas de fechamento escolhidas na aba Histórico (padrão: hoje). */
 const closeDates = reactive({});
 const bulkCloseDate = ref(todayISO());
 
@@ -115,10 +111,6 @@ function setCloseDate(id, value) {
   closeDates[id] = value;
 }
 
-/* ---------- Diária ---------- */
-/* A diária é vinculada a MÊS/ANO (competência), não a um dia — o registro é
-   gravado no 1º dia do mês escolhido, igual ao Treinamento. Sem cadastro de
-   Colaboradores no sistema, o nome é sempre texto livre. */
 const diaria = reactive({
   employeeName: "",
   funcao: "",
@@ -130,11 +122,6 @@ const diaria = reactive({
   value: ""
 });
 
-/* ---------- Treinamento ---------- */
-/* O treinamento é vinculado a MÊS/ANO (competência), não a um dia. O registro
-   é gravado no 1º dia do mês escolhido para manter compatibilidade com as
-   consultas por data existentes. Sem cadastro de Colaboradores, o nome é
-   sempre texto livre. */
 const treinamento = reactive({
   employeeName: "",
   estado: "",
@@ -147,10 +134,6 @@ const treinamento = reactive({
   modalidade: "presencial"
 });
 
-/* ---------- Custos Totais (por filial) ---------- */
-/* O lançamento de Custos Totais é vinculado a MÊS/ANO (competência), não a
-   um dia. Internamente o registro é gravado no 1º dia do mês escolhido para
-   manter compatibilidade com as consultas por data existentes. */
 const custosTot = reactive({
   estado: filters.current !== "todos" ? filters.current : "todos",
   query: "",
@@ -200,7 +183,6 @@ function initModal() {
   headcountAdmissaoEnd.value = "";
   selectedHeadcountIds.value = new Set();
 
-  /* Modo edição: pré-preenche o formulário do lançamento selecionado. */
   if (props.editEntry && props.editEntry.entry && props.editEntry.indicatorId) {
     indicatorId.value = props.editEntry.indicatorId;
     buildForm();
@@ -208,7 +190,6 @@ function initModal() {
     return;
   }
 
-  /* Modo edição de vaga (aberto pelo histórico do KPI de contratação). */
   if (props.editVacancyId) {
     indicatorId.value = "tempo_contratacao";
     buildForm();
@@ -219,7 +200,6 @@ function initModal() {
   buildForm();
 }
 
-/* Pré-preenche o formulário a partir de um lançamento existente (edição). */
 function prefillEdit(indId, entry) {
   const m = entry.meta || {};
   editingEntryId.value = entry.id;
@@ -258,8 +238,6 @@ function prefillEdit(indId, entry) {
       custosTot.estado = nextEstado;
     }
     custosTot.query = "";
-    // Sem FK gravada: reencontra a filial pelo CNPJ (só pra pré-selecionar
-    // na aba Filial ao editar; o lançamento em si já tem CNPJ/razão social).
     custosTot.branchId = (m.cnpj && listBranches().find((b) => b.cnpj === m.cnpj)?.id) || null;
     custosTot.month = entry.date ? String(entry.date).slice(0, 7) : currentYm();
     custosTot.custos = normalizeCurrencyInput(entry.value != null ? String(entry.value) : "");
@@ -302,7 +280,6 @@ function resetCustosTot() {
   custosTot.percent = "";
 }
 
-/* Carrega os dados do estado escolhido para listar suas filiais. */
 let skipCustosEstadoWatch = false;
 watch(
   () => custosTot.estado,
@@ -391,22 +368,14 @@ function showTab(id) {
   activeTab.value = id;
 }
 
-/* ---------- Vaga ---------- */
-
 const vacancies = computed(() => listVacancies(filters.current));
 
-/* Busca da aba Histórico (vaga, tipo, filial, estado). */
 const vacancySearch = ref("");
-/* Dias de contratação de uma vaga fechada; null se ainda em aberto ou sem
-   datas válidas. Pode ser negativo quando o fechamento foi lançado antes da
-   abertura (erro de digitação) — é o que o filtro abaixo identifica. */
 function vacancyDays(v) {
   if (!v || !v.openAt || !v.closeAt) return null;
   const days = daysBetween(v.openAt, v.closeAt);
   return days === null || isNaN(days) ? null : days;
 }
-/* Mostra só vagas com tempo de contratação negativo (data de fechamento
-   anterior à de abertura), para facilitar achar e corrigir esses lançamentos. */
 const vacancyOnlyNegative = ref(false);
 const filteredVacancies = computed(() => {
   const q = normalizeText(vacancySearch.value).trim();
@@ -427,19 +396,16 @@ const filteredVacancies = computed(() => {
   return list;
 });
 
-/* Totais do histórico de vagas (abertas x fechadas). */
 const vacancyStats = computed(() => {
   const list = vacancies.value;
   const fechadas = list.filter((v) => v.closeAt).length;
   return { total: list.length, abertas: list.length - fechadas, fechadas };
 });
 
-/* Filiais disponíveis para a vaga, conforme o estado selecionado. */
 const vagaBranches = computed(() =>
   listBranches(estado.value === "todos" ? "todos" : estado.value)
 );
 
-/* Garante que as filiais do estado estejam carregadas para o seletor. */
 watch(
   () => estado.value,
   async (state) => {
@@ -451,11 +417,6 @@ watch(
   }
 );
 
-/* Filial da vaga é texto livre (metade das vagas da planilha não bate com
-   nenhuma sigla do cadastro — ex.: "CD - RO", "NOVA ERA"). Antes, editar uma
-   dessas limpava a filial ao abrir, e salvar a apagava na planilha. Agora o
-   valor atual vira uma opção própria e só é limpo quando o usuário troca o
-   estado da vaga. */
 const vagaFilialOriginal = ref(null);
 const vagaFilialOriginalForaDaLista = computed(
   () => !!vagaFilialOriginal.value && !vagaBranches.value.some((b) => b.shortName === vagaFilialOriginal.value)
@@ -486,7 +447,6 @@ function setVagaNow() {
   vaga.abertura = todayISO();
 }
 
-/* Valor da vaga (R$) com máscara brasileira. */
 function onVagaSalaryInput(ev) {
   vaga.salario = maskCurrencyInput(ev.target.value);
 }
@@ -495,7 +455,6 @@ function onVagaSalaryBlur() {
   vaga.salario = normalizeCurrencyInput(vaga.salario);
 }
 
-/* Converte o salário digitado em número (null quando vazio/inválido). */
 function vagaSalarioValue() {
   const text = normalizeCurrencyInput(vaga.salario);
   if (text === "") return null;
@@ -503,7 +462,6 @@ function vagaSalarioValue() {
   return isNaN(value) || value < 0 ? NaN : value;
 }
 
-/* Estado efetivo do lançamento (fallback para o filtro/estado padrão). */
 function effectiveVagaEstado() {
   if (estado.value && estado.value !== "todos") return estado.value;
   return filters.current !== "todos" ? filters.current : DEFAULT_STATE;
@@ -553,7 +511,6 @@ function handleVacancyAdd() {
   resetVagaForm();
   showTab("historico");
   emit("saved");
-  /* Edição concluída: fecha o modal (ele não serve para lançar vagas novas). */
   close();
 }
 
@@ -581,8 +538,6 @@ async function editVacancy(id) {
   showTab("nova");
 }
 
-/* Exporta as vagas conforme os filtros atuais da aba Histórico (busca e
-   "somente dias negativos"). */
 function handleExportVagas() {
   if (!filteredVacancies.value.length) return toast("Nenhuma vaga para exportar com os filtros atuais.");
   exportVagas(filteredVacancies.value);
@@ -614,7 +569,6 @@ async function removeVacancy(id) {
   toast("Vaga excluída.");
 }
 
-/* ---------- Seleção múltipla de vagas (aba Histórico) ---------- */
 const selectedVacancyIds = ref(new Set());
 
 const selectedVacancies = computed(() =>
@@ -672,12 +626,6 @@ function handleBulkVacancyClose() {
   toast(`${list.length} vaga(s) fechada(s) — tempo de contratação e custo registrados.`);
 }
 
-/* ---------- Turnover (quantidade lançada manualmente) ----------
-   Não depende mais de colaboradores individuais: cada lançamento é só a
-   quantidade de admitidos/demitidos de uma filial num mês de referência
-   (lançado à mão ou importado por planilha) — puramente visual no KPI de
-   Turnover, mas usada no cálculo de Turnover (%) e Retenção (ver
-   turnoverRateStats/retentionRate em lib/employees.js). */
 const turnover = reactive({
   filial: null,
   mesReferencia: "",
@@ -687,8 +635,6 @@ const turnover = reactive({
 });
 const editingTurnoverId = ref(null);
 const turnoverSearch = ref("");
-/* Filtro pelos cards do Histórico: "admissoes" mostra só as empresas com
-   admissões, "demissoes" só as com demissões (clicar de novo remove). */
 const turnoverKindFilter = ref(null);
 const selectedTurnoverIds = ref(new Set());
 
@@ -758,10 +704,6 @@ async function removeTurnover(id) {
   toast("Registro excluído.");
 }
 
-/* ---------- Histórico (aba Histórico) ----------
-   Segue o filtro de Estado do próprio formulário de Turnover (`estado`,
-   selecionado na aba "Novo"), não o filtro global do dashboard — assim
-   trocar o Estado ali também atualiza o que aparece no Histórico. */
 const turnoverList = computed(() => listTurnoverEntries(estado.value));
 
 function turnoverFilial(t) {
@@ -785,10 +727,6 @@ function toggleTurnoverKind(kind) {
   turnoverKindFilter.value = turnoverKindFilter.value === kind ? null : kind;
 }
 
-/* Totais de Admitidos/Demitidos somados sobre os registros exibidos no
-   Histórico (respeitando a busca e o filtro dos cards) — mostrados como KPI
-   acima da lista: com "Total admissões" ativo, o total de demissões passa a
-   ser só o das empresas que têm admissões (e vice-versa). */
 const turnoverTotals = computed(() =>
   filteredTurnover.value.reduce(
     (acc, t) => {
@@ -800,7 +738,6 @@ const turnoverTotals = computed(() =>
   )
 );
 
-/* ---------- Seleção múltipla de turnover (aba Histórico) ---------- */
 const selectedTurnovers = computed(() => turnoverList.value.filter((t) => selectedTurnoverIds.value.has(t.id)));
 const allTurnoverSelected = computed(
   () =>
@@ -842,7 +779,6 @@ function handleExportTurnover() {
   exportTurnover(filteredTurnover.value, "turnover");
 }
 
-/* ---------- Headcount (quadro de colaboradores lançado por mês) ---------- */
 const headcount = reactive({
   codigo: "",
   genero: "",
@@ -856,23 +792,14 @@ const headcount = reactive({
 });
 const headcountSearch = ref("");
 const headcountFilterFilial = ref(null);
-/* Filtro por Data de admissão (De/Até) na aba Histórico — independente do
-   mês travado pelo filtro do dashboard (headcountViewMonth). */
 const headcountAdmissaoStart = ref("");
 const headcountAdmissaoEnd = ref("");
 const selectedHeadcountIds = ref(new Set());
 
-/* Empresas (filiais) disponíveis para o headcount, conforme o estado selecionado. */
 const headcountBranches = computed(() =>
   listBranches(estado.value === "todos" ? "todos" : estado.value)
 );
 
-/* Empresas do filtro do Histórico — só as que realmente têm colaborador na
-   tabela (mês/estado do filtro do dashboard), não o cadastro inteiro de
-   filiais. Deduplica pela chave normalizada do nome abreviado lançado
-   (h.filial pode variar de grafia entre registros — ver normalizeBranchKey
-   em lib/employees.js) e usa o shortName do cadastro como valor canônico do
-   filtro; filteredHeadcount compara por essa mesma chave normalizada. */
 const headcountFilterBranches = computed(() => {
   const seen = new Map();
   headcountList.value.forEach((h) => {
@@ -926,9 +853,6 @@ function submitHeadcount() {
   emit("saved");
 }
 
-/* Edição de um colaborador existente é feita clicando no nome dele na lista
-   abaixo, que abre o HeadcountEditModal (autocontido) — não passa mais por
-   esta aba "Novo". */
 const headcountEditId = ref(null);
 const headcountEditOpen = ref(false);
 
@@ -957,9 +881,6 @@ async function removeHeadcount(id) {
   toast("Registro excluído.");
 }
 
-/* ---------- Histórico (aba Histórico) ----------
-   Sempre travado no mês selecionado no filtro global do dashboard (sem
-   filtro de data manual aqui) — "mostrando os colaboradores desse mês". */
 const headcountViewMonth = computed(() => singleMonthOfRange(dateFilter.start, dateFilter.end) || currentYm());
 const headcountViewMonthLabel = computed(() => ymLabel(headcountViewMonth.value));
 
@@ -970,8 +891,6 @@ function headcountBranchLabel(h) {
   return b ? `${b.shortName} — ${b.name}` : "";
 }
 
-/* Histórico: só o nome completo da empresa (sem a sigla). A busca continua
-   usando headcountBranchLabel, então ainda encontra pela sigla. */
 function headcountBranchName(h) {
   const b = h && h.filial ? findBranchByShortName(h.filial, h.estado) : null;
   return b ? b.name : "";
@@ -996,7 +915,6 @@ const filteredHeadcount = computed(() => {
   );
 });
 
-/* ---------- Seleção múltipla de headcount (aba Histórico) ---------- */
 const selectedHeadcounts = computed(() => headcountList.value.filter((h) => selectedHeadcountIds.value.has(h.id)));
 const allHeadcountSelected = computed(
   () =>
@@ -1038,9 +956,6 @@ function handleExportHeadcount() {
   exportHeadcount(filteredHeadcount.value);
 }
 
-/* ---------- Diária ---------- */
-
-/* ---------- Mês/ano da diária (competência) ---------- */
 const diariaYearOptions = yearOptions(4, 1);
 
 const diariaMonthNum = computed(() =>
@@ -1066,7 +981,6 @@ function setDiariaCurrentMonth() {
 }
 
 function submitDiaria() {
-  // Sem cadastro de Colaboradores no sistema: o nome é sempre texto livre.
   const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
   const employeeName = up(diaria.employeeName);
   if (!employeeName) return toast("Informe o nome do colaborador.");
@@ -1077,10 +991,6 @@ function submitDiaria() {
   }
   const value = Number(valueRaw);
 
-  /* "Regional" é texto livre: só vira o estado do lançamento quando é uma
-     sigla (RO/AM/PA). Qualquer outro texto (ex.: "NORTE") mandava a diária
-     para RO sem aviso — agora mantém o estado atual dela (edição) ou o do
-     filtro (lançamento novo). */
   const regional = up(diaria.regional);
   const editing = editingEntryId.value
     ? getEntriesFor("custo_diaria").find((e) => e.id === editingEntryId.value)
@@ -1119,16 +1029,11 @@ function submitDiaria() {
   emit("saved");
   toast(`Diária lançada para ${employeeName} em ${diariaMonthLabel.value}: ${formatCurrency(value)}.`);
 
-  /* Mantém o restante do contexto preenchido para o próximo lançamento,
-     apenas limpando o valor. */
   diaria.value = "";
   diaria.motivo = "";
   diaria.mes = currentYm();
 }
 
-/* ---------- Treinamento ---------- */
-
-/* ---------- Mês/ano do treinamento (competência) ---------- */
 const treinamentoYearOptions = yearOptions(4, 1);
 
 const treinamentoMonthNum = computed(() =>
@@ -1154,7 +1059,6 @@ function setTreinamentoCurrentMonth() {
 }
 
 function submitTreinamento() {
-  // Sem cadastro de Colaboradores no sistema: o nome é sempre texto livre.
   const up = (v) => String(v == null ? "" : v).toUpperCase().trim() || null;
   const employeeName = up(treinamento.employeeName);
   if (!employeeName) return toast("Informe o nome do colaborador.");
@@ -1198,19 +1102,12 @@ function submitTreinamento() {
   emit("saved");
   toast(`Treinamento lançado para ${employeeName}: ${formatHoursClock(carga)}.`);
 
-  /* Limpa os dados do treinamento, mantendo cargo/filial para o próximo. */
   treinamento.month = currentYm();
   treinamento.tema = "";
   treinamento.cargaHoraria = "";
   treinamento.modalidade = "presencial";
 }
 
-/* ---------- Histórico por colaborador (aba Colaborador do Treinamento) ----------
-   Sem cadastro de Colaboradores: agrupa só pelos treinamentos já lançados
-   (nome digitado na hora), no estado do filtro atual. Clicar num colaborador
-   edita o treinamento (se só houver um) ou expande a lista para escolher
-   qual; marcar e excluir remove os treinamentos (e as horas) dele, em todos
-   os meses. */
 const trQuery = ref("");
 
 const trPeople = computed(() => {
@@ -1263,16 +1160,12 @@ function toggleTrAll() {
   trSelected.value = trAllSelected.value ? new Set() : new Set(trSelectable.value.map((x) => x.key));
 }
 
-/* Novo treinamento: descarta uma edição em andamento, limpa os campos e vai
-   para a aba de lançamento. */
 function newTreinamento() {
   editingEntryId.value = null;
   resetTreinamento();
   showTab("treinamento");
 }
 
-/* Clique no colaborador: um só treinamento → edita; vários → expande a lista
-   para escolher qual. */
 function onTrPersonClick(x) {
   if (x.count === 1) {
     prefillEdit("treinamento", x.entries[0]);
@@ -1301,8 +1194,6 @@ async function deleteTrSelected() {
 }
 
 
-/* ---------- Custos Totais (por filial) ---------- */
-
 const custosTotResults = computed(() => {
   const q = normalizeText(custosTot.query).trim();
   let list = listBranches(custosTot.estado);
@@ -1329,7 +1220,6 @@ function pickCustosTotBranch(b) {
   showTab("custos");
 }
 
-/* ---------- Mês de competência (Custos Totais) ---------- */
 const custosYearOptions = yearOptions(4, 1);
 
 const custosMonthNum = computed(() =>
@@ -1360,7 +1250,6 @@ function setCustosCurrentMonth() {
   custosTot.month = currentYm();
 }
 
-/* ---------- Valor monetário (R$) com máscara brasileira ---------- */
 function onCustosMoneyInput(ev) {
   custosTot.custos = maskCurrencyInput(ev.target.value);
 }
@@ -1391,7 +1280,6 @@ function submitCustosTotal() {
     percent = p;
   }
 
-  /* O lançamento é gravado no 1º dia do mês/ano escolhido. */
   const dataCompetencia = `${custosTot.month}-01`;
 
   const payload = {
@@ -1415,9 +1303,6 @@ function submitCustosTotal() {
     return;
   }
 
-  /* Um lançamento por filial/mês: lançar de novo no mesmo mês substitui o
-     valor anterior em vez de duplicar a linha (a soma dos custos contaria a
-     filial duas vezes). */
   const existingCusto = getEntriesFor("custo_total").find(
     (e) => e.date === dataCompetencia && e.meta && b.cnpj && e.meta.cnpj === b.cnpj
   );
@@ -1431,13 +1316,9 @@ function submitCustosTotal() {
     toast(`Custos de ${custosTotMonthLabel.value} lançados para ${b.name}: ${formatCurrency(custos)}.`);
   }
 
-  /* Mantém a filial selecionada para o próximo lançamento, limpando apenas
-     os dados específicos do custo. */
   custosTot.custos = "";
   custosTot.percent = "";
 }
-
-/* ---------- Submit ---------- */
 
 function handleSubmit() {
   if (!indicator.value) return;
@@ -1445,8 +1326,6 @@ function handleSubmit() {
   if (form === "diaria") return submitDiaria();
   if (form === "treinamento") return submitTreinamento();
   if (form === "custo_total") return submitCustosTotal();
-  /* "Concluir" não grava (a gravação é pelo botão de salvar do formulário):
-     se houver alterações não salvas, pergunta antes de fechar. */
   if (form === "vaga") return requestClose();
   if (form === "turnover") return requestClose();
   if (form === "headcount") return requestClose();
@@ -1456,9 +1335,6 @@ function close() {
   emit("close");
 }
 
-/* ---------- Alterações não salvas ---------- */
-/* Foto dos campos logo após o modal abrir (já pré-preenchido para edição);
-   qualquer diferença depois disso é uma alteração não salva. */
 const unsaved = useUnsavedGuard(() => ({
   vaga,
   diaria,
@@ -1475,8 +1351,6 @@ watch(
   { immediate: true }
 );
 
-/* Fechar (×, Esc, fora do modal, Cancelar ou Concluir) sem ter salvo: pede
-   confirmação antes de descartar. Depois de salvar, o modal usa close() direto. */
 async function requestClose() {
   if (!(await unsaved.confirmDiscard())) return;
   close();
@@ -1492,8 +1366,6 @@ async function requestClose() {
     @close="requestClose"
   >
     <form v-if="indicator" class="flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
-      <!-- Este modal só edita registros existentes (aberto por "Editar"): sem
-           troca de indicador nem abas de lançamento/histórico. -->
       <div v-if="false" class="flex flex-col gap-1.5">
         <label for="entryIndicator" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Indicador</label>
         <select
@@ -1506,7 +1378,6 @@ async function requestClose() {
         </select>
       </div>
 
-      <!-- Abas -->
       <div v-if="false && tabs.length" class="flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
         <button
           v-for="(t, i) in tabs"
@@ -1523,7 +1394,6 @@ async function requestClose() {
         </button>
       </div>
 
-      <!-- ===== VAGA ===== -->
       <template v-if="indicator.form === 'vaga'">
         <div v-show="activeTab === 'nova'" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
@@ -1734,7 +1604,6 @@ async function requestClose() {
         </div>
       </template>
 
-      <!-- ===== TURNOVER / TURNOVER (EXP) ===== -->
       <template v-if="indicator.form === 'turnover'">
         <div v-show="activeTab === 'novo'" class="flex flex-col gap-4">
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1895,7 +1764,6 @@ async function requestClose() {
         </div>
       </template>
 
-      <!-- ===== HEADCOUNT ===== -->
       <template v-if="indicator.form === 'headcount'">
         <div v-show="activeTab === 'novo'" class="flex flex-col gap-4">
           <div class="grid gap-4">
@@ -2076,7 +1944,6 @@ async function requestClose() {
         </div>
       </template>
 
-      <!-- ===== DIÁRIA ===== -->
       <template v-if="indicator.form === 'diaria'">
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
@@ -2149,7 +2016,6 @@ async function requestClose() {
         </div>
       </template>
 
-      <!-- ===== TREINAMENTO ===== -->
       <template v-if="indicator.form === 'treinamento'">
         <div v-show="activeTab === 'colaborador'" class="flex flex-col gap-3">
           <div class="flex flex-col gap-1.5">
@@ -2312,7 +2178,6 @@ async function requestClose() {
         </div>
       </template>
 
-      <!-- ===== CUSTOS TOTAIS (por filial) ===== -->
       <template v-if="indicator.form === 'custo_total'">
         <div v-show="activeTab === 'filial'" class="flex flex-col gap-3">
           <div class="grid gap-4 sm:grid-cols-2">

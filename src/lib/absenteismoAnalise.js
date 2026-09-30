@@ -1,20 +1,9 @@
-/* Análise de absenteísmo (modal do KPI): tudo calculado a partir das ocorrências
-   do Mapa de Absenteísmo e do Headcount do mês.
-
-   Regras (mostradas no modal):
-   - Dias úteis do mês: segunda a sábado (domingo é folga, como no mapa).
-   - Dias de ausência de uma ocorrência: Falta, Atestado, Declaração e Acidente de
-     trabalho = 1 dia; Meio período = 0,5; Advertência não é ausência (0).
-   - Taxa de absenteísmo = dias de ausência ÷ (ativos × dias úteis) × 100.
-   - Ativos = colaboradores ativos do Headcount do mês (ou do mais recente anterior,
-     se o mês ainda não tem Headcount — ver headcountMonthFor). */
 import { getOcorrencias } from "./store";
 import { listHeadcountRecords } from "./employees";
 import { TIPOS, competenciaYm, headcountMonthFor, isOcorrenciaAusencia } from "./absenteismo";
 import { nameKey, ymLabel } from "./utils";
 
 export const DIAS_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-/* Ordem de exibição: a semana começa na segunda. */
 const ORDEM_SEMANA = [1, 2, 3, 4, 5, 6, 0];
 
 const PESO_MOTIVO = { Falta: 1, Atestado: 1, Declaração: 1, "Meio Expediente": 0.5 };
@@ -30,7 +19,6 @@ export function shiftYm(ym, delta) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/* Dias úteis (segunda a sábado) de um mês YYYY-MM. */
 export function diasUteis(ym) {
   const [y, m] = String(ym).split("-").map(Number);
   const total = new Date(y, m, 0).getDate();
@@ -43,7 +31,6 @@ const norm = (v) => String(v ?? "").trim().toUpperCase();
 const round1 = (n) => Math.round(n * 10) / 10;
 const pct = (num, den) => (den > 0 ? (num / den) * 100 : null);
 
-/* Ocorrências de ausência do mês (pela competência) e do estado, já achatadas. */
 export function ocorrenciasDoMes(ym, estado) {
   const uf = String(estado || "").toUpperCase();
   const todos = !uf || uf === "TODOS";
@@ -71,13 +58,11 @@ export function ocorrenciasDoMes(ym, estado) {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
-/* Ativos do Headcount usados como base do mês. */
 function ativosDoMes(ym, estado) {
   const hc = headcountMonthFor(estado, ym);
   return { rows: listHeadcountRecords(estado, hc.ym), refYm: hc.ym, fallback: hc.fallback };
 }
 
-/* Totais de um mês (usado para o mês filtrado, o anterior e a tendência). */
 function resumoDoMes(ym, estado) {
   const ocs = ocorrenciasDoMes(ym, estado);
   const ativos = ativosDoMes(ym, estado);
@@ -94,7 +79,6 @@ function resumoDoMes(ym, estado) {
   };
 }
 
-/* Agrupa ocorrências + ativos por um rótulo e calcula a taxa de cada grupo. */
 function agrupar(ocs, ativosRows, labelOc, labelAtivo, uteis, { incluirSemOcorrencia = false } = {}) {
   const mapa = new Map();
   const get = (label) => {
@@ -131,11 +115,9 @@ export function analiseAbsenteismo(ym, estado) {
   const ativos = ativosDoMes(ym, uf);
   const uteis = diasUteis(ym);
 
-  // Headcount por nome (gênero, admissão, função/filial de referência)
   const hcPorNome = new Map();
   ativos.rows.forEach((h) => hcPorNome.set(nameKey(h.colaborador), h));
 
-  // Enriquecimento: função/filial da própria ocorrência, senão as do Headcount
   const itens = ocs.map((o) => {
     const h = hcPorNome.get(o.key);
     return {
@@ -154,9 +136,6 @@ export function analiseAbsenteismo(ym, estado) {
   const prevYm = shiftYm(ym, -1);
   const prev = resumoDoMes(prevYm, uf);
 
-  // ---- distribuições ----
-  /* Cada ocorrência cai em UM tipo (a soma das fatias = total): o motivo; sem motivo
-     (só marcação), Acidente de trabalho ou Advertência. */
   const tipoPrincipal = (o) =>
     TIPOS.find((t) => t.has(o) && o.motivo && o.motivo !== "Presente" && t.value === o.motivo) ||
     (o.acidente ? TIPOS.find((t) => t.key === "acidente") : null) ||
@@ -208,7 +187,6 @@ export function analiseAbsenteismo(ym, estado) {
     })
     .sort(porTaxa);
 
-  // ---- quando acontece ----
   const [y, m] = ym.split("-").map(Number);
   const nDias = new Date(y, m, 0).getDate();
   const porDiaDoMes = Array.from({ length: nDias }, (_, i) => ({ label: String(i + 1), dia: i + 1, value: 0, itens: [] }));
@@ -227,14 +205,12 @@ export function analiseAbsenteismo(ym, estado) {
   });
   const porDiaSemana = ORDEM_SEMANA.map((dow) => semana[dow]);
 
-  // ---- tendência (6 meses até o filtrado) ----
   const tendencia = Array.from({ length: 6 }, (_, i) => {
     const mes = shiftYm(ym, i - 5);
     const r = mes === ym ? { ym, total: itens.length, taxa } : resumoDoMes(mes, uf);
     return { ym: mes, label: ymLabel(mes), total: r.total, taxa: r.taxa };
   });
 
-  // ---- reincidentes ----
   const porColab = new Map();
   itens.forEach((o) => {
     if (!porColab.has(o.key)) porColab.set(o.key, { colaborador: o.colaborador, filial: o.filial, setor: o.setor, total: 0, dias: 0, faltas: 0, advertencias: 0, itens: [] });
@@ -251,7 +227,6 @@ export function analiseAbsenteismo(ym, estado) {
     .map((c) => ({ ...c, alerta: c.total >= 3 || c.faltas >= 3 || c.advertencias >= 1 }));
   const comTresOuMais = [...porColab.values()].filter((c) => c.total >= 3).length;
 
-  // ---- período de experiência (até 90 dias de casa na data da ocorrência) ----
   const emExperiencia = itens.filter((o) => {
     if (!o.admissao) return false;
     const dias = (new Date(`${o.date}T00:00:00`) - new Date(`${o.admissao}T00:00:00`)) / 86400000;
@@ -263,7 +238,6 @@ export function analiseAbsenteismo(ym, estado) {
     pctDasOcorrencias: pct(emExperiencia.length, itens.length)
   };
 
-  // ---- textos de destaque ----
   const insights = [];
   const delta = (cur, ant) => (ant > 0 ? ((cur - ant) / ant) * 100 : null);
   const dTotal = delta(itens.length, prev.total);

@@ -3,11 +3,6 @@ import { computed } from "vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue, formatCurrency } from "@/lib/utils";
 
-/* KPI "% do faturamento" compacto, para a barra de título do gráfico de Custo de
-   folha de salário (mesma altura do botão de faturamento, sem crescer o
-   cabeçalho): ícone, rótulo e percentual; os detalhes do cálculo ficam no
-   tooltip. `data`: { custo, faturamento, faturamentoMedio, headcount, pct,
-   motivo } (ver ticketMedioFaturamento em useDashboardData.js). */
 const props = defineProps({
   data: { type: Object, required: true }
 });

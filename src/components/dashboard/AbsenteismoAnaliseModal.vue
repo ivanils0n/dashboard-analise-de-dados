@@ -11,13 +11,8 @@ import { monthYm, ymLabel } from "@/lib/utils";
 import { STATES, STATE_NAMES } from "@/lib/config";
 import { analiseAbsenteismo } from "@/lib/absenteismoAnalise";
 
-/* Análise de Absenteísmo (clique direito no KPI): indicadores, distribuições,
-   funções, filiais críticas, reincidentes e período de experiência — tudo sobre as
-   ocorrências do Mapa de Absenteísmo no mês filtrado no dashboard. Gráficos e
-   linhas são clicáveis e abrem a lista das ocorrências por trás do número. */
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* Estado filtrado no dashboard; o modal tem o próprio filtro de estado. */
   estado: { type: String, default: "todos" }
 });
 const emit = defineEmits(["close"]);
@@ -38,12 +33,10 @@ const a = computed(() => analiseAbsenteismo(ym.value, estadoSel.value));
 const escopo = computed(() => (estadoSel.value === "todos" ? "Todos os estados" : STATE_NAMES[estadoSel.value] || estadoSel.value));
 const periodo = computed(() => ymLabel(ym.value));
 
-/* ---------- formatação ---------- */
 const nf = (n, d = 0) => Number(n).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtPct = (n) => (n == null ? "—" : `${nf(n, 2)}%`);
 const fmtPp = (n) => `${n >= 0 ? "+" : "−"}${nf(Math.abs(n), 2)} p.p.`;
 
-/* Variação: para o absenteísmo, subir é ruim (vermelho) e cair é bom (verde). */
 function variacao(value, kind = "pct") {
   if (value == null) return { text: `sem base em ${ymLabel(a.value.prev.ym)}`, cls: "text-zinc-500 dark:text-zinc-400" };
   if (Math.abs(value) < 0.005) return { text: `igual a ${ymLabel(a.value.prev.ym)}`, cls: "text-zinc-500 dark:text-zinc-400" };
@@ -92,7 +85,6 @@ const cards = computed(() => {
   ];
 });
 
-/* ---------- dados dos gráficos ---------- */
 const motivoPie = computed(() => a.value.porMotivo.map((m) => ({ label: m.label, value: m.value, color: m.color })));
 const estadoPie = computed(() => a.value.porEstado.map((e) => ({ label: STATE_NAMES[e.label] || e.label, value: e.value })));
 const tooltipGrupo = (g) =>
@@ -113,7 +105,6 @@ const experienciaPie = computed(() => [
   { label: "Demais colaboradores", value: a.value.experiencia.demais.length, color: "#94a3b8" }
 ]);
 
-/* ---------- detalhe ao clicar ---------- */
 const detalhe = ref({ open: false, title: "", subtitle: "", rows: [] });
 function abrirDetalhe(title, rows, subtitle = "") {
   detalhe.value = { open: true, title, subtitle: subtitle || `${escopo.value} · ${periodo.value}`, rows };
@@ -163,7 +154,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
 <template>
   <Modal title="Análise de Absenteísmo" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
     <template #actions>
-      <!-- Filtro de estado (só deste modal) -->
       <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
         <button
           v-for="o in estadoOptions"
@@ -188,7 +178,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
           Ainda não há Headcount de {{ periodo }}: a taxa usa os ativos de {{ ymLabel(a.headcountRef.ym) }}.
         </p>
 
-        <!-- Indicadores -->
         <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           <div v-for="c in cards" :key="c.label" :class="[cardCls, 'relative p-5 text-center']">
             <span class="absolute inset-x-0 top-0 h-1" :class="c.bar" />
@@ -198,11 +187,9 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
           </div>
         </div>
 
-        <!-- Por tipo de ocorrência -->
         <AbsenteismoKpis :ocorrencias="a.itens" class="lg:!w-full lg:!min-w-0" />
 
         <template v-if="a.total > 0">
-          <!-- Visão geral -->
           <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             <section :class="cardCls">
               <header :class="headCls">
@@ -235,7 +222,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
             </section>
           </div>
 
-          <!-- Quando acontece -->
           <div class="grid gap-5 lg:grid-cols-3">
             <section :class="[cardCls, 'lg:col-span-2']">
               <header :class="headCls">
@@ -259,7 +245,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
           </div>
         </template>
 
-        <!-- Tendência -->
         <section :class="cardCls">
           <header :class="headCls">
             <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Tendência — últimos 6 meses</h3>
@@ -271,7 +256,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
         </section>
 
         <template v-if="a.total > 0">
-          <!-- Por função -->
           <section :class="cardCls">
             <header :class="headCls">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por função</h3>
@@ -282,7 +266,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
             </div>
           </section>
 
-          <!-- Filiais críticas -->
           <section :class="cardCls">
             <header :class="headCls">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Filiais críticas</h3>
@@ -340,7 +323,6 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
             </div>
           </section>
 
-          <!-- Reincidentes + experiência -->
           <div class="grid gap-5 lg:grid-cols-3">
             <section :class="[cardCls, 'lg:col-span-2']">
               <header :class="headCls">

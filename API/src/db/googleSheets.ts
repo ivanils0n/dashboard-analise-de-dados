@@ -1,18 +1,5 @@
 import type { Bindings } from "../types";
 
-// Cliente direto da API do Google Sheets (v4), usado pelo Worker para LER e
-// GRAVAR na planilha sem passar pelo Apps Script (que levava 2–3 s por
-// chamada). Autentica com uma conta de serviço (JWT RS256 assinado com
-// WebCrypto). É opcional: sem GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY /
-// GOOGLE_SHEET_ID configurados, o Worker segue usando só o Apps Script (ver
-// db/sheets.ts).
-//
-// Velocidade: cada ida ao Google custa ~0,3–0,4 s, então o que importa é o
-// NÚMERO de chamadas por operação. Por isso: token e gid (sheetId) das abas são
-// guardados na KV (compartilhados entre os servidores do Worker, em vez de cada
-// um pedir o seu ao "acordar"), ids e estados vêm numa chamada só, e as
-// respostas são enxutas (majorDimension=COLUMNS e `fields`).
-
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -31,8 +18,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ---------- autenticação ----------
-
 function base64Url(input: string | Uint8Array): string {
   const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
   let binary = "";
@@ -41,7 +26,6 @@ function base64Url(input: string | Uint8Array): string {
 }
 
 function pemToDer(pem: string): ArrayBuffer {
-  // A chave pode vir com "\n" literais (variável de ambiente numa linha só).
   const body = pem
     .replace(/\\n/g, "\n")
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
@@ -73,9 +57,6 @@ async function signJwt(env: Bindings): Promise<string> {
 
 type StoredToken = { value: string; expiresAt: number };
 
-// Token de acesso: memória do isolate → KV (compartilhado entre isolates, evita
-// ~0,35 s de novo login quando um servidor "acorda") → Google. A chamada em
-// andamento é compartilhada para não assinar/pedir várias vezes em paralelo.
 let cachedToken: StoredToken | null = null;
 let tokenInFlight: Promise<string> | null = null;
 
@@ -93,7 +74,6 @@ async function getAccessToken(env: Bindings): Promise<string> {
         return stored.value;
       }
     } catch {
-      /* KV indisponível: segue para o Google */
     }
     const res = await fetch(TOKEN_URL, {
       method: "POST",
@@ -112,7 +92,6 @@ async function getAccessToken(env: Bindings): Promise<string> {
     try {
       await env.CACHE.put(TOKEN_KV_KEY, JSON.stringify(token), { expirationTtl: Math.max(60, (json.expires_in ?? 3600) - 300) });
     } catch {
-      /* só perde o compartilhamento entre servidores */
     }
     return token.value;
   })().finally(() => {
@@ -120,8 +99,6 @@ async function getAccessToken(env: Bindings): Promise<string> {
   });
   return tokenInFlight;
 }
-
-// ---------- chamadas ----------
 
 async function sheetsFetch<T>(env: Bindings, path: string, init: RequestInit = {}): Promise<T> {
   let lastMessage = "";
@@ -136,12 +113,10 @@ async function sheetsFetch<T>(env: Bindings, path: string, init: RequestInit = {
     const text = await res.text();
     lastMessage = `Sheets API HTTP ${res.status}: ${text.slice(0, 300)}`;
     if (res.status === 401) {
-      // token vencido/revogado: descarta (memória e KV) e pede outro
       cachedToken = null;
       try {
         await env.CACHE.delete(TOKEN_KV_KEY);
       } catch {
-        /* ignora */
       }
     }
     const retriable = res.status === 429 || res.status >= 500 || res.status === 401;
@@ -151,7 +126,6 @@ async function sheetsFetch<T>(env: Bindings, path: string, init: RequestInit = {
   throw new Error(lastMessage);
 }
 
-// "A", "B", ..., "Z", "AA", ...
 export function columnLetter(count: number): string {
   let n = count;
   let out = "";
@@ -165,14 +139,8 @@ export function columnLetter(count: number): string {
 
 const quoteSheet = (name: string) => `'${name.replace(/'/g, "''")}'`;
 
-// ---------- leitura de ids / linhas ----------
-
 export type IdRow = { row: number; state: string };
 
-// Colunas de id (A) e — se informada — de estado, sem o cabeçalho, NUMA chamada
-// só (em colunas: bem menor que linha a linha). Devolve id -> { número da linha
-// (1-based, contando o cabeçalho), estado em maiúsculas }. Linhas em branco no
-// meio mantêm a posição certa; ids repetidos ficam com a última ocorrência.
 export async function readIdRows(env: Bindings, sheetName: string, stateIndex = -1): Promise<Map<string, IdRow>> {
   const params = new URLSearchParams();
   params.append("ranges", `${quoteSheet(sheetName)}!A2:A`);
@@ -193,8 +161,6 @@ export async function readIdRows(env: Bindings, sheetName: string, stateIndex = 
   return map;
 }
 
-// Valores brutos das linhas pedidas (mesmo formato do Apps Script: datas como
-// texto ou número serial, que valuesToRow já entende), por número de linha.
 export async function readRowsByNumber(
   env: Bindings,
   sheetName: string,
@@ -213,8 +179,6 @@ export async function readRowsByNumber(
   (data.valueRanges ?? []).forEach((range, i) => out.set(rowNumbers[i], range.values?.[0] ?? []));
   return out;
 }
-
-// ---------- escrita ----------
 
 export async function appendValues(env: Bindings, sheetName: string, rows: unknown[][]): Promise<void> {
   if (!rows.length) return;
@@ -246,8 +210,6 @@ export async function updateValues(
   });
 }
 
-// gid (sheetId) de cada aba — muda só se a aba for recriada. Memória do isolate
-// → KV (1 dia) → Google (uma chamada que já traz todas as abas).
 const gidCache = new Map<string, number>();
 
 export async function sheetGid(env: Bindings, sheetName: string): Promise<number> {
@@ -260,7 +222,6 @@ export async function sheetGid(env: Bindings, sheetName: string): Promise<number
       return stored[sheetName];
     }
   } catch {
-    /* KV indisponível: segue para o Google */
   }
   const data = await sheetsFetch<{ sheets?: { properties: { sheetId: number; title: string } }[] }>(
     env,
@@ -274,16 +235,12 @@ export async function sheetGid(env: Bindings, sheetName: string): Promise<number
   try {
     await env.CACHE.put(GIDS_KV_KEY, JSON.stringify(all), { expirationTtl: GIDS_TTL_S });
   } catch {
-    /* só perde o compartilhamento */
   }
   const gid = gidCache.get(sheetName);
   if (gid === undefined) throw new Error(`Aba "${sheetName}" não existe na planilha.`);
   return gid;
 }
 
-// Apaga linhas pelo número, de baixo para cima, numa única requisição (atômica:
-// a exclusão de uma linha não desloca as que ainda faltam apagar). `gid` pode vir
-// já resolvido (em paralelo com a leitura dos ids).
 export async function deleteRowNumbers(
   env: Bindings,
   sheetName: string,
@@ -304,24 +261,16 @@ export async function deleteRowNumbers(
   try {
     await send(await (gidPromise ?? sheetGid(env, sheetName)));
   } catch (err) {
-    // Aba apagada e recriada: o gid guardado ficou velho. Descarta (memória e KV)
-    // e tenta uma vez com o gid atual.
     if (!/No grid with id|Invalid requests/i.test(String(err instanceof Error ? err.message : err))) throw err;
     gidCache.clear();
     try {
       await env.CACHE.delete(GIDS_KV_KEY);
     } catch {
-      /* ignora */
     }
     await send(await sheetGid(env, sheetName));
   }
 }
 
-// Todas as linhas de dados (sem o cabeçalho) de várias abas numa chamada só —
-// o equivalente ao "readMany" do Apps Script, bem mais rápido. Os valores vêm
-// tipados (números, booleanos) e datas/horas como texto formatado, que é o que
-// fromCellValue (db/sheets.ts) já sabe interpretar. Aba inexistente faz a
-// chamada inteira falhar; quem chama cai no Apps Script.
 export async function readSheetsRaw(env: Bindings, sheetNames: string[]): Promise<Record<string, unknown[][]>> {
   const out: Record<string, unknown[][]> = {};
   if (!sheetNames.length) return out;
@@ -337,8 +286,6 @@ export async function readSheetsRaw(env: Bindings, sheetNames: string[]): Promis
   return out;
 }
 
-// Aquecimento: deixa o token (e o gid das abas) prontos antes da primeira
-// gravação, para ela não pagar o "acordar" do servidor.
 export async function warmSheetsApi(env: Bindings, sheetName: string): Promise<void> {
   await Promise.all([getAccessToken(env), sheetGid(env, sheetName)]);
 }

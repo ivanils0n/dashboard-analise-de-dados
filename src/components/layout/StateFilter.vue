@@ -2,8 +2,6 @@
 import { STATES } from "@/lib/config";
 import { useFilters } from "@/composables/useFilters";
 
-/* `variant` "sidebar": versão escura fixa (sidebar); "page": segue o tema, para
-   ficar ao lado do filtro de período no corpo da página. */
 defineProps({
   variant: { type: String, default: "sidebar" }
 });

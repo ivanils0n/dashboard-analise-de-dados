@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed } from "vue";
+import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed, nextTick } from "vue";
 import ChartEmpty from "@/components/charts/ChartEmpty.vue";
 import { createPieChart, updatePieChart, setShowValues, setCenterText, setPieFormat, pieFormatter } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
@@ -8,18 +8,12 @@ const props = defineProps({
   data: { type: Array, default: () => [] },
   showValues: { type: Boolean, default: false },
   height: { type: String, default: "h-40" },
-  /* Quando true, um clique na área do gráfico (fatias e centro; a legenda
-     continua só alternando as fatias) emite "chart-click". */
   clickable: { type: Boolean, default: false },
-  /* Texto no centro da rosca (ex.: taxa total de Turnover) e sua legenda. */
   centerValue: { type: String, default: "" },
   centerCaption: { type: String, default: "" },
-  /* Formato dos valores (tooltip e rótulos): "percent" (Turnover) ou "currency". */
   valueFormat: { type: String, default: "percent" }
 });
 
-/* Sem nada para desenhar (lista vazia ou todos os valores zerados/vazios):
-   mostra o aviso ChartEmpty por cima do gráfico. */
 const isEmpty = computed(() => props.data.every((d) => !Number(d.value)));
 
 const emit = defineEmits(["chart-click", "chart-contextmenu"]);
@@ -34,11 +28,6 @@ function insidePlot(evt) {
   return evt.offsetX >= area.left && evt.offsetX <= area.right && evt.offsetY >= area.top && evt.offsetY <= area.bottom;
 }
 
-/* Índice da fatia sob o ponteiro (ex.: Turnover — 0 = Entrada/Admissões,
-   1 = Saída/Demissões), para quem ouve "chart-click"/"chart-contextmenu"
-   abrir o detalhe daquela fatia específica; `null` quando o clique cai fora
-   de qualquer fatia (ex.: buraco central da rosca), mantendo o
-   comportamento padrão de quem ouve o evento. */
 function sliceIndexAt(evt) {
   if (!chart) return null;
   const hits = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, false);
@@ -49,8 +38,6 @@ function onCanvasClick(evt) {
   if (props.clickable && insidePlot(evt)) emit("chart-click", sliceIndexAt(evt));
 }
 
-/* Botão direito na área do gráfico: mesmo destino do clique esquerdo (abre o
-   modal de informações), sem o menu de contexto do navegador. */
 function onCanvasContext(evt) {
   if (props.clickable && insidePlot(evt)) {
     evt.preventDefault();
@@ -62,8 +49,6 @@ function onCanvasMove(evt) {
   overPlot.value = props.clickable && insidePlot(evt);
 }
 
-/* Pizza de contagem (Headcount por gênero) sempre mostra quantidade e % nas
-   fatias, sem depender do botão "Mostrar valores". */
 function effectiveShow() {
   return props.showValues || props.valueFormat === "count";
 }
@@ -88,15 +73,30 @@ function unmountChart() {
   }
 }
 
-onMounted(mountChart);
-onBeforeUnmount(unmountChart);
+const ready = ref(false);
+let readyTimer = null;
+function showWhenSized() {
+  if (ready.value) return;
+  if (chart) chart.resize();
+  ready.value = true;
+}
+onMounted(() => {
+  mountChart();
+  nextTick(() => {
+    if (chart) chart.resize();
+    requestAnimationFrame(showWhenSized);
+    readyTimer = setTimeout(showWhenSized, 120);
+  });
+});
+onBeforeUnmount(() => {
+  clearTimeout(readyTimer);
+  unmountChart();
+});
 
-/* Ao voltar de uma aba mantida em cache (KeepAlive), reajusta o canvas. */
 onActivated(() => {
   if (chart) chart.resize();
 });
 
-/* Recria o gráfico com a paleta do tema quando o modo claro/escuro muda */
 watch(isDark, () => {
   unmountChart();
   mountChart();
@@ -112,8 +112,6 @@ watch(
 
 watch(() => [props.centerValue, props.centerCaption], applyCenterText);
 
-/* A mesma pizza é reaproveitada entre KPIs (ex.: Turnover ↔ Custo médio por
-   colaborador): ao trocar o formato, atualiza tooltip e rótulos. */
 watch(
   () => props.valueFormat,
   (format) => {
@@ -135,7 +133,7 @@ watch(
   <div class="relative" :class="height">
     <canvas
       ref="canvas"
-      :class="overPlot ? 'cursor-pointer' : ''"
+      :class="[overPlot ? 'cursor-pointer' : '', ready ? 'opacity-100' : 'opacity-0', 'transition-opacity duration-200']"
       aria-hidden="true"
       @click="onCanvasClick"
       @contextmenu="onCanvasContext"

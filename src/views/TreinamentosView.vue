@@ -12,9 +12,6 @@ import { beginLoading, endLoading } from "@/composables/useLoading";
 import { formatHoursClock, normalizeText, ymLabel } from "@/lib/utils";
 import { employeeNameKey } from "@/lib/metrics";
 
-/* Página detalhada de Treinamentos: um lançamento por linha (aba "treinamentos"),
-   com pesquisa e filtros de estado, mês, filial, gerente regional, cargo, tema e
-   modalidade. */
 const { state: filters } = useFilters();
 
 onActivated(() => {
@@ -25,7 +22,6 @@ onActivated(() => {
 });
 
 const search = ref("");
-/* Todos os filtros abaixo aceitam vários valores ([] = sem filtro). */
 const meses = ref([]);
 const filiais = ref([]);
 const gerentes = ref([]);
@@ -33,7 +29,6 @@ const cargos = ref([]);
 const temas = ref([]);
 const modalidades = ref([]);
 
-/* Uma linha "achatada" por lançamento do estado escolhido. */
 const base = computed(() => {
   void filters.revision;
   return getEntriesFor("treinamento", filters.current).map((e) => {
@@ -65,7 +60,6 @@ const cargoOptions = computed(() => uniqueSorted("cargo"));
 const temaOptions = computed(() => uniqueSorted("tema"));
 const modalidadeOptions = computed(() => uniqueSorted("modalidade"));
 
-/* Valor marcado que deixou de existir (troca de estado) sai da seleção. */
 function prune(selected, options) {
   if (selected.value.some((v) => !options.includes(v))) {
     selected.value = selected.value.filter((v) => options.includes(v));
@@ -80,8 +74,6 @@ watch([mesOptions, filialOptions, gerenteOptions, cargoOptions, temaOptions, mod
   prune(modalidades, modalidadeOptions.value);
 });
 
-/* O filtro de mês já abre no mês anterior ao atual. Vale só na primeira vez que
-   há dados — e só se esse mês existir neles; depois disso a escolha é do usuário. */
 function previousYm() {
   const d = new Date();
   d.setDate(1);
@@ -153,7 +145,6 @@ function clearFilters() {
 
 const text = (v) => (v === undefined || v === null || String(v).trim() === "" ? "—" : String(v));
 
-/* `clamp`: texto longo, mostra até 3 linhas com "..." e expande ao clicar. */
 const columns = [
   { label: "Competência", get: (r) => (r.mes ? ymLabel(r.mes) : "—") },
   { label: "Colaborador", get: (r) => text(r.colaborador), strong: true },

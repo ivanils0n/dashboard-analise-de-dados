@@ -2,13 +2,9 @@
 import { computed } from "vue";
 import { activeTab, switchTab } from "@/composables/useDashboardTab";
 
-/* Controle segmentado Visão Geral / Painel. `topbar`: versão para a barra
-   superior (sempre escura); `page`: versão para o corpo da página (segue o
-   tema). O "indicador" desliza entre as abas; setas ←/→ trocam de aba. */
 defineProps({
   variant: { type: String, default: "page" },
   vertical: { type: Boolean, default: false },
-  /* Só ícones (sidebar recolhida); vale junto com `vertical`. */
   compact: { type: Boolean, default: false }
 });
 
@@ -43,7 +39,6 @@ function onKeydown(e) {
     role="tablist"
     aria-label="Modo de visualização"
   >
-    <!-- Indicador deslizante -->
     <span
       v-if="!(vertical && compact)"
       class="tabs-thumb pointer-events-none absolute rounded-lg shadow-sm ring-1 ring-inset"

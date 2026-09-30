@@ -36,8 +36,6 @@ function base64UrlToString(value: string): string {
   return decoder.decode(base64UrlToBytes(value));
 }
 
-// A chave HMAC é a mesma em todas as requisições do isolate: importa uma vez
-// e reaproveita, em vez de repetir o importKey a cada verificação de token.
 let cachedKey: { secret: string; key: Promise<CryptoKey> } | null = null;
 
 function hmacKey(secret: string): Promise<CryptoKey> {
@@ -50,7 +48,6 @@ function hmacKey(secret: string): Promise<CryptoKey> {
       ["sign", "verify"]
     );
     cachedKey = { secret, key };
-    // Não guarda uma importação que falhou.
     key.catch(() => {
       if (cachedKey && cachedKey.key === key) cachedKey = null;
     });

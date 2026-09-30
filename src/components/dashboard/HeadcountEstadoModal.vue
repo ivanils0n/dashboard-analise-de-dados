@@ -12,26 +12,15 @@ import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
 
-/* Colaboradores do quadro de um estado (barra clicada no gráfico de
-   Headcount), no mês do filtro do dashboard. Usa a mesma regra da contagem da
-   barra (headcountCountInRange): linhas com aquele mês referente, então o
-   total aqui é sempre o número da barra. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   estado: { type: String, default: "" },
-  /* "masculino" | "feminino": só colaboradores desse gênero (barra de gênero
-     clicada). Vazio = quadro geral (barra Total ou clique no KPI). */
   genero: { type: String, default: "" },
-  /* Filiais/empresas marcadas no filtro (multi-seleção) do gráfico — contexto
-     herdado de fora. [] = todas. Os filtros de Filial/Empresa deste modal
-     (abaixo) recortam ainda mais, dentro do que já veio filtrado daqui. */
   filial: { type: Array, default: () => [] },
   empresa: { type: Array, default: () => [] },
   funcao: { type: Array, default: () => [] }
 });
 
-/* Edição e exclusão são resolvidas aqui mesmo, sem passar pelo pai — clicar
-   no nome do colaborador abre o HeadcountEditModal por cima deste. */
 const emit = defineEmits(["close"]);
 
 const { confirm } = useDialog();
@@ -40,16 +29,10 @@ const canEdit = canEditData();
 
 const search = ref("");
 
-/* Mesmo mês usado por headcountCountInRange: sem início de período, todos
-   os registros. */
 const ym = computed(() =>
   dateFilter.start ? String(dateFilter.end || dateFilter.start).slice(0, 7) : ""
 );
 
-/* `h.filial` é lançado como o nome abreviado da filial (ex.: "PVH 5") —
-   busca o cadastro em Filiais para exibir o nome completo em `filialNome`;
-   sem correspondência, usa o texto lançado mesmo. `h.empresa` é o campo livre
-   de empresa (razão social), separado da filial. */
 const records = computed(() =>
   listHeadcountRecords(props.estado, ym.value || undefined, { incluirDesligados: true })
     .filter((h) => !props.filial.length || props.filial.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
@@ -62,10 +45,6 @@ const records = computed(() =>
   })
 );
 
-/* Filtros de Filial, Empresa e Função próprios do modal — recortam ainda mais o que
-   já chegou filtrado do gráfico (props.filial/props.empresa), para explorar
-   sem precisar fechar e trocar o filtro do gráfico. Zerados sempre que o
-   modal reabre. */
 const filialFilter = ref([]);
 const empresaFilter = ref([]);
 const funcaoFilter = ref([]);
@@ -79,8 +58,6 @@ watch(
   }
 );
 
-/* Com empresa(s) marcada(s) no filtro deste modal, o filtro de filial só
-   lista as filiais dessa(s) empresa(s) (mesma regra do gráfico). */
 const filialOptions = computed(() => {
   const seen = new Map();
   records.value
@@ -119,8 +96,6 @@ const rows = computed(() =>
     .filter((h) => !funcaoFilter.value.length || funcaoFilter.value.includes(String(h.funcao || "").trim().toUpperCase()))
 );
 
-/* Filtro de situação: o total do card e o número da barra do gráfico contam só
-   os ativos ("ativos" é o padrão); "desligados" e "todos" só existem aqui. */
 const situacao = ref("ativos");
 const situacaoOptions = computed(() => [
   { value: "ativos", label: "Ativos", count: rows.value.filter((h) => h.ativo).length },
@@ -139,8 +114,6 @@ const filteredRows = computed(() => {
   );
 });
 
-/* Sem estado (ou "todos"): abre pelo botão direito no KPI de Headcount, que
-   segue o filtro de estado do dashboard em vez de uma barra específica. */
 const stateName = computed(() =>
   !props.estado || props.estado === "todos" ? "Todos os estados" : STATE_NAMES[props.estado] || props.estado
 );

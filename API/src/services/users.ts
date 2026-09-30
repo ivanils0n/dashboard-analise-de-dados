@@ -5,14 +5,10 @@ import { hashPassword } from "../utils/password";
 import { ApiError } from "../utils/errors";
 import type { Bindings, Perfil } from "../types";
 
-// "visitante" não é mais um perfil cadastrável (ver UsuariosView.vue) — esse
-// tipo de conta deixou de existir. Fica de fora daqui mesmo que o tipo Perfil
-// ainda o admita, para não permitir criar/editar para esse perfil pela API.
 const PERFIS: Perfil[] = ["admin", "analista"];
 
 type UserInput = Record<string, unknown>;
 
-// Boolean("false") é true — um "ativo": "false" vindo como texto reativava o usuário.
 function toBoolean(value: unknown): boolean {
   if (typeof value === "string") return value.trim().toLowerCase() === "true";
   return Boolean(value);
@@ -26,7 +22,6 @@ function normalizePerfil(value: unknown): Perfil {
   return perfil as Perfil;
 }
 
-// senha_hash nunca sai da API.
 function toSafeUser(row: SheetRow) {
   const { senha_hash, ...rest } = row;
   return rest;
@@ -78,8 +73,6 @@ export async function createUser(env: Bindings, input: UserInput) {
   }
 
   const { rows } = await readTable(env, USERS_SHEET, USERS_COLUMNS);
-  // Sem diferenciar caixa, como o login (services/auth.ts): uma linha digitada
-  // à mão como "Ivan" e um cadastro "ivan" entrariam como a mesma pessoa.
   if (rows.some((row) => String(row.usuario ?? "").trim().toLowerCase() === usuario)) {
     throw new ApiError(409, "Já existe um usuário com esse login.", "conflict");
   }

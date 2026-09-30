@@ -23,27 +23,16 @@
  * { success: true, data } ou { success: false, error }.
  */
 
-// Sobe junto em toda resposta — dá pra confirmar pela própria API se a
-// implantação no ar já é esta versão do arquivo, sem precisar abrir o editor
-// do Apps Script. Troque essa string sempre que reimplantar.
 var CODE_VERSION = "2026-10-01-sem-deletesheet-1";
 
-// Ações que gravam na planilha — cada uma roda sob o lock (ver doPost). "read"
-// fica de fora de propósito: travar leituras também derrubaria a velocidade
-// de carregamento do dashboard sem necessidade (elas não corrompem nada).
 var WRITE_ACTIONS = { setup: true, append: true, update: true, delete: true };
 
-// Nenhuma requisição pode passar de 1 min rodando aqui dentro — acima disso,
-// vira erro em vez de continuar (e travar o lock pros outros por mais tempo).
-// Verificado no início e a cada iteração dos laços abaixo (setup/update/
-// delete), os únicos pontos onde o tempo se acumula; os demais são uma
-// chamada só à API do Sheets, que não dá pra interromper no meio.
 var REQUEST_TIMEOUT_MS = 60 * 1000;
 
 function checkTimeout_(startedAt) {
   if (Date.now() - startedAt > REQUEST_TIMEOUT_MS) {
     var err = new Error("Tempo limite de 1 minuto excedido nesta requisição.");
-    err.retriable = true; // sinal de sobrecarga passageira, não erro de negócio.
+    err.retriable = true;
     throw err;
   }
 }
@@ -62,23 +51,16 @@ function doPost(e) {
     return respond({ success: false, error: "Não autorizado." });
   }
 
-  // Duas gravações na mesma aba ao mesmo tempo (ex.: salvar um lançamento
-  // nos 3 estados de uma vez, cada um numa requisição separada) podiam se
-  // sobrescrever silenciosamente: appendRows calculava a mesma "próxima linha
-  // livre" pras duas chamadas, e a segunda pisava na primeira. O lock serializa
-  // as gravações — só uma por vez mexe na planilha — sem travar leituras.
   var lock = null;
   if (WRITE_ACTIONS[body.action]) {
     lock = LockService.getScriptLock();
     if (!lock.tryLock(30000)) {
-      // retriable: true — o Worker (sheets.ts) tenta de novo sozinho, com
-      // backoff, em vez de já devolver erro pro usuário.
       return respond({ success: false, retriable: true, error: "Muitas gravações simultâneas na planilha, tente novamente." });
     }
   }
 
   try {
-    checkTimeout_(startedAt); // tempo já gasto até aqui (fila do lock incluída) conta.
+    checkTimeout_(startedAt);
     var data;
     switch (body.action) {
       case "setup":
@@ -120,9 +102,6 @@ function sheet_(name) {
   return sheet;
 }
 
-// Cria as abas que faltarem e (re)grava a linha de cabeçalho de cada uma.
-// Formata o corpo (linha 2 em diante) como texto simples — evita que o
-// Sheets reinterprete datas/números/ids longos ao digitar ou colar dados.
 function setupSheets(sheets, startedAt) {
   var ss = spreadsheet_();
   (sheets || []).forEach(function (def) {
@@ -136,7 +115,6 @@ function setupSheets(sheets, startedAt) {
   return { total: (sheets || []).length };
 }
 
-// Todas as linhas de dados (sem o cabeçalho), como matriz bruta de valores.
 function readRows(sheetName) {
   var sheet = sheet_(sheetName);
   var lastRow = sheet.getLastRow();
@@ -145,10 +123,6 @@ function readRows(sheetName) {
   return sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 }
 
-// Várias abas numa execução só: abre a planilha uma vez e devolve
-// { nomeDaAba: linhas | null }. Aba inexistente vira null (o Worker trata como
-// erro só daquela tabela). Evita pagar a partida do script e a abertura da
-// planilha uma vez por aba, que era o grosso da demora no carregamento.
 function readMany_(names) {
   var ss = spreadsheet_();
   var out = {};
@@ -164,61 +138,29 @@ function readMany_(names) {
   return out;
 }
 
-/* ==========================================================================
- * Cache do dashboard (Cloudflare KV)
- *
- * O Apps Script é quem mantém o cache do Worker atualizado: a cada 10 min
- * (gatilho de tempo) lê as abas e grava na KV, pela API da Cloudflare, só as
- * que mudaram desde a última vez. Sem expiração — cada aba fica gravada até
- * a próxima atualização.
- *
- * Configuração (uma vez só):
- * 1. Cloudflare → My Profile → API Tokens → Create Token → Create Custom
- *    Token. Permissão: Account · Workers KV Storage · Edit. Account
- *    Resources: Include · a conta do dashboard. Crie e copie o token.
- * 2. Aqui no editor: Projeto → Propriedades do projeto → Propriedades do
- *    script → adicione CF_API_TOKEN com o token copiado.
- * 3. Selecione a função instalarGatilhoDoCache no topo do editor e clique em
- *    Executar (autorize o acesso a serviço externo quando pedido).
- * Para forçar uma atualização completa à mão: execute atualizarCacheAgora.
- *
- * O formato gravado TEM que ser o que o Worker lê (API/src/db/cache.ts):
- *   "s:<aba>"     {"t": ms, "rows": [...]}  — t = início da leitura da planilha
- *   "s:<aba>"     {"t": ms, "parts": N}     — aba grande, repartida em pedaços:
- *   "s:<aba>:<i>" {"t": ms, "rows": [...]}  — mesmo t da principal
- * ========================================================================== */
-
 var CF_ACCOUNT_ID = "669a630ce000a6a3c41a1ccef1001d7b";
 var CF_KV_NAMESPACE_ID = "3cbe9ba669b7447fb9bf8cdf04f38617";
 
-// Abas guardadas no cache (as mesmas que o Worker lê).
 var CACHE_SHEETS = [
   "vagas", "headcount", "turnover", "permanencia", "rescisoes", "filiais",
   "diarias", "treinamentos", "custo_folha", "absenteismo", "usuarios"
 ];
 
-// Folga abaixo dos 25 MiB por valor da KV (acento ocupa mais bytes que
-// caracteres). Aba maior que isso vira pedaços. Mesmo valor de
-// MAX_VALUE_CHARS em API/src/db/cache.ts.
 var KV_MAX_VALUE_CHARS = 15 * 1024 * 1024;
 
-// Tamanho máximo de cada chamada à API em lote (o UrlFetchApp aceita até 50 MB).
 var KV_MAX_REQUEST_CHARS = 40 * 1024 * 1024;
 
 var CACHE_TRIGGER_HANDLER = "atualizarCacheAgendado";
 
-// Chamada pelo gatilho de tempo: grava só as abas que mudaram.
 function atualizarCacheAgendado() {
   pushCache_(false);
 }
 
-// Para rodar à mão no editor: regrava todas as abas, mudadas ou não.
 function atualizarCacheAgora() {
   var result = pushCache_(true);
   Logger.log(JSON.stringify(result));
 }
 
-// Cria (ou recria) o gatilho de 10 em 10 minutos e já faz a primeira gravação.
 function instalarGatilhoDoCache() {
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
     if (trigger.getHandlerFunction() === CACHE_TRIGGER_HANDLER) ScriptApp.deleteTrigger(trigger);
@@ -231,9 +173,6 @@ function pushCache_(force) {
   var token = PropertiesService.getScriptProperties().getProperty("CF_API_TOKEN");
   if (!token) throw new Error("Configure CF_API_TOKEN nas Propriedades do script (ver instruções acima).");
 
-  // Uma atualização por vez (o gatilho e uma execução manual podiam se
-  // cruzar). Lock do documento, não do script: não trava as gravações do
-  // dashboard (doPost usa o lock do script).
   var lock = LockService.getDocumentLock();
   if (!lock.tryLock(1000)) return { skipped: "outra atualização em andamento" };
   try {
@@ -246,10 +185,8 @@ function pushCache_(force) {
 
     CACHE_SHEETS.forEach(function (name) {
       var rows = data[name];
-      if (rows === null) return; // aba inexistente: o Worker trata como ausente
+      if (rows === null) return;
       var rowsJson = JSON.stringify(rows);
-      // Impressão digital da aba: sem mudança desde a última gravação, não
-      // regrava — poupa a cota de 1.000 gravações/dia da KV.
       var hash = hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, rowsJson, Utilities.Charset.UTF_8));
       var hashKey = "CACHE_HASH_" + name;
       if (!force && props.getProperty(hashKey) === hash) return;
@@ -260,10 +197,6 @@ function pushCache_(force) {
         writes.push({ key: "s:" + name, value: '{"t":' + startedAt + ',"rows":' + rowsJson + "}" });
         return;
       }
-      // Cada pedaço leva o mesmo "t" da chave principal: a Cloudflare não
-      // garante em que ordem cada chave aparece nos servidores dela, e o
-      // Worker só junta pedaços com o "t" igual ao da principal — nunca
-      // mistura pedaços de uma gravação antiga com os de uma nova.
       var chunks = chunkRows_(rows, KV_MAX_VALUE_CHARS);
       chunks.forEach(function (chunk, i) {
         writes.push({ key: "s:" + name + ":" + i, value: '{"t":' + startedAt + ',"rows":' + JSON.stringify(chunk) + "}" });
@@ -272,7 +205,6 @@ function pushCache_(force) {
     });
 
     if (writes.length) kvBulkPut_(token, writes);
-    // Só depois de gravar com sucesso: se falhar, a próxima execução tenta de novo.
     if (changed.length) props.setProperties(hashes);
     return { changed: changed, writes: writes.length, ms: Date.now() - startedAt };
   } finally {
@@ -280,7 +212,6 @@ function pushCache_(force) {
   }
 }
 
-// Divide as linhas em pedaços de até maxChars (em JSON).
 function chunkRows_(rows, maxChars) {
   var chunks = [];
   var current = [];
@@ -299,8 +230,6 @@ function chunkRows_(rows, maxChars) {
   return chunks;
 }
 
-// Grava vários pares chave/valor na KV pela API em lote da Cloudflare,
-// dividindo em chamadas de até KV_MAX_REQUEST_CHARS.
 function kvBulkPut_(token, writes) {
   var url =
     "https://api.cloudflare.com/client/v4/accounts/" + CF_ACCOUNT_ID +
@@ -344,10 +273,6 @@ function hex_(bytes) {
     .join("");
 }
 
-// Segurança: setValues interpreta texto começando com = + - @ como fórmula, e
-// os valores vêm de usuários da API (ex.: "=INDEX(usuarios!A:F;2;6)" no nome
-// leria o senha_hash de outro usuário). Nessas células, força formato de
-// texto puro ANTES de gravar — o valor fica literal e volta igual na leitura.
 function writeValues_(range, values) {
   var pattern = /^[=+\-@\t\r]/;
   for (var r = 0; r < values.length; r++) {
@@ -370,12 +295,6 @@ function appendRows(sheetName, values) {
   return { appended: values.length };
 }
 
-// Mapa id -> linha, lido agora (sob o lock) em vez de confiar num número de
-// linha calculado pelo Worker antes desta chamada — que podia já estar
-// desatualizado por outra gravação concorrente. A coluna do id é sempre a
-// A (célula A1 = cabeçalho "id"), nunca outra — checado abaixo antes de ler,
-// pra nunca casar update/delete com a coluna errada se alguém reordenar as
-// colunas na mão direto na planilha.
 function idRowMap_(sheet) {
   var header = sheet.getRange(1, 1).getValue();
   if (String(header).trim().toLowerCase() !== "id") {
@@ -387,15 +306,14 @@ function idRowMap_(sheet) {
   var lastRow = sheet.getLastRow();
   var map = {};
   if (lastRow < 2) return map;
-  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues(); // coluna A inteira, abaixo do cabeçalho
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
     var id = ids[i][0];
-    if (id !== "" && id !== null) map[id] = i + 2; // +2: 1-based e pula o cabeçalho
+    if (id !== "" && id !== null) map[id] = i + 2;
   }
   return map;
 }
 
-// updates: [{ id, values }] — a linha é resolvida agora, pelo id, não recebida pronta.
 function updateRows(sheetName, updates, startedAt) {
   var sheet = sheet_(sheetName);
   var map = idRowMap_(sheet);
@@ -403,20 +321,17 @@ function updateRows(sheetName, updates, startedAt) {
   (updates || []).forEach(function (update) {
     checkTimeout_(startedAt);
     var rowNumber = map[update.id];
-    if (!rowNumber) return; // linha já não existe mais (apagada por outra gravação) — ignora
+    if (!rowNumber) return;
     writeValues_(sheet.getRange(rowNumber, 1, 1, update.values.length), [update.values]);
     applied++;
   });
   return { updated: applied };
 }
 
-// ids: [id, ...] — mesma resolução por id da updateRows, acima.
 function deleteRows(sheetName, ids, startedAt) {
   var sheet = sheet_(sheetName);
   var map = idRowMap_(sheet);
   var rowNumbers = (ids || []).map(function (id) { return map[id]; }).filter(Boolean);
-  // Ordem decrescente: apagar de baixo para cima evita que uma exclusão
-  // desloque o número das linhas seguintes ainda por apagar no mesmo lote.
   var sorted = rowNumbers.slice().sort(function (a, b) {
     return b - a;
   });

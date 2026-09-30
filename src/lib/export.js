@@ -1,8 +1,6 @@
 /* Exportação via SheetJS (xlsx/csv). Sem importação por planilha: todo o
    lançamento de dados é feito à mão nos modais (ver LaunchModal.vue). */
 
-/* O SheetJS (~280 kB) só é baixado quando o usuário exporta algo — não entra no
-   carregamento da dashboard. */
 let xlsxModule = null;
 async function loadXLSX() {
   if (!xlsxModule) xlsxModule = await import("xlsx");
@@ -11,8 +9,6 @@ async function loadXLSX() {
 import { getEntriesFor, getOcorrencias, getBranches, getVacancies, getTurnovers, getPermanencias, getHeadcounts } from "./store";
 import { todayISO, formatDate } from "./utils";
 
-/* Previne "formula injection": texto iniciado com = + - @ vira texto puro
-   (prefixo ') para nunca executar fórmula em planilha. */
 const FORMULA_LEAD = /^[=+\-@]/;
 
 function sheetSafe(v) {
@@ -23,9 +19,6 @@ function sheetSafe(v) {
 function safeRows(rows) {
   return rows.map((row) => row.map(sheetSafe));
 }
-
-/* ---------- Linhas de cada tabela (reaproveitadas pelo export por tela e
-   pelo "Baixar em XLSX/CSV" do menu, que baixa todas de uma vez). ---------- */
 
 const VAGA_HEADER = [
   "Nome da vaga", "Data de abertura", "Data de fechamento", "Tipo de contratação",
@@ -187,7 +180,6 @@ const ABSENTEISMO_HEADER = [
   "Observação"
 ];
 
-/* Ocorrências lançadas no Mapa de Absenteísmo, da mais recente para a mais antiga. */
 function absenteismoRows(list) {
   const rows = [ABSENTEISMO_HEADER];
   (list || [])
@@ -210,8 +202,6 @@ function absenteismoRows(list) {
   return rows;
 }
 
-/* Todas as tabelas atualmente carregadas no navegador (a fonte é sempre o
-   store — os mesmos dados já em tela, sem nova requisição). */
 function allTables() {
   return [
     { name: "Vagas", rows: vagasRows(getVacancies()), cols: [28, 16, 18, 20, 14, 10, 14, 12, 14] },
@@ -223,14 +213,13 @@ function allTables() {
     { name: "Treinamentos", rows: treinamentosRows(getEntriesFor("treinamento")), cols: [14, 28, 20, 20, 26, 14, 20, 10] },
     { name: "Custo de Folha", rows: custoFolhaRows(getEntriesFor("custo_total")), cols: [14, 22, 30, 14, 14, 10] },
     { name: "Absenteísmo", rows: absenteismoRows(getOcorrencias()), cols: [12, 30, 22, 14, 8, 18, 12, 18, 30] }
-  ].filter((t) => t.rows.length > 1); // pula tabelas sem nenhum registro lançado
+  ].filter((t) => t.rows.length > 1);
 }
 
 function colsToWch(cols) {
   return cols.map((wch) => ({ wch }));
 }
 
-/* "Baixar em XLSX": um único arquivo, uma aba por tabela carregada. */
 export async function toXLSX() {
   const XLSX = await loadXLSX();
   const workbook = XLSX.utils.book_new();
@@ -242,8 +231,6 @@ export async function toXLSX() {
   XLSX.writeFile(workbook, `gente-gestao-dados_${todayISO()}.xlsx`);
 }
 
-/* "Baixar em CSV": CSV não suporta múltiplas abas num único arquivo, então
-   baixa um .csv por tabela carregada (um download por tabela). */
 export async function toCSV() {
   const XLSX = await loadXLSX();
   const date = todayISO();
@@ -260,8 +247,6 @@ export async function toCSV() {
     XLSX.writeFile(workbook, `gente-gestao-${slug}_${date}.csv`, { bookType: "csv" });
   });
 }
-
-/* ---------- Exportações por tela (botão "Exportar" de cada modal) ---------- */
 
 export async function exportVagas(list) {
   const XLSX = await loadXLSX();
@@ -299,8 +284,6 @@ export async function exportHeadcount(list) {
   XLSX.writeFile(workbook, `gente-gestao-headcount_${todayISO()}.xlsx`);
 }
 
-/* Exporta uma lista de ocorrências de absenteísmo (já achatadas, como nos
-   modais de análise) — uma linha por ocorrência, da mais recente para a mais antiga. */
 export async function exportOcorrencias(list, filename = "absenteismo") {
   const XLSX = await loadXLSX();
   const rows = [

@@ -1,12 +1,6 @@
 <script setup>
 import { computed } from "vue";
 
-/* Painel da Retenção (gráfico central do Painel): resultado em destaque com
-   barra de progresso, o fluxo do quadro (Headcount inicial + Novas contratações
-   − Demissões = Headcount final) e a fórmula usada. `data`: { headcountInicial,
-   headcountFinal, novasContratacoes, demissoes, retencaoPct, missing }. Cada
-   valor cai em "—" quando ainda não há dado suficiente. `large`: tipografia
-   maior (tela cheia). */
 const props = defineProps({
   data: { type: Object, default: null },
   large: { type: Boolean, default: false }
@@ -21,7 +15,6 @@ const pct = computed(() => {
   return v === null || v === undefined || !Number.isFinite(v) ? null : v;
 });
 const pctText = computed(() => (pct.value === null ? "—" : `${pct.value.toFixed(1).replace(".", ",")}%`));
-/* Largura da barra: limitada a 0–100% (a taxa pode passar de 100 ou ser negativa). */
 const barWidth = computed(() => `${Math.max(0, Math.min(100, pct.value ?? 0))}%`);
 
 const steps = computed(() => [
@@ -47,7 +40,6 @@ const TONES = {
       Sem dado suficiente para calcular: {{ data.missing.join(", ") }}.
     </div>
 
-    <!-- Resultado -->
     <div class="rounded-2xl border border-accent/25 bg-accent/5 px-6 py-5 text-center dark:border-accent/25 dark:bg-accent/10">
       <span class="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Taxa de retenção</span>
       <strong
@@ -66,7 +58,6 @@ const TONES = {
       </div>
     </div>
 
-    <!-- Fluxo do quadro -->
     <div>
       <h3 class="mb-2 text-center text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
         Movimentação do quadro
@@ -88,7 +79,6 @@ const TONES = {
       </div>
     </div>
 
-    <!-- Fórmula -->
     <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center dark:border-zinc-800 dark:bg-zinc-900">
       <span class="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Cálculo</span>
       <p class="mt-1 font-semibold tabular-nums text-zinc-800 dark:text-zinc-100" :class="large ? 'text-xl' : 'text-base'">

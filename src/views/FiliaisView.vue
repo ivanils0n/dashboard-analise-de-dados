@@ -18,8 +18,6 @@ const { show: toast } = useToast();
 const { confirm } = useDialog();
 const { state: filters } = useFilters();
 
-/* Mostra a tela de carregamento sempre que a aba é aberta (inclusive ao
-   voltar de outra aba, já que o KeepAlive não remonta o componente). */
 onActivated(() => {
   beginLoading("Carregando filiais...");
   hydrateState(filters.current)
@@ -56,8 +54,6 @@ const summaryText = computed(() =>
     : `${total.value} filial(ais) · ${filters.current === "todos" ? "todos os estados" : "estado " + filters.current}`
 );
 
-/* Novas filiais não são mais cadastradas por aqui: a edição de uma filial
-   existente abre neste modal (editar e salvar). */
 const editOpen = ref(false);
 
 function resetForm() {
@@ -74,8 +70,6 @@ function closeEdit() {
   resetForm();
 }
 
-/* Fechar sem salvar (×, Esc, Cancelar) com campos alterados: pergunta antes de
-   descartar. Depois de salvar usa closeEdit() direto. */
 const unsaved = useUnsavedGuard(() => form);
 
 async function requestCloseEdit() {
@@ -127,7 +121,6 @@ async function handleDelete(id) {
   toast("Filial excluída.");
 }
 
-/* ---------- Seleção múltipla / exclusão em lote ---------- */
 const selectedIds = ref(new Set());
 
 const selectedBranches = computed(() => tableList.value.filter((b) => selectedIds.value.has(b.id)));
@@ -180,13 +173,11 @@ function edit(id) {
 
 <template>
   <div>
-    <!-- ===== HERO ===== -->
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Filiais</h1>
       <Badge tone="accent">{{ total === 1 ? "1 filial" : `${total} filiais` }}</Badge>
     </div>
 
-    <!-- ===== LISTA ===== -->
     <section class="mt-8 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 p-5 dark:border-zinc-800">
         <div>
@@ -272,7 +263,6 @@ function edit(id) {
         />
       </div>
     </section>
-    <!-- ===== EDIÇÃO DA FILIAL (modal) ===== -->
     <Modal v-if="editOpen" title="Editar filial" :open="editOpen" max-width="max-w-2xl" @close="requestCloseEdit">
     <form class="grid gap-4 sm:grid-cols-2" novalidate @submit.prevent="handleSubmit">
       <div class="flex flex-col gap-1.5">

@@ -1,12 +1,3 @@
-/* Utilitários de formatação e de storage web seguro. */
-
-/* Roda `worker` sobre `items` com no máximo `limit` execuções em voo ao
-   mesmo tempo — um "pool" de workers que consome a fila compartilhada: assim
-   que uma chamada termina, o worker livre puxa o próximo item, sem esperar
-   os outros. Usado para não estourar cotas de execuções simultâneas de APIs
-   externas (ex.: Google Apps Script) quando há mais itens que o limite —
-   com `items.length <= limit` o comportamento é o mesmo de `Promise.all`.
-   Devolve os resultados na mesma ordem de `items`. */
 export async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -85,8 +76,6 @@ export function formatDate(isoDate) {
 
 export function formatShortDate(isoDate) {
   if (!isoDate) return "—";
-  /* Aceita "YYYY-MM-DD" e timestamps: sem o teste de "T", um valor que já
-     tem hora virava "...T10:00:00T00:00:00" (Invalid Date) e era exibido cru. */
   const date = new Date(/T/.test(isoDate) ? isoDate : isoDate + "T00:00:00");
   if (isNaN(date.getTime())) return String(isoDate);
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -112,8 +101,6 @@ export function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/* Comparações de data ISO tolerantes a valores ausentes/inválidos.
-   Evitam estouros em dados legados/importados com data nula. */
 export function compareDateAsc(a, b) {
   return String(a || "").localeCompare(String(b || ""));
 }
@@ -121,8 +108,6 @@ export function compareDateDesc(a, b) {
   return String(b || "").localeCompare(String(a || ""));
 }
 
-/* Agrega lançamentos por dia (soma dos valores na mesma data), usado na
-   evolução de indicadores com múltiplos registros por dia (ex.: diárias). */
 export function aggregateByDay(entries) {
   const byDay = new Map();
   (entries || []).forEach((e) => {
@@ -134,8 +119,6 @@ export function aggregateByDay(entries) {
     .sort((a, b) => compareDateAsc(a.date, b.date));
 }
 
-/* Agrega lançamentos por mês (soma ou média, conforme o tipo do indicador),
-   usado no gráfico de barras da "Evolução por indicador". */
 export function aggregateByMonth(entries, method = "sum") {
   const byMonth = new Map();
   (entries || []).forEach((e) => {
@@ -162,10 +145,6 @@ export function formatMonthLabel(monthKey) {
   return date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", "");
 }
 
-/* Data fora de 1900–2100 é lixo de digitação, não uma data real: o Sheets
-   pode entregar uma data como número serial em texto ("46294"), que o
-   new Date() lê como o ano 46294 — uma única vaga assim levava o Tempo médio
-   de contratação para centenas de milhares de dias. */
 function isPlausibleDate(d) {
   const year = d.getFullYear();
   return !isNaN(d.getTime()) && year >= 1900 && year <= 2100;
@@ -182,8 +161,6 @@ export function createId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-/* Normaliza texto para busca: minúsculas e sem acentos.
-   Ex.: "Aguíar" -> "aguiar", "São Paulo" -> "sao paulo". */
 export function normalizeText(value) {
   return String(value ?? "")
     .normalize("NFD")
@@ -191,15 +168,10 @@ export function normalizeText(value) {
     .toLowerCase();
 }
 
-/* Chave para comparar nomes de colaborador: sem acento, caixa ou espaços
-   repetidos ("José  da Silva" == "JOSE DA SILVA"). */
 export function nameKey(value) {
   return normalizeText(value).replace(/\s+/g, " ").trim().toUpperCase();
 }
 
-/* Motivo de ocorrência digitado à mão na planilha ("falta", "Meio Periodo",
-   "DECLARACAO"...) → nome canônico usado pelo app. Motivo desconhecido volta
-   como veio (aparece no mapa como "?" em vez de sumir). */
 const MOTIVO_CANONICO = {
   falta: "Falta",
   faltas: "Falta",
@@ -222,16 +194,10 @@ export function normalizeMotivo(value) {
   return MOTIVO_CANONICO[key] || raw;
 }
 
-/* Texto livre exibido em modais e gráficos (nome, filial, tema, gerente...):
-   força maiúsculas mesmo quando o dado vem de fora dos formulários da tela
-   (edição direta na planilha, importações antigas) — os formulários já
-   digitam em maiúsculas (ver diretiva v-upper), isto é a rede de segurança
-   na exibição. */
 export function upperText(value) {
   return value === null || value === undefined ? value : String(value).toUpperCase();
 }
 
-/* Compara siglas de estado tolerando caixa e espaços ("ro" = " RO " = "RO"). */
 export function sameState(value, target) {
   if (value === target) return true;
   return (
@@ -240,10 +206,6 @@ export function sameState(value, target) {
   );
 }
 
-/* =========================================================
-   Utilitários de mês/ano e valores monetários (BRL)
-   ========================================================= */
-
 export const MONTHS_SHORT = [
   "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
   "Jul", "Ago", "Set", "Out", "Nov", "Dez"
@@ -251,7 +213,6 @@ export const MONTHS_SHORT = [
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
-/* Chave de mês "YYYY-MM" a partir de uma data ISO (YYYY-MM-DD ou timestamp). */
 export function ymOf(isoDate) {
   if (!isoDate) return "";
   return String(isoDate).slice(0, 7);
@@ -261,12 +222,10 @@ export function ymOfDate(d = new Date()) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 
-/* Mês/ano vigente (relógio local). */
 export function currentYm() {
   return ymOfDate();
 }
 
-/* Mês deslocado por `offset` meses a partir de hoje (negativo = anterior). */
 export function monthYm(offset = 0) {
   const d = new Date();
   d.setDate(1);
@@ -274,8 +233,6 @@ export function monthYm(offset = 0) {
   return ymOfDate(d);
 }
 
-/* Desloca um mês "YYYY-MM" em `delta` meses (negativo = anterior).
-   Ex.: addMonthsYm("2026-09", -1) -> "2026-08". */
 export function addMonthsYm(ym, delta = 0) {
   const [y, m] = String(ym || currentYm()).split("-").map(Number);
   if (!y || !m) return currentYm();
@@ -283,7 +240,6 @@ export function addMonthsYm(ym, delta = 0) {
   return ymOfDate(d);
 }
 
-/* Primeiro e último dia (YYYY-MM-DD) de um mês "YYYY-MM". */
 export function firstDayOfYm(ym) {
   return `${ym}-01`;
 }
@@ -294,7 +250,6 @@ export function lastDayOfYm(ym) {
   return `${last.getFullYear()}-${pad2(last.getMonth() + 1)}-${pad2(last.getDate())}`;
 }
 
-/* Rótulo curto "Fev/2026" para um mês "YYYY-MM". */
 export function ymLabel(ym) {
   if (!ym) return "";
   const [y, m] = ym.split("-");
@@ -303,7 +258,6 @@ export function ymLabel(ym) {
   return `${MONTHS_SHORT[mi]}/${y}`;
 }
 
-/* Rótulo compacto "fev/26" (mês abreviado minúsculo + 2 dígitos do ano). */
 export function ymShortLabel(ym) {
   if (!ym) return "";
   const [y, m] = ym.split("-");
@@ -312,8 +266,6 @@ export function ymShortLabel(ym) {
   return `${MONTHS_SHORT[mi].toLowerCase()}/${String(y).slice(-2)}`;
 }
 
-/* Se `start`/`end` corresponderem exatamente a um mês civil completo,
-   devolve a chave "YYYY-MM"; caso contrário devolve null. */
 export function singleMonthOfRange(start, end) {
   if (!start || !end) return null;
   const ym = ymOf(start);
@@ -323,7 +275,6 @@ export function singleMonthOfRange(start, end) {
   return ym;
 }
 
-/* Lista de anos sugeridos para os seletores de mês (ex.: atual -4 .. atual +1). */
 export function yearOptions(before = 4, after = 1) {
   const cur = new Date().getFullYear();
   const out = [];
@@ -331,9 +282,6 @@ export function yearOptions(before = 4, after = 1) {
   return out;
 }
 
-/* Converte texto digitado (ex.: "1.500,50", "1500,50", "1500.50",
-   "R$ 250,75") para Number. Evita ambiguidade entre vírgula e ponto:
-   quando os dois existem, o ponto é separador de milhar. */
 export function parseCurrencyBR(input) {
   if (input === null || input === undefined) return NaN;
   let s = String(input).replace(/[R$\s]/g, "").trim();
@@ -344,15 +292,12 @@ export function parseCurrencyBR(input) {
 
   let normalized;
   if (hasComma) {
-    // Com vírgula presente ela é sempre o decimal: o ponto só pode ser milhar.
     normalized = s.replace(/\./g, "").replace(",", ".");
   } else if (hasDot) {
-    // "1.500" (milhar) x "1500.50" (decimal): só é milhar se os grupos
-    // forem de 3 dígitos do fim para o começo.
     if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
       normalized = s.replace(/\./g, "");
     } else {
-      normalized = s; // ponto como decimal
+      normalized = s;
     }
   } else {
     normalized = s;
@@ -362,12 +307,6 @@ export function parseCurrencyBR(input) {
   return Number(normalized);
 }
 
-/* Máscara de digitação monetária: mantém apenas dígitos e uma vírgula
-   decimal, agrupando os milhares com ponto enquanto o usuário digita.
-   ""       -> ""
-   "1500"   -> "1.500"
-   "1500,5" -> "1.500,5"  ("1.500,50" no blur)
-   "R$ 1.000,00" -> "1.000,00" */
 export function maskCurrencyInput(inputValue) {
   let s = String(inputValue ?? "");
   s = s.replace(/[R$\s]/g, "");
@@ -383,8 +322,6 @@ export function maskCurrencyInput(inputValue) {
   return `${intLabel},${decRaw || ""}`;
 }
 
-/* Finaliza a exibição de um campo monetário (chamada no blur): garante que
-   existam duas casas decimais. Devolve texto formatado pt-BR. */
 export function normalizeCurrencyInput(text) {
   const masked = maskCurrencyInput(text);
   if (masked === "") return "";
@@ -392,9 +329,6 @@ export function normalizeCurrencyInput(text) {
   return `${intPart || "0"},${(decPart || "").padEnd(2, "0")}`;
 }
 
-/* Converte texto de horas em número (horas decimais). Aceita:
-   "12" → 12 | "12:00" → 12 | "12:30" → 12.5 | "12,5"/"12.5" → 12.5 |
-   "12h30" → 12.5. Devolve null quando inválido. */
 export function parseHoursBR(input) {
   if (input === null || input === undefined) return null;
   let s = String(input).trim();
@@ -428,8 +362,6 @@ export function parseHoursBR(input) {
   return null;
 }
 
-/* Formata horas decimais no padrão relógio HH:MM (zero à esquerda).
-   Ex.: 1 → "01:00", 0.5 → "00:30", 10 → "10:00", 12.5 → "12:30". */
 export function formatHoursClock(value) {
   const n = Number(value);
   if (value === null || value === undefined || value === "" || isNaN(n)) return "—";
@@ -439,12 +371,8 @@ export function formatHoursClock(value) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/* Prefixo das chaves de cache de dados (ver lib/cache.js). São as únicas
-   descartáveis: podem ser rebaixadas para liberar espaço porque são
-   reconstruídas pelo delta sync. */
 const DISPOSABLE_PREFIX = "ggd:";
 
-// Grava no storage; em QuotaExceededError, descarta o cache de dados e regrava.
 export function safeSetItem(storage, key, value) {
   try {
     storage.setItem(key, value);
@@ -458,9 +386,6 @@ export function safeSetItem(storage, key, value) {
         err.code === 1014);
     if (!isQuota) return false;
 
-    /* Antes limpava o storage inteiro — isso apagava junto a sessão (gg-auth)
-       e deslogava o usuário no meio do trabalho. Remove apenas as chaves de
-       cache, que o delta sync rebaixa sozinho. */
     try {
       const disposable = [];
       for (let i = 0; i < storage.length; i++) {
@@ -479,7 +404,6 @@ export function safeSetItem(storage, key, value) {
   }
 }
 
-// Cria uma Storage web que nunca lança (noop se indisponível/bloqueada).
 function createWebStore(name) {
   try {
     const store = window[name];
@@ -505,7 +429,5 @@ function createWebStore(name) {
   }
 }
 
-// Dados sensíveis (sessão + cache) só em sessionStorage; localStore limpa
-// resíduos de versões antigas.
 export const sessionStore = createWebStore("sessionStorage");
 export const localStore = createWebStore("localStorage");

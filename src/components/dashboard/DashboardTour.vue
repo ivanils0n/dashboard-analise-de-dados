@@ -1,15 +1,8 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount, nextTick } from "vue";
 
-/* Tour guiado pela dashboard: escurece a tela, destaca um elemento por vez
-   (marcado com data-tour="...") e explica o que ele faz. Pode ser cancelado a
-   qualquer momento (botão "Sair do tour", X, Esc). Os passos dependem da aba
-   ativa e do aparelho (mouse: botão direito; toque: pressionar e segurar).
-   Passos cujo alvo não existe/está oculto (ex.: perfil sem permissão) são
-   pulados. */
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* "cockpit" (Painel) ou "overview" (Visão Geral). */
   tab: { type: String, default: "cockpit" }
 });
 
@@ -25,8 +18,6 @@ const tipEl = ref(null);
 const PAD = 6;
 const TIP_MAX_W = 360;
 
-/* Primeiro elemento visível entre os seletores (o mesmo data-tour pode existir
-   em mais de um lugar, ex.: versão do celular e do computador). */
 function pick(selectors) {
   for (const sel of selectors) {
     for (const el of document.querySelectorAll(sel)) {
@@ -238,7 +229,6 @@ watch(
   { immediate: true }
 );
 
-/* Trocar de aba com o tour aberto o encerra (os passos são de outra aba). */
 watch(
   () => props.tab,
   () => {
@@ -325,8 +315,6 @@ const tipStyle = computed(() => ({
 </template>
 
 <style scoped>
-/* Recorte iluminado: a sombra gigante escurece o resto da tela; o anel dourado
-   marca o elemento. Move-se suavemente de um passo para o outro. */
 .tour-spot {
   position: absolute;
   border-radius: 14px;

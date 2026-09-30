@@ -9,13 +9,6 @@ import { hydrateState } from "@/lib/db";
 import { useToast } from "@/composables/useToast";
 import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 
-/* Modal dedicado à edição de um colaborador do Headcount — autocontido (não
-   depende de nenhum modal "pai" ficar aberto ou fechado certo). Substitui o
-   antigo botão "Editar" (que abria o formulário de Headcount dentro do
-   Lançamento, via vários estados espalhados entre componentes — CockpitPanel,
-   DashboardView e HeadcountEstadoModal precisavam concordar sobre qual modal
-   fechar antes de qual abrir, e um deles ficava pra trás). Agora clicar no
-   nome do colaborador abre isto direto, com o registro já carregado. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   recordId: { type: String, default: null }
@@ -36,7 +29,6 @@ const form = reactive({
   filial: null,
   estado: ""
 });
-// Filial como veio do registro (ver filialOriginalForaDaLista).
 const filialOriginal = ref(null);
 
 const unsaved = useUnsavedGuard(() => form);
@@ -57,9 +49,6 @@ function loadRecord(id) {
   form.estado = h.estado || "";
 }
 
-/* Recarrega sempre que abre (não só quando o id muda) — reabrir pra editar
-   outro colaborador troca o id, mas reabrir o MESMO logo depois de salvar
-   também deve trazer os dados mais recentes. */
 watch(
   () => [props.open, props.recordId],
   ([open, id]) => {
@@ -73,13 +62,11 @@ watch(
   { immediate: true }
 );
 
-/* Fechar sem salvar (×, Esc, Cancelar): pergunta antes de descartar alterações. */
 async function requestClose() {
   if (!(await unsaved.confirmDiscard())) return;
   emit("close");
 }
 
-/* Filiais do estado do colaborador — recarrega ao trocar de estado no form. */
 const branches = computed(() => listBranches(form.estado || "todos"));
 watch(
   () => form.estado,
@@ -93,10 +80,6 @@ watch(
   }
 );
 
-/* A "filial" gravada às vezes é texto livre que não bate com a sigla de
-   nenhuma filial do cadastro. Antes o modal limpava o campo ao abrir quando
-   não achava a sigla, e salvar apagava a filial na planilha. Agora o valor
-   atual vira uma opção própria e só é limpo quando o usuário troca o estado. */
 const filialOriginalForaDaLista = computed(
   () => !!filialOriginal.value && !branches.value.some((b) => b.shortName === filialOriginal.value)
 );

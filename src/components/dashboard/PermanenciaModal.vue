@@ -24,9 +24,6 @@ import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* Quando informado (ex.: clique direito na barra do gráfico, ou "Editar" no
-     modal de detalhe), abre já com o formulário de edição desse registro
-     preenchido. */
   editRecordId: { type: String, default: null }
 });
 const emit = defineEmits(["close"]);
@@ -40,8 +37,6 @@ function close() {
   emit("close");
 }
 
-/* Alterações não salvas no formulário de edição: fechar o modal ou cancelar o
-   formulário pergunta antes de descartar. */
 const unsaved = useUnsavedGuard(() => form);
 
 async function requestClose() {
@@ -55,7 +50,6 @@ async function cancelForm() {
   unsaved.reset();
 }
 
-/* ---------- Formulário (Novo/Editar) ---------- */
 const showForm = ref(false);
 const editingId = ref(null);
 const form = reactive({
@@ -65,14 +59,10 @@ const form = reactive({
   filial: null,
   estado: filters.current !== "todos" ? filters.current : DEFAULT_STATE
 });
-// Filial como veio do registro em edição (ver filialOriginalForaDaLista).
 const filialOriginal = ref(null);
 
-/* Filiais disponíveis para o registro, conforme o estado selecionado no
-   formulário — mesma ideia da vaga (ver vagaBranches em LaunchModal.vue). */
 const permBranches = computed(() => listBranches(form.estado === "todos" ? "todos" : form.estado));
 
-/* Garante que as filiais do estado escolhido estejam carregadas. */
 watch(
   () => form.estado,
   async (state) => {
@@ -85,9 +75,6 @@ watch(
   { immediate: true }
 );
 
-/* Filial é texto livre: um valor fora do cadastro vira opção própria em vez
-   de ser limpo ao abrir (salvar apagava a filial na planilha). Só é limpa
-   quando o usuário troca o estado. */
 const filialOriginalForaDaLista = computed(
   () => !!filialOriginal.value && !permBranches.value.some((b) => b.shortName === filialOriginal.value)
 );
@@ -118,8 +105,6 @@ function editRecord(p) {
   nextTick(unsaved.markClean);
 }
 
-/* Abre direto no formulário de edição do registro indicado (ex.: clique
-   direito numa barra do gráfico, ou "Editar" no modal de detalhe). */
 watch(
   () => [props.open, props.editRecordId],
   ([open, id]) => {
@@ -131,7 +116,6 @@ watch(
 );
 
 function submitForm() {
-  /* Só edita registros existentes; lançamento novo é feito pela planilha. */
   if (!editingId.value) return;
   const nome = form.colaborador.trim();
   if (!nome) return toast("Informe o colaborador.");
@@ -168,11 +152,8 @@ async function removeRecord(id) {
   toast("Registro excluído.");
 }
 
-/* ---------- Filtros / lista ---------- */
 const search = ref("");
 
-/* Segue o mês selecionado no filtro global do dashboard, pela Data de
-   demissão (mesma regra da média e do gráfico de permanência). */
 const selectedMonthLabel = computed(() => {
   const ym = singleMonthOfRange(dateFilter.start, dateFilter.end);
   return ym ? ymLabel(ym) : "";
@@ -204,7 +185,6 @@ const avgDays = computed(() => {
   return withDays.reduce((a, b) => a + b, 0) / withDays.length;
 });
 
-/* ---------- Seleção múltipla ---------- */
 const selectedIds = ref(new Set());
 
 const selectedRows = computed(() => filteredList.value.filter((p) => selectedIds.value.has(p.id)));

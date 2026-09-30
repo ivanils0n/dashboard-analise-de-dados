@@ -1,18 +1,5 @@
 #!/usr/bin/env node
-// Script de setup, roda uma vez localmente (node scripts/seed-sheet.mjs).
-// Chama o Apps Script (apps-script/Code.gs) já publicado para criar as abas
-// da planilha (uma por entidade, + "usuarios") com o cabeçalho certo e, se
-// ainda não houver nenhum, um usuário admin inicial.
-//
-// Cada entidade tem uma única aba, com a coluna estado_sigla distinguindo RO/AM/PA.
-// Headcount é a fonte de colaborador/mês (não há abas de Colaboradores/Departamentos).
-//
-// Lê as credenciais de .dev.vars (mesmo arquivo usado pelo `wrangler dev`)
-// ou das variáveis de ambiente já exportadas no shell.
-//
 // Atenção: os nomes de coluna abaixo espelham db/tables.ts. Se o schema lá
-// mudar, atualize aqui também (é uma duplicação deliberada — o script roda
-// fora do runtime do Worker e não importa TypeScript diretamente).
 
 import { readFileSync, existsSync } from "node:fs";
 import { webcrypto } from "node:crypto";
@@ -55,8 +42,6 @@ if (!APPS_SCRIPT_URL || !APPS_SCRIPT_SECRET) {
   process.exit(1);
 }
 
-// ---------- schema (espelha API/src/db/tables.ts) ----------
-
 const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial", "estado_sigla", "recrutador", "motivo_contratacao"],
   headcount: [
@@ -70,7 +55,6 @@ const ENTITY_COLUMNS = {
     "regional", "motivo", "justificativa_apurada", "ponderacoes", "ult_dia_aviso", "valor_rescisao", "grrf_consig", "multa_40", "mes_referencia"
   ],
   filiais: ["id", "cnpj", "nome", "abreviado", "gerente", "estado_sigla"],
-  // Headcount é a fonte de colaborador/mês (não há abas de Colaboradores/Departamentos).
     diarias: [
     "id", "nome_colaborador", "funcao", "filial", "lider_imediato",
     "regional", "motivo", "competencia", "valor",
@@ -90,8 +74,6 @@ for (const entity of Object.keys(ENTITY_COLUMNS)) {
   targetSheets.push({ title: entity, header: ENTITY_COLUMNS[entity] });
 }
 
-// ---------- cliente do Apps Script ----------
-
 async function callAppsScript(action, params = {}) {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: "POST",
@@ -103,8 +85,6 @@ async function callAppsScript(action, params = {}) {
   if (!payload.success) throw new Error(`Apps Script recusou "${action}": ${payload.error}`);
   return payload.data;
 }
-
-// ---------- hash de senha (mesmo formato de src/utils/password.ts) ----------
 
 async function hashPassword(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -122,8 +102,6 @@ async function hashPassword(password) {
 function randomPassword() {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(9))).toString("base64url");
 }
-
-// ---------- main ----------
 
 async function main() {
   console.log(`Criando/atualizando ${targetSheets.length} aba(s)...`);

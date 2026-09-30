@@ -37,18 +37,10 @@ async function handleSubmit() {
     toast(friendly, "error");
     return;
   }
-  /* O reload abaixo zera a página: deixa um aviso para o App mostrar o
-     "login realizado" na nova carga. */
   try {
     sessionStorage.setItem("gg_login_toast", "1");
   } catch (e) {
-    /* sessionStorage indisponível: só não mostra o aviso */
   }
-  /* Usuário confirmado: recarrega a página ANTES de baixar os dados. O login já
-     gravou a sessão (sessionStorage, que sobrevive ao reload); na nova carga o
-     bootstrap (main.js) baixa os dados com cache + delta. Assim o Network do
-     navegador é zerado e a requisição de login (com a senha) não fica listada
-     junto das demais. `busy` fica ligado até a página recarregar. */
   history.replaceState(null, "", window.location.pathname + window.location.search + "#/dashboard");
   window.location.reload();
 }
@@ -60,8 +52,6 @@ async function handleSubmit() {
       class="w-full max-w-md px-6 py-8 slide-up sm:px-10 sm:py-10"
     >
       <header class="flex flex-col items-center text-center">
-        <!-- logo.png é branca (para fundo escuro); no tema claro usa a versão com
-             texto escuro. Inverter com filtro CSS deixava o amarelo azul. -->
         <img
           src="/logo-on-light.png"
           alt="Gente & Gestão"

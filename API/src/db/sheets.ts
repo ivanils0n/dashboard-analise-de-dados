@@ -16,12 +16,6 @@ import {
   updateValues
 } from "./googleSheets";
 
-// Acesso à planilha. O caminho principal é a API do Google Sheets com conta de
-// serviço (db/googleSheets.ts): leituras e gravações em poucas centenas de ms.
-// Se ela não estiver configurada ou falhar, cai no Google Apps Script
-// publicado como Web App (apps-script/Code.gs), que roda com a identidade de
-// quem o publicou e só aceita chamadas com o segredo combinado (reserva).
-
 export type SheetRow = Record<string, unknown>;
 
 const MAX_ATTEMPTS = 4;
@@ -31,16 +25,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Contas pessoais do Google limitam quantas execuções simultâneas um Web App
-// do Apps Script aceita; acima disso ele devolve uma página HTML genérica de
-// erro em vez do JSON esperado. O boot do front dispara várias tabelas em
-// paralelo, então isso acontece na prática — repete com backoff (+jitter)
-// antes de desistir, em vez de propagar um 500 por uma sobrecarga passageira.
-// Sem limite de tempo por tentativa: a leitura espera o Apps Script responder
-// (antes, a 1ª leitura era cancelada em 8 s e refeita, o que na prática
-// recomeçava uma leitura já em andamento). O cliente (navegador) ainda pode
-// cancelar — recarregar/fechar a página aborta a chamada (clientSignal).
-
 async function callAppsScriptOnce<T>(
   env: Bindings,
   action: string,
@@ -48,7 +32,6 @@ async function callAppsScriptOnce<T>(
   clientSignal?: AbortSignal
 ): Promise<{ ok: true; data: T } | { ok: false; retriable: boolean; message: string }> {
   const controller = new AbortController();
-  // Cliente (navegador) desistiu — recarregou/fechou a página: cancela também a chamada ao Apps Script.
   const onClientAbort = () => controller.abort();
   clientSignal?.addEventListener("abort", onClientAbort);
   let res: Response;
@@ -72,15 +55,10 @@ async function callAppsScriptOnce<T>(
   try {
     payload = JSON.parse(text);
   } catch {
-    // Resposta não-JSON (página de erro do Google): sinal de sobrecarga passageira.
     return { ok: false, retriable: true, message: `Apps Script devolveu resposta inválida na ação "${action}".` };
   }
 
   if (!payload.success) {
-    // Erro de negócio (segredo errado, aba inexistente, ...) — não adianta repetir.
-    // Exceção: o Code.gs marca `retriable: true` quando o lock de escrita não
-    // conseguiu a vez a tempo (ver LockService em doPost) — é sobrecarga
-    // passageira, não um erro de negócio, então vale tentar de novo.
     return {
       ok: false,
       retriable: Boolean(payload.retriable),
@@ -107,11 +85,8 @@ async function callAppsScript<T>(
     const jitter = Math.random() * RETRY_BASE_DELAY_MS;
     await sleep(RETRY_BASE_DELAY_MS * attempt + jitter);
   }
-  // Inalcançável (o loop sempre retorna ou lança), mas satisfaz o TypeScript.
   throw new Error(lastMessage);
 }
-
-// ---------- conversão de valores (coluna tipada <-> célula da planilha) ----------
 
 function toCellValue(column: ColumnDef | undefined, value: unknown): unknown {
   if (value === undefined || value === null) return "";
@@ -121,16 +96,7 @@ function toCellValue(column: ColumnDef | undefined, value: unknown): unknown {
   return String(value);
 }
 
-// Colunas numéricas às vezes são preenchidas à mão direto na planilha (sem
-// passar pelo formulário do app, que já normaliza o valor antes de enviar) —
-// aceita mais formatos do que `Number(raw)` entenderia sozinho:
-//   - horário "H:MM" ou "H:MM:SS" (ex.: carga horária de treinamento digitada
-//     como "01:00") -> horas decimais (1, 1.5, ...);
-//   - número no padrão BR, com vírgula decimal e opcionalmente ponto de
-//     milhar (ex.: "1.234,56" ou "1234,56") -> ponto decimal.
 function parseFlexibleNumber(raw: string): number | null {
-  // Símbolo de moeda/espaços (ex.: "R$ 200,00", "$ 12.50") não fazem parte do
-  // número em si — tira antes de tentar qualquer formato abaixo.
   const s = raw.trim().replace(/^(r\$|\$|R\$)\s*/i, "").trim();
   if (!s) return null;
 
@@ -142,9 +108,6 @@ function parseFlexibleNumber(raw: string): number | null {
     return hours + minutes / 60 + seconds / 3600;
   }
 
-  // Célula sem formato de texto: o Sheets converte "01:00" digitado num
-  // horário de verdade, e a resposta chega como timestamp ISO (o horário do
-  // dia é a parte que importa; a data em si é só a época interna do Sheets).
   const isoTime = /T(\d{2}):(\d{2}):(\d{2})/.exec(s);
   if (isoTime) {
     const hours = Number(isoTime[1]);
@@ -154,7 +117,6 @@ function parseFlexibleNumber(raw: string): number | null {
   }
 
   if (/^-?[\d.,]+$/.test(s) && s.includes(",")) {
-    // Vírgula é o separador decimal; ponto (se houver) é separador de milhar.
     const normalized = s.replace(/\./g, "").replace(",", ".");
     const num = Number(normalized);
     if (Number.isFinite(num)) return num;
@@ -179,17 +141,6 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-// Colunas de data/competência também são preenchidas à mão direto na
-// planilha. Aceita os mesmos formatos que o import por planilha do frontend
-// já entende (ver parseDiariaMes em src/lib/export.js): dd/mm/aaaa,
-// dd-mm-aaaa (e variantes com ano de 2 dígitos), mm/aaaa, aaaa-mm, mm/aa e
-// nome do mês (com ou sem ano) — um campo "competência" que só tem mês vira
-// o dia 1º desse mês. Sem bater com nenhum formato conhecido, devolve null
-// (quem chama mantém o texto original em vez de perder o dado). */
-// Data colada como número serial do Sheets (dias desde 30/12/1899), ex.:
-// "46294" = 29/09/2026 — acontece quando a célula estava formatada como
-// número e depois virou texto. Só aceita a faixa 20000–80000 (1954–2119),
-// para não confundir com outros números.
 function parseSheetsSerial(s: string): string | null {
   if (!/^\d{5}(?:\.\d+)?$/.test(s)) return null;
   const serial = Math.floor(Number(s));
@@ -204,7 +155,6 @@ function parseFlexibleDate(raw: string): string | null {
   const serial = parseSheetsSerial(s);
   if (serial) return serial;
 
-  // dia e mês com 1 ou 2 dígitos ("1/9/2026" também vale).
   let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (m) return `${m[3]}-${pad2(Number(m[2]))}-${pad2(Number(m[1]))}`;
   m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
@@ -216,25 +166,21 @@ function parseFlexibleDate(raw: string): string | null {
     .replace(/[̀-ͯ]/g, "")
     .replace(/\s+/g, " ");
 
-  // mm/aaaa · mm-aaaa · mm.aaaa
   m = text.match(/^(\d{1,2})[\/\-.](\d{4})$/);
   if (m) {
     const mes = Number(m[1]);
     return mes >= 1 && mes <= 12 ? `${m[2]}-${pad2(mes)}-01` : null;
   }
-  // aaaa-mm · aaaa/mm
   m = text.match(/^(\d{4})[\/\-.](\d{1,2})$/);
   if (m) {
     const mes = Number(m[2]);
     return mes >= 1 && mes <= 12 ? `${m[1]}-${pad2(mes)}-01` : null;
   }
-  // mm/aa (assume 20aa)
   m = text.match(/^(\d{1,2})[\/\-.](\d{2})$/);
   if (m) {
     const mes = Number(m[1]);
     return mes >= 1 && mes <= 12 ? `20${m[2]}-${pad2(mes)}-01` : null;
   }
-  // nome do mês, com ou sem ano ("ago", "agosto/26", "agosto de 2026")
   m = text.match(/^([a-z]+)\.?(?:\s*[\/\-.\s]\s*(?:de\s+)?(\d{4}|\d{2}))?$/);
   if (m) {
     const mes = mesPorNome(m[1]);
@@ -246,11 +192,6 @@ function parseFlexibleDate(raw: string): string | null {
   return null;
 }
 
-// Colunas timestamptz (aberta_em/fechada_em das vagas) digitadas à mão chegam
-// como "dd/mm/aaaa" ou "dd/mm/aaaa hh:mm[:ss]" — o dashboard usa
-// slice(0, 10) e new Date() sobre o texto, então fora do ISO a vaga sai do
-// filtro de período e os dias viram NaN (Tempo/Custo de contratação somem).
-// Converte para ISO local; formatos já ISO (ou desconhecidos) passam direto.
 function parseFlexibleTimestamp(raw: string): string | null {
   const serial = parseSheetsSerial(raw.trim());
   if (serial) return serial;
@@ -290,15 +231,7 @@ function fromCellValue(column: ColumnDef | undefined, raw: unknown): unknown {
     const parsed = parseFlexibleDate(String(raw));
     if (parsed) return parsed;
   }
-  // A coluna de estado (estado_sigla) é comparada por igualdade exata em
-  // vários pontos (matchesEstado em services/records.ts) — sem isso, uma
-  // linha digitada à mão como " ro", "Ro" ou "RO " (espaço/caixa diferente do
-  // esperado) simplesmente sumia do estado ao filtrar, mesmo "parecendo"
-  // igual visualmente.
   if (column?.stateRef) return String(raw).trim().toUpperCase();
-  // Datas/timestamps: o Apps Script pode devolver um Date (célula formatada
-  // como data) — nesse caso já chega como string ISO (JSON.stringify de um
-  // Date vira toJSON()). Texto puro passa direto.
   return String(raw);
 }
 
@@ -314,12 +247,6 @@ export function valuesToRow(columns: ColumnDef[], values: unknown[]): SheetRow {
   return row;
 }
 
-// ---------- leitura ----------
-
-// Linhas brutas (sem cabeçalho) das abas pedidas. Pela API do Sheets quando
-// configurada (uma chamada, ~1 s para a planilha toda); se falhar — ou a aba
-// não existir —, cai no "readMany" do Apps Script, que devolve null para a aba
-// inexistente.
 async function readRawSheets(
   env: Bindings,
   names: string[],
@@ -335,9 +262,6 @@ async function readRawSheets(
   return callAppsScript<Record<string, unknown[][] | null>>(env, "readMany", { sheets: names }, clientSignal);
 }
 
-// Sem número de linha: com o headcount repartido no cache (ver cacheGroups.ts)
-// a posição no array não é a da planilha — e ninguém precisa dela, o Code.gs
-// localiza a linha pelo id na hora de atualizar/apagar.
 export type IndexedTable = {
   rows: SheetRow[];
   rowById: Map<string, SheetRow>;
@@ -359,9 +283,6 @@ export async function readTable(
   return indexRawRows(rawRows, columns);
 }
 
-// Lê várias abas numa única chamada ao Apps Script (ação "readMany") — só para
-// as que não estiverem em cache. Devolve, por nome de aba, a tabela indexada
-// — ou null quando a aba não existe.
 export async function readTables(
   env: Bindings,
   requests: { sheetName: string; columns: ColumnDef[] }[],
@@ -370,7 +291,6 @@ export async function readTables(
   const out: Record<string, IndexedTable | null> = {};
   const misses: { sheetName: string; columns: ColumnDef[] }[] = [];
 
-  // Uma única ida à KV para todas as abas pedidas, em vez de uma por aba.
   const cached = await readManyCachedSheets(env, requests.map((r) => r.sheetName));
   for (const request of requests) {
     const entry = cached[request.sheetName];
@@ -395,7 +315,6 @@ export async function readTables(
     toCache[sheetName] = rows;
     out[sheetName] = indexRawRows(rows, columns);
   });
-  // Uma única gravação na KV para todas as abas que vieram certas (ver db/cache.ts).
   if (Object.keys(toCache).length) await writeCachedSheets(env, toCache, fetchedAt);
   return out;
 }
@@ -404,7 +323,7 @@ function indexRawRows(rawRows: unknown[][] | null | undefined, columns: ColumnDe
   const rows: SheetRow[] = [];
   const rowById = new Map<string, SheetRow>();
   (rawRows ?? []).forEach((values) => {
-    if (!values.length) return; // linha em branco no meio da planilha
+    if (!values.length) return;
     const row = valuesToRow(columns, values);
     const id = row.id;
     if (id === null || id === undefined || id === "") return;
@@ -415,13 +334,6 @@ function indexRawRows(rawRows: unknown[][] | null | undefined, columns: ColumnDe
   return { rows, rowById };
 }
 
-// ---------- refresh manual do admin ----------
-
-// Relê todas as abas da planilha e regrava o cache inteiro. A atualização
-// periódica é do Apps Script (pushCache no Code.gs), que grava na KV pela API
-// da Cloudflare — mas uma gravação vinda de fora leva até 60 s para aparecer
-// em todos os servidores da Cloudflare, e o admin veria dado velho logo
-// depois de clicar. Gravando pelo próprio Worker, a leitura seguinte já vê.
 export async function refreshAllSheets(env: Bindings): Promise<{ refreshed: string[]; errors: Record<string, string> }> {
   const names = allSheetNames();
   const fetchedAt = Date.now();
@@ -443,13 +355,6 @@ export async function refreshAllSheets(env: Bindings): Promise<{ refreshed: stri
   return { refreshed, errors };
 }
 
-// ---------- escrita ----------
-
-// `skipInvalidate`: usado por bulkWrite (ver services/records.ts), que chama
-// append+update da MESMA aba em paralelo e depois delete — sem isso, uma
-// chamada só ao endpoint em lote invalidaria (leitura+gravação na KV) a
-// mesma aba até 3 vezes. bulkWrite pede pra pular aqui e invalida 1 vez só,
-// no final, depois que todas as escritas terminaram.
 type WriteOptions = { skipInvalidate?: boolean };
 
 export async function appendRows(
@@ -471,16 +376,9 @@ export async function appendRows(
     }
   }
   if (!done) await callAppsScript(env, "append", { sheet: sheetName, values });
-  // Sem isso, quem lê essa aba continuaria vendo a versão de antes da
-  // gravação até a próxima atualização do cache — a próxima leitura busca de novo.
   if (!options?.skipInvalidate) await invalidateCachedSheet(env, sheetName);
 }
 
-// A linha é resolvida pelo id DENTRO do Code.gs, sob o lock de escrita — não
-// aqui — porque um número de linha calculado antes desta chamada pode já
-// estar desatualizado por outra gravação concorrente na mesma aba.
-// Devolve quantas linhas o Code.gs realmente encontrou e alterou (pode ser
-// menos que `rows.length` se algum id já não existir mais na planilha) —
 // quem chama não deve assumir sucesso total só porque a chamada não lançou.
 export async function updateRows(
   env: Bindings,
@@ -517,8 +415,6 @@ export async function updateRows(
   return updated;
 }
 
-// Mesma ideia de updateRows acima: devolve o total realmente apagado pelo
-// Code.gs, não a quantidade pedida.
 export async function deleteRows(
   env: Bindings,
   sheetName: string,

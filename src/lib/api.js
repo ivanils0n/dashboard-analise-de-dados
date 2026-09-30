@@ -1,14 +1,7 @@
-/* Cliente HTTP da API (Cloudflare Worker → Google Sheets).
-   A URL base vem de VITE_API_URL (ou VITE_API_BASE, por compatibilidade).
-   Lê o JWT direto do sessionStorage (chave gg-auth) para evitar dependência
-   circular com auth.js. */
-
 import { sessionStore } from "./utils";
 
 const AUTH_STORAGE_KEY = "gg-auth";
 
-/* Garante uma URL absoluta. Sem o esquema, o navegador trataria o valor como
-   caminho relativo do domínio atual (ex.: pages.dev/<host-do-worker>/api/...). */
 export function normalizeApiBase(value) {
   let raw = String(value || "").trim();
   if (!raw) return "";
@@ -42,22 +35,14 @@ function readToken() {
   }
 }
 
-/* Sem resposta em 30 s uma gravação (POST etc.) é abortada, para a tela de
-   carregamento não ficar presa. Leituras (GET) ficam sem limite — ver apiFetch. */
 const REQUEST_TIMEOUT_MS = 30000;
 
-/* Registrado pelo auth.js (evita import circular): chamado quando a API
-   responde 401 a uma requisição autenticada — token vencido/revogado no
-   servidor — para encerrar a sessão em vez de deixar o app "logado" com todas
-   as chamadas falhando. */
 let onUnauthorized = null;
 
 export function setUnauthorizedHandler(handler) {
   onUnauthorized = typeof handler === "function" ? handler : null;
 }
 
-/* `timeoutMs: 0` desliga o limite — para chamadas que legitimamente demoram
-   mais que 30 s (ex.: o refresh do cache, que relê a planilha inteira). */
 export async function apiFetch(
   path,
   {
@@ -79,8 +64,6 @@ export async function apiFetch(
   }
 
   const controller = new AbortController();
-  /* Leituras (GET) não têm limite: a 2ª tentativa do Worker à planilha fica
-     ativa até responder — recarregar ou fechar a página cancela a requisição. */
   const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let res;
   try {
@@ -107,12 +90,9 @@ export async function apiFetch(
   try {
     data = await res.json();
   } catch (e) {
-    /* resposta sem corpo */
   }
 
   if (!res.ok) {
-    /* Só encerra a sessão se o token recusado ainda é o da sessão atual — a
-       resposta atrasada de uma sessão anterior não pode derrubar um login novo. */
     if (res.status === 401 && sentToken && readToken() === sentToken && onUnauthorized) {
       onUnauthorized();
     }

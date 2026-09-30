@@ -9,9 +9,6 @@ const state = reactive({
 });
 
 export function useFilters() {
-  /* Troca o estado (RO, AM, PA ou "todos"). Carrega do banco apenas o que
-     ainda não está em memória (priorizando cache + delta) e recalcula os
-     snapshots. Nunca lança erro — a troca de estado nunca deve travar a UI. */
   async function setState(next) {
     const target = next || DEFAULT_STATE;
     state.current = target;

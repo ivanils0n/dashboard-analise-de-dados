@@ -1,6 +1,3 @@
-// Hash de senha no formato já existente no banco:
-// pbkdf2$sha256$<iteracoes>$<salt base64>$<hash base64>
-
 const encoder = new TextEncoder();
 const PBKDF2_ITERATIONS = 100000;
 

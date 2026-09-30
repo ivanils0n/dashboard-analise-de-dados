@@ -9,7 +9,6 @@ import TurnoverSummaryCards from "@/components/dashboard/TurnoverSummaryCards.vu
 import { getIndicatorById } from "@/lib/config";
 import { aggregateByMonth, formatMonthLabel, formatValue } from "@/lib/utils";
 
-/* Tipos cuja soma mensal não faz sentido — usa a média do mês. */
 const AVG_TYPES = ["percent", "days", "months"];
 
 const props = defineProps({
@@ -17,24 +16,15 @@ const props = defineProps({
   entries: { type: Array, default: () => [] },
   pieData: { type: Array, default: () => [] },
   barData: { type: Array, default: () => [] },
-  /* Card "table" (ex.: Retenção): { headcountInicial, headcountFinal,
-     novasContratacoes, retencaoPct }. */
   tableData: { type: Object, default: null },
   showValues: { type: Boolean, default: false },
-  /* Largura total (cards empilhados um abaixo do outro) em vez do card fixo
-     de 280px da faixa horizontal. */
   stacked: { type: Boolean, default: false },
-  /* Só no card de Turnover: quantidades do período ({ admissoes, demissoes,
-     totalPct, entradaPct, saidaPct }) — mostradas ao lado da pizza, com a taxa
-     total no centro. */
   turnoverSummary: { type: Object, default: null },
-  /* Centro da rosca em pizzas que não são o Turnover: { value, caption }. */
   pieCenter: { type: Object, default: null }
 });
 
 const emit = defineEmits(["bar-click", "turnover-detail"]);
 
-/* Taxa total de Turnover no centro da pizza. */
 const centerInfo = computed(() => {
   if (props.turnoverSummary) {
     return { value: formatValue({ type: "percent", decimals: 1 }, props.turnoverSummary.totalPct), caption: "Turnover" };
@@ -42,42 +32,29 @@ const centerInfo = computed(() => {
   return props.pieCenter || { value: "", caption: "" };
 });
 
-/* Clique num card de Admissões/Demissões: a tela hospeda o modal de detalhe.
-   Da tela cheia, fecha o modal do gráfico antes. */
 function onTurnoverDetail(kind) {
   fullscreenOpen.value = false;
   emit("turnover-detail", kind);
 }
 
-/* Clique (esquerdo ou direito) na própria pizza do Turnover: mesmo modal de
-   informações dos cards de Admissões/Demissões — a fatia clicada decide qual
-   (0 = Entrada/Admissões, 1 = Saída/Demissões, ver chartPieData em
-   useDashboardData.js); fora de uma fatia (ex.: buraco central), cai em
-   Admissões. */
 function onTurnoverChartInfo(sliceIndex) {
   onTurnoverDetail(sliceIndex === 1 ? "demissoes-empresas" : "admissoes-empresas");
 }
 
-/* Clique numa fatia: Turnover abre o detalhe; Custo de contratação abre as vagas
-   da filial (o pai trata o "bar-click" com o índice da fatia). */
 function onPieClick(sliceIndex) {
   if (props.turnoverSummary) return onTurnoverChartInfo(sliceIndex);
   if (props.card.id === "custo_contratacao" && sliceIndex != null) {
     fullscreenOpen.value = false;
     emit("bar-click", { index: sliceIndex });
   }
-  /* Headcount por gênero: fatia 0 = Masculino, 1 = Feminino, fora = geral. */
   if (props.card.id === "headcount_genero") {
     fullscreenOpen.value = false;
     emit("bar-click", { index: sliceIndex });
   }
 }
 
-/* Altura do gráfico nos cards empilhados (padrão do BarChart: 288px). */
 const STACKED_HEIGHT_PX = 340;
 
-/* Tela cheia: gráficos de barras usam o modal do próprio BarChart; pizza e
-   Retenção (tabela) abrem o modal deste card. */
 const chartRef = ref(null);
 const fullscreenOpen = ref(false);
 function openFullscreen() {
@@ -90,8 +67,6 @@ let flashTimer = null;
 
 const indicator = computed(() => getIndicatorById(props.card.id) || { id: props.card.id, name: props.card.title });
 
-/* Evolução por indicador: agrega os lançamentos por mês para o gráfico de
-   barras (soma para contagens/valores, média para percentuais e prazos). */
 const monthlyBarData = computed(() => {
   if (props.card.kind !== "line") return [];
   const method = AVG_TYPES.includes(indicator.value.type) ? "avg" : "sum";
@@ -114,8 +89,6 @@ onMounted(() => {
   flashTimer = setTimeout(() => (flash.value = false), 1800);
 });
 
-/* O card é remontado a cada troca de filtro/estado; sem isto o timer
-   continuava vivo e escrevia num componente já desmontado. */
 onBeforeUnmount(() => clearTimeout(flashTimer));
 </script>
 

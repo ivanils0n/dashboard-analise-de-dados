@@ -22,19 +22,6 @@ import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
 import { uniqueEmployeeCount } from "@/lib/metrics";
 
-/* Modal genérico de registros de um indicador manual. Cada coluna descreve
-   como ler a célula a partir do lançamento:
-     { label, meta }              texto de entry.meta[meta]
-     { label, meta, money }       valor monetário de entry.meta[meta]
-     { label, meta, hours }       horas de entry.meta[meta]
-     { label, meta, percent }     percentual de entry.meta[meta]
-     { label, period: [a, b] }    período a–b em entry.meta
-     { label, date }              data do lançamento
-     { label, month }             competência mês/ano do lançamento (ex.: ago/26)
-     { label, monthYear }         competência com ano completo (ex.: ago/2026)
-     { label, value }             valor do lançamento formatado pelo indicador
-*/
-
 const props = defineProps({
   open: { type: Boolean, default: false },
   indicatorId: { type: String, required: true },
@@ -51,13 +38,7 @@ const canEdit = canEditData();
 
 const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: props.indicatorId });
 
-/* Sem filtro de data manual aqui — segue sempre o mês selecionado no filtro
-   global do dashboard (DateRangeFilter), sem opção de sobrepor dentro do
-   modal. */
 const form = reactive({
-  /* Segue o filtro de estado do dashboard, inclusive "Todos Estados": antes
-     "todos" abria em RO e o "Total no filtro" deixava AM e PA de fora — o
-     total não batia com o do dashboard. */
   estado: filters.current,
   filial: "todos",
   search: ""
@@ -81,12 +62,6 @@ function clearFilters() {
   form.search = "";
 }
 
-/* Sigla da filial do lançamento — lida direto do próprio registro, sem
-   depender do cadastro de Filiais (evita "sumir" do filtro por causa de
-   texto digitado à mão, filial renomeada/excluída ou estado divergente no
-   cadastro). Usa meta.shortName quando existe (ex.: Custos Totais); senão a
-   primeira palavra de meta.filial, que segue o padrão "SIGLA Nome da
-   filial" (Diárias e Treinamento). */
 function entryFilialKey(entry) {
   const m = entry.meta || {};
   if (m.shortName) return normalizeText(m.shortName).trim();
@@ -101,13 +76,10 @@ function entryFilialLabel(entry) {
   return text.split(/\s+/)[0] || "";
 }
 
-/* Rótulo do mês selecionado no filtro global do dashboard. */
 const selectedMonthLabel = computed(() => {
   const ym = singleMonthOfRange(dateFilter.start, dateFilter.end);
   return ym ? ymLabel(ym) : "";
 });
-
-/* ---------- Células ---------- */
 
 function meta(entry, key) {
   return entry && entry.meta ? entry.meta[key] : undefined;
@@ -118,7 +90,6 @@ function hoursLabel(value) {
   return formatHoursClock(Number(value));
 }
 
-/* Competência com ano completo ("ago/2026"). */
 function monthYearText(entry) {
   const ym = String(entry.date || "").slice(0, 7);
   return ym ? ymLabel(ym).toLowerCase() : "—";
@@ -170,10 +141,6 @@ function formatValue(entry) {
   return num.toLocaleString("pt-BR", { maximumFractionDigits: indicator.value.decimals ?? 1 });
 }
 
-/* ---------- Linhas ---------- */
-
-/* Lançamentos filtrados por estado, período (mês do filtro global do
-   dashboard) e busca — ANTES do filtro de filial. */
 function filteredByEstadoPeriodoBusca() {
   let list = getEntriesFor(props.indicatorId, form.estado).slice();
 
@@ -191,9 +158,6 @@ function filteredByEstadoPeriodoBusca() {
   return list;
 }
 
-/* Filiais que de fato aparecem nos lançamentos filtrados (estado, período e
-   busca — nunca a própria filial, senão selecionar uma a faria "sumir" das
-   opções), em ordem alfabética pela sigla. */
 const SEM_FILIAL = "__sem_filial__";
 
 const filialOptions = computed(() => {
@@ -217,8 +181,6 @@ const filialOptions = computed(() => {
 
 const preFilialEntries = computed(() => filteredByEstadoPeriodoBusca());
 
-/* Se a filial selecionada deixar de aparecer nas opções (filtros mudaram),
-   volta para "Todas". */
 watch(filialOptions, (opts) => {
   if (form.filial !== "todos" && !opts.some((f) => f.key === form.filial)) {
     form.filial = "todos";
@@ -241,11 +203,8 @@ const rows = computed(() => {
   return list;
 });
 
-/* Soma dos valores exibidos (só faz sentido para indicadores monetários). */
 const totalValue = computed(() => rows.value.reduce((sum, e) => sum + (Number(e.value) || 0), 0));
 
-/* Quantidade de colaboradores distintos nos registros exibidos (só quando o
-   indicador tem coluna de colaborador, ex.: Diárias e Treinamento). */
 const hasEmployeeColumn = computed(() => props.columns.some((c) => c.meta === "employeeName"));
 const employeeCount = computed(() => uniqueEmployeeCount(rows.value));
 
@@ -261,7 +220,6 @@ async function removeRow(entry) {
   toast("Registro excluído.");
 }
 
-/* ---------- Seleção múltipla / exclusão em lote ---------- */
 const selectedIds = ref(new Set());
 
 const selectedRows = computed(() => rows.value.filter((e) => selectedIds.value.has(e.id)));
@@ -300,7 +258,6 @@ async function handleBulkDelete() {
   toast(`${n} registro(s) excluído(s).`);
 }
 
-/* Pede ao pai para abrir o modal de edição do registro. */
 function editRow(entry) {
   emit("edit", { indicatorId: props.indicatorId, entry });
 }
@@ -309,10 +266,6 @@ function close() {
   emit("close");
 }
 
-/* ---------- Barra de rolagem horizontal fixa (acompanha a tabela) ----------
-   A tabela rola na vertical dentro do card; uma barra horizontal separada,
-   logo abaixo da área rolável, fica sempre visível e sincroniza o scrollLeft
-   com a tabela (nos dois sentidos). */
 const tableWrapRef = ref(null);
 const tableElRef = ref(null);
 const hScrollRef = ref(null);

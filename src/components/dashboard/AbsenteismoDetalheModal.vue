@@ -6,15 +6,10 @@ import { FLAGS, motivoOf } from "@/lib/absenteismo";
 import { exportOcorrencias } from "@/lib/export";
 import { formatDate } from "@/lib/utils";
 
-/* Lista das ocorrências de absenteísmo por trás de um número do modal de análise
-   (fatia da pizza, barra, filial, colaborador...). O total daqui é sempre o do
-   gráfico clicado (mesma fonte: as ocorrências já calculadas na análise). */
 const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: "Ocorrências" },
   subtitle: { type: String, default: "" },
-  /* Ocorrências já achatadas: { date, colaborador, setor, filial, estado, motivo,
-     advertencia, acidente, observacao, dias } */
   rows: { type: Array, default: () => [] }
 });
 const emit = defineEmits(["close"]);

@@ -1,16 +1,12 @@
 <script setup>
 import { computed } from "vue";
 
-/* Filtro de status (todas/abertas/fechadas) do gráfico de Tempo médio de
-   contratação — controle segmentado com indicador deslizante (mesma linguagem
-   do seletor Visão Geral/Painel). Setas ←/→ trocam de opção. */
 const props = defineProps({
   modelValue: { type: String, default: "todas" }
 });
 
 const emit = defineEmits(["update:modelValue"]);
 
-/* `dot`: cor do marcador de status (Todas não tem). */
 const OPTIONS = [
   { value: "todas", label: "Todas", dot: "" },
   { value: "abertas", label: "Abertas", dot: "bg-emerald-500" },
@@ -35,7 +31,6 @@ function onKeydown(e) {
     role="tablist"
     aria-label="Filtro por status da vaga"
   >
-    <!-- Indicador deslizante -->
     <span
       class="status-thumb pointer-events-none absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-lg bg-white shadow-sm ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700"
       :style="{ transform: `translateX(${activeIndex * 100}%)` }"

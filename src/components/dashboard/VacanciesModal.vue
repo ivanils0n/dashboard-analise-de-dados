@@ -15,14 +15,7 @@ import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /* KPI de origem. Nos dois casos segue sempre o mês selecionado no filtro
-     global do dashboard, sem opção de sobrepor aqui, com a mesma regra do
-     KPI/gráfico:
-       tempo_contratacao  vagas abertas no mês (data de abertura)
-       custo_contratacao  vagas fechadas com salário no mês (data de fechamento) */
   indicatorId: { type: String, default: "tempo_contratacao" },
-  /* Filial já selecionada ao abrir (clique numa barra do gráfico de custo de
-     contratação); "__sem_filial__" = vagas sem filial. */
   initialFilial: { type: String, default: null }
 });
 const emit = defineEmits(["close", "edit"]);
@@ -49,10 +42,6 @@ const form = reactive({
 const periodFrom = computed(() => dateFilter.start);
 const periodTo = computed(() => dateFilter.end);
 
-/* `immediate: true`: sem isso, o estado inicial do formulário nunca disparava
-   o hydrate (só uma troca depois de aberto) — se o filtro do dashboard não
-   tivesse carregado esse(s) estado(s) ainda, a tabela abria vazia até o
-   usuário trocar o filtro de Estado manualmente. */
 let firstEstadoRun = true;
 watch(
   () => form.estado,
@@ -85,19 +74,14 @@ function tipoLabel(t) {
   return t ? String(t).toUpperCase() : "—";
 }
 
-/* Data usada no filtro de mês: fechamento no Custo de contratação (o custo
-   é reconhecido quando a vaga fecha), abertura no Tempo de contratação. */
 function periodDate(v) {
   const raw = isCost.value ? v && v.closeAt : v && v.openAt;
   return raw ? String(raw).slice(0, 10) : "";
 }
 
-/* Lista base (estado + período + busca), ANTES dos filtros de filial e de
-   status. É a raiz tanto da tabela quanto da lista de filiais do dropdown. */
 const scopedList = computed(() => {
   let list = listVacancies(form.estado);
 
-  /* Custo: só vagas fechadas com salário, como o KPI e o gráfico. */
   if (isCost.value) list = list.filter((v) => v.closeAt && Number(v.salario) > 0);
 
   if (periodFrom.value) list = list.filter((v) => periodDate(v) >= periodFrom.value);
@@ -117,8 +101,6 @@ const scopedList = computed(() => {
 const SEM_FILIAL = "__sem_filial__";
 const SEM_RECRUTADOR = "__sem_recrutador__";
 
-/* + filtro de filial e de recrutador (mantém o mesmo escopo usado antes para
-   os contadores de abertas/fechadas, que não consideram o filtro de status). */
 const baseList = computed(() => {
   let list = scopedList.value;
   if (form.filial !== "todos") {
@@ -136,11 +118,8 @@ const baseList = computed(() => {
   return list;
 });
 
-/* Soma dos salários das vagas exibidas (Custo de contratação): mês e estado
-   filtrados, mais filial e busca se aplicados. */
 const totalSalarios = computed(() => baseList.value.reduce((sum, v) => sum + (Number(v.salario) || 0), 0));
 
-/* Custo médio de contratação das vagas exibidas (só as com salário). */
 const custoMedio = computed(() => {
   const withSalary = baseList.value.filter((v) => Number(v.salario) > 0);
   return withSalary.length ? withSalary.reduce((s, v) => s + Number(v.salario), 0) / withSalary.length : null;
@@ -149,9 +128,6 @@ const custoMedio = computed(() => {
 const openCount = computed(() => baseList.value.filter((v) => !v.closeAt).length);
 const closedCount = computed(() => baseList.value.filter((v) => v.closeAt).length);
 
-/* Base para as opções de filial/recrutador: escopo + status, sem aplicar o
-   próprio filtro de filial nem o de recrutador (senão escolher um valor
-   faria as opções dos dois dropdowns encolherem/sumirem). */
 const statusFilteredList = computed(() => {
   let list = scopedList.value;
   if (form.status === "abertas") list = list.filter((v) => !v.closeAt);
@@ -159,10 +135,6 @@ const statusFilteredList = computed(() => {
   return list;
 });
 
-/* Filiais que de fato aparecem na tabela (estado, período, busca, status e
-   recrutador — mas não a própria filial, senão selecionar uma a faria sumir
-   da lista), em ordem alfabética. "Filial" é texto livre digitado na vaga
-   (sem FK pra Filiais, como recrutador). */
 const filialOptions = computed(() => {
   let list = statusFilteredList.value;
   if (form.recrutador !== "todos") {
@@ -187,8 +159,6 @@ const filialOptions = computed(() => {
   return opts;
 });
 
-/* Recrutadores que de fato aparecem na tabela, mesma regra da filialOptions
-   acima (mas cruzando com o filtro de filial em vez do de recrutador). */
 const recrutadorOptions = computed(() => {
   let list = statusFilteredList.value;
   if (form.filial !== "todos") {
@@ -213,8 +183,6 @@ const recrutadorOptions = computed(() => {
   return opts;
 });
 
-/* Se a filial/recrutador selecionado deixar de aparecer nas opções (filtros
-   mudaram), volta para "Todas". */
 watch(filialOptions, (opts) => {
   if (form.filial !== "todos" && !opts.some((b) => b.id === form.filial)) {
     form.filial = "todos";
@@ -232,7 +200,6 @@ const rows = computed(() => {
   return baseList.value;
 });
 
-/* ---------- Seleção múltipla / exclusão em lote ---------- */
 const selectedIds = ref(new Set());
 
 const selectedRows = computed(() => rows.value.filter((v) => selectedIds.value.has(v.id)));
@@ -267,7 +234,6 @@ async function handleBulkDelete() {
   selectedIds.value = new Set();
 }
 
-/* Limpa a seleção quando os filtros mudam (evita IDs fora da visão). */
 watch(
   () => [form.estado, periodFrom.value, periodTo.value, form.search, form.status, form.recrutador],
   () => {
@@ -279,10 +245,6 @@ function close() {
   emit("close");
 }
 
-/* ---------- Barra de rolagem horizontal fixa (acompanha a tabela) ----------
-   A tabela rola na vertical dentro do card; uma barra horizontal separada,
-   logo abaixo da área rolável, fica sempre visível e sincroniza o scrollLeft
-   com a tabela (nos dois sentidos). */
 const tableWrapRef = ref(null);
 const tableElRef = ref(null);
 const hScrollRef = ref(null);
@@ -340,7 +302,6 @@ watch(rows, () => nextTick(updateTableWidths));
     @close="close"
   >
     <div class="flex flex-col gap-3">
-      <!-- Resumo -->
       <div class="grid gap-3 sm:grid-cols-2">
         <div v-if="!isCost" class="rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Vagas abertas</span>
@@ -362,7 +323,6 @@ watch(rows, () => nextTick(updateTableWidths));
 
       <HiringGoalsLegend v-if="!isCost" size="md" class="-mt-1" />
 
-      <!-- Filtros -->
       <div class="rounded-xl border border-zinc-200 px-3 py-3 dark:border-zinc-800">
         <div class="flex flex-col gap-3">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -412,7 +372,6 @@ watch(rows, () => nextTick(updateTableWidths));
         </div>
       </div>
 
-      <!-- Seleção em lote -->
       <div
         v-if="canEdit && selectedRows.length"
         class="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
@@ -429,7 +388,6 @@ watch(rows, () => nextTick(updateTableWidths));
         </button>
       </div>
 
-      <!-- Tabela -->
       <div v-if="rows.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div
           ref="tableWrapRef"

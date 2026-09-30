@@ -1,6 +1,4 @@
 <script setup>
-/* Alterna o gráfico de Rescisões entre barras por função e pizza por estado.
-   v-model: "funcao" | "estado". */
 defineProps({
   modelValue: { type: String, default: "funcao" }
 });

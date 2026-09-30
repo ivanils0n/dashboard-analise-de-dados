@@ -65,9 +65,6 @@ function applyColumn(
 
   const value = coerceValue(column, raw);
   if (column.values) {
-    // Comparação sem diferenciar maiúsculas/minúsculas — dado antigo digitado
-    // à mão direto na planilha (ex.: "CLT") não pode travar uma edição que
-    // nem mexeu nesse campo. Grava sempre o valor canônico da lista.
     const needle = String(value).toLowerCase();
     const match = column.values.find((v) => v.toLowerCase() === needle);
     if (!match) {
@@ -83,8 +80,6 @@ function applyColumn(
   target[column.name] = value;
 }
 
-// Usado no endpoint em lote: aceita só os campos enviados, sem exigir os
-// obrigatórios (o registro normalmente já existe).
 export function buildUpsertPayload(
   entity: EntityDef,
   body: Record<string, unknown>,

@@ -57,8 +57,6 @@ const { confirm } = useDialog();
 
 const dashboard = useDashboardData(dateFilter);
 
-/* Retornos desestruturados como bindings de topo (o template desembrulha
-   automaticamente refs de topo; um ref aninhado em objeto não é desembrulhado). */
 const {
   kpis,
   selectedKpiId,
@@ -71,13 +69,7 @@ const {
   formatDate
 } = dashboard;
 
-/* Modal de edição de lançamentos (vaga ou registro de Diárias, Treinamento,
-   Custos e indicadores mensais). Só edita o que já existe — a entrada de dados
-   nova é feita pela planilha. */
 const launchOpen = ref(false);
-/* KPI selecionado no Painel antes de abrir a edição vinda de lá (ex.: editar
-   vaga a partir do gráfico de Tempo médio de contratação) — restaurado em
-   onSaved para não jogar o Painel de volta ao Panorama atual. */
 const preEditSelectedKpiId = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
@@ -87,10 +79,8 @@ const custosEntriesOpen = ref(false);
 const absenteismoAnaliseOpen = ref(false);
 const vacanciesOpen = ref(false);
 const vacancyIndicatorId = ref("tempo_contratacao");
-/* Filial pré-selecionada no modal de Vagas (clique numa barra do custo). */
 const vacancyInitialFilial = ref(null);
 
-/* Fatia "OUTRAS" da pizza de custo: modal com as filiais agrupadas nela. */
 const outrasFiliaisOpen = ref(false);
 const outrasFiliaisItems = ref([]);
 
@@ -108,14 +98,11 @@ function onCustoFilial(filial) {
 }
 const permanenciaOpen = ref(false);
 
-/* Modal ao clicar em uma barra do gráfico de Treinamento (por filial). */
 const treinamentoFilialOpen = ref(false);
 const treinamentoFilialLabel = ref("");
 const treinamentoFilialRows = ref([]);
 const treinamentoModalTitle = ref("");
 
-/* Barra do gráfico Regional Treinamentos: mesmo card, com os treinamentos do
-   gerente regional (e a coluna Filial). */
 function onRegionalBarClick({ label }) {
   if (!label) return;
   treinamentoModalTitle.value = `Regional Treinamentos — ${label}`;
@@ -131,9 +118,6 @@ function onTreinamentoBarClick({ label }) {
   treinamentoFilialOpen.value = true;
 }
 
-/* Modal ao clicar em uma barra do gráfico de Headcount (uma por estado) —
-   lista os colaboradores do estado da barra no mês filtrado. */
-/* Detalhe de Admissões/Demissões do Turnover (cards ao lado da pizza). */
 const turnoverDetailOpen = ref(false);
 const turnoverDetailKind = ref("admissoes");
 
@@ -142,14 +126,10 @@ function openTurnoverDetail(kind) {
   turnoverDetailOpen.value = true;
 }
 
-/* Análise de Turnover em tela cheia (botão direito no KPI de Turnover). */
 const turnoverAnaliseOpen = ref(false);
 
-/* Tour guiado pela dashboard (botão "i" ao lado de "Ocultar valores"). */
 const tourOpen = ref(false);
 
-/* Análise de Headcount em tela cheia (botão direito no KPI de Headcount); de
-   lá, "Ver colaboradores"/clique na pizza abre a lista abaixo por cima. */
 const headcountAnaliseOpen = ref(false);
 
 function onHeadcountAnaliseColaboradores({ genero, estado }) {
@@ -164,14 +144,11 @@ const headcountGenero = ref("");
 
 function onHeadcountBarClick({ label, datasetIndex }) {
   if (!label) return;
-  /* Séries do gráfico: 0 = Masculino, 1 = Feminino, 2 = Total (geral). */
   headcountGenero.value = ["masculino", "feminino"][datasetIndex] || "";
   headcountEstadoSigla.value = label;
   headcountEstadoOpen.value = true;
 }
 
-/* Modal ao clicar em uma barra do gráfico de Custo médio da diária geral (um
-   colaborador por barra) — mostra os dados e as diárias do colaborador. */
 const diariaColabOpen = ref(false);
 const diariaColabName = ref("");
 const diariaColabRows = ref([]);
@@ -183,8 +160,6 @@ function onDiariaBarClick({ label }) {
   diariaColabOpen.value = true;
 }
 
-/* Modal ao clicar em uma barra do gráfico de Tempo médio de contratação
-   (uma barra por vaga) — mostra os dados da vaga, com opção de editar. */
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
 const vacancyDetailFallback = ref(null);
@@ -197,10 +172,6 @@ function onHiringBarClick({ index }) {
   vacancyDetailOpen.value = true;
 }
 
-/* Clique numa barra do gráfico de Custo médio de contratação (uma barra por
-   vaga): abre o mesmo detalhe da vaga do gráfico de Tempo médio de contratação. */
-/* Botão direito na barra: vai direto para a edição da vaga, sem passar pelo
-   modal de detalhe (mesmo destino do botão "Editar" de lá). */
 function onHiringBarContext({ index }) {
   const row = hiringBarData.value[index];
   if (!row || !row.vacancyId) return;
@@ -226,13 +197,8 @@ function onKpiCardBarClick({ card, pieData }, { index, label, datasetIndex }) {
   if (row && row.key) onCustoFilial(row.key);
 }
 
-/* Modal ao clicar em uma barra do gráfico de Tempo médio de permanência
-   (um colaborador desligado por barra) — mostra os dados do registro, com
-   opção de editar/excluir. */
 const permanenciaDetailOpen = ref(false);
 const permanenciaDetailId = ref(null);
-/* Quando preenchido, o modal de Tempo médio de permanência abre já no
-   formulário de edição desse registro (ver PermanenciaModal). */
 const permanenciaEditId = ref(null);
 
 function onPermanenciaBarClick({ index }) {
@@ -242,8 +208,6 @@ function onPermanenciaBarClick({ index }) {
   permanenciaDetailOpen.value = true;
 }
 
-/* Botão direito na barra: vai direto para a edição do registro, sem passar
-   pelo modal de detalhe (mesmo destino do botão "Editar" de lá). */
 function onPermanenciaBarContext({ index }) {
   const row = permanenciaBarData.value[index];
   if (!row || !row.permanenciaId) return;
@@ -264,9 +228,6 @@ function onPermanenciaEdit(recordId) {
   permanenciaOpen.value = true;
 }
 
-/* Filtro de status (abertas/fechadas) do gráfico de Tempo médio de
-   contratação. Os gráficos seguem o filtro de estado da aba (StateFilter, no
-   TopBar). */
 const hiringStatusFilter = ref("fechadas");
 const menuOpen = ref(false);
 const kpiSearch = ref("");
@@ -283,16 +244,11 @@ const treinamentoBarChartRef = ref(null);
 const regionalBarChartRef = ref(null);
 const regionalChartRef = ref(null);
 
-/* Clique direito no KPI Regional Treinamentos: card com cada regional e seus
-   treinamentos (lista calculada ao abrir). */
 const regionalModalOpen = ref(false);
 const regionalGroups = ref([]);
 const hiringBarChartRef = ref(null);
 const permanenciaBarChartRef = ref(null);
 
-/* Colunas exibidas no modal de registros (clique direito no KPI). Regional
-   passou a vir do próprio estado do lançamento (estado_sigla → meta.estado,
-   ver diariaToRow em lib/db.js) em vez do texto lançado à mão. */
 const diariaColumns = [
   { label: "Mês", monthYear: true },
   { label: "Colaborador", meta: "employeeName" },
@@ -310,8 +266,6 @@ const treinamentoColumns = [
   { label: "Gerente regional", meta: "gerenteRegional" },
   { label: "Estado", meta: "estado" },
   { label: "Tema do treinamento", meta: "tema" },
-  /* `value` (não meta.cargaHoraria): é o que o KPI, os gráficos e os modais
-     somam — a cópia em meta podia divergir em lançamentos editados antes. */
   { label: "Carga horária", value: true },
   { label: "Modalidade", meta: "modalidade" }
 ];
@@ -327,17 +281,9 @@ const custosColumns = [
 
 const scrollRef = ref(null);
 
-/* Gráficos por indicador: os que dividem a linha (2 por linha) vêm primeiro,
-   na ordem em que aparecem; os demais seguem em largura total. */
-/* Grade de 3 colunas: [Headcount | Turnover | Mapa-filtro] e depois
-   [Absenteísmo | Custo médio de contratação | Retenção]. Os demais gráficos
-   ocupam a largura toda. */
 const CHART_ORDER = ["headcount", "turnover", "absenteismo", "custo_contratacao", "retencao"];
-/* Grade de 12 colunas: Turnover e Custo de contratação mais largos (5), e o
-   mapa-filtro e a Retenção estreitos (3). */
 function chartSpan(id) {
   if (id === "turnover") return "lg:col-span-5";
-  /* Linha 2: Headcount Gênero, Custo médio de contratação e Retenção, do mesmo tamanho. */
   if (id === "headcount_genero" || id === "custo_contratacao" || id === "retencao") return "lg:col-span-4";
   return CHART_ORDER.includes(id) ? "lg:col-span-4" : "lg:col-span-12";
 }
@@ -349,37 +295,24 @@ const orderedKpiChartCards = computed(() => {
 let flashTimer = null;
 
 const canEdit = canEditData();
-// Só o admin recarrega dados: é ele quem força a atualização do cache do
-// Worker (ver handleReload) — analistas não têm mais esse botão.
 const canRefreshCache = isAdmin();
 
-/* Busca na área de indicadores: filtra os cards pelo nome/descrição
-   (ignorando maiúsculas/minúsculas e acentos). */
 const visibleKpis = computed(() => {
   const q = normalizeText(kpiSearch.value).trim();
   if (!q) return kpis.value;
   return kpis.value.filter((k) => normalizeText(`${k.name} ${k.desc || ""}`).includes(q));
 });
 
-/* Dados do gráfico de barras dos Custos Totais em largura total. */
 const custosBarData = computed(() => dashboard.custosBarByFilial());
 
-/* Dados do gráfico de barras de Treinamento (carga horária por filial). */
 const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
 
-/* Horas de treinamento por gerente regional (ao lado do gráfico por filial). */
 const regionalBarData = computed(() => dashboard.cockpitChartFor("horas_regional").data);
 
-/* Dados do gráfico de barras de Tempo médio de contratação (uma barra por
-   vaga aberta no período) — mesmo gráfico que já existia na faixa "Evolução
-   por indicador", agora com seção própria abaixo de Treinamento. */
 const hiringBarData = computed(() => dashboard.vacanciesBarByOpen(hiringStatusFilter.value));
 const permanenciaBarData = computed(() => dashboard.turnoverTenureBarByEmployee());
 
-/* Rescisões por função: "total" (rescisão + GRRF/consig + 40%) ou "liquido"
-   (só o valor da rescisão). */
 const rescisaoMode = ref("total");
-/* Filtros de filial e gerente imediato ("" = todos). */
 const rescisaoFilial = ref("");
 const rescisaoGerente = ref("");
 const rescisaoOptions = computed(() => dashboard.rescisoesFilterOptions());
@@ -389,7 +322,6 @@ watch(rescisaoOptions, (opts) => {
   if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
 });
 const rescisoesBarData = computed(() => dashboard.rescisoesBarByFuncao(rescisaoMode.value, rescisaoFilters.value));
-/* Visualização: barras por função ou pizza por estado. */
 const rescisaoView = ref("funcao");
 const rescisoesPieData = computed(() => dashboard.rescisoesPieByEstado(rescisaoMode.value, rescisaoFilters.value));
 const rescisaoPorEstado = ref(false);
@@ -423,9 +355,6 @@ function onRescisaoBarClick({ label }) {
 const rescisoesChartRef = ref(null);
 const rescisoesBarChartRef = ref(null);
 
-/* Entradas da linha do gráfico "Evolução no período". Absenteísmo, diárias e
-   treinamento usam a série agregada por dia (total do dia, sem visão
-   individual); os demais indicadores usam os lançamentos do período. */
 function lineEntries(card) {
   if (card.kind !== "line") return [];
   const ind = getIndicatorById(card.id);
@@ -433,8 +362,6 @@ function lineEntries(card) {
   return filteredEntries(ind);
 }
 
-/* Gráfico de barras por estado do Headcount (demais indicadores têm gráfico
-   próprio fora da faixa "Evolução por indicador"). */
 function chartBarData(card) {
   if (card.kind !== "bar") return [];
   if (card.id === "headcount") return dashboard.headcountBarByState();
@@ -449,10 +376,6 @@ function chartTableData(card) {
   return null;
 }
 
-/* Dados de cada gráfico por indicador, calculados uma única vez por mudança
-   nos dados/filtros. Antes eram chamados direto no template e geravam arrays
-   novos a cada re-render da tela (ex.: ao digitar na busca de indicadores),
-   o que fazia todos os gráficos serem redesenhados sem necessidade. */
 const kpiChartViews = computed(() =>
   orderedKpiChartCards.value.map((card) => ({
     card,
@@ -471,17 +394,12 @@ const kpiChartViews = computed(() =>
         : card.id === "custo_contratacao"
           ? dashboard.custoContratacaoPieCenter()
           : null,
-    /* Turnover: quantidades de admissões/demissões e taxa total (centro da pizza). */
     turnoverSummary: card.id === "turnover" ? dashboard.cockpitChartFor("turnover").summary : null,
     barData: chartBarData(card),
     tableData: chartTableData(card)
   }))
 );
 
-/* Custo médio por colaborador não entra na grade "por indicador": fica ao lado
-   do gráfico de Custo de folha de salário (mesma linha, mais abaixo). */
-/* Headcount por gênero (pizza Masculino x Feminino, nos filtros atuais): ocupa
-   na grade o lugar do Absenteísmo, que foi para a linha do Custo de folha. */
 const generoChartView = computed(() => {
   const chart = dashboard.cockpitChartFor("headcount", undefined, undefined, undefined, [], [], "pie");
   return {
@@ -505,8 +423,6 @@ const gridChartViews = computed(() =>
     .filter((v) => v.card.id !== "ticket_medio")
     .map((v) => (v.card.id === "absenteismo" ? generoChartView.value : v))
 );
-/* Absenteísmo (ao lado do Custo médio por colaborador): a mesma pizza do Painel —
-   total de cada ocorrência no período e estado filtrados, total no centro. */
 const absenteismoChartView = computed(() => {
   const view = kpiChartViews.value.find((v) => v.card.id === "absenteismo");
   if (!view) return null;
@@ -524,32 +440,20 @@ const ticketChartView = computed(() => kpiChartViews.value.find((v) => v.card.id
 const ticketChartRef = ref(null);
 const absenteismoChartRef = ref(null);
 
-/* % do faturamento (Custo médio por colaborador ÷ faturamento médio × 100):
-   KPI ao lado do gráfico de Custo de folha de salário, com o botão do
-   faturamento (especulativo) no cabeçalho dele. null sem faturamento. */
 const custosFaturamento = computed(() => dashboard.ticketMedioFaturamento());
 
-/* Mapa-filtro ao lado do gráfico de Turnover (sem valores): RO, AM e PA com o
-   filtro em "todos"; só o estado escolhido nos demais casos. */
 const estadoFiltroMapa = computed(() => {
   void filters.revision;
   const ufs = !filters.current || filters.current === "todos" ? STATES : [filters.current];
   return ufs.map((uf) => ({ uf, text: "", sub: "", filled: true }));
 });
 
-/* "Recarregar dados": força o Worker a buscar tudo de novo na planilha e
-   reescrever o cache (reseta a contagem dos 5 min a partir de agora — ver
-   services/cache.ts no backend), depois baixa o cache local com o resultado. */
 const reloading = ref(false);
 async function handleReload() {
   if (reloading.value) return;
   reloading.value = true;
-  /* Aviso fixo (não some sozinho) enquanto a planilha é relida; trocado pelo
-     resultado ao terminar. */
   const loadingToast = toast("Atualizando dados, aguarde...", "loading");
   try {
-    // Sem limite de tempo: reler a planilha inteira pode passar de 30 s
-    // quando o Apps Script está lento (ele repete a leitura sozinho).
     await apiFetch("/api/cache/refresh", { method: "POST", timeoutMs: 0 });
     await reloadData();
     syncAll();
@@ -571,8 +475,6 @@ function closeLaunch() {
   editVacancyTarget.value = null;
 }
 
-/* Editar uma vaga (botão "Editar" do detalhe/lista ou botão direito na barra
-   do gráfico de contratação). */
 function onVacancyEdit(vacancyId) {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -585,7 +487,6 @@ function onVacancyEdit(vacancyId) {
   launchOpen.value = true;
 }
 
-/* Editar um registro vindo do modal de registros (botão direito no KPI). */
 function onEntriesEdit({ indicatorId, entry }) {
   if (!canEdit) {
     toast("Seu perfil tem acesso somente leitura.");
@@ -601,8 +502,6 @@ function onEntriesEdit({ indicatorId, entry }) {
 }
 
 function onSaved() {
-  /* Salvar uma edição aberta a partir de um KPI/gráfico já selecionado (ex.:
-     Painel) mantém a mesma seleção. */
   dashboard.selectKpi(preEditSelectedKpiId.value);
   preEditSelectedKpiId.value = null;
 }
@@ -652,17 +551,6 @@ function onSelectKpi(id) {
   });
 }
 
-/* Clique direito em um KPI abre o modal correspondente:
-   Headcount → card de informações (colaboradores do mês e estado filtrados,
-   mesmo modal do clique numa barra do gráfico de Headcount — ver
-   HeadcountEstadoModal.vue); Retenção → colaboradores do mês filtrado (aba
-   Histórico do Lançamento), pois vem do próprio quadro do Headcount e não
-   tem lançamento manual próprio; Diárias, Treinamento e Custos Totais →
-   registros; Absenteísmo → histórico do lançamento mensal; Turnover → modal
-   de informações (Admissões/Demissões — mesmo destino do clique na pizza do
-   gráfico de Turnover, ver onTurnoverChartInfo em KpiChartCard.vue); Tempo de
-   permanência → modal próprio (importação por planilha de
-   colaborador/admissão/demissão). */
 function onKpiContext(id) {
   if (id === "headcount") {
     headcountAnaliseOpen.value = true;
@@ -684,15 +572,12 @@ function onKpiContext(id) {
     vacancyInitialFilial.value = null;
     vacanciesOpen.value = true;
   } else if (id === "custo_contratacao") {
-    /* O custo de contratação vem do salário das vagas fechadas no mês
-       filtrado (mesma regra do KPI e do gráfico). */
     vacancyIndicatorId.value = "custo_contratacao";
     vacancyInitialFilial.value = null;
     vacanciesOpen.value = true;
   }
 }
 
-/* Rola a página até o gráfico do indicador e o destaca. */
 function scrollToKpiChart(indicatorId) {
   const scroll = scrollRef.value;
   if (!scroll) return;
@@ -718,10 +603,6 @@ onUnmounted(() => {
   clearTimeout(flashTimer);
 });
 
-/* Ao abrir a aba (inclusive ao voltar de outra, já que o KeepAlive não
-   remonta o componente) garante que o estado do filtro esteja em memória.
-   hydrateState só mostra a tela de carregamento quando realmente há algo a
-   baixar — antes ela piscava a cada visita mesmo com tudo já carregado. */
 onActivated(() => {
   warmApi();
   hydrateState(filters.current).catch(() => {});
@@ -731,7 +612,6 @@ onDeactivated(() => {
   sidebarHidden.value = false;
 });
 
-/* No Painel a sidebar fica oculta para dar mais espaço aos gráficos. */
 watch(activeTab, (tab) => {
   sidebarHidden.value = tab === "cockpit";
 });
@@ -739,7 +619,6 @@ watch(activeTab, (tab) => {
 
 <template>
   <div>
-    <!-- ===== HERO ===== -->
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6 sm:gap-4">
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-100">Gente &amp; Gestão</h1>
@@ -760,8 +639,6 @@ watch(activeTab, (tab) => {
         </button>
       </div>
 
-      <!-- Números-resumo do gráfico central do Painel (Teleport do CockpitPanel),
-           no meio da linha, entre o título e o filtro de mês. -->
       <div
         v-if="activeTab === 'cockpit'"
         id="cockpit-kpi-slot"
@@ -769,7 +646,6 @@ watch(activeTab, (tab) => {
       ></div>
 
       <div class="flex w-full flex-wrap items-center justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
-        <!-- Tour guiado pela dashboard (à esquerda de "Ocultar valores"). -->
         <button
           type="button"
           data-tour="tour-button"
@@ -824,7 +700,6 @@ watch(activeTab, (tab) => {
       </div>
     </div>
 
-    <!-- ===== VISÃO GERAL / COCKPIT (com animação de arrasto lateral) ===== -->
     <transition :name="tabDirection === 1 ? 'slide-left' : 'slide-right'" mode="out-in">
     <CockpitPanel
       v-if="activeTab === 'cockpit'"
@@ -839,7 +714,6 @@ watch(activeTab, (tab) => {
 
     <div v-else key="visao-geral">
 
-    <!-- ===== KPIs ===== -->
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
       <input
@@ -869,37 +743,6 @@ watch(activeTab, (tab) => {
       </p>
     </section>
 
-    <!-- ===== EVOLUÇÃO POR INDICADOR (desativado: faixa horizontal) =====
-    <section class="mt-8">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Evolução por indicador</h2>
-          <p class="text-xs text-zinc-400 dark:text-zinc-400">Clique em um indicador acima para ir até o gráfico correspondente.</p>
-        </div>
-        <button type="button" class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800" @click="toggleShowValues">
-          {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
-        </button>
-      </div>
-      <div
-        ref="scrollRef"
-        class="flex gap-4 overflow-x-auto pb-2"
-      >
-        <KpiChartCard
-          v-for="card in kpiChartCards"
-          :key="card.id"
-          :card="card"
-          :entries="lineEntries(card)"
-          :pie-data="card.kind === 'pie' ? chartPieData(card.id) : []"
-          :bar-data="chartBarData(card)"
-          :table-data="chartTableData(card)"
-          :show-values="showValues"
-          :data-indicator-card="card.id"
-        />
-      </div>
-    </section>
-    ===== FIM EVOLUÇÃO POR INDICADOR (desativado) ===== -->
-
-    <!-- ===== GRÁFICOS POR INDICADOR (um abaixo do outro) ===== -->
     <div class="mt-8 flex justify-end">
       <button type="button" data-tour="hide-values" class="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800" @click="toggleShowValues">
         {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
@@ -922,7 +765,6 @@ watch(activeTab, (tab) => {
           @turnover-detail="openTurnoverDetail"
           @bar-click="onKpiCardBarClick(view, $event)"
         />
-        <!-- Mapa dos estados ao lado do Turnover: só filtro, sem valores. -->
         <UfMapCard
           v-if="view.card.id === 'turnover'"
           class="lg:col-span-3"
@@ -934,42 +776,8 @@ watch(activeTab, (tab) => {
       </template>
     </div>
 
-    <!-- ===== PANORAMA ATUAL + CUSTOS TOTAIS ===== -->
     <div class="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,0.75fr)]">
-      <!-- ===== PANORAMA ATUAL (desativado) =====
-      <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div class="mb-4 flex items-start justify-between gap-2">
-          <div>
-            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Panorama atual</h2>
-            <span class="text-xs text-zinc-400 dark:text-zinc-400">Último valor por indicador</span>
-          </div>
-          <button
-            type="button"
-            class="icon-btn-sm"
-            title="Tela cheia"
-            aria-label="Ver gráfico Panorama atual em tela cheia"
-            @click="panoramaChartRef?.openFullscreen()"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-            </svg>
-          </button>
-        </div>
-        <BarChart
-          ref="panoramaChartRef"
-          :data="panorama"
-          :show-values="showValues"
-          :show-trend="false"
-          title="Panorama atual"
-          subtitle="Último valor por indicador"
-        />
-      </section>
-      ===== FIM PANORAMA ATUAL (desativado) ===== -->
 
-      <!-- ===== CUSTOS TOTAIS — EVOLUÇÃO DOS INDICADORES ===== -->
       <section
         ref="custosChartRef"
         class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
@@ -1017,7 +825,6 @@ watch(activeTab, (tab) => {
         </div>
       </section>
 
-      <!-- ===== CUSTO MÉDIO POR COLABORADOR (ao lado do Custo de folha de salário) ===== -->
       <div v-if="ticketChartView" ref="ticketChartRef" class="min-w-0">
         <KpiChartCard
           stacked
@@ -1030,7 +837,6 @@ watch(activeTab, (tab) => {
         />
       </div>
 
-      <!-- ===== ABSENTEÍSMO (ao lado do Custo médio por colaborador) ===== -->
       <div v-if="absenteismoChartView" ref="absenteismoChartRef" class="min-w-0">
         <KpiChartCard
           stacked
@@ -1044,7 +850,6 @@ watch(activeTab, (tab) => {
       </div>
     </div>
 
-    <!-- ===== TREINAMENTO — CARGA HORÁRIA POR FILIAL ===== -->
     <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
     <section
       ref="treinamentoChartRef"
@@ -1096,7 +901,6 @@ watch(activeTab, (tab) => {
       </div>
     </section>
 
-    <!-- ===== REGIONAL TREINAMENTOS (ao lado direito do gráfico por filial) ===== -->
     <section ref="regionalChartRef" class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div class="mb-4 flex items-start justify-between gap-2">
         <div class="min-w-0">
@@ -1142,7 +946,6 @@ watch(activeTab, (tab) => {
     </section>
     </div>
 
-    <!-- ===== TEMPO MÉDIO DE CONTRATAÇÃO ===== -->
     <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
     <section
       ref="hiringChartRef"
@@ -1198,7 +1001,6 @@ watch(activeTab, (tab) => {
       <HiringGoalsLegend size="md" class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800" />
     </section>
 
-    <!-- ===== TEMPO MÉDIO DE PERMANÊNCIA (ao lado direito do Tempo médio de contratação) ===== -->
     <section class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div class="mb-4 grid grid-cols-1 items-center gap-2 sm:grid-cols-3">
         <div>
@@ -1247,7 +1049,6 @@ watch(activeTab, (tab) => {
     </section>
     </div>
 
-    <!-- ===== RESCISÕES (por função; alterna entre líquido e total) ===== -->
     <div class="mt-8">
     <section
       ref="rescisoesChartRef"
@@ -1469,7 +1270,6 @@ watch(activeTab, (tab) => {
 </template>
 
 <style scoped>
-/* Animação de "arrasto" lateral ao trocar entre Visão Geral e Painel. */
 .slide-left-enter-active,
 .slide-left-leave-active,
 .slide-right-enter-active,

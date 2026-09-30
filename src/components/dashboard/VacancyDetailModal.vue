@@ -9,16 +9,9 @@ import { canEditData } from "@/lib/auth";
 import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 
-/* Detalhe de uma vaga clicada na barra do gráfico de Tempo médio de
-   contratação (Visão geral e Painel) — mostra os dados da vaga e, quando o
-   perfil permite, botões para editá-la (abre o mesmo formulário de
-   lançamento usado pelo modal de Vagas, aba "Vaga") ou excluí-la. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   vacancyId: { type: String, default: null },
-  /* Dados do ponto clicado no gráfico de Custo médio de contratação
-     ({ name, salario, date }): mostrados, com o aviso "Falta de informações
-     suficientes", quando a vaga (ex.: em aberto) não é encontrada. */
   fallback: { type: Object, default: null }
 });
 

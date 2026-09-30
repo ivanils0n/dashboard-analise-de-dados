@@ -4,10 +4,6 @@ import Modal from "@/components/ui/Modal.vue";
 import { faturamento, setFaturamento, clearFaturamento } from "@/composables/useFaturamento";
 import { formatCurrency, maskCurrencyInput, normalizeCurrencyInput, parseCurrencyBR } from "@/lib/utils";
 
-/* Botão do cabeçalho do gráfico de Custo de folha de salário para informar o
-   faturamento da empresa (especulativo) — usado no KPI "% do faturamento".
-   `compact`: mostra o valor abreviado (ex.: "R$ 1,5 mi") para caber em
-   cabeçalhos estreitos; o valor completo fica no tooltip. */
 const props = defineProps({
   compact: { type: Boolean, default: false }
 });
@@ -23,7 +19,6 @@ function label(value) {
 }
 
 const open = ref(false);
-/* Texto do campo, já com a máscara brasileira (ex.: "1.500.000,00"). */
 const draft = ref("");
 
 function openModal() {

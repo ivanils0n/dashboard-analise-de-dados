@@ -1,24 +1,15 @@
-/* Gráficos Chart.js (linha, barras e pizza). As funções recebem as entradas
-   já filtradas pela UI; o plugin valueLabels desenha os números quando
-   options.plugins.valueLabels.display = true. */
 import { Chart, registerables } from "chart.js";
 import { formatValue, formatAxisValue, formatShortDate, formatCurrency } from "./utils";
 
 Chart.register(...registerables);
 
-/* Animações mais curtas e redimensionamento com debounce: o padrão do
-   Chart.js (1 s de animação a cada atualização, resize a cada pixel) deixava a
-   troca de filtros e a rolagem da página pesadas — o dashboard tem mais de dez
-   gráficos que reagem ao mesmo filtro. */
 const REDUCED_MOTION =
   typeof window !== "undefined" &&
   window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 Chart.defaults.animation.duration = REDUCED_MOTION ? 0 : 500;
 Chart.defaults.animation.easing = "easeOutQuart";
-/* Hover/tooltip respondem rápido (não seguem a animação longa de entrada). */
 Chart.defaults.transitions.active.animation.duration = REDUCED_MOTION ? 0 : 180;
-/* Resize (rolagem, troca de aba) nunca anima: evita "gráfico pulando". */
 Chart.defaults.transitions.resize.animation.duration = 0;
 Chart.defaults.resizeDelay = 120;
 
@@ -39,32 +30,17 @@ export function chartPalette() {
 
 export const ACCENT = "#E8AF3E";
 export const ACCENT_HOVER = "#B7791F";
-/* Cor neutra da segunda fatia da pizza — legível em temas claro e escuro. */
 export const PIE_SECONDARY = "#94a3b8";
-/* Cores das fatias da pizza: as duas primeiras são as do Turnover (Entrada/
-   Saída); as demais só entram em pizzas com mais de duas fatias (ex.: uma
-   fatia por estado). */
 const PIE_COLORS = [ACCENT, PIE_SECONDARY, "#b45309", "#64748b", "#f2c766", "#0f766e", "#7c3aed", "#0284c7", "#65a30d", "#db2777"];
 
-/* Transformação de escala (raiz quadrada) aplicada às barras: comprime a
-   altura de valores muito grandes em relação aos pequenos, evitando que
-   um ou dois itens (ex.: uma filial com custo muito acima das demais)
-   dominem visualmente o gráfico e apaguem as outras barras. Preserva a
-   ordem e o zero — só a altura desenhada muda; rótulos e tooltips sempre
-   mostram o valor real (ver chart.__realBarValues). */
 function scaleTransform(v) {
   const n = Number(v) || 0;
   return Math.sign(n) * Math.sqrt(Math.abs(n));
 }
 
-/* ---------- Rótulos externos da pizza ----------
-   Nos gráficos de pizza/rosca grandes, os valores ficam FORA da fatia, ligados a
-   ela por uma linha, com fonte proporcional ao tamanho do gráfico. Gráficos
-   pequenos (cards compactos, altura < PIE_OUTSIDE_MIN_HEIGHT) mantêm o valor
-   dentro da fatia: não há espaço para reservar a margem dos rótulos. */
 const PIE_OUTSIDE_MIN_HEIGHT = 200;
-/* Altura estimada da legenda (embaixo) que divide a área do gráfico com a pizza. */
 const PIE_LEGEND_ESTIMATE = 44;
+const PIE_LAYOUT_PADDING = 18;
 
 function isPieChart(chart) {
   return chart.config.type === "doughnut" || chart.config.type === "pie";
@@ -80,16 +56,11 @@ function pieLabelsOutside(chart) {
   return isPieChart(chart) && (chart.height || 0) >= PIE_OUTSIDE_MIN_HEIGHT;
 }
 
-/* Tamanho da fonte dos valores: cresce com o gráfico (14–22px). */
 function pieLabelFontSize(chart) {
   const size = Math.min(chart.width || 0, chart.height || 0);
   return Math.max(14, Math.min(20, Math.round(size / 18)));
 }
 
-/* Encolhe o raio da pizza para sobrar margem, dentro da própria área do
-   gráfico, para a linha e o número de cada fatia (e não colidir com a legenda).
-   O raio é uma opção do dataset: precisa ir para a config crua, não para o
-   proxy `chart.options`. */
 function reservePieLabelSpace(chart) {
   if (!isPieChart(chart)) return;
   const raw = chart.config.options;
@@ -100,11 +71,9 @@ function reservePieLabelSpace(chart) {
   const fs = pieLabelFontSize(chart);
   const w = chart.width || 0;
   const h = Math.max(0, (chart.height || 0) - PIE_LEGEND_ESTIMATE);
-  const half = Math.min(w, h) / 2;
-  if (!half) return;
-  /* Vertical: linha + meia altura do texto. Horizontal: linha (~1,8 fs) +
-     texto (~5 caracteres, ex.: "12,5%", ~3,2 fs) + folga. */
-  const r = Math.min(h / 2 - fs * 1.8, w / 2 - fs * 5);
+  const half = Math.min(w, h) / 2 - PIE_LAYOUT_PADDING;
+  if (half <= 0) return;
+  const r = Math.min(h / 2 - fs * 1.8, w / 2 - fs * 4.4);
   const pct = Math.max(0.3, Math.min(1, r / half));
   raw.radius = `${Math.round(pct * 100)}%`;
 }
@@ -115,22 +84,16 @@ const valueLabelsPlugin = {
     try {
       reservePieLabelSpace(chart);
     } catch (err) {
-      /* Nunca deixar um erro de layout quebrar o app */
     }
   },
   afterDatasetsDraw(chart) {
     try {
       drawValueLabels(chart);
     } catch (err) {
-      /* Nunca deixar um erro de desenho quebrar o app */
     }
   }
 };
 
-/* Registrado globalmente ANTES dos plugins de linha (média/tendência) para que
-   essas linhas sejam desenhadas por cima dos rótulos de valor. O registro
-   global vale para todos os gráficos — não repetir em `plugins: []` na
-   criação de cada um. */
 Chart.register(valueLabelsPlugin);
 
 function drawValueLabels(chart) {
@@ -143,11 +106,7 @@ function drawValueLabels(chart) {
   const p = chartPalette();
   const compact = local.compact !== undefined ? local.compact : opts.compact;
   const isPie = chart.config.type === "doughnut" || chart.config.type === "pie";
-  /* Checa antes de `ctx.save()`: o retorno antecipado abaixo deixava o
-     contexto salvo sem restaurar. */
   if (isPie && (!chart.getDatasetMeta(0) || !chart.data.datasets[0])) return;
-  /* Pizza de contagem (ex.: Headcount por gênero): 2ª linha com a porcentagem
-     da fatia sobre o total, abaixo da quantidade. */
   const pieTotal = isPie ? (chart.data.datasets[0].data || []).reduce((a, b) => a + (Number(b) || 0), 0) : 0;
   const pieSub = (val) =>
     chart.__pieShowPercent && pieTotal > 0 ? formatPiePercent((Number(val) / pieTotal) * 100) : "";
@@ -173,13 +132,11 @@ function drawValueLabels(chart) {
       const sin = Math.sin(mid);
 
       if (!outside) {
-        /* Gráfico pequeno: valor dentro da fatia. */
         const r = (prop.outerRadius + prop.innerRadius) / 2;
         ctx.fillStyle = ds.backgroundColor[i] === PIE_SECONDARY ? "#1f2937" : "#ffffff";
         ctx.textBaseline = "middle";
         const sub = pieSub(val);
         if (sub) {
-          /* Quantidade em cima, porcentagem (menor) logo abaixo. */
           ctx.fillText(label(val), prop.x + cos * r, prop.y + sin * r - 7);
           ctx.font = "600 10px Inter, sans-serif";
           ctx.fillText(sub, prop.x + cos * r, prop.y + sin * r + 7);
@@ -190,11 +147,8 @@ function drawValueLabels(chart) {
         return;
       }
 
-      /* Fatia sem tamanho (valor 0): não há para onde apontar a linha. */
       if (prop.endAngle - prop.startAngle < 0.01) return;
 
-      /* Linha: sai da borda da fatia, dobra num "cotovelo" e segue na
-         horizontal até o número, que fica ao lado (esquerda ou direita). */
       const right = cos >= 0;
       const sx = prop.x + cos * (prop.outerRadius - 2);
       const sy = prop.y + sin * (prop.outerRadius - 2);
@@ -241,18 +195,10 @@ function drawValueLabels(chart) {
       const total = meta.data.length;
       let lastX = -Infinity;
       meta.data.forEach((el, i) => {
-        /* Barras com transformação de escala: o dataset guarda o valor
-           transformado (altura desenhada), mas o rótulo sempre mostra o
-           valor real. */
         const val = isBar && di === 0 && realBarValues ? realBarValues[i] : ds.data[i];
         if (val == null) return;
-        /* Em gráficos compactos (mini sparklines) evita sobrepor rótulos,
-           mas sempre desenha o último ponto. */
         if (compact && i !== total - 1 && el.x - lastX < 24) return;
         const offset = isBar ? 5 : compact ? 4 : 9;
-        /* Barras deitadas (indexAxis "y"): o número fica na ponta da barra
-           (à direita). Com a linha de tendência ligada, sai à direita também
-           do ponto dela, para a linha não riscar o número. */
         if (isBar && chart.options.indexAxis === "y") {
           let tipX = el.x;
           const trend = chart.__trendLine;
@@ -281,15 +227,12 @@ function drawValueLabels(chart) {
   ctx.restore();
 }
 
-/* Linha tracejada da média do período (usada p/ Tempo médio de contratação).
-   updateLineChart define chart.__meanLine = { value, label }. */
 const meanLinePlugin = {
   id: "meanLine",
   afterDatasetsDraw(chart) {
     try {
       drawMeanLine(chart);
     } catch (err) {
-      /* Nunca deixar um erro de desenho quebrar o app */
     }
   }
 };
@@ -324,8 +267,6 @@ function drawMeanLine(chart) {
 
 Chart.register(meanLinePlugin);
 
-/* Linha de tendência — média móvel de 2 períodos (MM2) sobre os pontos do
-   gráfico de barras. updateBarChart define chart.__trendLine = [valores]. */
 export const TREND_COLOR = "#3b82f6";
 const trendLinePlugin = {
   id: "trendLine",
@@ -333,7 +274,6 @@ const trendLinePlugin = {
     try {
       drawTrendLine(chart);
     } catch (err) {
-      /* Nunca deixar um erro de desenho quebrar o app */
     }
   }
 };
@@ -342,43 +282,77 @@ function drawTrendLine(chart) {
   const t = chart.__trendLine;
   if (!t || !Array.isArray(t.data) || !t.data.length) return;
   const meta = chart.getDatasetMeta(0);
-  /* Barras deitadas (indexAxis "y"): o valor corre no eixo X e a categoria
-     fica na altura da barra. */
   const horizontal = chart.options.indexAxis === "y";
   const valueScale = chart.scales && (horizontal ? chart.scales.x : chart.scales.y);
   if (!meta || !valueScale) return;
+
+  const progress = chart.__trendProgress === undefined ? 1 : chart.__trendProgress;
+  if (progress <= 0) return;
 
   const { ctx } = chart;
   ctx.save();
   ctx.strokeStyle = TREND_COLOR;
   ctx.lineWidth = 2;
   ctx.setLineDash([]);
-  ctx.beginPath();
-  let started = false;
   const points = [];
   t.data.forEach((val, i) => {
     const el = meta.data[i];
     if (!el || val === null || val === undefined || isNaN(Number(val))) return;
     const pos = valueScale.getPixelForValue(Number(val));
-    const x = horizontal ? pos : el.x;
-    const y = horizontal ? el.y : pos;
-    points.push({ x, y });
-    if (!started) {
-      ctx.moveTo(x, y);
-      started = true;
-    } else {
-      ctx.lineTo(x, y);
+    points.push({ x: horizontal ? pos : el.x, y: horizontal ? el.y : pos });
+  });
+
+  const reach = progress * (points.length - 1);
+  const visible = [];
+  points.forEach((pt, i) => {
+    if (i <= reach) {
+      visible.push(pt);
+    } else if (i - 1 <= reach && visible.length) {
+      const prev = points[i - 1];
+      const f = reach - (i - 1);
+      visible.push({ x: prev.x + (pt.x - prev.x) * f, y: prev.y + (pt.y - prev.y) * f, partial: true });
     }
   });
-  if (started) ctx.stroke();
+
+  ctx.beginPath();
+  visible.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+  if (visible.length > 1) ctx.stroke();
 
   ctx.fillStyle = TREND_COLOR;
-  points.forEach((pt) => {
+  visible.forEach((pt) => {
+    if (pt.partial) return;
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
     ctx.fill();
   });
   ctx.restore();
+}
+
+export function animateTrendLine(chart, { delay = 700, duration = 1500 } = {}) {
+  cancelTrendAnimation(chart);
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    chart.__trendProgress = undefined;
+    return;
+  }
+  chart.__trendProgress = 0;
+  let start = null;
+  const step = (now) => {
+    if (!chart.ctx) return;
+    if (start === null) start = now;
+    const raw = Math.min(1, Math.max(0, (now - start) / duration));
+    chart.__trendProgress = 1 - Math.pow(1 - raw, 3);
+    chart.draw();
+    if (raw < 1) chart.__trendRaf = requestAnimationFrame(step);
+    else chart.__trendProgress = undefined;
+  };
+  chart.__trendTimer = setTimeout(() => {
+    chart.__trendRaf = requestAnimationFrame(step);
+  }, delay);
+}
+
+export function cancelTrendAnimation(chart) {
+  clearTimeout(chart.__trendTimer);
+  cancelAnimationFrame(chart.__trendRaf);
 }
 
 Chart.register(trendLinePlugin);
@@ -428,8 +402,14 @@ export function createPieChart(canvas) {
       responsive: true,
       maintainAspectRatio: false,
       cutout: "58%",
-      /* Folga para a fatia em hover (hoverOffset) não ser cortada pelo canvas. */
-      layout: { padding: 18 },
+      layout: { padding: PIE_LAYOUT_PADDING },
+      animations: {
+        x: { duration: 0 },
+        y: { duration: 0 },
+        innerRadius: { duration: 0 },
+        outerRadius: { duration: 0 },
+        offset: { duration: 150 }
+      },
       plugins: {
         valueLabels: { display: false },
         legend: {
@@ -443,9 +423,6 @@ export function createPieChart(canvas) {
           padding: 12,
           cornerRadius: 8,
           callbacks: {
-            /* Turnover: cada fatia já é uma taxa (%), não uma contagem —
-               formata com 1 casa decimal e o sufixo "%". Outras pizzas trocam
-               o formato via setPieFormat (ex.: moeda). */
             label: (context) => {
               const base = ` ${context.label}: ${(context.chart.__pieFormatter || formatPiePercent)(context.raw)}`;
               if (!context.chart.__pieShowPercent) return base;
@@ -465,7 +442,6 @@ export function formatPiePercent(value) {
   return num.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 }
 
-/* Contagem inteira (ex.: colaboradores por gênero). */
 export function formatPieCount(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "—";
@@ -476,8 +452,6 @@ export function formatPieCurrency(value) {
   return Number.isFinite(num) ? formatCurrency(num) : "—";
 }
 
-/* Formato dos valores da pizza (tooltip e rótulos): "percent" (padrão) ou
-   "currency". Os rótulos usam o formatter passado em setShowValues. */
 export function pieFormatter(format) {
   if (format === "count") return formatPieCount;
   return format === "currency" ? formatPieCurrency : formatPiePercent;
@@ -489,13 +463,11 @@ export function setPieFormat(chart, format) {
   chart.__pieShowPercent = format === "count";
 }
 
-/* data: [{ label, value, color? }] */
 export function updatePieChart(chart, data) {
   if (!chart || !data) return;
   chart.data.labels = data.map((d) => d.label);
   const ds = chart.data.datasets[0];
   ds.data = data.map((d) => d.value);
-  /* `color` opcional por fatia (ex.: gênero); senão a paleta padrão. */
   ds.backgroundColor = data.map((d, i) => d.color || PIE_COLORS[i % PIE_COLORS.length]);
   chart.update();
 }
@@ -573,7 +545,6 @@ export function updateLineChart(chart, indicator, entries) {
   const labels = entries.map((e) => formatShortDate(e.date));
   const values = entries.map((e) => e.value);
 
-  /* Tempo médio de contratação: destaca a média do período em dias. */
   if (indicator && indicator.id === "tempo_contratacao") {
     const valid = values.filter((v) => !isNaN(Number(v)));
     const mean = valid.length
@@ -617,16 +588,12 @@ export function updateLineChart(chart, indicator, entries) {
   chart.update();
 }
 
-/* Linha sobre categorias (uma por item, ex.: uma vaga por ponto) — mesmo
-   formato de dados do gráfico de barras (ver updateBarChart). */
 export function createSeriesLineChart(canvas) {
   const chart = createLineChart(canvas);
   chart.options.interaction = { mode: "nearest", intersect: true };
   return chart;
 }
 
-/* rows: [{ label, value, tooltipValue? }]. options: { formatter } formata o
-   eixo Y. Só a linha: valores e nomes aparecem no tooltip ao passar o mouse. */
 export function updateSeriesLineChart(chart, rows, options = {}) {
   if (!chart || !rows) return;
   const p = chartPalette();
@@ -638,7 +605,6 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
   chart.options.scales = {
     x: {
       grid: { display: false },
-      /* Sem nomes embaixo: a função aparece no tooltip ao passar o mouse. */
       ticks: { display: false }
     },
     y: {
@@ -683,16 +649,8 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
   chart.update();
 }
 
-/* Entrada escalonada das barras: cada barra começa um pouco depois da anterior,
-   em vez de todas surgirem de uma vez. O intervalo encolhe com a quantidade de
-   barras para a entrada inteira nunca passar de BAR_STAGGER_TOTAL_MS (gráficos
-   com dezenas de vagas/colaboradores não ficam esperando). Só vale para
-   atualização de dados — resize, hover e troca de tema não atrasam. */
 const BAR_ANIMATION_MS = REDUCED_MOTION ? 0 : 550;
 const BAR_STAGGER_MAX_MS = 70;
-/* Barra sob o cursor "cresce" (mais larga e mais alta) e se destaca das demais.
-   Plugin próprio: aumenta o retângulo do elemento só durante o desenho, com um
-   progresso 0..1 por barra (suave, ~160 ms) — o hit-test do Chart.js não muda. */
 const BAR_HOVER_GROW_PX = REDUCED_MOTION ? 0 : 8;
 const BAR_HOVER_MS = 160;
 const barHoverGrow = {
@@ -750,8 +708,6 @@ function barStaggerDelay(context) {
   return context.dataIndex * step;
 }
 
-/* options: { horizontal } — barras deitadas (uma categoria por linha, nome à
-   esquerda e barra crescendo para a direita) em vez de colunas em pé. */
 export function createBarChart(canvas, options = {}) {
   const p = chartPalette();
   const horizontal = !!options.horizontal;
@@ -797,7 +753,6 @@ export function createBarChart(canvas, options = {}) {
       animation: { duration: BAR_ANIMATION_MS, easing: "easeOutQuart", delay: barStaggerDelay },
       responsive: true,
       maintainAspectRatio: false,
-      /* Horizontal: folga à direita para o número não ser cortado. */
       layout: { padding: horizontal ? { right: 80 } : { top: 24 } },
       plugins: {
         valueLabels: { display: false },
@@ -816,16 +771,8 @@ export function createBarChart(canvas, options = {}) {
   });
 }
 
-/* panorama: [{ label, value, tooltipValue, format? }] — `format` por item
-   ("currency") controla o rótulo daquela barra.
-   options: { trend?: boolean } — desenha (padrão) ou não a linha de tendência.
-   A formatação global dos rótulos vem de chart.__valueLabels.formatter,
-   definido pelo componente (ver BarChart.vue). */
 const BAR_SERIES_COLORS = ["#0284c7", "#db2777", ACCENT];
 
-/* Barras agrupadas: cada item traz `series: [{ label, value }]` (uma barra por
-   série dentro de cada categoria, com legenda). Valores reais, sem a
-   transformação de escala nem linha de tendência. */
 function updateGroupedBarChart(chart, panorama) {
   const p = chartPalette();
   const names = panorama[0].series.map((s) => s.label);
@@ -872,8 +819,6 @@ export function updateBarChart(chart, panorama, options = {}) {
     p.tooltipValue != null ? p.tooltipValue : p.tooltip
   );
   chart.__valueFormats = panorama.map((p) => p.format || null);
-  /* Valores reais (sem transformação) — usados pelos rótulos, tooltip de
-     fallback e pelo clique na barra. */
   chart.__realBarValues = values;
 
   chart.data = {
@@ -891,14 +836,9 @@ export function updateBarChart(chart, panorama, options = {}) {
   };
 
   chart.options.plugins.tooltip.callbacks = {
-    /* O título do tooltip já é o rótulo (nome do indicador/filial); aqui
-       mostramos apenas o valor real (nunca o transformado). */
     label: (context) => String(tooltips[context.dataIndex] ?? values[context.dataIndex])
   };
 
-  /* Linha de tendência — média móvel de 2 períodos (MM2), calculada sobre os
-     valores reais e depois levada para a mesma escala transformada das
-     barras (senão ficaria desalinhada visualmente). */
   const ma2 = values.map((v, i) => {
     const cur = Number(v) || 0;
     if (i === 0) return cur;
@@ -909,15 +849,11 @@ export function updateBarChart(chart, panorama, options = {}) {
       ? { data: ma2.map(scaleTransform), label: "Tendência (MM2)" }
       : null;
 
-  /* Gráficos de barras não usam a linha de média. */
   chart.__meanLine = null;
 
   chart.update();
 }
 
-/* Texto no centro da rosca (ex.: taxa total de Turnover): valor em destaque e
-   legenda pequena abaixo, no centro real da rosca (não do canvas, que também
-   comporta a legenda). Ativado por chart.__centerText = { value, caption }. */
 const centerTextPlugin = {
   id: "centerText",
   afterDraw(chart) {
@@ -938,7 +874,6 @@ const centerTextPlugin = {
       ctx.textBaseline = "middle";
       ctx.fillStyle = p.text;
       ctx.font = `700 ${valueSize}px ${Chart.defaults.font.family}`;
-      /* Textos longos (ex.: valores em moeda) encolhem para caber no furo. */
       const maxWidth = inner * 1.6;
       const width = ctx.measureText(info.value).width;
       if (width > maxWidth) {
@@ -953,7 +888,6 @@ const centerTextPlugin = {
       }
       ctx.restore();
     } catch (err) {
-      /* Nunca deixar um erro de desenho quebrar o app */
     }
   }
 };

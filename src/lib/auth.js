@@ -1,6 +1,3 @@
-/* Autenticação própria (API → Google Sheets): sessão e perfil em sessionStorage
-   (sem tokens em disco); logout/expiração purgam memória+cache+fila; RBAC por
-   perfil admin/analista/visitante; perfil validado via /api/auth/me. */
 import { reactive } from "vue";
 import { safeSetItem, sessionStore, localStore } from "./utils";
 import { apiFetch, setUnauthorizedHandler } from "./api";
@@ -8,7 +5,7 @@ import { resetLocalState } from "./db";
 import { clearFaturamento } from "@/composables/useFaturamento";
 
 const AUTH_STORAGE_KEY = "gg-auth";
-const AUTH_DURATION_MS = 6 * 60 * 60 * 1000; // 6 horas
+const AUTH_DURATION_MS = 6 * 60 * 60 * 1000;
 
 export const PERFIL_LABELS = {
   admin: "Administrador",
@@ -19,15 +16,9 @@ export const PERFIL_LABELS = {
 export const authState = reactive({
   profile: null,
   loading: true,
-  /* Por que a sessão terminou: "logout" (o usuário saiu) ou "expired" (limite
-     de tempo/token recusado). Permite avisar só a expiração de verdade. */
   endReason: null
 });
 
-/* Nota: a montagem do e-mail a partir do usuário ("ivan" -> "ivan@...") é
-   feita pelo backend (services/auth.ts) — não duplicar aqui. */
-
-// ---------- Sessão (sessionStorage) ----------
 function readSession() {
   try {
     const raw = sessionStore.getItem(AUTH_STORAGE_KEY);
@@ -47,7 +38,6 @@ function clearSession() {
   } catch (e) {}
 }
 
-// Remove resíduos de tokens do supabase-js (sb-*-auth-token) de versões antigas.
 function clearLegacyKeys() {
   const scan = (store) => {
     try {
@@ -67,15 +57,13 @@ function clearLegacyKeys() {
 
 let _expiredHandled = false;
 
-// Revalida o perfil no servidor com TTL (evita chamar a API a cada navegação).
-const PROFILE_CHECK_TTL_MS = 60 * 60 * 1000; // 1 hora
+const PROFILE_CHECK_TTL_MS = 60 * 60 * 1000;
 let _lastProfileCheck = 0;
 
 export function getToken() {
   const data = readSession();
   if (!data || !data.token) return null;
   if (!data.expiresAt || Date.now() > data.expiresAt) {
-    // Sessão vencida: purga completa (memória + cache + timers).
     handleSessionExpired();
     return null;
   }
@@ -103,7 +91,6 @@ export function canEditData() {
   return !!(p && (p.perfil === "admin" || p.perfil === "analista"));
 }
 
-// Carrega o perfil via API e salva na sessão.
 export async function loadProfile() {
   try {
     const data = await apiFetch("/api/auth/me");
@@ -185,7 +172,6 @@ export async function login(identifier, password) {
     const data = response && response.data ? response.data : {};
     const profile = data.user || null;
     saveSession(data.token, profile);
-    // Sessão nova = estado zerado (nada do usuário anterior em memória/cache).
     resetLocalState();
     return { data };
   } catch (err) {
@@ -244,10 +230,8 @@ export function handleSessionExpired() {
   performFullCleanup();
 }
 
-// Token recusado pelo servidor (401): encerra a sessão local imediatamente.
 setUnauthorizedHandler(() => handleSessionExpired());
 
-// Expiração em tempo real (6h): intervalo rastreado e encerrado no logout.
 let _pollTimer = null;
 
 export function startAuthPolling() {

@@ -13,9 +13,6 @@ const router = useRouter();
 const { show: toast } = useToast();
 const loading = useLoading();
 
-/* A sobreposição de carregamento só aparece se a operação demorar: cargas
-   rápidas (dados já em cache, delta pequeno) não precisam piscar uma tela
-   cheia com blur — isso é o que dava a sensação de trava ao navegar. */
 const LOADING_DELAY_MS = 250;
 const showLoading = ref(false);
 let loadingTimer = null;
@@ -34,16 +31,12 @@ watch(
   { immediate: true }
 );
 
-/* Ao abrir a página já autenticado (F5 ou logo após o login, que recarrega a
-   página): avisa o login e/ou que os dados foram carregados. Os dados iniciais
-   já foram baixados antes do app montar (ver bootstrap em main.js). */
 onMounted(() => {
   let justLoggedIn = false;
   try {
     justLoggedIn = sessionStorage.getItem("gg_login_toast") === "1";
     sessionStorage.removeItem("gg_login_toast");
   } catch (e) {
-    /* sessionStorage indisponível */
   }
   if (!isAuthenticated()) return;
   if (justLoggedIn) {
@@ -54,13 +47,10 @@ onMounted(() => {
   }
 });
 
-/* Sessão expirada/encerrada enquanto o usuário está em uma página interna:
-   notifica e volta para o login. */
 watch(
   () => authState.profile,
   (profile) => {
     if (!profile && route.name && route.name !== "login") {
-      /* Só a expiração avisa; quem saiu pelo menu vê "Até a próxima!" (UserMenu). */
       if (authState.endReason === "expired") {
         toast("Tempo limite da sessão atingido. Faça login novamente.", "error");
       }

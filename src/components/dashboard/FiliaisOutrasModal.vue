@@ -2,12 +2,8 @@
 import Modal from "@/components/ui/Modal.vue";
 import { formatCurrency } from "@/lib/utils";
 
-/* Filiais agrupadas na fatia "OUTRAS" da pizza de Custo médio de contratação:
-   filial, quantidade de vagas fechadas e custo médio. Clicar numa linha abre
-   as vagas daquela filial ("select" com a key da filial). */
 defineProps({
   open: { type: Boolean, default: false },
-  /* [{ key, label, count, value }] — value = custo médio. */
   items: { type: Array, default: () => [] }
 });
 const emit = defineEmits(["close", "select"]);

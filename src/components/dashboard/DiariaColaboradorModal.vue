@@ -5,9 +5,6 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import { getIndicatorById } from "@/lib/config";
 import { formatCurrency, ymShortLabel, compareDateDesc } from "@/lib/utils";
 
-/* Detalhe de um colaborador no gráfico de Custo médio da diária geral (clique
-   na barra): dados cadastrais vindos dos próprios lançamentos e as diárias
-   pagas no período filtrado. */
 const props = defineProps({
   open: { type: Boolean, default: false },
   colaborador: { type: String, default: "" },
@@ -24,8 +21,6 @@ const sorted = computed(() =>
 
 const total = computed(() => props.entries.reduce((sum, e) => sum + (Number(e.value) || 0), 0));
 
-/* Primeiro valor preenchido do campo, do lançamento mais recente para o mais
-   antigo. */
 function latest(key) {
   for (const e of sorted.value) {
     const v = e.meta && e.meta[key];

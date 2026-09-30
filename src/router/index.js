@@ -2,9 +2,6 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import { isAuthenticated, ensureProfile } from "@/lib/auth";
 import AppLayout from "@/components/layout/AppLayout.vue";
 
-/* Carregadores das views (lazy). Ficam num único lugar para permitir o
-   pré-carregamento dos chunks logo após o login — a troca de abas fica
-   instantânea, sem baixar o código no momento da navegação. */
 const views = {
   login: () => import("@/views/LoginView.vue"),
   dashboard: () => import("@/views/DashboardView.vue"),
@@ -78,15 +75,12 @@ const routes = [
   }
 ];
 
-/* Baixa antecipadamente os chunks das views durante o tempo ocioso do
-   navegador. Chamado após a montagem do layout interno (usuário logado). */
 export function prefetchRoutes() {
   const run = () => {
     Object.values(views).forEach((load) => {
       try {
         load().catch(() => {});
       } catch (err) {
-        /* noop */
       }
     });
   };
@@ -101,10 +95,6 @@ export function prefetchRoutes() {
 
 const router = createRouter({ history: createWebHashHistory(), routes });
 
-/* Login: sem sessão volta ao dashboard. Rotas internas sem sessão vão ao
-   login (guardando ?redirect). adminOnly/editOnly revalidam o perfil no
-   servidor (ensureProfile) antes de liberar. Segurança de dados = RLS; o
-   guard é apenas UX. */
 router.beforeEach(async (to) => {
   if (to.meta.public) {
     if (isAuthenticated()) return { name: "dashboard" };

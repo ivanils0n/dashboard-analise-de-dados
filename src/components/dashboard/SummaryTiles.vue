@@ -1,10 +1,4 @@
 <script setup>
-/* Faixa de números-resumo de um gráfico (ex.: Total, Colaboradores e Média da
-   diária no Painel). `items`: [{ label, value, accent? }] — `accent` destaca
-   o número principal (cor de destaque e fundo levemente tingido). Os itens
-   formam um único cartão dividido em células, com rótulo pequeno em caixa
-   alta e o valor logo abaixo, alinhados ao centro. `compact`: versão enxuta
-   para a barra superior do Painel (rótulo e valor menores, sem quebra). */
 defineProps({
   items: { type: Array, default: () => [] },
   compact: { type: Boolean, default: false }

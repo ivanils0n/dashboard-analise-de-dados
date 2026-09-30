@@ -4,20 +4,10 @@ import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import TurnoverCostCard from "@/components/dashboard/TurnoverCostCard.vue";
 import { formatValue } from "@/lib/utils";
 
-/* KPIs de Admissões e Demissões ao lado do gráfico de Turnover no Painel, com
-   as quantidades do período e estado filtrados (mesmo estilo dos cards de KPI).
-   `summary`: { admissoes, demissoes, entradaPct, saidaPct } — ver
-   cockpitChartFor em useDashboardData.js.
-   `showCost`: empilha o card de Custo de admissões acima de Admissões (Painel). */
 const props = defineProps({
   summary: { type: Object, required: true },
   showCost: { type: Boolean, default: false },
-  /* false no Painel (CockpitPanel): o gráfico já tem a taxa geral no centro
-     da pizza, então o card "Geral" ficaria redundante ali. */
   showGeral: { type: Boolean, default: true },
-  /* A partir de que largura os cards viram uma coluna vertical de 180px ao lado
-     do gráfico: "md" (padrão) ou "lg". Abaixo disso ficam alinhados numa linha
-     horizontal (ex.: tablet no Painel, com a pizza ocupando a largura toda). */
   verticalFrom: { type: String, default: "md" }
 });
 
@@ -26,7 +16,6 @@ const VERTICAL = {
   lg: "lg:h-full lg:min-h-0 lg:w-[180px] lg:shrink-0 lg:flex-col lg:justify-center lg:[&>*]:min-h-0 lg:[&>*]:flex-auto lg:[&>*]:overflow-hidden"
 };
 
-/* Clique num card: abre o detalhe — id "geral" | "admissoes" | "demissoes". */
 const emit = defineEmits(["select"]);
 
 const PERCENT = { type: "percent", decimals: 1 };
