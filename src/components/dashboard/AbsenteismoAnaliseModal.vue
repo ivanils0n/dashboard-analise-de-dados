@@ -387,7 +387,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
 
         <p class="rounded-lg px-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
           <strong>Como é calculado.</strong> Taxa de absenteísmo = dias de ausência ÷ (ativos × dias úteis) × 100. Dias úteis: segunda a sábado
-          ({{ a.uteis }} em {{ periodo }}). Dias de ausência: Falta, Atestado, Declaração e Acidente de trabalho = 1 dia; Meio período = 0,5;
+          ({{ a.uteis }} em {{ periodo }}). Dias de ausência: Falta, Atestado, Suspensão e Acidente de trabalho = 1 dia;
           Advertência não conta como ausência. Ativos: Headcount de {{ ymLabel(a.headcountRef.ym) }} ({{ nf(a.ativos) }} colaboradores).
         </p>
       </div>

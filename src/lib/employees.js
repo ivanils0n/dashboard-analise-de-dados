@@ -5,14 +5,6 @@ import {
   upsertVacancy,
   deleteVacancy,
   getVacancyById,
-  getTurnovers,
-  upsertTurnover,
-  deleteTurnover,
-  getTurnoverById,
-  getPermanencias,
-  upsertPermanencia,
-  deletePermanencia,
-  getPermanenciaById,
   getRescisoes,
   getHeadcounts,
   upsertHeadcount,
@@ -20,7 +12,7 @@ import {
   getHeadcountById
 } from "./store";
 import { computed, toRaw } from "vue";
-import { createId, nowLocalISO, daysBetween, sameState } from "./utils";
+import { createId, nowLocalISO, daysBetween, sameState, ymLabel, filialDisplay } from "./utils";
 import { flush } from "./db";
 
 function filterByState(list, state) {
@@ -124,6 +116,19 @@ export function branchKeyFor(text, estado) {
   if (!key) return "";
   const b = findBranchByShortName(text, estado);
   return b ? normalizeBranchKey(b.shortName) : key;
+}
+
+const CD_LABEL = /^cd\s*-\s*([a-z]{2})$/i;
+
+export function filialKeyFor(text, estado) {
+  const key = branchKeyFor(text, estado);
+  const uf = String(estado ?? "").trim().toUpperCase();
+  return key === "cd" && uf ? `cd|${uf}` : key;
+}
+
+export function filialKeyOfLabel(label) {
+  const m = CD_LABEL.exec(String(label ?? "").trim());
+  return m ? `cd|${m[1].toUpperCase()}` : branchKeyFor(label);
 }
 
 export function moneyOrNull(value) {
@@ -266,7 +271,7 @@ export function rescisaoAmount(r, mode) {
 export function listRescisoes(state, range, filters) {
   let list = filterByState(getRescisoes(), state);
   if (range) list = list.filter((r) => dateWithinRange(r.mesReferencia, range));
-  if (filters && filters.filial) list = list.filter((r) => r.filial === filters.filial);
+  if (filters && filters.filial) list = list.filter((r) => filialDisplay(r.filial, r.estado) === filters.filial);
   if (filters && filters.gerente) list = list.filter((r) => r.gerenteImediato === filters.gerente);
   return list;
 }
@@ -275,7 +280,7 @@ export function rescisaoFilterOptions(state, range) {
   const filiais = new Set();
   const gerentes = new Set();
   listRescisoes(state, range).forEach((r) => {
-    if (r.filial) filiais.add(r.filial);
+    if (r.filial) filiais.add(filialDisplay(r.filial, r.estado));
     if (r.gerenteImediato) gerentes.add(r.gerenteImediato);
   });
   const sort = (set) => [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -314,12 +319,6 @@ export function rescisoesByEstado(state, range, mode, filters) {
   return [...groups.values()].sort((a, b) => b.value - a.value);
 }
 
-export function listTurnoverEntries(state) {
-  return filterByState(getTurnovers(), state)
-    .slice()
-    .sort((a, b) => String(b.mesReferencia || "").localeCompare(String(a.mesReferencia || "")));
-}
-
 function monthWithinRange(ym, range) {
   if (!ym) return false;
   if (!range) return true;
@@ -339,99 +338,25 @@ export function turnoverQuantitiesInRange(state, range) {
   };
 }
 
-export function addTurnoverEntry({ filial = null, mesReferencia, admitidos = 0, demitidos = 0, ativos = 0, estado }) {
-  const record = {
-    id: createId(),
-    filial: filial || null,
-    mesReferencia: mesReferencia ? String(mesReferencia).slice(0, 7) : null,
-    admitidos: Number(admitidos) || 0,
-    demitidos: Number(demitidos) || 0,
-    ativos: Number(ativos) || 0,
-    estado: estado || null
-  };
-  upsertTurnover(record);
-  return record;
-}
-
-export function updateTurnoverEntry(id, { filial, mesReferencia, admitidos, demitidos, ativos, estado }) {
-  const record = getTurnoverById(id);
-  if (!record) return null;
-  const updated = {
-    ...record,
-    filial: filial !== undefined ? filial || null : record.filial,
-    mesReferencia:
-      mesReferencia !== undefined ? (mesReferencia ? String(mesReferencia).slice(0, 7) : null) : record.mesReferencia,
-    admitidos: admitidos !== undefined ? Number(admitidos) || 0 : record.admitidos,
-    demitidos: demitidos !== undefined ? Number(demitidos) || 0 : record.demitidos,
-    ativos: ativos !== undefined ? Number(ativos) || 0 : record.ativos,
-    estado: estado !== undefined ? estado || null : record.estado
-  };
-  upsertTurnover(updated);
-  return updated;
-}
-
-export async function deleteTurnoverEntry(id) {
-  deleteTurnover(id);
-  await flush();
-}
-
-export async function deleteTurnoverEntries(ids) {
-  (ids || []).forEach((id) => deleteTurnover(id));
-  await flush();
-}
-
-export function listPermanenciaRecords(state) {
-  return filterByState(getPermanencias(), state)
-    .slice()
-    .sort((a, b) => String(b.dataDemissao || "").localeCompare(String(a.dataDemissao || "")));
+export function permanenciaDesligados(state, range) {
+  return headcountMovements(state, range)
+    .demissoes.filter((h) => h.dataAdmissao && h.dataDesligamento)
+    .map((h) => ({
+      id: h.id,
+      colaborador: h.colaborador,
+      dataAdmissao: String(h.dataAdmissao).slice(0, 10),
+      dataDemissao: String(h.dataDesligamento).slice(0, 10),
+      filial: h.filial || null,
+      estado: h.estado || null,
+      dias: daysBetween(h.dataAdmissao, h.dataDesligamento)
+    }))
+    .filter((p) => p.dias !== null && Number.isFinite(p.dias) && p.dias >= 0);
 }
 
 export function turnoverAvgTenureDays(state, range) {
-  let list = filterByState(getPermanencias(), state).filter((p) => p.dataAdmissao && p.dataDemissao);
-  if (range) list = list.filter((p) => dateWithinRange(p.dataDemissao, range));
-  const days = list
-    .map((p) => daysBetween(p.dataAdmissao, p.dataDemissao))
-    .filter((d) => d !== null && Number.isFinite(d) && d >= 0);
+  const days = permanenciaDesligados(state, range).map((p) => p.dias);
   if (!days.length) return null;
   return days.reduce((sum, d) => sum + d, 0) / days.length;
-}
-
-export function addPermanenciaRecord({ colaborador, dataAdmissao, dataDemissao, filial = null, estado }) {
-  const record = {
-    id: createId(),
-    colaborador: String(colaborador || "").toUpperCase(),
-    dataAdmissao: dataAdmissao || null,
-    dataDemissao: dataDemissao || null,
-    filial: filial || null,
-    estado: estado || null
-  };
-  upsertPermanencia(record);
-  return record;
-}
-
-export function updatePermanenciaRecord(id, { colaborador, dataAdmissao, dataDemissao, filial, estado }) {
-  const record = getPermanenciaById(id);
-  if (!record) return null;
-  const updated = {
-    ...record,
-    colaborador: colaborador !== undefined ? String(colaborador || "").toUpperCase() : record.colaborador,
-    dataAdmissao: dataAdmissao !== undefined ? dataAdmissao || null : record.dataAdmissao,
-    dataDemissao: dataDemissao !== undefined ? dataDemissao || null : record.dataDemissao,
-    filial: filial !== undefined ? filial || null : record.filial,
-    estado: estado !== undefined ? estado || null : record.estado
-  };
-  upsertPermanencia(updated);
-  return updated;
-}
-
-export async function deletePermanenciaRecord(id) {
-  deletePermanencia(id);
-  await flush();
-}
-
-export async function deletePermanenciaRecords(ids) {
-  (ids || []).forEach((id) => deletePermanencia(id));
-  await flush();
 }
 
 const _ymCache = new Map();
@@ -631,10 +556,10 @@ export function headcountFilialOptions(state, empresas = []) {
     const pair = `${estado}\u0000${filial}`;
     if (tried.has(pair)) return;
     tried.add(pair);
-    const key = branchKeyFor(filial, estado);
+    const key = filialKeyFor(filial, estado);
     if (!key || seen.has(key)) return;
     const b = findBranchByShortName(filial, estado);
-    seen.set(key, String((b && b.shortName) || filial).trim().toUpperCase());
+    seen.set(key, filialDisplay(String((b && b.shortName) || filial).trim().toUpperCase(), estado));
   });
   return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
@@ -670,14 +595,14 @@ export function headcountGenderCountInRange(state, range, filiais = [], empresas
     rows = rows.filter((row) => set.has(row.funcao));
   }
   if (filiais.length) {
-    const keys = new Set(filiais.map((f) => branchKeyFor(f)));
+    const keys = new Set(filiais.map((f) => filialKeyOfLabel(f)));
     const memo = new Map();
     rows = rows.filter((row) => {
       const { filial, estado } = row.raw;
       const pair = `${estado}\u0000${filial}`;
       let hit = memo.get(pair);
       if (hit === undefined) {
-        hit = keys.has(branchKeyFor(filial, estado));
+        hit = keys.has(filialKeyFor(filial, estado));
         memo.set(pair, hit);
       }
       return hit;
@@ -791,6 +716,66 @@ export function retentionRate(state, range, prevRange) {
     demissoes,
     retencaoPct
   };
+}
+
+function divergenceReason(c, mes, anterior) {
+  if (c.ini && c.adm) return `Admissão em ${mes}, mas já constava em ${anterior}`;
+  if (c.dem && c.fin) return `Desligamento em ${mes}, mas consta como ativo no mês`;
+  if (c.ini && !c.fin && !c.dem) {
+    return c.noMes
+      ? `Ativo em ${anterior}, mas em ${mes} consta com desligamento fora do mês`
+      : `Ativo em ${anterior}, não aparece em ${mes} e não tem data de desligamento`;
+  }
+  if (c.fin && !c.ini && !c.adm) return `Aparece em ${mes} sem constar em ${anterior} e sem admissão no mês`;
+  if (c.adm && !c.fin && !c.dem) return `Admissão em ${mes}, mas não consta como ativo no mês`;
+  if (c.dem && !c.ini && !c.adm) return `Desligamento em ${mes}, mas não constava como ativo em ${anterior}`;
+  return "Registros inconsistentes entre os meses";
+}
+
+export function retentionDivergences(state, range, prevRange) {
+  const ym = rangeYm(range);
+  const prevYm = rangeYm(prevRange);
+  if (!ym || !prevYm) return [];
+  const inicial = activeRowsOf(state, prevYm);
+  if (!inicial.length) return [];
+
+  const people = new Map();
+  const entry = (h) => {
+    const key = personKey(h);
+    let c = people.get(key);
+    if (!c) {
+      c = { h, ini: 0, fin: 0, adm: 0, dem: 0, noMes: false };
+      people.set(key, c);
+    }
+    return c;
+  };
+  inicial.forEach((row) => { entry(row.raw).ini += 1; });
+  activeRowsOf(state, ym).forEach((row) => { entry(row.raw).fin += 1; });
+  const { admissoes, demissoes } = headcountMovements(state, range);
+  admissoes.forEach((h) => { entry(h).adm += 1; });
+  demissoes.forEach((h) => { entry(h).dem += 1; });
+  monthRowsOf(state, ym).forEach((row) => {
+    const c = people.get(personKey(row.raw));
+    if (c) c.noMes = true;
+  });
+
+  const mes = ymLabel(ym);
+  const anterior = ymLabel(prevYm);
+  const out = [];
+  people.forEach((c, key) => {
+    const delta = c.ini + c.adm - c.dem - c.fin;
+    if (!delta) return;
+    out.push({
+      key,
+      colaborador: c.h.colaborador || "",
+      codigo: c.h.codigo || null,
+      filial: c.h.filial || null,
+      estado: c.h.estado || null,
+      delta,
+      motivo: divergenceReason(c, mes, anterior)
+    });
+  });
+  return out.sort((a, b) => String(a.colaborador).localeCompare(String(b.colaborador), "pt-BR"));
 }
 
 export function turnoverEntriesInRange(state, range) {

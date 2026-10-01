@@ -62,31 +62,6 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
-  turnover: {
-    key: "turnover",
-    label: "Turnover",
-    columns: [
-      { name: "id", type: "text" },
-      { name: "filial", type: "text" },
-      { name: "mes_referencia", type: "date", required: true },
-      { name: "admitidos", type: "number", notNull: true },
-      { name: "demitidos", type: "number", notNull: true },
-      { name: "ativos", type: "number", notNull: true },
-      { name: "estado_sigla", type: "text", stateRef: true }
-    ]
-  },
-  permanencia: {
-    key: "permanencia",
-    label: "Tempo médio de permanência",
-    columns: [
-      { name: "id", type: "text" },
-      { name: "colaborador", type: "text", required: true },
-      { name: "data_admissao", type: "date", required: true },
-      { name: "data_demissao", type: "date", required: true },
-      { name: "filial", type: "text" },
-      { name: "estado_sigla", type: "text", stateRef: true }
-    ]
-  },
   rescisoes: {
     key: "rescisoes",
     label: "Rescisões",
@@ -156,14 +131,32 @@ export const ENTITIES: Record<string, EntityDef> = {
   },
   custo_folha: {
     key: "custo_folha",
-    label: "Custo de folha de salário",
+    label: "Custo de Pessoal",
     columns: [
       { name: "id", type: "text" },
-      { name: "filial_cnpj", type: "text", required: true },
-      { name: "razao_social", type: "text", required: true },
-      { name: "percent", type: "number" },
-      { name: "competencia", type: "date", required: true },
-      { name: "valor", type: "number", notNull: true, required: true },
+      { name: "codigo", type: "text" },
+      { name: "nome", type: "text", required: true },
+      { name: "banco", type: "text" },
+      { name: "valor_total", type: "number", notNull: true, required: true },
+      { name: "data_pagto", type: "date" },
+      { name: "empresa", type: "text" },
+      { name: "filial", type: "text" },
+      { name: "mes_referente", type: "date", required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  ferias: {
+    key: "ferias",
+    label: "Férias",
+    columns: [
+      { name: "id", type: "text" },
+      { name: "codigo", type: "text" },
+      { name: "nome", type: "text", required: true },
+      { name: "banco", type: "text" },
+      { name: "valor_total", type: "number", notNull: true, required: true },
+      { name: "data_pagto", type: "date" },
+      { name: "filial", type: "text" },
+      { name: "mes_referente", type: "date", required: true },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
@@ -178,7 +171,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "setor", type: "text" },
       { name: "filial", type: "text" },
       { name: "data", type: "date" },
-      { name: "motivo", type: "text", values: ["Falta", "Atestado", "Declaração", "Meio Expediente", "Presente"] },
+      { name: "motivo", type: "text", values: ["Falta", "Atestado", "Suspensão", "Presente"] },
       { name: "observacao", type: "text" },
       { name: "advertencia", type: "boolean" },
       { name: "acidente_trabalho", type: "boolean" }

@@ -17,6 +17,15 @@ const pct = computed(() => {
 const pctText = computed(() => (pct.value === null ? "—" : `${pct.value.toFixed(1).replace(".", ",")}%`));
 const barWidth = computed(() => `${Math.max(0, Math.min(100, pct.value ?? 0))}%`);
 
+const MAX_DIVERGENCIAS = 12;
+const diferenca = computed(() => {
+  const d = props.data;
+  if (!d || !Number.isFinite(d.headcountEsperado) || !Number.isFinite(d.headcountFinal)) return 0;
+  return d.headcountEsperado - d.headcountFinal;
+});
+const divergencias = computed(() => (diferenca.value ? props.data?.divergencias || [] : []));
+const divergenciasVisiveis = computed(() => divergencias.value.slice(0, MAX_DIVERGENCIAS));
+
 const steps = computed(() => [
   { key: "ini", label: "Headcount inicial", value: num(props.data?.headcountInicial), sign: "", tone: "neutral" },
   { key: "nov", label: "Novas contratações", value: num(props.data?.novasContratacoes), sign: "+", tone: "positive" },
@@ -32,12 +41,37 @@ const TONES = {
 </script>
 
 <template>
-  <div class="flex h-full flex-col justify-center gap-5 overflow-y-auto py-2">
+  <div class="flex h-full flex-col justify-center-safe gap-5 overflow-y-auto py-2">
     <div
       v-if="data?.missing?.length"
       class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
     >
       Sem dado suficiente para calcular: {{ data.missing.join(", ") }}.
+    </div>
+
+    <div
+      v-if="diferenca"
+      class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+      role="alert"
+    >
+      <p class="text-center font-semibold">
+        A conta não fecha: inicial + contratações − demissões = {{ data.headcountEsperado }}, mas o headcount final é
+        {{ data.headcountFinal }} (diferença de {{ Math.abs(diferenca) }}).
+      </p>
+      <p v-if="divergencias.length && !large" class="mt-1 text-center text-xs">
+        {{ divergencias.length }} {{ divergencias.length === 1 ? "registro divergente" : "registros divergentes" }} na planilha — expanda o painel para ver quais.
+      </p>
+      <ul v-if="divergencias.length && large" class="mt-2 flex flex-col gap-1 text-sm">
+        <li v-for="d in divergenciasVisiveis" :key="d.key">
+          <strong>{{ d.colaborador }}</strong>
+          <span v-if="d.codigo"> (cód. {{ d.codigo }})</span>
+          <span v-if="d.filial || d.estado"> · {{ [d.filial, d.estado].filter(Boolean).join("/") }}</span>
+          — {{ d.motivo }}.
+        </li>
+        <li v-if="divergencias.length > divergenciasVisiveis.length" class="font-semibold">
+          + {{ divergencias.length - divergenciasVisiveis.length }} outros registros divergentes.
+        </li>
+      </ul>
     </div>
 
     <div class="rounded-2xl border border-accent/25 bg-accent/5 px-6 py-5 text-center dark:border-accent/25 dark:bg-accent/10">

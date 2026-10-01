@@ -10,6 +10,12 @@ function num(v) {
   return v === null || v === undefined ? "—" : v;
 }
 
+const diferenca = computed(() => {
+  const d = props.tableData;
+  if (!d || !Number.isFinite(d.headcountEsperado) || !Number.isFinite(d.headcountFinal)) return 0;
+  return d.headcountEsperado - d.headcountFinal;
+});
+
 const retencaoText = computed(() => {
   const v = props.tableData && props.tableData.retencaoPct;
   return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
@@ -38,6 +44,15 @@ const retencaoText = computed(() => {
       :class="large ? 'text-base' : 'text-sm'"
     >
       Sem dado suficiente para calcular: {{ tableData.missing.join(", ") }}.
+    </div>
+    <div
+      v-if="diferenca"
+      class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+      :class="large ? 'text-base' : 'text-sm'"
+      role="alert"
+    >
+      A conta não fecha: inicial + contratações − demissões = {{ tableData.headcountEsperado }}, mas o headcount final é
+      {{ tableData.headcountFinal }}.
     </div>
     <div
       class="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"

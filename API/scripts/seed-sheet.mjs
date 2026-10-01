@@ -48,8 +48,6 @@ const ENTITY_COLUMNS = {
     "id", "codigo", "colaborador", "funcao", "data_admissao",
     "genero", "data_desligamento", "mes_referente", "empresa", "filial", "estado_sigla"
   ],
-  turnover: ["id", "filial", "mes_referencia", "admitidos", "demitidos", "ativos", "estado_sigla"],
-  permanencia: ["id", "colaborador", "data_admissao", "data_demissao", "filial", "estado_sigla"],
   rescisoes: [
     "id", "empresa", "estado", "colaborador", "filial", "funcao", "admissao", "gerente_imediato",
     "regional", "motivo", "justificativa_apurada", "ponderacoes", "ult_dia_aviso", "valor_rescisao", "grrf_consig", "multa_40", "mes_referencia"
@@ -64,7 +62,8 @@ const ENTITY_COLUMNS = {
     "id", "nome_colaborador", "cargo", "filial", "gerente_regional", "tema", "modalidade",
     "competencia", "horas", "estado_sigla"
   ],
-  custo_folha: ["id", "filial_cnpj", "razao_social", "percent", "competencia", "valor", "estado_sigla"],
+  custo_folha: ["id", "codigo", "nome", "banco", "valor_total", "data_pagto", "empresa", "filial", "mes_referente", "estado_sigla"],
+  ferias: ["id", "codigo", "nome", "banco", "valor_total", "data_pagto", "filial", "mes_referente", "estado_sigla"],
   absenteismo: ["id", "competencia", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];

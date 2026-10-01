@@ -177,11 +177,8 @@ const MOTIVO_CANONICO = {
   faltas: "Falta",
   atestado: "Atestado",
   atestados: "Atestado",
-  declaracao: "Declaração",
-  declaracoes: "Declaração",
-  "meio expediente": "Meio Expediente",
-  "meio periodo": "Meio Expediente",
-  "meio dia": "Meio Expediente",
+  suspensao: "Suspensão",
+  suspensoes: "Suspensão",
   presente: "Presente",
   advertencia: "Advertência",
   "acidente de trabalho": "Acidente de Trabalho",
@@ -192,6 +189,12 @@ export function normalizeMotivo(value) {
   if (!raw) return null;
   const key = normalizeText(raw).replace(/[\s_-]+/g, " ").trim();
   return MOTIVO_CANONICO[key] || raw;
+}
+
+export function filialDisplay(filial, estado) {
+  const text = String(filial ?? "").trim();
+  const uf = String(estado ?? "").trim().toUpperCase();
+  return /^cd$/i.test(text) && uf ? `CD - ${uf}` : text;
 }
 
 export function upperText(value) {

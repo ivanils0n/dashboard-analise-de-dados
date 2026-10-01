@@ -67,8 +67,9 @@ const contextHint = computed(() => {
     case "absenteismo":
       return `${CONTEXT_ACTION_LABEL}: informações de absenteísmo`;
     case "turnover":
-    case "turnover_experiencia":
     case "tempo_permanencia":
+      return `${CONTEXT_ACTION_LABEL}: colaboradores desligados`;
+    case "turnover_experiencia":
       return `${CONTEXT_ACTION_LABEL}: histórico de registros`;
     default:
       return "";
@@ -122,6 +123,7 @@ function onKeydown(e) {
         'treinamento',
         'custo_contratacao',
         'custo_diaria',
+        'ferias',
         'absenteismo',
         'tempo_permanencia',
         'retencao',
@@ -163,6 +165,9 @@ function onKeydown(e) {
           Fechadas: <strong class="text-zinc-800 dark:text-zinc-100">{{ kpi.vagasFechadas ?? 0 }}</strong>
         </span>
       </div>
+      <p v-if="kpi.secondary" class="mt-1 text-center text-[11px] text-zinc-500 dark:text-zinc-400">
+        {{ kpi.secondary.label }}: <strong class="text-zinc-800 dark:text-zinc-100">{{ kpi.secondary.text }}</strong>
+      </p>
     </div>
 
     <div v-if="contextHint" class="mt-2 border-t border-zinc-100 pt-2 text-right text-[10px] uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">

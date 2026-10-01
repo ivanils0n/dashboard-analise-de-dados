@@ -15,6 +15,11 @@ JWT_SECRET=troque-por-uma-string-aleatoria-bem-longa
 # Em produção já vem do wrangler.jsonc; use aqui para sobrescrever no dev.
 # CORS_ORIGIN=http://localhost:5173
 
+# Só no dev: idade máxima (em segundos) do cache local das abas. O gatilho do
+# Apps Script atualiza a KV da Cloudflare, não a KV local do `wrangler dev` —
+# sem isto, edições feitas à mão na planilha nunca chegam ao localhost.
+CACHE_MAX_AGE_S=60
+
 # (Opcional) Gravação direta pela API do Google Sheets com uma conta de serviço —
 # bem mais rápida que o Apps Script. Sem estas variáveis, o Worker grava só pelo
 # Apps Script. A planilha precisa estar compartilhada (Editor) com o e-mail abaixo.

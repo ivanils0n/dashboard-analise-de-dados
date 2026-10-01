@@ -142,8 +142,8 @@ var CF_ACCOUNT_ID = "669a630ce000a6a3c41a1ccef1001d7b";
 var CF_KV_NAMESPACE_ID = "3cbe9ba669b7447fb9bf8cdf04f38617";
 
 var CACHE_SHEETS = [
-  "vagas", "headcount", "turnover", "permanencia", "rescisoes", "filiais",
-  "diarias", "treinamentos", "custo_folha", "absenteismo", "usuarios"
+  "vagas", "headcount", "rescisoes", "filiais",
+  "diarias", "treinamentos", "custo_folha", "absenteismo", "ferias", "usuarios"
 ];
 
 var KV_MAX_VALUE_CHARS = 15 * 1024 * 1024;

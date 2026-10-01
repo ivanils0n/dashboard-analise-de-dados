@@ -6,11 +6,15 @@ import Modal from "@/components/ui/Modal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
+import FeriasColaboradorModal from "@/components/dashboard/FeriasColaboradorModal.vue";
+import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresaModal.vue";
+import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import HiringStatusSelect from "@/components/dashboard/HiringStatusSelect.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
+import ViewTabs from "@/components/dashboard/ViewTabs.vue";
 import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
@@ -31,7 +35,7 @@ const props = defineProps({
   showValues: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["edit-vacancy", "edit-permanencia", "kpi-context", "custo-filial"]);
+const emit = defineEmits(["edit-vacancy", "kpi-context", "custo-filial"]);
 
 const kpis = computed(() => props.dashboard.kpis.value);
 const selectedKpiId = computed(() => props.dashboard.selectedKpiId.value);
@@ -80,6 +84,12 @@ watch(absenteismoFilialOptions, (opts) => {
   absenteismoFilialFilter.value = absenteismoFilialFilter.value.filter((v) => opts.includes(v));
 });
 
+const FERIAS_VIEWS = [
+  { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
+  { value: "filial", label: "Filial", title: "Total por filial" }
+];
+const feriasView = ref("colaborador");
+
 const headcountView = ref("bar");
 
 const rescisaoMode = ref("total");
@@ -100,9 +110,28 @@ const rescisaoFuncaoName = ref("");
 const rescisaoFuncaoRows = ref([]);
 const rescisaoPorEstado = ref(false);
 
+const DIARIA_VIEWS = [
+  { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
+  { value: "filial", label: "Filial", title: "Total por filial" },
+  { value: "regional", label: "Regional", title: "Total por regional" }
+];
+const diariaView = ref("colaborador");
+
+const CONTRATACAO_VIEWS = [
+  { value: "tempo", label: "Tempo médio", title: "Tempo médio de contratação" },
+  { value: "custo", label: "Custo médio", title: "Custo médio de contratação" }
+];
+const CONTRATACAO_CHARTS = ["tempo_contratacao", "custo_contratacao"];
+const contratacaoView = ref("tempo");
+
+function contratacaoKpiId(id) {
+  return id === "tempo_contratacao" && contratacaoView.value === "custo" ? "custo_contratacao" : id;
+}
+const activeKpiId = computed(() => contratacaoKpiId(selectedKpiId.value));
+
 const centerChart = computed(() =>
   props.dashboard.cockpitChartFor(
-    selectedKpiId.value === "treinamento" && treinamentoView.value === "regional" ? "horas_regional" : selectedKpiId.value,
+    selectedKpiId.value === "treinamento" && treinamentoView.value === "regional" ? "horas_regional" : activeKpiId.value,
     hiringStatusFilter.value,
     treinamentoGerenteFilter.value,
     hiringRecrutadorFilter.value,
@@ -113,7 +142,9 @@ const centerChart = computed(() =>
     rescisaoFilters.value,
     rescisaoView.value,
     headcountFuncaoFilter.value,
-    absenteismoFilialFilter.value
+    absenteismoFilialFilter.value,
+    diariaView.value,
+    feriasView.value
   )
 );
 
@@ -144,8 +175,20 @@ const diariaSummaryItems = computed(() => {
   ];
 });
 
+const feriasSummaryItems = computed(() => {
+  const s = centerChart.value.id === "ferias" ? centerChart.value.summary : null;
+  if (!s) return [];
+  return [
+    { label: "Total", value: formatCurrency(s.total), accent: true },
+    feriasView.value === "filial"
+      ? { label: "Filiais", value: String(s.filiais) }
+      : { label: "Colaboradores", value: String(s.colaboradores) }
+  ];
+});
+
 const cardSummaryItems = computed(() => {
   const id = centerChart.value.id;
+  if (id === "ferias") return feriasSummaryItems.value;
   if (id === "tempo_contratacao") return hiringSummaryItems.value;
   if (id === "custo_diaria") return diariaSummaryItems.value;
   return [];
@@ -156,7 +199,7 @@ const topKpis = computed(() => kpis.value.slice(0, 6));
 const bottomKpis = computed(() => kpis.value.slice(6));
 
 const { setState, state: filters } = useFilters();
-const mapStates = computed(() => props.dashboard.kpiValueByEstado(selectedKpiId.value));
+const mapStates = computed(() => props.dashboard.kpiValueByEstado(activeKpiId.value));
 
 const pieCenter = computed(() => {
   const chart = centerChart.value;
@@ -202,6 +245,16 @@ const treinamentoModalTitle = ref("");
 const diariaColabOpen = ref(false);
 const diariaColabName = ref("");
 const diariaColabRows = ref([]);
+const diariaColabGroup = ref("colaborador");
+
+const custoPessoalOpen = ref(false);
+const custoPessoalEmpresa = ref("");
+const custoPessoalRows = ref([]);
+
+const feriasColabOpen = ref(false);
+const feriasColabName = ref("");
+const feriasColabRows = ref([]);
+const feriasColabGroup = ref("colaborador");
 
 const headcountEstadoOpen = ref(false);
 const headcountEstadoSigla = ref("");
@@ -215,10 +268,26 @@ function onCenterBarClick({ index, label, datasetIndex }) {
     headcountEstadoOpen.value = true;
     return;
   }
+  if (!centerChart.value.id || centerChart.value.id === "custo_total") {
+    if (!label) return;
+    custoPessoalEmpresa.value = label;
+    custoPessoalRows.value = props.dashboard.custoPessoalEntriesByEmpresa(label);
+    custoPessoalOpen.value = true;
+    return;
+  }
+  if (centerChart.value.id === "ferias") {
+    if (!label) return;
+    feriasColabName.value = label;
+    feriasColabGroup.value = feriasView.value;
+    feriasColabRows.value = props.dashboard.feriasEntriesBy(feriasView.value, label);
+    feriasColabOpen.value = true;
+    return;
+  }
   if (centerChart.value.id === "custo_diaria") {
     if (!label) return;
     diariaColabName.value = label;
-    diariaColabRows.value = props.dashboard.custoDiariaEntriesByColaborador(label);
+    diariaColabGroup.value = diariaView.value;
+    diariaColabRows.value = props.dashboard.custoDiariaEntriesBy(diariaView.value, label);
     diariaColabOpen.value = true;
     return;
   }
@@ -255,8 +324,8 @@ function onCenterBarClick({ index, label, datasetIndex }) {
   }
   if (centerChart.value.id === "tempo_permanencia") {
     const row = centerChart.value.data[index];
-    if (!row || !row.permanenciaId) return;
-    permanenciaDetailId.value = row.permanenciaId;
+    if (!row || !row.permanenciaDetail) return;
+    permanenciaDetailRecord.value = row.permanenciaDetail;
     permanenciaDetailOpen.value = true;
     return;
   }
@@ -264,7 +333,7 @@ function onCenterBarClick({ index, label, datasetIndex }) {
 }
 
 function onKpiContext(id) {
-  emit("kpi-context", id);
+  emit("kpi-context", contratacaoKpiId(id));
 }
 
 function onCenterBarContext({ index }) {
@@ -273,11 +342,6 @@ function onCenterBarContext({ index }) {
     if (!row || !row.vacancyId) return;
     emit("edit-vacancy", row.vacancyId);
     return;
-  }
-  if (centerChart.value.id === "tempo_permanencia") {
-    const row = centerChart.value.data[index];
-    if (!row || !row.permanenciaId) return;
-    emit("edit-permanencia", row.permanenciaId);
   }
 }
 
@@ -291,18 +355,15 @@ function onVacancyDetailEdit(vacancyId) {
 }
 
 const permanenciaDetailOpen = ref(false);
-const permanenciaDetailId = ref(null);
+const permanenciaDetailRecord = ref(null);
 
-function onPermanenciaDetailEdit(recordId) {
-  permanenciaDetailOpen.value = false;
-  emit("edit-permanencia", recordId);
-}
-
-const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ticket_medio", "horas_regional", "rescisoes", "absenteismo"];
+const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "ticket_medio", "horas_regional", "rescisoes", "absenteismo"];
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
-const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "rescisoes"];
-const isHorizontalChart = computed(() => HORIZONTAL_CHARTS.includes(centerChart.value.id));
+const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "rescisoes"];
+const isHorizontalChart = computed(
+  () => HORIZONTAL_CHARTS.includes(centerChart.value.id) && !(centerChart.value.id === "custo_diaria" && diariaView.value === "regional")
+);
 
 const stackedOnPhone = computed(() => centerChart.value.kind === "pie" || centerChart.value.kind === "table");
 
@@ -404,6 +465,9 @@ function goNextKpi() {
               <div class="min-w-0" :class="summaryInCard ? 'basis-full' : ['treinamento', 'rescisoes'].includes(centerChart.id) ? 'flex-1' : ''">
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
+                  <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />
+                  <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
+                  <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
                   <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
                     <HiringStatusSelect v-model="hiringStatusFilter" />
                     <GerenteRegionalFilter
@@ -576,6 +640,9 @@ function goNextKpi() {
 
       <aside data-tour="cockpit-indicators" class="flex flex-col xl:col-start-3 xl:row-start-1 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-[12rem] xl:flex-1">
         <h2 class="mb-2 text-center text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+        <div class="mb-2">
+          <CompararMesesButton :dashboard="dashboard" compact />
+        </div>
         <div class="xl:relative xl:min-h-0 xl:flex-1">
         <ul
           ref="indicatorListRef"
@@ -617,10 +684,28 @@ function goNextKpi() {
       </div>
     </div>
 
+    <CustoPessoalEmpresaModal
+      v-if="custoPessoalOpen"
+      :open="custoPessoalOpen"
+      :empresa="custoPessoalEmpresa"
+      :entries="custoPessoalRows"
+      @close="custoPessoalOpen = false"
+    />
+
+    <FeriasColaboradorModal
+      v-if="feriasColabOpen"
+      :open="feriasColabOpen"
+      :colaborador="feriasColabName"
+      :group-by="feriasColabGroup"
+      :entries="feriasColabRows"
+      @close="feriasColabOpen = false"
+    />
+
     <DiariaColaboradorModal
       v-if="diariaColabOpen"
       :open="diariaColabOpen"
       :colaborador="diariaColabName"
+      :group-by="diariaColabGroup"
       :entries="diariaColabRows"
       @close="diariaColabOpen = false"
     />
@@ -673,9 +758,8 @@ function goNextKpi() {
     <PermanenciaDetailModal
       v-if="permanenciaDetailOpen"
       :open="permanenciaDetailOpen"
-      :record-id="permanenciaDetailId"
+      :record="permanenciaDetailRecord"
       @close="permanenciaDetailOpen = false"
-      @edit="onPermanenciaDetailEdit"
     />
 
     <Modal
@@ -721,6 +805,9 @@ function goNextKpi() {
             <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
             <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
           </div>
+          <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />
+          <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
+          <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
           <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
           <GerenteRegionalFilter
             v-if="centerChart.id === 'rescisoes'"

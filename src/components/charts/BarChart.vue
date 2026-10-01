@@ -30,6 +30,32 @@ const isEmpty = computed(() =>
   )
 );
 
+const singleRow = computed(() => (props.variant !== "line" && !isEmpty.value && props.data.length === 1 ? props.data[0] : null));
+
+const singleText = computed(() => {
+  const row = singleRow.value;
+  if (!row) return "";
+  const formatter = formatterFor(props.valueFormat);
+  if (formatter) return formatter(Number(row.value) || 0);
+  if (row.tooltipValue) return String(row.tooltipValue);
+  return Number(row.value || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+});
+
+function singlePayload() {
+  const row = singleRow.value;
+  return { index: 0, datasetIndex: 0, label: row ? row.label : "", value: row ? row.value : null };
+}
+
+function onSingleClick() {
+  if (props.barsClickable && singleRow.value) emit("bar-click", singlePayload());
+}
+
+function onSingleContextmenu(evt) {
+  if (!singleRow.value) return;
+  evt.preventDefault();
+  emit("bar-contextmenu", singlePayload());
+}
+
 const expandOpen = ref(false);
 
 const ROW_PX = 30;
@@ -195,7 +221,7 @@ watch(
     :class="[fluid ? 'h-full' : '', isHorizontal ? 'overflow-y-auto overflow-x-hidden' : '']"
     :style="rootStyle"
   >
-    <div class="relative w-full" :style="canvasBoxStyle">
+    <div class="relative w-full" :class="singleRow ? 'invisible' : ''" :style="canvasBoxStyle">
       <canvas
         ref="canvas"
         :class="barsClickable ? 'cursor-pointer' : ''"
@@ -203,6 +229,17 @@ watch(
         @click="onCanvasClick"
         @contextmenu="onCanvasContextmenu"
       ></canvas>
+    </div>
+    <div
+      v-if="singleRow"
+      class="absolute inset-0 flex items-center justify-center px-4 text-center"
+      :class="barsClickable ? 'cursor-pointer' : ''"
+      role="img"
+      :aria-label="`${singleRow.label}: ${singleText}`"
+      @click="onSingleClick"
+      @contextmenu="onSingleContextmenu"
+    >
+      <span class="break-words text-5xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ singleText }}</span>
     </div>
     <ChartEmpty v-if="isEmpty" />
   </div>

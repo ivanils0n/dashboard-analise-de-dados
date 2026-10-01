@@ -66,5 +66,8 @@ const valueText = computed(() => {
       <span v-if="currencyPrefix" class="block text-sm font-semibold text-zinc-400">{{ currencyPrefix }}</span>
       {{ valueText }}
     </span>
+    <span v-if="kpi.secondary" class="max-w-full truncate text-[11px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+      {{ kpi.secondary.label }}: {{ kpi.secondary.text }}
+    </span>
   </button>
 </template>

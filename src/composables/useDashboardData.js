@@ -5,7 +5,7 @@ import { TIPOS, isOcorrenciaAusencia, competenciaYm } from "@/lib/absenteismo";
 import {
   computedSnapshot,
   listVacancies,
-  listPermanenciaRecords,
+  permanenciaDesligados,
   averageHiringDays,
   turnoverAvgTenureDays,
   headcountCountInRange,
@@ -21,6 +21,7 @@ import {
   rescisaoFuncaoLabel,
   turnoverRateStats,
   retentionRate,
+  retentionDivergences,
   findBranchByShortName,
   normalizeBranchKey
 } from "@/lib/employees";
@@ -37,11 +38,12 @@ import {
   todayISO,
   singleMonthOfRange,
   upperText,
+  filialDisplay,
   addMonthsYm,
   firstDayOfYm,
   lastDayOfYm
 } from "@/lib/utils";
-import { aggregateEntries, diariaDivisor, employeeNameKey } from "@/lib/metrics";
+import { aggregateEntries, diariaDivisor, employeeNameKey, uniqueEmployeeCount } from "@/lib/metrics";
 import { useFilters } from "@/composables/useFilters";
 import { faturamento } from "@/composables/useFaturamento";
 
@@ -102,7 +104,7 @@ export function useDashboardData(filter) {
     return getOcorrencias().filter(
       (o) =>
         isOcorrenciaAusencia(o.meta) &&
-        (!filialKeys.length || filialKeys.includes(String(o.meta.filial || "").trim().toUpperCase())) &&
+        (!filialKeys.length || filialKeys.includes(filialDisplay(o.meta.filial, o.meta.estado).toUpperCase())) &&
         !(fromYm && competenciaYm(o.meta, o.date) < fromYm) &&
         !(toYm && competenciaYm(o.meta, o.date) > toYm) &&
         (all || String(o.meta.estado || "").trim().toUpperCase() === uf)
@@ -127,7 +129,7 @@ export function useDashboardData(filter) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const set = new Set();
     absenteismoOcorrencias(currentState(), range).forEach((o) => {
-      const f = String(o.meta.filial || "").trim().toUpperCase();
+      const f = filialDisplay(o.meta.filial, o.meta.estado).toUpperCase();
       if (f) set.add(f);
     });
     return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -269,7 +271,7 @@ export function useDashboardData(filter) {
     const pct = custo !== null && faturamentoMedio ? (custo / faturamentoMedio) * 100 : null;
     let motivo = "";
     if (!headcount) motivo = "Sem colaboradores (Headcount) neste mês/estado.";
-    else if (!folhaCount) motivo = "Sem custo de folha de salário lançado neste mês/estado.";
+    else if (!folhaCount) motivo = "Sem Custo de Pessoal lançado neste mês/estado.";
     return { custo, faturamento: total, faturamentoMedio, headcount, pct, motivo };
   }
 
@@ -344,7 +346,7 @@ export function useDashboardData(filter) {
       branches.find((b) => normalizeBranchKey(b.name) === key) ||
       branches.find((b) => b.shortName && text.includes(String(b.shortName).toUpperCase())) ||
       branches.find((b) => b.name && text.includes(String(b.name).toUpperCase()));
-    return match ? String(match.shortName || match.name).toUpperCase() : text;
+    return filialDisplay(match ? String(match.shortName || match.name).toUpperCase() : text, meta && meta.estado);
   }
 
   function treinamentoBarByFilial(gerenteRegional) {
@@ -455,16 +457,22 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.horas - a.horas);
   }
 
-  function custosBarByFilial() {
+  function custoPessoalEntriesByEmpresa(label) {
     const ind = getIndicatorById("custo_total");
     if (!ind) return [];
-    const byFilial = new Map();
+    return filteredEntries(ind).filter((e) => (upperText((e.meta && e.meta.empresa) || "Sem empresa")) === label);
+  }
+
+  function custosBarByEmpresa() {
+    const ind = getIndicatorById("custo_total");
+    if (!ind) return [];
+    const byEmpresa = new Map();
     filteredEntries(ind).forEach((e) => {
       const meta = e.meta || {};
-      const filial = upperText(meta.razaoSocial || "Sem filial");
-      byFilial.set(filial, (byFilial.get(filial) || 0) + (Number(e.value) || 0));
+      const empresa = upperText(meta.empresa || "Sem empresa");
+      byEmpresa.set(empresa, (byEmpresa.get(empresa) || 0) + (Number(e.value) || 0));
     });
-    return [...byFilial.entries()]
+    return [...byEmpresa.entries()]
       .map(([label, value]) => ({
         label,
         value,
@@ -496,16 +504,17 @@ export function useDashboardData(filter) {
   function custoContratacaoMedioPorFilial() {
     const byFilial = new Map();
     filterByRange(costVacancyEntries()).forEach((e) => {
-      const key = (e.meta && e.meta.filial) || "__sem_filial__";
-      const acc = byFilial.get(key) || { count: 0, sum: 0 };
+      const raw = (e.meta && e.meta.filial) || "__sem_filial__";
+      const label = raw === "__sem_filial__" ? raw : filialDisplay(raw, e.meta && e.meta.estado);
+      const acc = byFilial.get(label) || { count: 0, sum: 0, key: raw };
       acc.count += 1;
       acc.sum += e.value;
-      byFilial.set(key, acc);
+      byFilial.set(label, acc);
     });
     const rows = [...byFilial.entries()]
-      .map(([key, acc]) => ({
-        key,
-        label: key === "__sem_filial__" ? "SEM FILIAL" : key,
+      .map(([label, acc]) => ({
+        key: acc.key,
+        label: label === "__sem_filial__" ? "SEM FILIAL" : label,
         value: acc.sum / acc.count,
         count: acc.count,
         sum: acc.sum
@@ -542,9 +551,26 @@ export function useDashboardData(filter) {
     return upperText((entry.meta && entry.meta.employeeName) || "Sem colaborador");
   }
 
+  function diariaGroup(entry, view) {
+    if (view === "filial") {
+      const label = upperText(treinamentoFilialLabel(entry.meta));
+      return { key: label, label };
+    }
+    if (view === "regional") {
+      const label = upperText((entry.meta && entry.meta.regional) || "").trim() || "SEM REGIONAL";
+      return { key: label, label };
+    }
+    const label = diariaColaboradorName(entry);
+    return { key: employeeNameKey(label), label };
+  }
+
+  function custoDiariaEntriesBy(view, label) {
+    const key = view === "filial" || view === "regional" ? label : employeeNameKey(label);
+    return diariaBarEntries().filter((e) => diariaGroup(e, view).key === key);
+  }
+
   function custoDiariaEntriesByColaborador(label) {
-    const key = employeeNameKey(label);
-    return diariaBarEntries().filter((e) => employeeNameKey(diariaColaboradorName(e)) === key);
+    return custoDiariaEntriesBy("colaborador", label);
   }
 
   function custoDiariaSummary() {
@@ -558,14 +584,17 @@ export function useDashboardData(filter) {
   }
 
   function custoDiariaBarByColaborador() {
-    const byColaborador = new Map();
+    return custoDiariaBarBy("colaborador");
+  }
+
+  function custoDiariaBarBy(view) {
+    const groups = new Map();
     diariaBarEntries().forEach((e) => {
-      const nome = diariaColaboradorName(e);
-      const key = employeeNameKey(nome);
-      if (!byColaborador.has(key)) byColaborador.set(key, { label: nome, value: 0 });
-      byColaborador.get(key).value += Number(e.value) || 0;
+      const { key, label } = diariaGroup(e, view);
+      if (!groups.has(key)) groups.set(key, { label, value: 0 });
+      groups.get(key).value += Number(e.value) || 0;
     });
-    return [...byColaborador.values()]
+    return [...groups.values()]
       .map(({ label, value }) => ({
         label,
         value,
@@ -574,12 +603,106 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
+  function feriasEntries() {
+    const ind = getIndicatorById("ferias");
+    return ind ? filteredEntries(ind) : [];
+  }
+
+  function feriasFilial(entry) {
+    return upperText(filialDisplay(entry.meta && entry.meta.filial, entry.meta && entry.meta.estado)) || "SEM FILIAL";
+  }
+
+  function feriasGroup(entry, view) {
+    if (view === "filial") {
+      const label = feriasFilial(entry);
+      return { key: employeeNameKey(label), label };
+    }
+    const meta = entry.meta || {};
+    const label = upperText(meta.employeeName || "Sem colaborador");
+    return { key: `${meta.codigo || ""}|${employeeNameKey(label)}`, label, codigo: meta.codigo || "" };
+  }
+
+  function feriasGroups(view) {
+    const groups = new Map();
+    feriasEntries().forEach((e) => {
+      const { key, label, codigo } = feriasGroup(e, view);
+      if (!groups.has(key)) groups.set(key, { label, codigo, value: 0, entries: [] });
+      const g = groups.get(key);
+      g.value += Number(e.value) || 0;
+      g.entries.push(e);
+    });
+    const list = [...groups.values()];
+    const repetidos = new Map();
+    list.forEach((g) => repetidos.set(g.label, (repetidos.get(g.label) || 0) + 1));
+    list.forEach((g) => {
+      if (repetidos.get(g.label) > 1 && g.codigo) g.label = `${g.label} · cód. ${g.codigo}`;
+    });
+    return list;
+  }
+
+  function feriasEntriesBy(view, label) {
+    const group = feriasGroups(view).find((g) => g.label === label);
+    return group ? group.entries : [];
+  }
+
+  function feriasBarBy(view) {
+    const list = feriasEntries();
+    const rows = feriasGroups(view)
+      .map((g) => {
+        const pessoas = uniqueEmployeeCount(g.entries);
+        return {
+          label: g.label,
+          value: g.value,
+          tooltipValue: view === "filial" ? `${formatCurrency(g.value)} · ${pessoas} ${pessoas === 1 ? "colaborador" : "colaboradores"}` : formatCurrency(g.value)
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+    return {
+      rows,
+      summary: {
+        total: list.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
+        colaboradores: uniqueEmployeeCount(list),
+        filiais: new Set(list.map((e) => employeeNameKey(feriasFilial(e)))).size
+      }
+    };
+  }
+
   function indicatorCurrentValue(ind) {
     if (ind.computed) {
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       return computedValue(ind, range);
     }
     return aggregateList(ind, filteredEntries(ind));
+  }
+
+  function indicatorValueForMonth(ind, ym) {
+    const range = { start: firstDayOfYm(ym), end: lastDayOfYm(ym) };
+    if (ind.computed) return computedValue(ind, range);
+    const inMonth = scopeEntries(ind, stateEntries(ind.id, currentState())).filter(
+      (e) => e.date >= range.start && e.date <= range.end
+    );
+    return inMonth.length ? aggregateList(ind, inMonth) : null;
+  }
+
+  function comparacaoMeses(count) {
+    const base = String(filter.end || filter.start || todayISO()).slice(0, 7);
+    const todos = Array.from({ length: count + 2 }, (_, i) => addMonthsYm(base, i - count - 1));
+    const months = todos.slice(1);
+    const rows = INDICATORS.filter((ind) => ind.id !== "horas_regional").map((ind) => ({
+      id: ind.id,
+      name: ind.name,
+      type: ind.type,
+      decimals: ind.decimals,
+      higherIsBetter: ind.higherIsBetter !== false,
+      ...(() => {
+        const vals = todos.map((ym) => {
+          const v = indicatorValueForMonth(ind, ym);
+          return v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v);
+        });
+        return { anterior: vals[0], values: vals.slice(1) };
+      })()
+    }));
+    return { months, rows };
   }
 
   function previousMonthRange() {
@@ -628,7 +751,7 @@ export function useDashboardData(filter) {
   }
 
   const kpis = computed(() => {
-    return INDICATORS.filter((ind) => ind.id !== "horas_regional").map((ind) => {
+    return INDICATORS.filter((ind) => ind.id !== "horas_regional" && ind.id !== "custo_contratacao").map((ind) => {
       const entries = filteredEntries(ind);
       const allEntries = scopeEntries(ind, stateEntries(ind.id, currentState()));
       let current = indicatorCurrentValue(ind);
@@ -696,6 +819,14 @@ export function useDashboardData(filter) {
         });
         base.vagasAbertas = vacs.filter((v) => !v.closeAt).length;
         base.vagasFechadas = vacs.filter((v) => v.closeAt).length;
+        const custoInd = getIndicatorById("custo_contratacao");
+        const custo = custoInd ? indicatorCurrentValue(custoInd) : null;
+        base.name = "Contratação";
+        base.desc = "Tempo médio de contratação (dias entre abertura e fechamento da vaga) e custo médio de contratação (média dos salários das vagas fechadas)";
+        base.secondary = {
+          label: "Custo médio",
+          text: custo === null || custo === undefined ? "—" : formatValue(custoInd, custo)
+        };
       }
 
       return base;
@@ -755,7 +886,7 @@ export function useDashboardData(filter) {
           id: "ticket_medio",
           kind: "pie",
           title: ind.name,
-          sub: "Custo de folha ÷ Headcount, por estado no período filtrado",
+          sub: "Custo de Pessoal ÷ Headcount, por estado no período filtrado",
           unit: ind.unit,
           valueFormat: "currency"
         };
@@ -806,22 +937,21 @@ export function useDashboardData(filter) {
     ];
   }
 
+  function permanenciaDesligadosLista() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return permanenciaDesligados(currentState(), range).sort((a, b) =>
+      b.dataDemissao.localeCompare(a.dataDemissao) || String(a.colaborador).localeCompare(String(b.colaborador), "pt-BR")
+    );
+  }
+
   function turnoverTenureBarByEmployee() {
-    const list = listPermanenciaRecords(currentState())
-      .filter((p) => p.dataAdmissao && p.dataDemissao)
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return permanenciaDesligados(currentState(), range)
       .map((p) => ({
-        date: String(p.dataDemissao).slice(0, 10),
         label: upperText(p.colaborador || "—"),
-        value: daysBetween(p.dataAdmissao, p.dataDemissao),
-        permanenciaId: p.id
-      }))
-      .filter((p) => p.value !== null && Number.isFinite(p.value) && p.value >= 0);
-    return filterByRange(list)
-      .map((p) => ({
-        label: p.label,
-        value: p.value,
-        tooltipValue: `${p.value.toFixed(1)} dias`,
-        permanenciaId: p.permanenciaId
+        value: p.dias,
+        tooltipValue: `${p.dias.toFixed(1)} dias`,
+        permanenciaDetail: p
       }))
       .sort((a, b) => b.value - a.value);
   }
@@ -862,12 +992,15 @@ export function useDashboardData(filter) {
 
   function retentionBreakdown() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
-    const stats = retentionRate(currentState(), range, previousMonthRange());
+    const prevRange = previousMonthRange();
+    const stats = retentionRate(currentState(), range, prevRange);
     const missing = [];
     if (!stats.headcountInicial) missing.push("Headcount inicial");
     if (!stats.headcountFinal) missing.push("Headcount final");
     if (!stats.novasContratacoes) missing.push("Novas contratações");
-    return { ...stats, missing };
+    const divergencias = retentionDivergences(currentState(), range, prevRange);
+    const headcountEsperado = stats.headcountInicial + stats.novasContratacoes - stats.demissoes;
+    return { ...stats, missing, divergencias, headcountEsperado };
   }
 
   const panorama = computed(() => {
@@ -954,22 +1087,24 @@ export function useDashboardData(filter) {
       if (entry.meta.motivo) parts.push(entry.meta.motivo);
       return `${formatValue(ind, entry.value)} · ${parts.join(" — ")}`;
     }
-    if (ind.form === "custo_total" && entry.meta && entry.meta.razaoSocial) {
-      return `${formatValue(ind, entry.value)} · ${entry.meta.razaoSocial}`;
+    if (ind.id === "custo_total" && entry.meta && (entry.meta.empresa || entry.meta.employeeName)) {
+      return `${formatValue(ind, entry.value)} · ${[entry.meta.employeeName, entry.meta.empresa].filter(Boolean).join(" — ")}`;
     }
     return formatValue(ind, entry.value);
   }
 
   const COCKPIT_AVG_TYPES = ["percent", "days", "months"];
 
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = []) {
+  const DIARIA_VIEW_LABELS = { colaborador: "colaborador", filial: "filial", regional: "regional" };
+
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador") {
     if (!kpiId) {
       return {
         id: null,
         kind: "bar",
-        title: "Custo de folha de salário",
-        sub: "Soma dos custos por filial no período filtrado",
-        data: custosBarByFilial(),
+        title: "Custo de Pessoal",
+        sub: "Valor total por empresa, no período filtrado",
+        data: custosBarByEmpresa(),
         valueFormat: "currency",
         faturamento: ticketMedioFaturamento(),
         faturamentoEnabled: true
@@ -1028,7 +1163,7 @@ export function useDashboardData(filter) {
         id: "ticket_medio",
         kind: "pie",
         title: "Custo médio por colaborador",
-        sub: "Custo de folha ÷ Headcount, por estado no período filtrado",
+        sub: "Custo de Pessoal ÷ Headcount, por estado no período filtrado",
         data: ticketMedioBarByState(),
         center: ticketMedioPieCenter(),
         valueFormat: "currency"
@@ -1038,9 +1173,9 @@ export function useDashboardData(filter) {
       return {
         id: "custo_total",
         kind: "bar",
-        title: "Custo de folha de salário",
-        sub: "Soma dos custos por filial no período filtrado",
-        data: custosBarByFilial(),
+        title: "Custo de Pessoal",
+        sub: "Valor total por empresa, no período filtrado",
+        data: custosBarByEmpresa(),
         valueFormat: "currency",
         faturamento: ticketMedioFaturamento(),
         faturamentoEnabled: true
@@ -1136,13 +1271,25 @@ export function useDashboardData(filter) {
         valueFormat: "count"
       };
     }
+    if (kpiId === "ferias") {
+      const { rows, summary } = feriasBarBy(feriasView);
+      return {
+        id: "ferias",
+        kind: "bar",
+        title: "Férias",
+        sub: `Valor total de férias por ${feriasView === "filial" ? "filial" : "colaborador"}, no mês filtrado`,
+        data: rows,
+        valueFormat: "currency",
+        summary
+      };
+    }
     if (kpiId === "custo_diaria") {
       return {
         id: "custo_diaria",
         kind: "bar",
         title: "Custo médio da diária geral",
-        sub: "Valor total por colaborador, no período filtrado",
-        data: custoDiariaBarByColaborador(),
+        sub: `Valor total por ${DIARIA_VIEW_LABELS[diariaView] || DIARIA_VIEW_LABELS.colaborador}, no período filtrado`,
+        data: custoDiariaBarBy(diariaView),
         valueFormat: "currency",
         summary: custoDiariaSummary()
       };
@@ -1185,13 +1332,17 @@ export function useDashboardData(filter) {
     ticketMedioBarByState,
     ticketMedioPieCenter,
     ticketMedioFaturamento,
-    custosBarByFilial,
+    custosBarByEmpresa,
+    custoPessoalEntriesByEmpresa,
     custoContratacaoBarByFuncao,
     custoContratacaoMedioPorFilial,
     custoContratacaoPieCenter,
     kpiValueByEstado,
     custoDiariaBarByColaborador,
     custoDiariaEntriesByColaborador,
+    custoDiariaEntriesBy,
+    feriasEntriesBy,
+    comparacaoMeses,
     indicatorCurrentValue,
     kpis,
     selectedKpiId,
@@ -1199,6 +1350,7 @@ export function useDashboardData(filter) {
     kpiChartCards,
     chartPieData,
     turnoverTenureBarByEmployee,
+    permanenciaDesligadosLista,
     rescisoesBarByFuncao,
     rescisoesPieByEstado,
     rescisoesEntriesByFuncao,

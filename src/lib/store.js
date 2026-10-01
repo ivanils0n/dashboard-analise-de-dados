@@ -5,14 +5,13 @@ export function emptyData() {
   return {
     version: 1,
     vacancies: [],
-    turnovers: [],
-    permanencias: [],
     rescisoes: [],
     headcounts: [],
     branches: [],
     diarias: [],
     treinamentos: [],
     custoFolha: [],
+    ferias: [],
     absenteismo: []
   };
 }
@@ -35,6 +34,7 @@ const ENTRY_LISTS = {
   custo_diaria: "diarias",
   treinamento: "treinamentos",
   custo_total: "custoFolha",
+  ferias: "ferias",
   absenteismo: "absenteismo"
 };
 
@@ -204,48 +204,6 @@ export function getVacancyById(id) {
   return getVacancies().find((v) => v.id === id) || null;
 }
 
-export function getTurnovers() {
-  return data.turnovers;
-}
-
-export function upsertTurnover(turnover) {
-  const idx = data.turnovers.findIndex((t) => t.id === turnover.id);
-  if (idx >= 0) data.turnovers[idx] = turnover;
-  else data.turnovers.push(turnover);
-  if (ok()) remote.turnoverSaved(turnover, idx < 0);
-}
-
-export function deleteTurnover(id) {
-  const t = data.turnovers.find((x) => x.id === id);
-  data.turnovers = data.turnovers.filter((x) => x.id !== id);
-  if (ok()) remote.turnoverRemoved(id, t ? t.estado : null);
-}
-
-export function getTurnoverById(id) {
-  return getTurnovers().find((t) => t.id === id) || null;
-}
-
-export function getPermanencias() {
-  return data.permanencias;
-}
-
-export function upsertPermanencia(record) {
-  const idx = data.permanencias.findIndex((p) => p.id === record.id);
-  if (idx >= 0) data.permanencias[idx] = record;
-  else data.permanencias.push(record);
-  if (ok()) remote.permanenciaSaved(record, idx < 0);
-}
-
-export function deletePermanencia(id) {
-  const p = data.permanencias.find((x) => x.id === id);
-  data.permanencias = data.permanencias.filter((x) => x.id !== id);
-  if (ok()) remote.permanenciaRemoved(id, p ? p.estado : null);
-}
-
-export function getPermanenciaById(id) {
-  return getPermanencias().find((p) => p.id === id) || null;
-}
-
 export function getRescisoes() {
   return data.rescisoes;
 }
@@ -300,14 +258,13 @@ export function replaceFromCache(cached) {
   const d = emptyData();
   if (cached && typeof cached === "object") {
     d.vacancies = Array.isArray(cached.vacancies) ? cached.vacancies : [];
-    d.turnovers = Array.isArray(cached.turnovers) ? cached.turnovers : [];
-    d.permanencias = Array.isArray(cached.permanencias) ? cached.permanencias : [];
     d.rescisoes = Array.isArray(cached.rescisoes) ? cached.rescisoes : [];
     d.headcounts = Array.isArray(cached.headcounts) ? cached.headcounts : [];
     d.branches = Array.isArray(cached.branches) ? cached.branches : [];
     d.diarias = Array.isArray(cached.diarias) ? cached.diarias : [];
     d.treinamentos = Array.isArray(cached.treinamentos) ? cached.treinamentos : [];
     d.custoFolha = Array.isArray(cached.custoFolha) ? cached.custoFolha : [];
+    d.ferias = Array.isArray(cached.ferias) ? cached.ferias : [];
     d.absenteismo = Array.isArray(cached.absenteismo) ? cached.absenteismo : [];
   }
   Object.assign(data, d);
@@ -327,14 +284,13 @@ function mergeNewItems(current, incoming) {
 
 const MERGE_LIST_KEYS = [
   "vacancies",
-  "turnovers",
-  "permanencias",
   "rescisoes",
   "headcounts",
   "branches",
   "diarias",
   "treinamentos",
   "custoFolha",
+  "ferias",
   "absenteismo"
 ];
 

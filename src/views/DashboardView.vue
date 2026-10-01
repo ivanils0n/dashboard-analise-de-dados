@@ -13,8 +13,10 @@ import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
-import PermanenciaModal from "@/components/dashboard/PermanenciaModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
+import PermanenciaListaModal from "@/components/dashboard/PermanenciaListaModal.vue";
+import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
+import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresaModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import AbsenteismoAnaliseModal from "@/components/dashboard/AbsenteismoAnaliseModal.vue";
@@ -43,12 +45,11 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData, isAdmin } from "@/lib/auth";
 import { getIndicatorById, STATES } from "@/lib/config";
-import { safeSetItem, localStore, normalizeText } from "@/lib/utils";
+import { safeSetItem, localStore, normalizeText, ymLabel } from "@/lib/utils";
 import { toXLSX, toCSV } from "@/lib/export";
 import { hydrateState, reloadData, warmApi } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 import { apiFetch } from "@/lib/api";
-import { CONTEXT_ACTION_LABEL } from "@/lib/longPress";
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
@@ -96,7 +97,6 @@ function onCustoFilial(filial) {
   vacancyInitialFilial.value = filial || null;
   vacanciesOpen.value = true;
 }
-const permanenciaOpen = ref(false);
 
 const treinamentoFilialOpen = ref(false);
 const treinamentoFilialLabel = ref("");
@@ -197,35 +197,28 @@ function onKpiCardBarClick({ card, pieData }, { index, label, datasetIndex }) {
   if (row && row.key) onCustoFilial(row.key);
 }
 
+const custoPessoalOpen = ref(false);
+const custoPessoalEmpresa = ref("");
+const custoPessoalRows = ref([]);
+
+function onCustoPessoalBarClick({ label }) {
+  if (!label) return;
+  custoPessoalEmpresa.value = label;
+  custoPessoalRows.value = dashboard.custoPessoalEntriesByEmpresa(label);
+  custoPessoalOpen.value = true;
+}
+
+const permanenciaListaOpen = ref(false);
+const permanenciaListaRows = ref([]);
+const permanenciaListaPeriodo = ref("");
 const permanenciaDetailOpen = ref(false);
-const permanenciaDetailId = ref(null);
-const permanenciaEditId = ref(null);
+const permanenciaDetailRecord = ref(null);
 
 function onPermanenciaBarClick({ index }) {
   const row = permanenciaBarData.value[index];
-  if (!row || !row.permanenciaId) return;
-  permanenciaDetailId.value = row.permanenciaId;
+  if (!row || !row.permanenciaDetail) return;
+  permanenciaDetailRecord.value = row.permanenciaDetail;
   permanenciaDetailOpen.value = true;
-}
-
-function onPermanenciaBarContext({ index }) {
-  const row = permanenciaBarData.value[index];
-  if (!row || !row.permanenciaId) return;
-  onPermanenciaEdit(row.permanenciaId);
-}
-
-function onPermanenciaDetailEdit(recordId) {
-  permanenciaDetailOpen.value = false;
-  onPermanenciaEdit(recordId);
-}
-
-function onPermanenciaEdit(recordId) {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  permanenciaEditId.value = recordId;
-  permanenciaOpen.value = true;
 }
 
 const hiringStatusFilter = ref("fechadas");
@@ -272,11 +265,14 @@ const treinamentoColumns = [
 
 const custosColumns = [
   { label: "Mês", month: true },
-  { label: "Filial CNPJ", meta: "cnpj" },
-  { label: "Razão Social", meta: "razaoSocial" },
+  { label: "Código", meta: "codigo" },
+  { label: "Nome", meta: "employeeName" },
+  { label: "Banco", meta: "banco" },
+  { label: "Empresa", meta: "empresa" },
+  { label: "Filial", meta: "filial" },
   { label: "Estado", meta: "estado" },
-  { label: "Custos", value: true },
-  { label: "%", meta: "percent", percent: true }
+  { label: "Data de pagamento", meta: "dataPagto" },
+  { label: "Valor total", value: true }
 ];
 
 const scrollRef = ref(null);
@@ -303,7 +299,7 @@ const visibleKpis = computed(() => {
   return kpis.value.filter((k) => normalizeText(`${k.name} ${k.desc || ""}`).includes(q));
 });
 
-const custosBarData = computed(() => dashboard.custosBarByFilial());
+const custosBarData = computed(() => dashboard.custosBarByEmpresa());
 
 const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
 
@@ -565,8 +561,11 @@ function onKpiContext(id) {
   } else if (id === "turnover") {
     turnoverAnaliseOpen.value = true;
   } else if (id === "tempo_permanencia") {
-    permanenciaEditId.value = null;
-    permanenciaOpen.value = true;
+    permanenciaListaRows.value = dashboard.permanenciaDesligadosLista();
+    const ini = dateFilter.start ? ymLabel(String(dateFilter.start).slice(0, 7)) : "";
+    const fim = dateFilter.end ? ymLabel(String(dateFilter.end).slice(0, 7)) : "";
+    permanenciaListaPeriodo.value = ini && fim && ini !== fim ? `${ini} a ${fim}` : ini;
+    permanenciaListaOpen.value = true;
   } else if (id === "tempo_contratacao") {
     vacancyIndicatorId.value = "tempo_contratacao";
     vacancyInitialFilial.value = null;
@@ -707,7 +706,6 @@ watch(activeTab, (tab) => {
       :dashboard="dashboard"
       :show-values="showValues"
       @edit-vacancy="onVacancyEdit"
-      @edit-permanencia="onPermanenciaEdit"
       @custo-filial="onCustoFilial"
       @kpi-context="onKpiContext"
     />
@@ -716,6 +714,7 @@ watch(activeTab, (tab) => {
 
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
+      <CompararMesesButton :dashboard="dashboard" />
       <input
         v-model="kpiSearch"
         type="search"
@@ -784,8 +783,8 @@ watch(activeTab, (tab) => {
       >
         <div class="mb-4 flex items-start justify-between gap-2">
           <div class="min-w-0">
-            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de folha de salário</h2>
-            <span class="text-xs text-zinc-400 dark:text-zinc-400">Soma dos custos por filial no período filtrado</span>
+            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de Pessoal</h2>
+            <span class="text-xs text-zinc-400 dark:text-zinc-400">Valor total por empresa, no período filtrado</span>
           </div>
           <div class="flex shrink-0 items-center gap-2">
           <FaturamentoShareChip v-if="custosFaturamento" :data="custosFaturamento" />
@@ -795,7 +794,7 @@ watch(activeTab, (tab) => {
             type="button"
             class="icon-btn-sm"
             title="Tela cheia"
-            aria-label="Ver gráfico de Custo de folha de salário em tela cheia"
+            aria-label="Ver gráfico de Custo de Pessoal em tela cheia"
             @click="custosBarChartRef?.openFullscreen()"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -814,13 +813,15 @@ watch(activeTab, (tab) => {
           :show-values="showValues"
           value-format="currency"
           :height-px="340"
-          title="Custo de folha de salário — Evolução dos Indicadores"
-          subtitle="Soma dos custos por filial no período filtrado"
+          bars-clickable
+          title="Custo de Pessoal — Evolução dos Indicadores"
+          subtitle="Valor total por empresa, no período filtrado"
+          @bar-click="onCustoPessoalBarClick"
         />
         <div v-else class="p-6">
           <EmptyState
             title="Sem custos no período"
-            text="Nenhum custo de folha lançado para o período e o estado filtrados."
+            text="Nenhum Custo de Pessoal lançado para o período e o estado filtrados."
           />
         </div>
       </section>
@@ -1038,12 +1039,11 @@ watch(activeTab, (tab) => {
         title="Tempo médio de permanência"
         subtitle="Dias entre admissão e desligamento, por colaborador"
         @bar-click="onPermanenciaBarClick"
-        @bar-contextmenu="onPermanenciaBarContext"
       />
       <div v-else class="p-6">
         <EmptyState
           title="Sem colaboradores desligados no período"
-          :text="`Lance um registro (${CONTEXT_ACTION_LABEL.toLowerCase()} no KPI de Tempo médio de permanência) ou ajuste o filtro.`"
+          text="Nenhum colaborador do Headcount tem data de desligamento no mês filtrado. Ajuste o filtro."
         />
       </div>
     </section>
@@ -1172,18 +1172,25 @@ watch(activeTab, (tab) => {
       :records="rescisaoFuncaoRows"
       @close="rescisaoFuncaoOpen = false"
     />
-    <PermanenciaModal
-      v-if="permanenciaOpen"
-      :open="permanenciaOpen"
-      :edit-record-id="permanenciaEditId"
-      @close="permanenciaOpen = false; permanenciaEditId = null"
+    <CustoPessoalEmpresaModal
+      v-if="custoPessoalOpen"
+      :open="custoPessoalOpen"
+      :empresa="custoPessoalEmpresa"
+      :entries="custoPessoalRows"
+      @close="custoPessoalOpen = false"
+    />
+    <PermanenciaListaModal
+      v-if="permanenciaListaOpen"
+      :open="permanenciaListaOpen"
+      :records="permanenciaListaRows"
+      :periodo="permanenciaListaPeriodo"
+      @close="permanenciaListaOpen = false"
     />
     <PermanenciaDetailModal
       v-if="permanenciaDetailOpen"
       :open="permanenciaDetailOpen"
-      :record-id="permanenciaDetailId"
+      :record="permanenciaDetailRecord"
       @close="permanenciaDetailOpen = false"
-      @edit="onPermanenciaDetailEdit"
     />
     <TurnoverDetailModal
       v-if="turnoverDetailOpen"
@@ -1253,8 +1260,9 @@ watch(activeTab, (tab) => {
       v-if="custosEntriesOpen"
       :open="custosEntriesOpen"
       indicator-id="custo_total"
-      title="Custo de folha de salário — Lançamentos"
+      title="Custo de Pessoal — Registros"
       :columns="custosColumns"
+      readonly
       @close="custosEntriesOpen = false"
       @edit="onEntriesEdit"
     />

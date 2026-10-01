@@ -6,7 +6,7 @@ async function loadXLSX() {
   if (!xlsxModule) xlsxModule = await import("xlsx");
   return xlsxModule;
 }
-import { getEntriesFor, getOcorrencias, getBranches, getVacancies, getTurnovers, getPermanencias, getHeadcounts } from "./store";
+import { getEntriesFor, getOcorrencias, getBranches, getVacancies, getHeadcounts } from "./store";
 import { todayISO, formatDate } from "./utils";
 
 const FORMULA_LEAD = /^[=+\-@]/;
@@ -41,39 +41,6 @@ function vagasRows(list) {
       v.motivoContratacao || "",
       v.closeAt ? "Fechada" : "Aberta",
       days === null || isNaN(days) ? null : Number(days.toFixed(1))
-    ]);
-  });
-  return rows;
-}
-
-const TURNOVER_HEADER = ["Filial", "Mês de referência", "Admitidos", "Demitidos", "Ativos", "Estado"];
-
-function turnoverRows(list) {
-  const rows = [TURNOVER_HEADER];
-  (list || []).forEach((t) => {
-    rows.push([
-      t.filial || "",
-      t.mesReferencia || "",
-      Number(t.admitidos) || 0,
-      Number(t.demitidos) || 0,
-      Number(t.ativos) || 0,
-      t.estado || ""
-    ]);
-  });
-  return rows;
-}
-
-const PERMANENCIA_HEADER = ["Colaborador", "Data de admissão", "Data de demissão", "Filial", "Estado"];
-
-function permanenciaRows(list) {
-  const rows = [PERMANENCIA_HEADER];
-  (list || []).forEach((p) => {
-    rows.push([
-      p.colaborador || "",
-      p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : "",
-      p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : "",
-      p.filial || "",
-      p.estado || ""
     ]);
   });
   return rows;
@@ -150,19 +117,22 @@ function treinamentosRows(list) {
   return rows;
 }
 
-const CUSTO_FOLHA_HEADER = ["Competência", "CNPJ", "Razão Social", "Percentual (%)", "Valor", "Estado"];
+const CUSTO_FOLHA_HEADER = ["Mês referente", "Código", "Nome", "Banco", "Empresa", "Filial", "Estado", "Data de pagamento", "Valor total"];
 
 function custoFolhaRows(list) {
   const rows = [CUSTO_FOLHA_HEADER];
   (list || []).forEach((e) => {
     const m = e.meta || {};
     rows.push([
-      m.competencia || (e.date ? String(e.date).slice(0, 7) : ""),
-      m.cnpj || "",
-      m.razaoSocial || "",
-      m.percent != null ? Number(m.percent) : null,
-      Number(e.value) || 0,
-      m.estado || ""
+      e.date ? String(e.date).slice(0, 7) : "",
+      m.codigo || "",
+      m.employeeName || "",
+      m.banco || "",
+      m.empresa || "",
+      m.filial || "",
+      m.estado || "",
+      m.dataPagto || "",
+      Number(e.value) || 0
     ]);
   });
   return rows;
@@ -205,13 +175,11 @@ function absenteismoRows(list) {
 function allTables() {
   return [
     { name: "Vagas", rows: vagasRows(getVacancies()), cols: [28, 16, 18, 20, 14, 10, 14, 12, 14] },
-    { name: "Turnover", rows: turnoverRows(getTurnovers()), cols: [20, 16, 12, 12, 10, 10] },
-    { name: "Permanência", rows: permanenciaRows(getPermanencias()), cols: [28, 18, 18, 10] },
     { name: "Headcount", rows: headcountRows(getHeadcounts()), cols: [28, 14, 22, 16, 22, 16, 10, 12] },
     { name: "Filiais", rows: filiaisRows(getBranches()), cols: [14, 22, 30, 18, 22, 10] },
     { name: "Diárias", rows: diariasRows(getEntriesFor("custo_diaria")), cols: [12, 28, 20, 20, 26, 14, 10] },
     { name: "Treinamentos", rows: treinamentosRows(getEntriesFor("treinamento")), cols: [14, 28, 20, 20, 26, 14, 20, 10] },
-    { name: "Custo de Folha", rows: custoFolhaRows(getEntriesFor("custo_total")), cols: [14, 22, 30, 14, 14, 10] },
+    { name: "Custo de Pessoal", rows: custoFolhaRows(getEntriesFor("custo_total")), cols: [14, 10, 32, 14, 30, 16, 10, 18, 14] },
     { name: "Absenteísmo", rows: absenteismoRows(getOcorrencias()), cols: [12, 30, 22, 14, 8, 18, 12, 18, 30] }
   ].filter((t) => t.rows.length > 1);
 }
@@ -255,24 +223,6 @@ export async function exportVagas(list) {
   sheet["!cols"] = colsToWch([28, 16, 18, 20, 14, 10, 14, 12, 14]);
   XLSX.utils.book_append_sheet(workbook, sheet, "Vagas");
   XLSX.writeFile(workbook, `gente-gestao-vagas_${todayISO()}.xlsx`);
-}
-
-export async function exportTurnover(list, filename) {
-  const XLSX = await loadXLSX();
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet(safeRows(turnoverRows(list)));
-  sheet["!cols"] = colsToWch([20, 16, 12, 12, 10, 10]);
-  XLSX.utils.book_append_sheet(workbook, sheet, "Turnover");
-  XLSX.writeFile(workbook, `gente-gestao-${filename || "turnover"}_${todayISO()}.xlsx`);
-}
-
-export async function exportPermanencia(list) {
-  const XLSX = await loadXLSX();
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet(safeRows(permanenciaRows(list)));
-  sheet["!cols"] = colsToWch([28, 18, 18, 10]);
-  XLSX.utils.book_append_sheet(workbook, sheet, "Permanência");
-  XLSX.writeFile(workbook, `gente-gestao-permanencia_${todayISO()}.xlsx`);
 }
 
 export async function exportHeadcount(list) {

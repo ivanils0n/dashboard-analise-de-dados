@@ -6,7 +6,7 @@ import { nameKey, ymLabel } from "./utils";
 export const DIAS_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const ORDEM_SEMANA = [1, 2, 3, 4, 5, 6, 0];
 
-const PESO_MOTIVO = { Falta: 1, Atestado: 1, Declaração: 1, "Meio Expediente": 0.5 };
+const PESO_MOTIVO = { Falta: 1, Atestado: 1, Suspensão: 1 };
 
 export function diasDeAusencia(o) {
   const base = o.motivo && o.motivo !== "Presente" ? (PESO_MOTIVO[o.motivo] ?? 1) : 0;

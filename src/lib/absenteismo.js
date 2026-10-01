@@ -6,8 +6,7 @@ import { normalizeText, nameKey } from "./utils";
 export const MOTIVOS = [
   { value: "Falta", label: "Falta", letter: "F", chip: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300", dot: "bg-red-400", hex: "#f87171" },
   { value: "Atestado", label: "Atestado", letter: "A", chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", dot: "bg-emerald-400", hex: "#34d399" },
-  { value: "Declaração", label: "Declaração", letter: "D", chip: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300", dot: "bg-amber-400", hex: "#fbbf24" },
-  { value: "Meio Expediente", label: "Meio período", letter: "M", chip: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300", dot: "bg-sky-400", hex: "#38bdf8" }
+  { value: "Suspensão", label: "Suspensão", letter: "S", chip: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300", dot: "bg-amber-400", hex: "#fbbf24" }
 ];
 
 export const PRESENTE = {
@@ -23,7 +22,7 @@ export const FLAGS = [
   { key: "acidente", value: "Acidente de Trabalho", label: "Acidente de trabalho", plural: "Acidentes de trabalho", short: "Acid. de trabalho", letter: "T", chip: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300", dot: "bg-violet-400", hex: "#a78bfa" }
 ];
 
-const MOTIVO_PLURAL = { Falta: "Faltas", Atestado: "Atestados", Declaração: "Declarações", "Meio Expediente": "Meio período" };
+const MOTIVO_PLURAL = { Falta: "Faltas", Atestado: "Atestados", Suspensão: "Suspensões" };
 
 export const TIPOS = [
   ...MOTIVOS.map((m) => ({ ...m, plural: MOTIVO_PLURAL[m.value] || m.label, has: (o) => o.motivo === m.value })),

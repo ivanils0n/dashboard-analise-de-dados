@@ -27,7 +27,7 @@ const sobreposicao = computed(() => somaCards.value - props.ocorrencias.length);
 
 <template>
   <div class="mx-auto w-full lg:w-5/6 lg:min-w-[56rem]">
-  <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+  <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
     <div
       v-for="c in cards"
       :key="c.key"

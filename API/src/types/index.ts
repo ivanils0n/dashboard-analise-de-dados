@@ -8,6 +8,7 @@ export type Bindings = {
   GOOGLE_PRIVATE_KEY?: string;
   GOOGLE_SHEET_ID?: string;
   CORS_ORIGIN?: string;
+  CACHE_MAX_AGE_S?: string;
   LOGIN_LIMITER?: RateLimit;
   CACHE: KVNamespace;
   SHEET_WRITER?: DurableObjectNamespace<import("../db/sheetWriter").SheetWriter>;

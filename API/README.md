@@ -193,9 +193,9 @@ node scripts/set-google-secrets.mjs "<chave.json>"   # segredos da conta de serv
 
 ## Modelo de dados na planilha
 
-Uma aba por entidade (`vagas`, `headcount`, `turnover`, `permanencia`,
-`filiais`, `diarias`, `treinamentos`, `custo_folha`, `absenteismo`) + uma
-aba `usuarios` — 10 abas ao todo. RO/AM/PA convivem na mesma aba, distinguidos
+Uma aba por entidade (`vagas`, `headcount`, `filiais`, `diarias`,
+`treinamentos`, `custo_folha`, `ferias`, `absenteismo`, `rescisoes`) + uma
+aba `usuarios`. RO/AM/PA convivem na mesma aba, distinguidos
 pela coluna `estado_sigla`; o Worker filtra por estado em memória depois de
 ler a aba (ver `matchesEstado` em `src/services/records.ts`). Isso substituiu
 o modelo antigo de uma aba por `entidade_estado` (`vagas_ro`, `vagas_am`, ...),

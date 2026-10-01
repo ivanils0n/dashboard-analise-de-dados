@@ -15,20 +15,19 @@ export const INDICATORS = [
   {
     id: "turnover",
     name: "Turnover",
-    desc: "((Admitidos + Demitidos) / 2) / Ativos × 100 — pizza mostra Entrada (admitidos) vs Saída (demitidos); quantidade lançada manualmente por filial e mês, sem depender de colaboradores nem do KPI de Headcount",
+    desc: "((Admitidos + Demitidos) / 2) / Ativos × 100 — pizza mostra Entrada (admitidos) vs Saída (demitidos), calculados a partir do Headcount do mês filtrado",
     calc: "((Admitidos + Demitidos) ÷ 2) ÷ Ativos × 100",
     type: "percent",
     unit: "%",
     decimals: 1,
     higherIsBetter: false,
     computed: true,
-    manual: true,
-    form: "turnover"
+    manual: false
   },
   {
     id: "absenteismo",
     name: "Absenteísmo",
-    desc: "Faltas, atestados, declarações, meio período, advertências e acidentes de trabalho lançados no Mapa de Absenteísmo",
+    desc: "Faltas, atestados, suspensões, advertências e acidentes de trabalho lançados no Mapa de Absenteísmo",
     calc: "Total de ocorrências lançadas no Mapa de Absenteísmo no período",
     type: "number",
     unit: "ocorrências",
@@ -65,8 +64,8 @@ export const INDICATORS = [
   {
     id: "tempo_permanencia",
     name: "Tempo médio de permanência",
-    desc: "Média de dias entre a Data de admissão e a Data de demissão, importada por planilha própria (colaborador, admissão, demissão)",
-    calc: "Soma dos dias entre admissão e demissão ÷ quantidade de colaboradores desligados no período",
+    desc: "Média de dias entre a admissão e o desligamento dos colaboradores do Headcount desligados no mês filtrado",
+    calc: "Soma dos dias entre admissão e desligamento ÷ quantidade de colaboradores desligados no mês filtrado (Headcount)",
     type: "days",
     unit: "dias",
     decimals: 1,
@@ -100,6 +99,18 @@ export const INDICATORS = [
     form: "diaria"
   },
   {
+    id: "ferias",
+    name: "Férias",
+    desc: "Valor pago em férias (colaborador, banco, data de pagamento, filial e mês referente), lido da aba \"ferias\" da planilha",
+    calc: "Soma do valor total das férias no mês referente filtrado",
+    type: "currency",
+    unit: "R$",
+    decimals: 2,
+    higherIsBetter: false,
+    computed: false,
+    manual: false
+  },
+  {
     id: "treinamento",
     name: "Treinamento",
     desc: "Carga horária em treinamentos (colaborador, cargo, loja, tema, modalidade)",
@@ -114,22 +125,21 @@ export const INDICATORS = [
   },
   {
     id: "custo_total",
-    name: "Custo de folha de salário",
-    desc: "Custos totais por estado e filial (CNPJ, razão social, custo e % de participação)",
-    calc: "Soma dos custos totais no período",
+    name: "Custo de Pessoal",
+    desc: "Valor pago por colaborador (nome, banco, data de pagamento, empresa, filial e mês referente), lido da aba \"custo_folha\" da planilha",
+    calc: "Soma do valor total pago no mês referente filtrado",
     type: "currency",
     unit: "R$",
     decimals: 2,
     higherIsBetter: false,
     computed: false,
-    manual: true,
-    form: "custo_total"
+    manual: false
   },
   {
     id: "ticket_medio",
     name: "Custo médio por colaborador",
-    desc: "Custo médio de folha de salário por colaborador: custo de folha de salário do mês ÷ Headcount do mês, no estado filtrado",
-    calc: "Custo de folha de salário ÷ total de Headcount (mês e estado filtrados)",
+    desc: "Custo médio de pessoal por colaborador: Custo de Pessoal do mês ÷ Headcount do mês, no estado filtrado",
+    calc: "Custo de Pessoal ÷ total de Headcount (mês e estado filtrados)",
     type: "currency",
     unit: "R$",
     decimals: 2,

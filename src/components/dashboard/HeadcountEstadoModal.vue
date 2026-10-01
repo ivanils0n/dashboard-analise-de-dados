@@ -5,9 +5,9 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
-import { listHeadcountRecords, isHeadcountAtivo, findBranchByShortName, deleteHeadcountRecord, branchKeyFor } from "@/lib/employees";
+import { listHeadcountRecords, isHeadcountAtivo, findBranchByShortName, deleteHeadcountRecord, filialKeyFor, filialKeyOfLabel } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
-import { formatDate, normalizeText, ymLabel } from "@/lib/utils";
+import { formatDate, normalizeText, ymLabel, filialDisplay } from "@/lib/utils";
 import { useDialog } from "@/composables/useDialog";
 import { useToast } from "@/composables/useToast";
 import { canEditData } from "@/lib/auth";
@@ -35,7 +35,7 @@ const ym = computed(() =>
 
 const records = computed(() =>
   listHeadcountRecords(props.estado, ym.value || undefined, { incluirDesligados: true })
-    .filter((h) => !props.filial.length || props.filial.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
+    .filter((h) => !props.filial.length || props.filial.some((f) => filialKeyFor(h.filial, h.estado) === filialKeyOfLabel(f)))
     .filter((h) => !props.empresa.length || props.empresa.some((e) => String(h.empresa || "").trim().toUpperCase() === String(e).trim().toUpperCase()))
     .filter((h) => !props.funcao.length || props.funcao.some((f) => String(h.funcao || "").trim().toUpperCase() === String(f).trim().toUpperCase()))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
@@ -63,9 +63,9 @@ const filialOptions = computed(() => {
   records.value
     .filter((h) => !empresaFilter.value.length || empresaFilter.value.includes(String(h.empresa || "").trim().toUpperCase()))
     .forEach((h) => {
-      const key = branchKeyFor(h.filial, h.estado);
+      const key = filialKeyFor(h.filial, h.estado);
       if (!key || seen.has(key)) return;
-      seen.set(key, h.filial);
+      seen.set(key, filialDisplay(h.filial, h.estado));
     });
   return [...seen.values()].sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
 });
@@ -91,7 +91,7 @@ const funcaoOptions = computed(() => {
 
 const rows = computed(() =>
   records.value
-    .filter((h) => !filialFilter.value.length || filialFilter.value.some((f) => branchKeyFor(h.filial, h.estado) === branchKeyFor(f)))
+    .filter((h) => !filialFilter.value.length || filialFilter.value.some((f) => filialKeyFor(h.filial, h.estado) === filialKeyOfLabel(f)))
     .filter((h) => !empresaFilter.value.length || empresaFilter.value.includes(String(h.empresa || "").trim().toUpperCase()))
     .filter((h) => !funcaoFilter.value.length || funcaoFilter.value.includes(String(h.funcao || "").trim().toUpperCase()))
 );

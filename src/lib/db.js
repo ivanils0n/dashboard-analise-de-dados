@@ -67,11 +67,14 @@ function custoFolhaToRow(entry) {
   const meta = entry.meta || {};
   return {
     id: entry.id,
-    filial_cnpj: meta.cnpj || null,
-    razao_social: meta.razaoSocial || null,
-    percent: meta.percent != null && meta.percent !== "" ? Number(meta.percent) : null,
-    competencia: entry.date,
-    valor: Number(entry.value) || 0,
+    codigo: meta.codigo || null,
+    nome: meta.employeeName || "",
+    banco: meta.banco || null,
+    valor_total: Number(entry.value) || 0,
+    data_pagto: meta.dataPagto || null,
+    empresa: meta.empresa || null,
+    filial: meta.filial || null,
+    mes_referente: entry.date,
     estado_sigla: meta.estado || null
   };
 }
@@ -105,29 +108,6 @@ function vacancyToRow(vacancy) {
     estado_sigla: vacancy.estado || null,
     recrutador: vacancy.recrutador || null,
     motivo_contratacao: vacancy.motivoContratacao || null
-  };
-}
-
-function turnoverToRow(t) {
-  return {
-    id: t.id,
-    filial: t.filial || null,
-    mes_referencia: t.mesReferencia ? `${String(t.mesReferencia).slice(0, 7)}-01` : null,
-    admitidos: Number(t.admitidos) || 0,
-    demitidos: Number(t.demitidos) || 0,
-    ativos: Number(t.ativos) || 0,
-    estado_sigla: t.estado || null
-  };
-}
-
-function permanenciaToRow(p) {
-  return {
-    id: p.id,
-    colaborador: p.colaborador ?? "",
-    data_admissao: p.dataAdmissao ? String(p.dataAdmissao).slice(0, 10) : null,
-    data_demissao: p.dataDemissao ? String(p.dataDemissao).slice(0, 10) : null,
-    filial: p.filial || null,
-    estado_sigla: p.estado || null
   };
 }
 
@@ -344,18 +324,6 @@ export function registerRemote() {
     vacancyRemoved(id, estado) {
       _enqueue(stateTable("vagas", estado), id, { type: "delete", id });
     },
-    turnoverSaved(turnover, isNew) {
-      _enqueue(stateTable("turnover", turnover.estado), turnover.id, { type: "upsert", row: turnoverToRow(turnover), created: !!isNew });
-    },
-    turnoverRemoved(id, estado) {
-      _enqueue(stateTable("turnover", estado), id, { type: "delete", id });
-    },
-    permanenciaSaved(record, isNew) {
-      _enqueue(stateTable("permanencia", record.estado), record.id, { type: "upsert", row: permanenciaToRow(record), created: !!isNew });
-    },
-    permanenciaRemoved(id, estado) {
-      _enqueue(stateTable("permanencia", estado), id, { type: "delete", id });
-    },
     headcountSaved(record, isNew) {
       _enqueue(stateTable("headcount", record.estado), record.id, { type: "upsert", row: headcountToRow(record), created: !!isNew });
     },
@@ -392,6 +360,22 @@ function mapRemoteDiaria(row, impliedState) {
   };
 }
 
+function mapRemoteFerias(row, impliedState) {
+  return {
+    id: row.id,
+    date: row.mes_referente ? String(row.mes_referente).slice(0, 10) : "",
+    value: Number(row.valor_total) || 0,
+    meta: {
+      employeeName: up(row.nome) || "",
+      codigo: row.codigo != null ? String(row.codigo) : null,
+      banco: row.banco || null,
+      dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
+      filial: up(row.filial) || null,
+      estado: row.estado_sigla || impliedState || null
+    }
+  };
+}
+
 function mapRemoteTreinamento(row, impliedState) {
   return {
     id: row.id,
@@ -412,12 +396,15 @@ function mapRemoteTreinamento(row, impliedState) {
 function mapRemoteCustoFolha(row, impliedState) {
   return {
     id: row.id,
-    date: row.competencia,
-    value: Number(row.valor) || 0,
+    date: row.mes_referente ? String(row.mes_referente).slice(0, 10) : "",
+    value: Number(row.valor_total) || 0,
     meta: {
-      cnpj: row.filial_cnpj || null,
-      razaoSocial: up(row.razao_social) || null,
-      percent: row.percent != null && row.percent !== "" ? Number(row.percent) : null,
+      employeeName: up(row.nome) || "",
+      codigo: row.codigo != null ? String(row.codigo) : null,
+      banco: row.banco || null,
+      dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
+      empresa: up(row.empresa) || null,
+      filial: up(row.filial) || null,
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -467,29 +454,6 @@ function mapRemoteVacancy(row, impliedState) {
     estado: row.estado_sigla || impliedState || null,
     recrutador: up(row.recrutador) || null,
     motivoContratacao: up(row.motivo_contratacao) || null
-  };
-}
-
-function mapRemoteTurnover(row, impliedState) {
-  return {
-    id: row.id,
-    filial: up(row.filial) || null,
-    mesReferencia: row.mes_referencia ? String(row.mes_referencia).slice(0, 7) : null,
-    admitidos: row.admitidos != null ? Number(row.admitidos) : 0,
-    demitidos: row.demitidos != null ? Number(row.demitidos) : 0,
-    ativos: row.ativos != null ? Number(row.ativos) : 0,
-    estado: row.estado_sigla || impliedState || null
-  };
-}
-
-function mapRemotePermanencia(row, impliedState) {
-  return {
-    id: row.id,
-    colaborador: up(row.colaborador) ?? "",
-    dataAdmissao: row.data_admissao ? String(row.data_admissao).slice(0, 10) : null,
-    dataDemissao: row.data_demissao ? String(row.data_demissao).slice(0, 10) : null,
-    filial: up(row.filial) || null,
-    estado: row.estado_sigla || impliedState || null
   };
 }
 
@@ -551,14 +515,13 @@ function mapRemoteBranch(row, impliedState) {
 
 const TABLE_KINDS = {
   vagas: { key: "vacancies", map: mapRemoteVacancy },
-  turnover: { key: "turnovers", map: mapRemoteTurnover },
-  permanencia: { key: "permanencias", map: mapRemotePermanencia },
   rescisoes: { key: "rescisoes", map: mapRemoteRescisao },
   headcount: { key: "headcounts", map: mapRemoteHeadcount },
   filiais: { key: "branches", map: mapRemoteBranch },
   diarias: { key: "diarias", map: mapRemoteDiaria },
   treinamentos: { key: "treinamentos", map: mapRemoteTreinamento },
   custo_folha: { key: "custoFolha", map: mapRemoteCustoFolha },
+  ferias: { key: "ferias", map: mapRemoteFerias },
   absenteismo: { key: "absenteismo", map: mapRemoteAbsenteismo }
 };
 const DATA_TABLES = Object.keys(TABLE_KINDS);
@@ -573,14 +536,13 @@ function splitTable(tabela) {
 function emptyPayload() {
   return {
     vacancies: [],
-    turnovers: [],
-    permanencias: [],
     rescisoes: [],
     headcounts: [],
     branches: [],
     diarias: [],
     treinamentos: [],
     custoFolha: [],
+    ferias: [],
     absenteismo: []
   };
 }

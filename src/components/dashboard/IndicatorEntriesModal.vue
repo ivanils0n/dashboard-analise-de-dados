@@ -26,7 +26,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   indicatorId: { type: String, required: true },
   title: { type: String, default: "" },
-  columns: { type: Array, default: () => [] }
+  columns: { type: Array, default: () => [] },
+  readonly: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["close", "edit"]);
@@ -34,7 +35,7 @@ const emit = defineEmits(["close", "edit"]);
 const { state: filters } = useFilters();
 const { confirm } = useDialog();
 const { show: toast } = useToast();
-const canEdit = canEditData();
+const canEdit = canEditData() && !props.readonly;
 
 const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: props.indicatorId });
 

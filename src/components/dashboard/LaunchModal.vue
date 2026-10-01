@@ -19,7 +19,6 @@ import {
   removeEntries,
   getEntriesFor,
   getVacancyById,
-  getTurnoverById,
   getHeadcountById,
   getBranchById
 } from "@/lib/store";
@@ -32,11 +31,6 @@ import {
   closeVacancies,
   listVacancies,
   formatVacancyTempo,
-  listTurnoverEntries,
-  addTurnoverEntry,
-  updateTurnoverEntry,
-  deleteTurnoverEntry,
-  deleteTurnoverEntries,
   listHeadcountRecords,
   addHeadcountRecord,
   deleteHeadcountRecord,
@@ -44,7 +38,7 @@ import {
   findBranchByShortName,
   branchKeyFor
 } from "@/lib/employees";
-import { exportVagas, exportTurnover, exportHeadcount } from "@/lib/export";
+import { exportVagas, exportHeadcount } from "@/lib/export";
 import {
   todayISO,
   formatDate,
@@ -172,10 +166,6 @@ function initModal() {
   selectedVacancyIds.value = new Set();
   Object.keys(closeDates).forEach((k) => delete closeDates[k]);
   bulkCloseDate.value = todayISO();
-  resetTurnoverForm();
-  turnoverSearch.value = "";
-  turnoverKindFilter.value = null;
-  selectedTurnoverIds.value = new Set();
   resetHeadcountForm();
   headcountSearch.value = "";
   headcountFilterFilial.value = null;
@@ -308,7 +298,6 @@ const tabs = computed(() => {
         { id: "nova", label: "Nova vaga" },
         { id: "historico", label: "Histórico" }
       ];
-    case "turnover":
     case "headcount":
       return [
         { id: "novo", label: "Novo" },
@@ -333,10 +322,9 @@ const submitLabel = computed(() => {
   if (!indicator.value) return "Salvar lançamento";
   switch (indicator.value.form) {
     case "vaga":
-      return "Concluir";
-    case "turnover":
     case "headcount":
       return "Concluir";
+
     case "diaria":
       return "Salvar diária";
     case "treinamento":
@@ -352,7 +340,6 @@ const canSubmitForm = computed(() => {
   const f = indicator.value && indicator.value.form;
   return (
     f === "vaga" ||
-    f === "turnover" ||
     f === "headcount" ||
     f === "diaria" ||
     f === "treinamento" ||
@@ -624,159 +611,6 @@ function handleBulkVacancyClose() {
   selectedVacancyIds.value = new Set();
   emit("saved");
   toast(`${list.length} vaga(s) fechada(s) — tempo de contratação e custo registrados.`);
-}
-
-const turnover = reactive({
-  filial: null,
-  mesReferencia: "",
-  admitidos: "",
-  demitidos: "",
-  ativos: ""
-});
-const editingTurnoverId = ref(null);
-const turnoverSearch = ref("");
-const turnoverKindFilter = ref(null);
-const selectedTurnoverIds = ref(new Set());
-
-function resetTurnoverForm() {
-  turnover.filial = null;
-  turnover.mesReferencia = "";
-  turnover.admitidos = "";
-  turnover.demitidos = "";
-  turnover.ativos = "";
-  editingTurnoverId.value = null;
-}
-
-const turnoverBranches = computed(() =>
-  listBranches(estado.value === "todos" ? "todos" : estado.value)
-);
-
-function submitTurnover() {
-  if (!turnover.mesReferencia) return toast("Informe o mês de referência.");
-  const st = effectiveVagaEstado();
-  const payload = {
-    filial: turnover.filial,
-    mesReferencia: turnover.mesReferencia,
-    admitidos: Number(turnover.admitidos) || 0,
-    demitidos: Number(turnover.demitidos) || 0,
-    ativos: Number(turnover.ativos) || 0,
-    estado: st
-  };
-
-  if (editingTurnoverId.value) {
-    updateTurnoverEntry(editingTurnoverId.value, payload);
-    toast("Turnover atualizado.");
-  } else {
-    addTurnoverEntry(payload);
-    toast("Turnover lançado.");
-  }
-
-  resetTurnoverForm();
-  showTab("historico");
-  emit("saved");
-}
-
-function editTurnover(id) {
-  const t = getTurnoverById(id);
-  if (!t) return;
-  editingTurnoverId.value = id;
-  turnover.filial = t.filial || null;
-  turnover.mesReferencia = t.mesReferencia || "";
-  turnover.admitidos = t.admitidos != null ? String(t.admitidos) : "";
-  turnover.demitidos = t.demitidos != null ? String(t.demitidos) : "";
-  turnover.ativos = t.ativos != null ? String(t.ativos) : "";
-  if (t.estado && t.estado !== estado.value) estado.value = t.estado;
-  showTab("novo");
-}
-
-async function removeTurnover(id) {
-  const t = getTurnoverById(id);
-  if (!t) return;
-  const ok = await confirm({
-    title: "Excluir lançamento?",
-    message: "O registro de Turnover será removido permanentemente.",
-    confirmText: "Excluir",
-    danger: true
-  });
-  if (!ok) return;
-  await deleteTurnoverEntry(id);
-  emit("saved");
-  toast("Registro excluído.");
-}
-
-const turnoverList = computed(() => listTurnoverEntries(estado.value));
-
-function turnoverFilial(t) {
-  return (t && t.filial) || "";
-}
-
-const filteredTurnover = computed(() => {
-  const q = normalizeText(turnoverSearch.value).trim();
-  let list = turnoverList.value;
-  if (q) {
-    list = list.filter((t) =>
-      normalizeText([turnoverFilial(t), t.mesReferencia || "", t.estado || ""].join(" ")).includes(q)
-    );
-  }
-  if (turnoverKindFilter.value === "admissoes") list = list.filter((t) => (Number(t.admitidos) || 0) > 0);
-  else if (turnoverKindFilter.value === "demissoes") list = list.filter((t) => (Number(t.demitidos) || 0) > 0);
-  return list;
-});
-
-function toggleTurnoverKind(kind) {
-  turnoverKindFilter.value = turnoverKindFilter.value === kind ? null : kind;
-}
-
-const turnoverTotals = computed(() =>
-  filteredTurnover.value.reduce(
-    (acc, t) => {
-      acc.admitidos += Number(t.admitidos) || 0;
-      acc.demitidos += Number(t.demitidos) || 0;
-      return acc;
-    },
-    { admitidos: 0, demitidos: 0 }
-  )
-);
-
-const selectedTurnovers = computed(() => turnoverList.value.filter((t) => selectedTurnoverIds.value.has(t.id)));
-const allTurnoverSelected = computed(
-  () =>
-    filteredTurnover.value.length > 0 &&
-    filteredTurnover.value.every((t) => selectedTurnoverIds.value.has(t.id))
-);
-
-function toggleTurnoverRow(id) {
-  const next = new Set(selectedTurnoverIds.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  selectedTurnoverIds.value = next;
-}
-
-function toggleTurnoverAll() {
-  if (allTurnoverSelected.value) selectedTurnoverIds.value = new Set();
-  else selectedTurnoverIds.value = new Set(filteredTurnover.value.map((t) => t.id));
-}
-
-async function handleBulkTurnoverDelete() {
-  const list = selectedTurnovers.value;
-  const n = list.length;
-  if (!n) return;
-  const ok = await confirm({
-    title: `Excluir ${n} registro(s)?`,
-    message: "Os registros selecionados serão removidos permanentemente.",
-    confirmText: `Excluir ${n}`,
-    danger: true
-  });
-  if (!ok) return;
-  await deleteTurnoverEntries(list.map((t) => t.id));
-  selectedTurnoverIds.value = new Set();
-  emit("saved");
-  toast(`${n} registro(s) excluído(s).`);
-}
-
-function handleExportTurnover() {
-  if (!filteredTurnover.value.length) return toast("Nenhum registro para exportar com os filtros atuais.");
-  exportTurnover(filteredTurnover.value, "turnover");
 }
 
 const headcount = reactive({
@@ -1327,7 +1161,6 @@ function handleSubmit() {
   if (form === "treinamento") return submitTreinamento();
   if (form === "custo_total") return submitCustosTotal();
   if (form === "vaga") return requestClose();
-  if (form === "turnover") return requestClose();
   if (form === "headcount") return requestClose();
 }
 
@@ -1598,166 +1431,6 @@ async function requestClose() {
                 />
                 <button v-if="!v.closeAt" type="button" class="btn-primary btn-sm" @click="closeVacancyById(v.id)">Fechar vaga</button>
                 <button type="button" class="btn-danger-ghost btn-sm" @click="removeVacancy(v.id)">Excluir</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <template v-if="indicator.form === 'turnover'">
-        <div v-show="activeTab === 'novo'" class="flex flex-col gap-4">
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="flex flex-col gap-1.5">
-              <label for="turnoverEstado" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
-              <select id="turnoverEstado" v-model="estado" class="input-field">
-                <option v-for="s in stateOptions" :key="s" :value="s">{{ stateLabel(s) }}</option>
-              </select>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="turnoverFilial" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Filial</label>
-              <select id="turnoverFilial" v-model="turnover.filial" class="input-field">
-                <option :value="null">— Sem filial —</option>
-                <option v-for="b in turnoverBranches" :key="b.id" :value="b.name">{{ b.name }}</option>
-              </select>
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="turnoverMes" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Mês de referência</label>
-              <input id="turnoverMes" v-model="turnover.mesReferencia" type="month" class="input-field" />
-            </div>
-          </div>
-
-          <div class="grid gap-4 sm:grid-cols-3">
-            <div class="flex flex-col gap-1.5">
-              <label for="turnoverAdmitidos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Admitidos no período</label>
-              <input id="turnoverAdmitidos" v-model="turnover.admitidos" type="number" min="0" step="1" class="input-field" placeholder="0" />
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="turnoverDemitidos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Demitidos no período</label>
-              <input id="turnoverDemitidos" v-model="turnover.demitidos" type="number" min="0" step="1" class="input-field" placeholder="0" />
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <label for="turnoverAtivos" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Ativos no período</label>
-              <input id="turnoverAtivos" v-model="turnover.ativos" type="number" min="0" step="1" class="input-field" placeholder="0" />
-            </div>
-          </div>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            Não é preciso informar colaboradores — só a quantidade admitida, demitida e ativa no mês, por filial. "Ativos"
-            substitui o Headcount no cálculo: Turnover (%) = ((Admitidos + Demitidos) / 2) / Ativos × 100 — não depende mais do
-            KPI de Headcount. Admitidos também alimenta as Novas contratações da Retenção.
-          </p>
-
-
-          <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-primary" @click="submitTurnover">
-              {{ editingTurnoverId ? "Salvar alterações" : "+ Lançar turnover" }}
-            </button>
-          </div>
-        </div>
-
-
-        <div v-show="activeTab === 'historico'" class="flex flex-col gap-3">
-          <p v-if="!turnoverList.length" class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            Nenhum registro lançado. Adicione um lançamento na aba "Novo".
-          </p>
-
-          <div v-if="turnoverList.length" class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="flex w-fit cursor-pointer flex-col gap-0.5 rounded-xl border border-accent/25 bg-accent/5 px-4 py-2.5 text-left transition hover:bg-accent/10 dark:border-accent/25 dark:bg-accent/10"
-              :class="turnoverKindFilter === 'admissoes' ? 'ring-2 ring-accent' : ''"
-              :aria-pressed="turnoverKindFilter === 'admissoes'"
-              title="Filtrar só as empresas com admissões"
-              @click="toggleTurnoverKind('admissoes')"
-            >
-              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total admissões</span>
-              <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.admitidos }}</span>
-            </button>
-            <button
-              type="button"
-              class="flex w-fit cursor-pointer flex-col gap-0.5 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-left transition hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-              :class="turnoverKindFilter === 'demissoes' ? 'ring-2 ring-accent' : ''"
-              :aria-pressed="turnoverKindFilter === 'demissoes'"
-              title="Filtrar só as empresas com demissões"
-              @click="toggleTurnoverKind('demissoes')"
-            >
-              <span class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Total demissões</span>
-              <span class="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ turnoverTotals.demitidos }}</span>
-            </button>
-            <p v-if="turnoverKindFilter" class="text-xs text-zinc-500 dark:text-zinc-400">
-              Mostrando só as empresas com
-              {{ turnoverKindFilter === "admissoes" ? "admissões" : "demissões" }} —
-              <button type="button" class="font-medium text-accent-hover dark:text-accent-light" @click="turnoverKindFilter = null">
-                remover filtro
-              </button>
-            </p>
-          </div>
-
-          <div v-if="turnoverList.length" class="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div class="flex flex-1 flex-col gap-1.5">
-              <label for="turnoverSearch" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Buscar</label>
-              <input
-                id="turnoverSearch"
-                v-model="turnoverSearch"
-                type="search"
-                class="input-field"
-                placeholder="Filial, mês, estado..."
-              />
-            </div>
-            <button type="button" class="btn-ghost btn-sm" @click="handleExportTurnover">Exportar</button>
-          </div>
-
-          <div v-if="turnoverList.length" class="flex flex-wrap items-center justify-between gap-2">
-            <label class="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              <input
-                type="checkbox"
-                class="h-4 w-4 cursor-pointer accent-accent"
-                :checked="allTurnoverSelected"
-                aria-label="Selecionar todos os registros"
-                @change="toggleTurnoverAll"
-              />
-              Selecionar todos
-            </label>
-            <div v-if="selectedTurnovers.length" class="flex flex-wrap items-center gap-2">
-              <span class="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent-hover dark:text-accent-light">
-                {{ selectedTurnovers.length }} selecionado(s)
-              </span>
-              <button type="button" class="btn-danger-ghost btn-sm" @click="handleBulkTurnoverDelete">Excluir selecionados</button>
-            </div>
-          </div>
-
-          <p
-            v-if="turnoverList.length && !filteredTurnover.length"
-            class="py-4 text-center text-sm text-zinc-500 dark:text-zinc-400"
-          >
-            Nenhum registro encontrado para essa busca.
-          </p>
-
-          <div
-            v-for="t in filteredTurnover"
-            :key="t.id"
-            class="flex items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-            :class="selectedTurnoverIds.has(t.id) ? 'bg-accent/5 dark:bg-accent/5' : ''"
-          >
-            <input
-              type="checkbox"
-              class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-accent"
-              :checked="selectedTurnoverIds.has(t.id)"
-              aria-label="Selecionar registro"
-              @change="toggleTurnoverRow(t.id)"
-            />
-            <div class="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div class="flex flex-col gap-0.5">
-                <strong class="text-sm text-zinc-900 dark:text-zinc-100">{{ turnoverFilial(t) || "— Sem filial —" }}</strong>
-                <span v-if="t.mesReferencia || t.estado" class="text-xs text-zinc-500 dark:text-zinc-400">
-                  {{ [t.mesReferencia ? ymLabel(t.mesReferencia) : "", t.estado].filter(Boolean).join(" · ") }}
-                </span>
-                <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                  Admitidos: {{ t.admitidos || 0 }} · Demitidos: {{ t.demitidos || 0 }}
-                </span>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <button type="button" class="btn-ghost btn-sm" @click="editTurnover(t.id)">Editar</button>
-                <button type="button" class="btn-danger-ghost btn-sm" @click="removeTurnover(t.id)">Excluir</button>
               </div>
             </div>
           </div>

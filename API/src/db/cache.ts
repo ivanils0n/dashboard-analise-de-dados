@@ -24,6 +24,14 @@ function logError(action: string, err: unknown) {
   console.error(`[cache] Falha ao ${action}:`, err instanceof Error ? err.message : err);
 }
 
+// Não definir CACHE_MAX_AGE_S em produção: lá o Apps Script só regrava a KV
+// quando a aba muda, então um cache "velho" é o normal e expirar por idade
+// faria o Worker reler a planilha inteira à toa.
+function maxAgeMsOf(env: Bindings): number {
+  const seconds = Number(env.CACHE_MAX_AGE_S);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+}
+
 async function bulkGet(env: Bindings, keys: string[]): Promise<Map<string, unknown>> {
   const out = new Map<string, unknown>();
   for (let i = 0; i < keys.length; i += BULK_GET_MAX) {
@@ -59,9 +67,11 @@ export async function readManyCachedSheets(
     return out;
   }
 
+  const maxAgeMs = maxAgeMsOf(env);
   sheetNames.forEach((name) => {
     const stored = values.get(sheetKey(name)) as StoredSheet | null;
     if (!stored || typeof stored.t !== "number") return;
+    if (maxAgeMs && Date.now() - stored.t > maxAgeMs) return;
     const invalidatedAt = values.get(markerKey(name));
     if (typeof invalidatedAt === "number" && stored.t <= invalidatedAt) return;
 

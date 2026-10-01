@@ -1,4 +1,4 @@
-const SUM_INDICATORS = new Set(["absenteismo", "treinamento", "custo_total"]);
+const SUM_INDICATORS = new Set(["absenteismo", "treinamento", "custo_total", "ferias"]);
 
 const AVG_INDICATORS = new Set(["custo_diaria", "custo_contratacao"]);
 
@@ -15,7 +15,8 @@ export function uniqueEmployeeCount(list) {
   (list || []).forEach((e) => {
     const m = e && e.meta;
     if (!m) return;
-    const key = employeeNameKey(m.employeeName) || m.employeeId;
+    const nome = employeeNameKey(m.employeeName);
+    const key = nome ? `${m.codigo || ""}|${nome}` : m.employeeId;
     if (key) keys.add(key);
   });
   return keys.size;
