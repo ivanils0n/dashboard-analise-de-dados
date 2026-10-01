@@ -3,7 +3,8 @@ import { computed } from "vue";
 import { TIPOS } from "@/lib/absenteismo";
 
 const props = defineProps({
-  ocorrencias: { type: Array, default: () => [] }
+  ocorrencias: { type: Array, default: () => [] },
+  neutral: { type: Boolean, default: false }
 });
 
 const cards = computed(() => {
@@ -14,7 +15,7 @@ const cards = computed(() => {
       key: t.value,
       label: t.short || t.plural,
       letter: t.letter,
-      chip: t.chip,
+      chip: props.neutral ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" : t.chip,
       count,
       share: total ? Math.round((count / total) * 100) : 0
     };

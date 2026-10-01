@@ -320,28 +320,24 @@ const totals = computed(() => [
     label: "Turnover geral",
     value: centerValue.value,
     sub: "Média de entrada e saída",
-    bar: "bg-accent",
-    tone: "text-accent"
+    tone: "text-zinc-900 dark:text-zinc-100"
   },
   {
     label: "Admissões",
     value: String(stats.value.admissoes),
     sub: `Entrada ${stats.value.turnoverEntradaPct === null ? "—" : fmtPct(stats.value.turnoverEntradaPct)}`,
-    bar: "bg-green-500",
-    tone: "text-green-600 dark:text-green-400"
+    tone: "text-zinc-900 dark:text-zinc-100"
   },
   {
     label: "Demissões",
     value: String(stats.value.desligamentos),
     sub: `Saída ${stats.value.turnoverSaidaPct === null ? "—" : fmtPct(stats.value.turnoverSaidaPct)}`,
-    bar: "bg-red-500",
-    tone: "text-red-600 dark:text-red-400"
+    tone: "text-zinc-900 dark:text-zinc-100"
   },
   {
     label: "Ativos",
     value: String(stats.value.headcountAtual),
     sub: "Quadro do mês filtrado",
-    bar: "bg-zinc-400",
     tone: "text-zinc-900 dark:text-zinc-100"
   }
 ]);
@@ -374,7 +370,6 @@ const totals = computed(() => [
             :key="t.label"
             class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-5 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
           >
-            <span class="absolute inset-x-0 top-0 h-1" :class="t.bar" />
             <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{{ t.label }}</p>
             <p class="mt-1.5 text-4xl font-bold leading-none tabular-nums" :class="t.tone">{{ t.value }}</p>
             <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{{ t.sub }}</p>

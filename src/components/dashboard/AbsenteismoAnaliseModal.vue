@@ -44,7 +44,7 @@ function variacao(value, kind = "pct") {
   const body = kind === "pp" ? fmtPp(value) : `${nf(Math.abs(value), 1)}%`;
   return {
     text: `${up ? "▲" : "▼"} ${kind === "pp" ? body : body} vs ${ymLabel(a.value.prev.ym)}`,
-    cls: up ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"
+    cls: "text-zinc-500 dark:text-zinc-400"
   };
 }
 
@@ -56,30 +56,27 @@ const cards = computed(() => {
   const vDias = variacao(d.variacao.dias);
   const pctAtivos = d.ativos ? (d.afetados / d.ativos) * 100 : null;
   return [
-    { label: "Ocorrências", value: nf(d.total), sub: vTotal.text, subCls: vTotal.cls, bar: "bg-accent", tone: "text-zinc-900 dark:text-zinc-100" },
+    { label: "Ocorrências", value: nf(d.total), sub: vTotal.text, subCls: vTotal.cls, tone: "text-zinc-900 dark:text-zinc-100" },
     {
       label: "Taxa de absenteísmo",
       value: fmtPct(d.taxa),
       sub: d.taxa == null ? "sem ativos no Headcount" : vTaxa.text,
       subCls: vTaxa.cls,
-      bar: "bg-rose-500",
-      tone: "text-rose-600 dark:text-rose-400"
+      tone: "text-zinc-900 dark:text-zinc-100"
     },
     {
       label: "Colaboradores afetados",
       value: nf(d.afetados),
       sub: pctAtivos == null ? vAfet.text : `${nf(pctAtivos, 1)}% dos ${nf(d.ativos)} ativos · ${vAfet.text}`,
       subCls: "text-zinc-500 dark:text-zinc-400",
-      bar: "bg-sky-500",
       tone: "text-zinc-900 dark:text-zinc-100"
     },
-    { label: "Dias de ausência", value: nf(d.dias, 1), sub: vDias.text, subCls: vDias.cls, bar: "bg-amber-500", tone: "text-zinc-900 dark:text-zinc-100" },
+    { label: "Dias de ausência", value: nf(d.dias, 1), sub: vDias.text, subCls: vDias.cls, tone: "text-zinc-900 dark:text-zinc-100" },
     {
       label: "Média por afetado",
       value: d.mediaPorAfetado == null ? "—" : nf(d.mediaPorAfetado, 1),
       sub: "ocorrências por colaborador afetado",
       subCls: "text-zinc-500 dark:text-zinc-400",
-      bar: "bg-violet-500",
       tone: "text-zinc-900 dark:text-zinc-100"
     }
   ];
@@ -180,14 +177,13 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
 
         <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           <div v-for="c in cards" :key="c.label" :class="[cardCls, 'relative p-5 text-center']">
-            <span class="absolute inset-x-0 top-0 h-1" :class="c.bar" />
             <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{{ c.label }}</p>
             <p class="mt-1.5 text-4xl font-bold leading-none tabular-nums" :class="c.tone">{{ c.value }}</p>
             <p class="mt-2 text-xs" :class="c.subCls">{{ c.sub }}</p>
           </div>
         </div>
 
-        <AbsenteismoKpis :ocorrencias="a.itens" class="lg:!w-full lg:!min-w-0" />
+        <AbsenteismoKpis :ocorrencias="a.itens" neutral class="lg:!w-full lg:!min-w-0" />
 
         <template v-if="a.total > 0">
           <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">

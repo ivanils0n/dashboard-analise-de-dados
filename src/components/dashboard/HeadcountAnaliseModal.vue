@@ -82,25 +82,22 @@ const cards = computed(() => {
     if (anterior) {
       const diff = t - anterior;
       sub = `${diff > 0 ? "▲ +" : diff < 0 ? "▼ " : "• "}${diff} vs mês anterior`;
-      subTone = diff > 0 ? "text-green-600 dark:text-green-400" : diff < 0 ? "text-red-600 dark:text-red-400" : subTone;
     }
   }
   return [
-    { label: "Colaboradores ativos", value: String(t), sub, subTone, bar: "bg-accent", tone: "text-accent" },
+    { label: "Colaboradores ativos", value: String(t), sub, subTone, tone: "text-zinc-900 dark:text-zinc-100" },
     {
       label: "Feminino",
       value: t ? fmtPct((fem / t) * 100) : "—",
       sub: `${fem} de ${t} colaboradores`,
-      bar: "bg-pink-500",
-      tone: "text-pink-600 dark:text-pink-400"
+      tone: "text-zinc-900 dark:text-zinc-100"
     },
-    { label: "Tempo médio de casa", value: tempoMedioCasa.value, sub: "Dos colaboradores ativos", bar: "bg-sky-500", tone: "text-sky-600 dark:text-sky-400" },
+    { label: "Tempo médio de casa", value: tempoMedioCasa.value, sub: "Dos colaboradores ativos", tone: "text-zinc-900 dark:text-zinc-100" },
     {
       label: "Saldo do período",
       value: `${saldo > 0 ? "+" : ""}${saldo}`,
       sub: `${adm} admissões · ${desl} desligamentos`,
-      bar: saldo < 0 ? "bg-red-500" : "bg-green-500",
-      tone: saldo < 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"
+      tone: "text-zinc-900 dark:text-zinc-100"
     }
   ];
 });
@@ -228,7 +225,6 @@ function onGeneroClick(sliceIndex) {
             :key="c.label"
             class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-5 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
           >
-            <span class="absolute inset-x-0 top-0 h-1" :class="c.bar" />
             <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{{ c.label }}</p>
             <p class="mt-1.5 text-4xl font-bold leading-none tabular-nums" :class="c.tone">{{ c.value }}</p>
             <p class="mt-2 text-xs font-medium" :class="c.subTone || 'text-zinc-500 dark:text-zinc-400'">{{ c.sub }}</p>
