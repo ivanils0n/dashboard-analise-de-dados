@@ -7,10 +7,12 @@ import { turnoverEntriesInRange, headcountMovements, findBranchByShortName, list
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatDate, formatCurrency, ymLabel } from "@/lib/utils";
+import { regionalLabel } from "@/lib/regionais";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  kind: { type: String, default: "geral" }
+  kind: { type: String, default: "geral" },
+  regional: { type: String, default: "" }
 });
 
 const emit = defineEmits(["close"]);
@@ -28,7 +30,7 @@ const range = computed(() =>
 );
 
 const rows = computed(() =>
-  turnoverEntriesInRange(state.current, range.value).map((t) => {
+  turnoverEntriesInRange(state.current, range.value).filter((t) => !props.regional || t.regional === props.regional).map((t) => {
     const admissoes = Number(t.admitidos) || 0;
     const demissoes = Number(t.demitidos) || 0;
     const ativos = Number(t.ativos) || 0;
@@ -52,6 +54,7 @@ const rowsVisiveis = computed(() => (isGeral.value ? rows.value : rows.value.fil
 
 const colaboradoresRescisao = computed(() =>
   listRescisoes(state.current, range.value)
+    .filter((r) => !props.regional || regionalLabel(r.regionalFilial) === props.regional)
     .map((r) => {
       const branch = r.filial ? findBranchByShortName(r.filial, r.estado) : null;
       return {
@@ -68,12 +71,14 @@ const colaboradoresRescisao = computed(() =>
     .sort((a, b) => String(b.data).localeCompare(String(a.data)) || a.colaborador.localeCompare(b.colaborador))
 );
 
+const colunasRescisao = computed(() => !isAdmissao.value && !props.regional);
+
 const colaboradores = computed(() => {
   if (!isColaboradores.value) return [];
-  if (!isAdmissao.value) return colaboradoresRescisao.value;
+  if (colunasRescisao.value) return colaboradoresRescisao.value;
   const mov = headcountMovements(state.current, range.value);
-  const list = mov.admissoes;
-  return list
+  return (isAdmissao.value ? mov.admissoes : mov.demissoes)
+    .filter((h) => !props.regional || regionalLabel(h.regional) === props.regional)
     .map((h) => {
       const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
       return {
@@ -105,8 +110,8 @@ const escopo = computed(() => {
 const periodo = computed(() => (dateFilter.start ? ymLabel(String(dateFilter.end || dateFilter.start).slice(0, 7)) : "Todo o período"));
 
 const title = computed(() => {
-  if (isGeral.value) return "Turnover — Geral";
-  return isAdmissao.value ? "Turnover — Admissões" : "Turnover — Demissões";
+  const base = isGeral.value ? "Turnover — Geral" : isAdmissao.value ? "Turnover — Admissões" : "Turnover — Demissões";
+  return props.regional ? `${base} — ${props.regional}` : base;
 });
 </script>
 
@@ -175,7 +180,7 @@ const title = computed(() => {
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
-                <th v-if="isAdmissao" class="whitespace-nowrap px-4 py-2.5 font-semibold">Data de admissão</th>
+                <th v-if="!colunasRescisao" class="whitespace-nowrap px-4 py-2.5 font-semibold">{{ isAdmissao ? "Data de admissão" : "Data de desligamento" }}</th>
                 <template v-else>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Motivo</th>
                   <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Último dia de aviso</th>
@@ -188,7 +193,7 @@ const title = computed(() => {
                 <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ c.colaborador }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.empresa }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.estado || "—" }}</td>
-                <td v-if="isAdmissao" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.data ? formatDate(c.data) : "—" }}</td>
+                <td v-if="!colunasRescisao" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.data ? formatDate(c.data) : "—" }}</td>
                 <template v-else>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.motivo }}</td>
                   <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.ultDiaAviso ? formatDate(c.ultDiaAviso) : "—" }}</td>

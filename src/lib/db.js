@@ -490,6 +490,7 @@ function mapRemoteRescisao(row, impliedState) {
     admissao: row.admissao ? String(row.admissao).slice(0, 10) : null,
     gerenteImediato: up(row.gerente_imediato) || null,
     regional: regionalText(row.regional),
+    regionalFilial: regionalDaFilial(row.filial, row.estado || impliedState),
     motivo: up(row.motivo) || null,
     justificativaApurada: up(row.justificativa_apurada) || null,
     ponderacoes: up(row.ponderacoes) || null,

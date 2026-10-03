@@ -820,7 +820,7 @@ export function turnoverEntriesInRange(state, range) {
   const bucket = (h, ym) => {
     const key = `${ym}|${h.estado || ""}|${branchKeyFor(h.filial, h.estado)}`;
     if (!groups.has(key)) {
-      groups.set(key, { id: key, mesReferencia: ym, filial: h.filial || null, estado: h.estado || null, admitidos: 0, demitidos: 0, ativos: 0 });
+      groups.set(key, { id: key, mesReferencia: ym, filial: h.filial || null, estado: h.estado || null, regional: regionalLabel(h.regional), admitidos: 0, demitidos: 0, ativos: 0 });
     }
     return groups.get(key);
   };

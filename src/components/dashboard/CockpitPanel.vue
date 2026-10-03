@@ -94,9 +94,23 @@ const feriasView = ref("colaborador");
 
 const PERMANENCIA_VIEWS = [
   { value: "colaborador", label: "Colaborador", title: "Dias por colaborador" },
+  { value: "filial", label: "Filial", title: "Média de dias por filial" },
   { value: "regional", label: "Regional", title: "Média de dias por regional" }
 ];
 const permanenciaView = ref("colaborador");
+
+const RETENCAO_VIEWS = [
+  { value: "geral", label: "Geral", title: "Retenção geral" },
+  { value: "regional", label: "Regional", title: "Retenção por regional" }
+];
+const retencaoView = ref("geral");
+
+const TURNOVER_VIEWS = [
+  { value: "geral", label: "Geral", title: "Entrada vs Saída geral" },
+  { value: "regional", label: "Regional", title: "Entrada vs Saída por regional" }
+];
+const turnoverView = ref("geral");
+const turnoverRegional = ref("");
 
 const CUSTO_VIEWS = [
   { value: "empresa", label: "Empresa", title: "Total por empresa" },
@@ -161,7 +175,9 @@ const centerChart = computed(() =>
     diariaView.value,
     feriasView.value,
     custoView.value,
-    permanenciaView.value
+    permanenciaView.value,
+    turnoverView.value,
+    retencaoView.value
   )
 );
 
@@ -209,6 +225,7 @@ const VIEW_REF_BY_CHART = {
   custo_diaria: diariaView,
   rescisoes: rescisaoView,
   tempo_permanencia: permanenciaView,
+  retencao: retencaoView,
   ferias: feriasView,
   custo_total: custoView
 };
@@ -216,7 +233,8 @@ const isRegionalView = computed(() => VIEW_REF_BY_CHART[centerChart.value.id || 
 
 const singleCaption = computed(() => {
   const chart = centerChart.value;
-  const nomeiaBarraUnica = isRegionalView.value || !chart.id || chart.id === "custo_total";
+  const nomeiaBarraUnica =
+    isRegionalView.value || !chart.id || chart.id === "custo_total" || (chart.id === "tempo_permanencia" && permanenciaView.value === "filial");
   return nomeiaBarraUnica && chart.data.length === 1 ? String(chart.data[0].label) : "";
 });
 
@@ -296,6 +314,12 @@ const headcountGenero = ref("");
 const headcountRegional = ref("");
 
 function onCenterBarClick({ index, label, datasetIndex }) {
+  if (centerChart.value.id === "turnover") {
+    if (!label) return;
+    turnoverRegional.value = label;
+    openTurnoverDetail(datasetIndex === 1 ? "demissoes" : "admissoes");
+    return;
+  }
   if (centerChart.value.id === "headcount") {
     if (!label) return;
     headcountGenero.value = ["masculino", "feminino"][datasetIndex] || "";
@@ -367,9 +391,9 @@ function onCenterBarClick({ index, label, datasetIndex }) {
   }
   if (centerChart.value.id === "tempo_permanencia") {
     const row = centerChart.value.data[index];
-    if (row && permanenciaView.value === "regional") {
+    if (row && permanenciaView.value !== "colaborador") {
       permanenciaRegionalName.value = row.label;
-      permanenciaRegionalRows.value = props.dashboard.permanenciaEntriesByRegional(row.label);
+      permanenciaRegionalRows.value = props.dashboard.permanenciaEntriesBy(permanenciaView.value, row.label);
       permanenciaRegionalOpen.value = true;
       return;
     }
@@ -409,7 +433,7 @@ const permanenciaRegionalRows = ref([]);
 const permanenciaDetailOpen = ref(false);
 const permanenciaDetailRecord = ref(null);
 
-const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "ticket_medio", "horas_regional", "rescisoes", "absenteismo"];
+const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "ticket_medio", "horas_regional", "rescisoes", "absenteismo", "retencao", "turnover"];
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
 const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "rescisoes"];
@@ -522,6 +546,8 @@ function goNextKpi() {
                   <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />
                   <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
                   <ViewTabs v-if="!centerChart.id || centerChart.id === 'custo_total'" v-model="custoView" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
+                  <ViewTabs v-if="centerChart.id === 'retencao'" v-model="retencaoView" :options="RETENCAO_VIEWS" label="Visão da retenção" />
+                  <ViewTabs v-if="centerChart.id === 'turnover'" v-model="turnoverView" :options="TURNOVER_VIEWS" label="Visão do turnover" />
                   <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
                   <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
                   <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -773,6 +799,7 @@ function goNextKpi() {
       v-if="turnoverDetailOpen"
       :open="turnoverDetailOpen"
       :kind="turnoverDetailKind"
+      :regional="turnoverView === 'regional' ? turnoverRegional : ''"
       @close="turnoverDetailOpen = false"
     />
 
@@ -866,6 +893,8 @@ function goNextKpi() {
           <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />
           <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
           <ViewTabs v-if="!centerChart.id || centerChart.id === 'custo_total'" v-model="custoView" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
+          <ViewTabs v-if="centerChart.id === 'retencao'" v-model="retencaoView" :options="RETENCAO_VIEWS" label="Visão da retenção" />
+          <ViewTabs v-if="centerChart.id === 'turnover'" v-model="turnoverView" :options="TURNOVER_VIEWS" label="Visão do turnover" />
           <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
           <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
           <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />

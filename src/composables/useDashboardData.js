@@ -11,6 +11,7 @@ import {
   headcountCountInRange,
   headcountGenderCountInRange,
   headcountGenderCountByRegional,
+  headcountMovements,
   headcountFilialOptions,
   headcountEmpresaOptions,
   headcountFuncaoOptions,
@@ -29,6 +30,7 @@ import {
   normalizeBranchKey
 } from "@/lib/employees";
 import { regionalLabel } from "@/lib/regionais";
+import { ACCENT, PIE_SECONDARY } from "@/lib/charts";
 import {
   formatValue,
   formatDate,
@@ -1023,16 +1025,23 @@ export function useDashboardData(filter) {
     );
   }
 
-  function permanenciaEntriesByRegional(label) {
+  const PERMANENCIA_GROUP_LABEL = {
+    regional: (p) => regionalLabel(p.regional),
+    filial: (p) => upperText(filialDisplay(p.filial, p.estado)) || "SEM FILIAL"
+  };
+
+  function permanenciaEntriesBy(view, label) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
-    return sortPermanencia(permanenciaDesligados(currentState(), range).filter((p) => regionalLabel(p.regional) === label));
+    const labelOf = PERMANENCIA_GROUP_LABEL[view];
+    return sortPermanencia(permanenciaDesligados(currentState(), range).filter((p) => labelOf(p) === label));
   }
 
-  function turnoverTenureBarByRegional() {
+  function turnoverTenureBarBy(view) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const labelOf = PERMANENCIA_GROUP_LABEL[view];
     const groups = new Map();
     permanenciaDesligados(currentState(), range).forEach((p) => {
-      const label = regionalLabel(p.regional);
+      const label = labelOf(p);
       const g = groups.get(label) || { dias: 0, count: 0 };
       g.dias += p.dias;
       g.count += 1;
@@ -1044,6 +1053,48 @@ export function useDashboardData(filter) {
         value: Math.round((dias / count) * 10) / 10,
         tooltipValue: `${(dias / count).toFixed(1)} dias · ${count} ${count === 1 ? "desligado" : "desligados"}`
       }))
+      .sort((a, b) => b.value - a.value);
+  }
+
+  function turnoverStatsByRegional() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const st = currentState();
+    const states = st && st !== "todos" ? [st] : STATES;
+    const byRegional = new Map();
+    const bucket = (label) => {
+      if (!byRegional.has(label)) byRegional.set(label, { admissoes: 0, demissoes: 0, ativos: 0 });
+      return byRegional.get(label);
+    };
+    states.forEach((s) => {
+      headcountGenderCountByRegional(s, range).forEach((g, label) => {
+        bucket(label).ativos += g.total;
+      });
+    });
+    const mov = headcountMovements(st, range);
+    mov.admissoes.forEach((h) => {
+      bucket(regionalLabel(h.regional)).admissoes += 1;
+    });
+    mov.demissoes.forEach((h) => {
+      bucket(regionalLabel(h.regional)).demissoes += 1;
+    });
+    return byRegional;
+  }
+
+  function turnoverBarByRegional() {
+    return [...turnoverStatsByRegional().entries()]
+      .filter(([, s]) => s.ativos > 0)
+      .map(([label, s]) => {
+        const entrada = (s.admissoes / s.ativos) * 100;
+        const saida = (s.demissoes / s.ativos) * 100;
+        return {
+          label,
+          value: entrada + saida,
+          series: [
+            { label: "Entrada", value: entrada, color: ACCENT },
+            { label: "Saída", value: saida, color: PIE_SECONDARY }
+          ]
+        };
+      })
       .sort((a, b) => b.value - a.value);
   }
 
@@ -1106,6 +1157,41 @@ export function useDashboardData(filter) {
     const divergencias = retentionDivergences(currentState(), range, prevRange);
     const headcountEsperado = stats.headcountInicial + stats.novasContratacoes - stats.demissoes;
     return { ...stats, missing, divergencias, headcountEsperado };
+  }
+
+  function retentionBarByRegional() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const prevRange = previousMonthRange();
+    if (!range || !prevRange) return [];
+    const st = currentState();
+    const states = st && st !== "todos" ? [st] : STATES;
+    const byRegional = new Map();
+    const bucket = (label) => {
+      if (!byRegional.has(label)) byRegional.set(label, { inicial: 0, final: 0, novas: 0 });
+      return byRegional.get(label);
+    };
+    states.forEach((s) => {
+      headcountGenderCountByRegional(s, range).forEach((g, label) => {
+        bucket(label).final += g.total;
+      });
+      headcountGenderCountByRegional(s, prevRange).forEach((g, label) => {
+        bucket(label).inicial += g.total;
+      });
+    });
+    headcountMovements(st, range).admissoes.forEach((h) => {
+      bucket(regionalLabel(h.regional)).novas += 1;
+    });
+    return [...byRegional.entries()]
+      .filter(([, g]) => g.inicial > 0)
+      .map(([label, g]) => {
+        const pct = ((g.final - g.novas) / g.inicial) * 100;
+        return {
+          label,
+          value: pct,
+          tooltipValue: `${pct.toFixed(1).replace(".", ",")}% · inicial ${g.inicial} · final ${g.final} · novas ${g.novas}`
+        };
+      })
+      .sort((a, b) => b.value - a.value);
   }
 
   const panorama = computed(() => {
@@ -1202,7 +1288,7 @@ export function useDashboardData(filter) {
 
   const DIARIA_VIEW_LABELS = { colaborador: "colaborador", filial: "filial", regional: "regional" };
 
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador") {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador", turnoverView = "geral", retencaoView = "geral") {
     const custoPorRegional = custoView === "regional";
     const custoSub = `Valor total por ${custoPorRegional ? "regional" : "empresa"}, no período filtrado`;
     const custoData = () => (custoPorRegional ? custosBarByRegional() : custosBarByEmpresa());
@@ -1220,6 +1306,16 @@ export function useDashboardData(filter) {
     }
 
     if (kpiId === "turnover") {
+      if (turnoverView === "regional") {
+        return {
+          id: "turnover",
+          kind: "bar",
+          title: "Turnover",
+          sub: "Entrada vs Saída por regional (% do headcount ativo)",
+          data: turnoverBarByRegional(),
+          valueFormat: "percent"
+        };
+      }
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
       const stats = turnoverRateStats(currentState(), range);
       return {
@@ -1328,10 +1424,10 @@ export function useDashboardData(filter) {
         kind: "bar",
         title: "Tempo médio de permanência",
         sub:
-          permanenciaView === "regional"
-            ? "Média de dias entre admissão e desligamento, por regional"
-            : "Dias entre admissão e desligamento, por colaborador",
-        data: permanenciaView === "regional" ? turnoverTenureBarByRegional() : turnoverTenureBarByEmployee(),
+          permanenciaView === "colaborador"
+            ? "Dias entre admissão e desligamento, por colaborador"
+            : `Média de dias entre admissão e desligamento, por ${permanenciaView}`,
+        data: permanenciaView === "colaborador" ? turnoverTenureBarByEmployee() : turnoverTenureBarBy(permanenciaView),
         valueFormat: ""
       };
     }
@@ -1352,6 +1448,16 @@ export function useDashboardData(filter) {
             ? rescisoesBarByRegional(rescisaoMode, rescisaoFilters)
             : rescisoesBarByFuncao(rescisaoMode, rescisaoFilters),
         valueFormat: "currency"
+      };
+    }
+    if (kpiId === "retencao" && retencaoView === "regional") {
+      return {
+        id: "retencao",
+        kind: "bar",
+        title: "Retenção",
+        sub: "Taxa de retenção por regional: (Headcount final − novas contratações) ÷ Headcount inicial",
+        data: retentionBarByRegional(),
+        valueFormat: "percent"
       };
     }
     if (kpiId === "retencao") {
@@ -1470,7 +1576,7 @@ export function useDashboardData(filter) {
     chartPieData,
     turnoverTenureBarByEmployee,
     permanenciaDesligadosLista,
-    permanenciaEntriesByRegional,
+    permanenciaEntriesBy,
     rescisoesBarByFuncao,
     rescisoesPieByEstado,
     rescisoesEntriesByFuncao,
