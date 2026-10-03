@@ -14,6 +14,7 @@ import {
 import { computed, toRaw } from "vue";
 import { createId, nowLocalISO, daysBetween, sameState, ymLabel, filialDisplay } from "./utils";
 import { flush } from "./db";
+import { regionalLabel } from "./regionais";
 
 function filterByState(list, state) {
   if (!state || state === "todos") return list;
@@ -308,7 +309,7 @@ export function rescisoesByFuncao(state, range, mode, filters) {
 }
 
 export function rescisaoRegionalLabel(r) {
-  return String(r.regional || "").trim().toUpperCase() || "SEM REGIONAL";
+  return regionalLabel(r.regional);
 }
 
 export function rescisoesByRegional(state, range, mode, filters) {
@@ -607,7 +608,7 @@ export function headcountFuncaoOptions(state) {
 export function headcountGenderCountByRegional(state, range, filiais = [], empresas = [], funcoes = []) {
   const groups = new Map();
   headcountFilteredRows(state, range, filiais, empresas, funcoes).forEach((row) => {
-    const label = String(row.raw.regional || "").trim().toUpperCase() || "SEM REGIONAL";
+    const label = regionalLabel(row.raw.regional);
     const g = groups.get(label) || { masculino: 0, feminino: 0, total: 0 };
     if (row.genero === "masculino") g.masculino += 1;
     else if (row.genero === "feminino") g.feminino += 1;

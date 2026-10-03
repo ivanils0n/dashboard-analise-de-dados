@@ -6,6 +6,7 @@ import HeadcountEditModal from "@/components/dashboard/HeadcountEditModal.vue";
 import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import { STATE_NAMES, getIndicatorById } from "@/lib/config";
 import { listHeadcountRecords, isHeadcountAtivo, findBranchByShortName, deleteHeadcountRecord, filialKeyFor, filialKeyOfLabel } from "@/lib/employees";
+import { regionalLabel } from "@/lib/regionais";
 import { dateFilter } from "@/composables/useDateFilter";
 import { formatDate, normalizeText, ymLabel, filialDisplay } from "@/lib/utils";
 import { useDialog } from "@/composables/useDialog";
@@ -40,7 +41,7 @@ const records = computed(() =>
     .filter((h) => !props.empresa.length || props.empresa.some((e) => String(h.empresa || "").trim().toUpperCase() === String(e).trim().toUpperCase()))
     .filter((h) => !props.funcao.length || props.funcao.some((f) => String(h.funcao || "").trim().toUpperCase() === String(f).trim().toUpperCase()))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
-    .filter((h) => !props.regional || (String(h.regional || "").trim().toUpperCase() || "SEM REGIONAL") === props.regional)
+    .filter((h) => !props.regional || regionalLabel(h.regional) === props.regional)
     .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
     return { ...h, filialNome: branch ? branch.name : h.filial || "", ativo: isHeadcountAtivo(h, ym.value) };

@@ -28,6 +28,7 @@ import {
   findBranchByShortName,
   normalizeBranchKey
 } from "@/lib/employees";
+import { regionalLabel } from "@/lib/regionais";
 import {
   formatValue,
   formatDate,
@@ -417,7 +418,7 @@ export function useDashboardData(filter) {
     if (!ind) return [];
     const byRegional = new Map();
     filteredEntries(ind).forEach((e) => {
-      const gr = upperText((e.meta && e.meta.gerenteRegional) || "") || "SEM REGIONAL";
+      const gr = regionalLabel(e.meta && e.meta.gerenteRegional);
       byRegional.set(gr, (byRegional.get(gr) || 0) + (Number(e.value) || 0));
     });
     return [...byRegional.entries()]
@@ -450,7 +451,7 @@ export function useDashboardData(filter) {
     const ind = getIndicatorById("treinamento");
     if (!ind) return [];
     return filteredEntries(ind).filter(
-      (e) => (upperText((e.meta && e.meta.gerenteRegional) || "") || "SEM REGIONAL") === label
+      (e) => regionalLabel(e.meta && e.meta.gerenteRegional) === label
     );
   }
 
@@ -460,7 +461,7 @@ export function useDashboardData(filter) {
     const groups = new Map();
     filteredEntries(ind).forEach((e) => {
       const meta = e.meta || {};
-      const regional = upperText(meta.gerenteRegional || "") || "SEM REGIONAL";
+      const regional = regionalLabel(meta.gerenteRegional);
       if (!groups.has(regional)) groups.set(regional, { regional, horas: 0, nomes: new Set(), treinamentos: [] });
       const g = groups.get(regional);
       const horas = Number(e.value) || 0;
@@ -497,13 +498,13 @@ export function useDashboardData(filter) {
   }
 
   function custoPessoalEntriesByRegional(label) {
-    return custoEntries().filter((e) => feriasRegional(e) === label);
+    return custoEntries().filter((e) => entryRegional(e) === label);
   }
 
   function custosBarByRegional() {
     const groups = new Map();
     custoEntries().forEach((e) => {
-      const label = feriasRegional(e);
+      const label = entryRegional(e);
       if (!groups.has(label)) groups.set(label, { value: 0, filiais: new Set() });
       const g = groups.get(label);
       g.value += Number(e.value) || 0;
@@ -610,7 +611,7 @@ export function useDashboardData(filter) {
       return { key: label, label };
     }
     if (view === "regional") {
-      const label = upperText((entry.meta && entry.meta.regional) || "").trim() || "SEM REGIONAL";
+      const label = regionalLabel(entry.meta && entry.meta.regional);
       return { key: label, label };
     }
     const label = diariaColaboradorName(entry);
@@ -661,8 +662,8 @@ export function useDashboardData(filter) {
     return ind ? filteredEntries(ind) : [];
   }
 
-  function feriasRegional(entry) {
-    return upperText((entry.meta && entry.meta.regional) || "").trim() || "SEM REGIONAL";
+  function entryRegional(entry) {
+    return regionalLabel(entry.meta && entry.meta.regional);
   }
 
   function feriasFilial(entry) {
@@ -671,7 +672,7 @@ export function useDashboardData(filter) {
 
   function feriasGroup(entry, view) {
     if (view === "regional") {
-      const label = feriasRegional(entry);
+      const label = entryRegional(entry);
       return { key: label, label };
     }
     if (view === "filial") {
@@ -683,9 +684,9 @@ export function useDashboardData(filter) {
     return { key: `${meta.codigo || ""}|${employeeNameKey(label)}`, label, codigo: meta.codigo || "" };
   }
 
-  function feriasGroups(view) {
+  function feriasGroups(view, entries = feriasEntries()) {
     const groups = new Map();
-    feriasEntries().forEach((e) => {
+    entries.forEach((e) => {
       const { key, label, codigo } = feriasGroup(e, view);
       if (!groups.has(key)) groups.set(key, { label, codigo, value: 0, entries: [] });
       const g = groups.get(key);
@@ -708,7 +709,7 @@ export function useDashboardData(filter) {
 
   function feriasBarBy(view) {
     const list = feriasEntries();
-    const rows = feriasGroups(view)
+    const rows = feriasGroups(view, list)
       .map((g) => {
         const pessoas = uniqueEmployeeCount(g.entries);
         return {
@@ -724,7 +725,7 @@ export function useDashboardData(filter) {
         total: list.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
         colaboradores: uniqueEmployeeCount(list),
         filiais: new Set(list.map((e) => employeeNameKey(feriasFilial(e)))).size,
-        regionais: new Set(list.map(feriasRegional)).size
+        regionais: new Set(list.map(entryRegional)).size
       }
     };
   }
@@ -1001,9 +1002,7 @@ export function useDashboardData(filter) {
 
   function permanenciaDesligadosLista() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
-    return permanenciaDesligados(currentState(), range).sort((a, b) =>
-      b.dataDemissao.localeCompare(a.dataDemissao) || String(a.colaborador).localeCompare(String(b.colaborador), "pt-BR")
-    );
+    return sortPermanencia(permanenciaDesligados(currentState(), range));
   }
 
   function turnoverTenureBarByEmployee() {
@@ -1018,15 +1017,22 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
+  function sortPermanencia(list) {
+    return list.sort((a, b) =>
+      b.dataDemissao.localeCompare(a.dataDemissao) || String(a.colaborador).localeCompare(String(b.colaborador), "pt-BR")
+    );
+  }
+
   function permanenciaEntriesByRegional(label) {
-    return permanenciaDesligadosLista().filter((p) => (upperText(p.regional || "").trim() || "SEM REGIONAL") === label);
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return sortPermanencia(permanenciaDesligados(currentState(), range).filter((p) => regionalLabel(p.regional) === label));
   }
 
   function turnoverTenureBarByRegional() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const groups = new Map();
     permanenciaDesligados(currentState(), range).forEach((p) => {
-      const label = upperText(p.regional || "").trim() || "SEM REGIONAL";
+      const label = regionalLabel(p.regional);
       const g = groups.get(label) || { dias: 0, count: 0 };
       g.dias += p.dias;
       g.count += 1;

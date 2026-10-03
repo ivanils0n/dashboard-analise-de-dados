@@ -232,7 +232,7 @@ const title = computed(() => {
         </div>
       </div>
 
-      <EmptyState v-else title="Sem informações suficientes" text="" />
+      <EmptyState v-else title="Sem informações suficientes" />
     </div>
   </Modal>
 </template>

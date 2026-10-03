@@ -7,7 +7,13 @@ const NOMES_ALTERNATIVOS = {
   NOVABRASILANDIA: "NBO"
 };
 
-export function filialKey(value) {
+export const SEM_REGIONAL = "SEM REGIONAL";
+
+export function regionalLabel(value) {
+  return String(value ?? "").trim().toUpperCase() || SEM_REGIONAL;
+}
+
+function filialKey(value) {
   return String(value ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -74,13 +80,19 @@ export function buildRegionalLookup(rows) {
     });
   });
 
+  const poolsByUf = new Map();
   function poolFor(estado) {
     const uf = String(estado || "").trim().toUpperCase();
-    const same = uf ? entries.filter((e) => e.estado === uf) : [];
-    return same.length ? same : entries;
+    let pool = poolsByUf.get(uf);
+    if (!pool) {
+      const same = uf ? entries.filter((e) => e.estado === uf) : [];
+      pool = same.length ? same : entries;
+      poolsByUf.set(uf, pool);
+    }
+    return pool;
   }
 
-  function resolve(filial, estado) {
+  function resolveUncached(filial, estado) {
     let key = filialKey(filial);
     if (!key) return "";
     if (key === "CD") key = `CD${String(estado || "").trim().toUpperCase()}`;
@@ -121,5 +133,16 @@ export function buildRegionalLookup(rows) {
     return "";
   }
 
-  return { resolve, size: entries.length };
+  const cache = new Map();
+  function resolve(filial, estado) {
+    const cacheKey = `${estado ?? ""}\u0000${filial ?? ""}`;
+    let found = cache.get(cacheKey);
+    if (found === undefined) {
+      found = resolveUncached(filial, estado);
+      cache.set(cacheKey, found);
+    }
+    return found;
+  }
+
+  return { resolve };
 }

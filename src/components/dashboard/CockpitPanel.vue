@@ -114,12 +114,10 @@ const rescisaoMode = ref("total");
 const rescisaoView = ref("funcao");
 
 const rescisaoFilial = ref("");
-const rescisaoGerente = ref("");
 const rescisaoOptions = computed(() => props.dashboard.rescisoesFilterOptions());
-const rescisaoFilters = computed(() => ({ filial: rescisaoFilial.value, gerente: rescisaoGerente.value }));
+const rescisaoFilters = computed(() => ({ filial: rescisaoFilial.value }));
 watch(rescisaoOptions, (opts) => {
   if (rescisaoFilial.value && !opts.filiais.includes(rescisaoFilial.value)) rescisaoFilial.value = "";
-  if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
 });
 
 const rescisaoFuncaoOpen = ref(false);
@@ -207,14 +205,19 @@ const feriasSummaryItems = computed(() => {
   ];
 });
 
+const VIEW_REF_BY_CHART = {
+  custo_diaria: diariaView,
+  rescisoes: rescisaoView,
+  tempo_permanencia: permanenciaView,
+  ferias: feriasView,
+  custo_total: custoView
+};
+const isRegionalView = computed(() => VIEW_REF_BY_CHART[centerChart.value.id || "custo_total"]?.value === "regional");
+
 const singleCaption = computed(() => {
   const chart = centerChart.value;
-  if (chart.id === "custo_diaria" && diariaView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
-  if (chart.id === "rescisoes" && rescisaoView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
-  if (chart.id === "tempo_permanencia" && permanenciaView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
-  if (chart.id === "ferias" && feriasView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
-  if (!chart.id || chart.id === "custo_total") return chart.data.length === 1 ? String(chart.data[0].label) : "";
-  return "";
+  const nomeiaBarraUnica = isRegionalView.value || !chart.id || chart.id === "custo_total";
+  return nomeiaBarraUnica && chart.data.length === 1 ? String(chart.data[0].label) : "";
 });
 
 const cardSummaryItems = computed(() => {
@@ -410,13 +413,10 @@ const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia"
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
 const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "rescisoes"];
+const VERTICAL_WHEN_REGIONAL = ["custo_diaria", "ferias", "tempo_permanencia"];
 const isHorizontalChart = computed(() => {
   const id = centerChart.value.id;
-  if (!HORIZONTAL_CHARTS.includes(id)) return false;
-  if (id === "custo_diaria") return diariaView.value !== "regional";
-  if (id === "ferias") return feriasView.value !== "regional";
-  if (id === "tempo_permanencia") return permanenciaView.value !== "regional";
-  return true;
+  return HORIZONTAL_CHARTS.includes(id) && !(VERTICAL_WHEN_REGIONAL.includes(id) && isRegionalView.value);
 });
 
 const stackedOnPhone = computed(() => centerChart.value.kind === "pie" || centerChart.value.kind === "table");
@@ -545,13 +545,6 @@ function goNextKpi() {
                       label="Filial"
                       all-label="Todas as filiais"
                       title="Filtrar Rescisões por filial"
-                    />
-                    <GerenteRegionalFilter
-                      v-model="rescisaoGerente"
-                      :options="rescisaoOptions.gerentes"
-                      label="Gerente imediato"
-                      all-label="Todos os gerentes imediatos"
-                      title="Filtrar Rescisões por gerente imediato"
                     />
                   </div>
                   <div v-if="centerChart.id === 'treinamento'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -883,14 +876,6 @@ function goNextKpi() {
             label="Filial"
             all-label="Todas as filiais"
             title="Filtrar Rescisões por filial"
-          />
-          <GerenteRegionalFilter
-            v-if="centerChart.id === 'rescisoes'"
-            v-model="rescisaoGerente"
-            :options="rescisaoOptions.gerentes"
-            label="Gerente imediato"
-            all-label="Todos os gerentes imediatos"
-            title="Filtrar Rescisões por gerente imediato"
           />
           <MultiSelectFilter
             v-if="centerChart.id === 'absenteismo'"

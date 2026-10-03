@@ -5,7 +5,7 @@ import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./stor
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
 import { mapWithConcurrency, formatDate, normalizeMotivo } from "./utils";
-import { buildRegionalLookup } from "./regionais";
+import { buildRegionalLookup, SEM_REGIONAL } from "./regionais";
 
 const FLUSH_DELAY_MS = 150;
 const RETRY_DELAY_MS = 1200;
@@ -343,7 +343,6 @@ function up(v) {
   return v == null ? v : String(v).toUpperCase();
 }
 
-const SEM_REGIONAL = "SEM REGIONAL";
 const SHEET_ERROR_RE = /^#(N\/A|REF!|VALUE!|NAME\?|DIV\/0!|NUM!|NULL!|ERROR!)/i;
 
 function regionalText(v) {
@@ -655,7 +654,7 @@ async function fetchTablesOnce(bases) {
   const epoch = _epoch;
   const [results, regionaisLookup] = await Promise.all([
     fetchTablesBatch(bases).then((r) => r || mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable)),
-    fetchRegionaisLookup()
+    _regionalLookup || fetchRegionaisLookup()
   ]);
   if (epoch !== _epoch) return { failed: bases };
   if (regionaisLookup) _regionalLookup = regionaisLookup;
@@ -847,6 +846,7 @@ export function discardPendingWrites() {
 
 export function resetLocalState() {
   _epoch += 1;
+  _regionalLookup = null;
   discardPendingWrites();
   resetData();
   clearLoadedTracking();
@@ -861,6 +861,7 @@ export async function reloadData() {
   DataCache.removeLegacy();
   DataCache.resetAll();
   _cacheDirty = false;
+  _regionalLookup = null;
   resetData();
   clearLoadedTracking();
 

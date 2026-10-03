@@ -310,12 +310,10 @@ const permanenciaBarData = computed(() => dashboard.turnoverTenureBarByEmployee(
 
 const rescisaoMode = ref("total");
 const rescisaoFilial = ref("");
-const rescisaoGerente = ref("");
 const rescisaoOptions = computed(() => dashboard.rescisoesFilterOptions());
-const rescisaoFilters = computed(() => ({ filial: rescisaoFilial.value, gerente: rescisaoGerente.value }));
+const rescisaoFilters = computed(() => ({ filial: rescisaoFilial.value }));
 watch(rescisaoOptions, (opts) => {
   if (rescisaoFilial.value && !opts.filiais.includes(rescisaoFilial.value)) rescisaoFilial.value = "";
-  if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
 });
 const rescisaoView = ref("funcao");
 const rescisoesBarData = computed(() =>
@@ -1077,13 +1075,6 @@ watch(activeTab, (tab) => {
             label="Filial"
             all-label="Todas as filiais"
             title="Filtrar Rescisões por filial"
-          />
-          <GerenteRegionalFilter
-            v-model="rescisaoGerente"
-            :options="rescisaoOptions.gerentes"
-            label="Gerente imediato"
-            all-label="Todos os gerentes imediatos"
-            title="Filtrar Rescisões por gerente imediato"
           />
         </div>
         <div class="flex justify-start sm:justify-end">
