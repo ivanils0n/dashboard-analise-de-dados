@@ -16,6 +16,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   estado: { type: String, default: "" },
   genero: { type: String, default: "" },
+  regional: { type: String, default: "" },
   filial: { type: Array, default: () => [] },
   empresa: { type: Array, default: () => [] },
   funcao: { type: Array, default: () => [] }
@@ -39,6 +40,7 @@ const records = computed(() =>
     .filter((h) => !props.empresa.length || props.empresa.some((e) => String(h.empresa || "").trim().toUpperCase() === String(e).trim().toUpperCase()))
     .filter((h) => !props.funcao.length || props.funcao.some((f) => String(h.funcao || "").trim().toUpperCase() === String(f).trim().toUpperCase()))
     .filter((h) => !props.genero || String(h.genero || "").trim().toLowerCase() === props.genero)
+    .filter((h) => !props.regional || (String(h.regional || "").trim().toUpperCase() || "SEM REGIONAL") === props.regional)
     .map((h) => {
     const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
     return { ...h, filialNome: branch ? branch.name : h.filial || "", ativo: isHeadcountAtivo(h, ym.value) };
@@ -152,7 +154,7 @@ async function removeRow(h) {
 
 <template>
   <Modal
-    :title="`Headcount ${generoLabel} — ${stateName}`"
+    :title="`Headcount ${generoLabel} — ${regional || stateName}`"
     :subtitle="getIndicatorById('headcount')?.calc || ''"
     :open="open"
     max-width="max-w-5xl"

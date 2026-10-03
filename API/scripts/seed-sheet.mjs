@@ -55,7 +55,7 @@ const ENTITY_COLUMNS = {
   filiais: ["id", "cnpj", "nome", "abreviado", "gerente", "estado_sigla"],
     diarias: [
     "id", "nome_colaborador", "funcao", "filial", "lider_imediato",
-    "regional", "motivo", "competencia", "valor",
+    "motivo", "competencia", "valor",
     "estado_sigla"
   ],
   treinamentos: [
@@ -64,6 +64,7 @@ const ENTITY_COLUMNS = {
   ],
   custo_folha: ["id", "codigo", "nome", "banco", "valor_total", "data_pagto", "empresa", "filial", "mes_referente", "estado_sigla"],
   ferias: ["id", "codigo", "nome", "banco", "valor_total", "data_pagto", "filial", "mes_referente", "estado_sigla"],
+  regionais: ["id", "filial", "gerente", "supervisor", "estado_sigla"],
   absenteismo: ["id", "competencia", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];

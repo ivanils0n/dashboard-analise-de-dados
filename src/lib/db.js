@@ -5,6 +5,7 @@ import { bindRemote, mergeFromRemote, replaceFromCache, resetData } from "./stor
 import { beginLoading, endLoading } from "../composables/useLoading";
 import { useToast } from "../composables/useToast";
 import { mapWithConcurrency, formatDate, normalizeMotivo } from "./utils";
+import { buildRegionalLookup } from "./regionais";
 
 const FLUSH_DELAY_MS = 150;
 const RETRY_DELAY_MS = 1200;
@@ -39,7 +40,6 @@ function diariaToRow(entry) {
     funcao: meta.funcao || null,
     filial: meta.filial || null,
     lider_imediato: meta.liderImediato || null,
-    regional: meta.regional || null,
     motivo: meta.motivo || null,
     competencia: entry.date,
     valor: Number(entry.value) || 0,
@@ -343,6 +343,20 @@ function up(v) {
   return v == null ? v : String(v).toUpperCase();
 }
 
+const SEM_REGIONAL = "SEM REGIONAL";
+const SHEET_ERROR_RE = /^#(N\/A|REF!|VALUE!|NAME\?|DIV\/0!|NUM!|NULL!|ERROR!)/i;
+
+function regionalText(v) {
+  if (v != null && SHEET_ERROR_RE.test(String(v).trim())) return SEM_REGIONAL;
+  return up(v) || null;
+}
+
+let _regionalLookup = null;
+
+function regionalDaFilial(filial, estado) {
+  return _regionalLookup ? up(_regionalLookup.resolve(filial, estado)) || null : null;
+}
+
 function mapRemoteDiaria(row, impliedState) {
   return {
     id: row.id,
@@ -353,7 +367,7 @@ function mapRemoteDiaria(row, impliedState) {
       funcao: up(row.funcao) || null,
       filial: up(row.filial) || null,
       liderImediato: up(row.lider_imediato) || null,
-      regional: up(row.regional) || null,
+      regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
       motivo: motivoKey(row.motivo),
       estado: row.estado_sigla || impliedState || null
     }
@@ -371,6 +385,7 @@ function mapRemoteFerias(row, impliedState) {
       banco: row.banco || null,
       dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
       filial: up(row.filial) || null,
+      regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -385,7 +400,7 @@ function mapRemoteTreinamento(row, impliedState) {
       employeeName: up(row.nome_colaborador) || "",
       cargo: up(row.cargo) || null,
       filial: up(row.filial) || null,
-      gerenteRegional: up(row.gerente_regional) || null,
+      gerenteRegional: regionalText(row.gerente_regional),
       tema: up(row.tema) || null,
       modalidade: row.modalidade || null,
       estado: row.estado_sigla || impliedState || null
@@ -405,6 +420,7 @@ function mapRemoteCustoFolha(row, impliedState) {
       dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
       empresa: up(row.empresa) || null,
       filial: up(row.filial) || null,
+      regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -474,7 +490,7 @@ function mapRemoteRescisao(row, impliedState) {
     funcao: up(row.funcao) || null,
     admissao: row.admissao ? String(row.admissao).slice(0, 10) : null,
     gerenteImediato: up(row.gerente_imediato) || null,
-    regional: up(row.regional) || null,
+    regional: regionalText(row.regional),
     motivo: up(row.motivo) || null,
     justificativaApurada: up(row.justificativa_apurada) || null,
     ponderacoes: up(row.ponderacoes) || null,
@@ -498,6 +514,7 @@ function mapRemoteHeadcount(row, impliedState) {
     mesReferente: row.mes_referente ? String(row.mes_referente).slice(0, 10) : null,
     empresa: row.empresa != null ? up(row.empresa) : null,
     filial: up(row.filial) || null,
+    regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
     estado: row.estado_sigla || impliedState || null
   };
 }
@@ -624,11 +641,24 @@ async function fetchOneTable(base) {
   }
 }
 
+async function fetchRegionaisLookup() {
+  try {
+    const res = await apiFetch("/api/data/regionais");
+    return buildRegionalLookup((res && res.data) || []);
+  } catch (err) {
+    console.warn("[API] Aba regionais indisponível — diárias ficarão sem regional:", err);
+    return null;
+  }
+}
+
 async function fetchTablesOnce(bases) {
   const epoch = _epoch;
-  const results =
-    (await fetchTablesBatch(bases)) || (await mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable));
+  const [results, regionaisLookup] = await Promise.all([
+    fetchTablesBatch(bases).then((r) => r || mapWithConcurrency(bases, MAX_CONCURRENT_REQUESTS, fetchOneTable)),
+    fetchRegionaisLookup()
+  ]);
   if (epoch !== _epoch) return { failed: bases };
+  if (regionaisLookup) _regionalLookup = regionaisLookup;
 
   const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };
   const failed = [];

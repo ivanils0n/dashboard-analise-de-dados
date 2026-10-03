@@ -19,7 +19,8 @@ const props = defineProps({
   horizontal: { type: Boolean, default: false },
   alignTop: { type: Boolean, default: false },
   title: { type: String, default: "" },
-  subtitle: { type: String, default: "" }
+  subtitle: { type: String, default: "" },
+  singleCaption: { type: String, default: "" }
 });
 
 const emit = defineEmits(["bar-click", "bar-contextmenu"]);
@@ -232,13 +233,14 @@ watch(
     </div>
     <div
       v-if="singleRow"
-      class="absolute inset-0 flex items-center justify-center px-4 text-center"
+      class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center"
       :class="barsClickable ? 'cursor-pointer' : ''"
       role="img"
       :aria-label="`${singleRow.label}: ${singleText}`"
       @click="onSingleClick"
       @contextmenu="onSingleContextmenu"
     >
+      <span v-if="singleCaption" class="break-words text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ singleCaption }}</span>
       <span class="break-words text-5xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ singleText }}</span>
     </div>
     <ChartEmpty v-if="isEmpty" />

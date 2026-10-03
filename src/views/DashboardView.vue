@@ -317,8 +317,12 @@ watch(rescisaoOptions, (opts) => {
   if (rescisaoFilial.value && !opts.filiais.includes(rescisaoFilial.value)) rescisaoFilial.value = "";
   if (rescisaoGerente.value && !opts.gerentes.includes(rescisaoGerente.value)) rescisaoGerente.value = "";
 });
-const rescisoesBarData = computed(() => dashboard.rescisoesBarByFuncao(rescisaoMode.value, rescisaoFilters.value));
 const rescisaoView = ref("funcao");
+const rescisoesBarData = computed(() =>
+  rescisaoView.value === "regional"
+    ? dashboard.rescisoesBarByRegional(rescisaoMode.value, rescisaoFilters.value)
+    : dashboard.rescisoesBarByFuncao(rescisaoMode.value, rescisaoFilters.value)
+);
 const rescisoesPieData = computed(() => dashboard.rescisoesPieByEstado(rescisaoMode.value, rescisaoFilters.value));
 const rescisaoPorEstado = ref(false);
 function onRescisaoPieClick(sliceIndex) {
@@ -333,7 +337,7 @@ const rescisoesHasData = computed(() =>
   rescisaoView.value === "estado" ? rescisoesPieData.value.length > 0 : rescisoesBarData.value.length > 0
 );
 const rescisoesSub = computed(() => {
-  const by = rescisaoView.value === "estado" ? "estado" : "função";
+  const by = rescisaoView.value === "estado" ? "estado" : rescisaoView.value === "regional" ? "regional" : "função";
   return rescisaoMode.value === "liquido"
     ? `Valor líquido (só a rescisão) por ${by} no período filtrado`
     : `Rescisão + GRRF/consig + 40% por ${by} no período filtrado`;
@@ -344,7 +348,10 @@ const rescisaoFuncaoRows = ref([]);
 function onRescisaoBarClick({ label }) {
   if (!label) return;
   rescisaoFuncaoName.value = label;
-  rescisaoFuncaoRows.value = dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
+  rescisaoFuncaoRows.value =
+    rescisaoView.value === "regional"
+      ? dashboard.rescisoesEntriesByRegional(label, rescisaoFilters.value)
+      : dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
   rescisaoPorEstado.value = false;
   rescisaoFuncaoOpen.value = true;
 }
@@ -1081,7 +1088,7 @@ watch(activeTab, (tab) => {
         </div>
         <div class="flex justify-start sm:justify-end">
           <button
-            v-if="rescisaoView === 'funcao' && rescisoesBarData.length"
+            v-if="rescisaoView !== 'estado' && rescisoesBarData.length"
             type="button"
             class="icon-btn-sm"
             title="Tela cheia"

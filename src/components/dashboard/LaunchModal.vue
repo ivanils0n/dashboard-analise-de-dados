@@ -110,7 +110,6 @@ const diaria = reactive({
   funcao: "",
   filial: "",
   liderImediato: "",
-  regional: "",
   mes: currentYm(),
   motivo: "",
   value: ""
@@ -199,7 +198,6 @@ function prefillEdit(indId, entry) {
     diaria.funcao = m.funcao || "";
     diaria.filial = m.filial || "";
     diaria.liderImediato = m.liderImediato || "";
-    diaria.regional = m.regional || m.estado || "";
     diaria.mes = m.competencia || (entry.date ? String(entry.date).slice(0, 7) : currentYm());
     diaria.motivo = m.motivo || "";
     diaria.value = entry.value != null ? String(entry.value) : "";
@@ -243,7 +241,6 @@ function resetDiaria() {
   diaria.funcao = "";
   diaria.filial = "";
   diaria.liderImediato = "";
-  diaria.regional = filters.current !== "todos" ? filters.current : DEFAULT_STATE;
   diaria.mes = currentYm();
   diaria.motivo = "";
   diaria.value = "";
@@ -825,14 +822,12 @@ function submitDiaria() {
   }
   const value = Number(valueRaw);
 
-  const regional = up(diaria.regional);
   const editing = editingEntryId.value
     ? getEntriesFor("custo_diaria").find((e) => e.id === editingEntryId.value)
     : null;
-  const estadoDiaria = STATES.includes(regional)
-    ? regional
-    : (editing && editing.meta && editing.meta.estado) ||
-      (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
+  const estadoDiaria =
+    (editing && editing.meta && editing.meta.estado) ||
+    (filters.current !== "todos" ? filters.current : DEFAULT_STATE);
 
   const payload = {
     date: `${diaria.mes}-01`,
@@ -843,7 +838,6 @@ function submitDiaria() {
       funcao: up(diaria.funcao),
       filial: up(diaria.filial),
       liderImediato: up(diaria.liderImediato),
-      regional: up(diaria.regional),
       motivo: up(diaria.motivo),
       competencia: diaria.mes
     }
@@ -1645,10 +1639,6 @@ async function requestClose() {
               <div class="flex flex-col gap-1.5">
                 <label for="diariaLider" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Líder imediato</label>
                 <input id="diariaLider" v-model="diaria.liderImediato" v-upper type="text" class="input-field" />
-              </div>
-              <div class="flex flex-col gap-1.5">
-                <label for="diariaRegional" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Regional</label>
-                <input id="diariaRegional" v-model="diaria.regional" v-upper type="text" class="input-field" />
               </div>
             </div>
           </fieldset>

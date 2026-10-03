@@ -3,10 +3,10 @@ import { computed } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATE_NAMES } from "@/lib/config";
-import { turnoverEntriesInRange, headcountMovements, findBranchByShortName } from "@/lib/employees";
+import { turnoverEntriesInRange, headcountMovements, findBranchByShortName, listRescisoes } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
-import { formatValue, formatDate, ymLabel } from "@/lib/utils";
+import { formatValue, formatDate, formatCurrency, ymLabel } from "@/lib/utils";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -48,10 +48,31 @@ const rows = computed(() =>
   })
 );
 
+const rowsVisiveis = computed(() => (isGeral.value ? rows.value : rows.value.filter((r) => r.quantidade > 0)));
+
+const colaboradoresRescisao = computed(() =>
+  listRescisoes(state.current, range.value)
+    .map((r) => {
+      const branch = r.filial ? findBranchByShortName(r.filial, r.estado) : null;
+      return {
+        id: r.id,
+        colaborador: r.colaborador || "—",
+        empresa: branch ? branch.name : r.filial || r.empresa || "—",
+        estado: r.estado || "",
+        data: r.ultDiaAviso || r.mesReferencia || "",
+        motivo: r.motivo || "—",
+        ultDiaAviso: r.ultDiaAviso || "",
+        valorTotal: (Number(r.valorRescisao) || 0) + (Number(r.grrfConsig) || 0) + (Number(r.multa40) || 0)
+      };
+    })
+    .sort((a, b) => String(b.data).localeCompare(String(a.data)) || a.colaborador.localeCompare(b.colaborador))
+);
+
 const colaboradores = computed(() => {
   if (!isColaboradores.value) return [];
+  if (!isAdmissao.value) return colaboradoresRescisao.value;
   const mov = headcountMovements(state.current, range.value);
-  const list = isAdmissao.value ? mov.admissoes : mov.demissoes;
+  const list = mov.admissoes;
   return list
     .map((h) => {
       const branch = h.filial ? findBranchByShortName(h.filial, h.estado) : null;
@@ -154,7 +175,12 @@ const title = computed(() => {
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Empresa</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">{{ isAdmissao ? "Data de admissão" : "Data de desligamento" }}</th>
+                <th v-if="isAdmissao" class="whitespace-nowrap px-4 py-2.5 font-semibold">Data de admissão</th>
+                <template v-else>
+                  <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Motivo</th>
+                  <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Último dia de aviso</th>
+                  <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Valor total</th>
+                </template>
               </tr>
             </thead>
             <tbody class="uppercase">
@@ -162,17 +188,19 @@ const title = computed(() => {
                 <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ c.colaborador }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.empresa }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.estado || "—" }}</td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.data ? formatDate(c.data) : "—" }}</td>
+                <td v-if="isAdmissao" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.data ? formatDate(c.data) : "—" }}</td>
+                <template v-else>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.motivo }}</td>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ c.ultDiaAviso ? formatDate(c.ultDiaAviso) : "—" }}</td>
+                  <td class="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatCurrency(c.valorTotal) }}</td>
+                </template>
               </tr>
             </tbody>
           </table>
         </div>
-        <div class="border-t border-zinc-100 px-4 py-2 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
-          {{ colaboradores.length === 1 ? "1 colaborador" : `${colaboradores.length} colaboradores` }}
-        </div>
       </div>
 
-      <div v-else-if="!isColaboradores && rows.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <div v-else-if="!isColaboradores && rowsVisiveis.length" class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div class="max-h-[26rem] overflow-auto">
           <table class="w-full min-w-max text-left text-sm">
             <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
@@ -186,7 +214,7 @@ const title = computed(() => {
               </tr>
             </thead>
             <tbody class="uppercase">
-              <tr v-for="r in rows" :key="r.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+              <tr v-for="r in rowsVisiveis" :key="r.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ r.mes ? ymLabel(r.mes) : "—" }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ r.empresa }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ r.estado || "—" }}</td>
@@ -200,15 +228,11 @@ const title = computed(() => {
           </table>
         </div>
         <div class="border-t border-zinc-100 px-4 py-2 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
-          {{ rows.length === 1 ? "1 lançamento" : `${rows.length} lançamentos` }}
+          {{ rowsVisiveis.length === 1 ? "1 lançamento" : `${rowsVisiveis.length} lançamentos` }}
         </div>
       </div>
 
-      <EmptyState
-        v-else
-        :title="isColaboradores ? (isAdmissao ? 'Sem admissões' : 'Sem demissões') : 'Sem movimentações de Turnover'"
-        text="Nenhum colaborador do Headcount no período e estado filtrados."
-      />
+      <EmptyState v-else title="Sem informações suficientes" text="" />
     </div>
   </Modal>
 </template>

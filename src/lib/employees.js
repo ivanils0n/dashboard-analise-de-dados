@@ -307,6 +307,22 @@ export function rescisoesByFuncao(state, range, mode, filters) {
   return [...groups.values()].sort((a, b) => b.value - a.value);
 }
 
+export function rescisaoRegionalLabel(r) {
+  return String(r.regional || "").trim().toUpperCase() || "SEM REGIONAL";
+}
+
+export function rescisoesByRegional(state, range, mode, filters) {
+  const groups = new Map();
+  listRescisoes(state, range, filters).forEach((r) => {
+    const label = rescisaoRegionalLabel(r);
+    const g = groups.get(label) || { label, value: 0, count: 0 };
+    g.value += rescisaoAmount(r, mode);
+    g.count += 1;
+    groups.set(label, g);
+  });
+  return [...groups.values()].sort((a, b) => b.value - a.value);
+}
+
 export function rescisoesByEstado(state, range, mode, filters) {
   const groups = new Map();
   listRescisoes(state, range, filters).forEach((r) => {
@@ -347,6 +363,7 @@ export function permanenciaDesligados(state, range) {
       dataAdmissao: String(h.dataAdmissao).slice(0, 10),
       dataDemissao: String(h.dataDesligamento).slice(0, 10),
       filial: h.filial || null,
+      regional: h.regional || null,
       estado: h.estado || null,
       dias: daysBetween(h.dataAdmissao, h.dataDesligamento)
     }))
@@ -587,7 +604,31 @@ export function headcountFuncaoOptions(state) {
   return distinctOptions(state, "funcao");
 }
 
+export function headcountGenderCountByRegional(state, range, filiais = [], empresas = [], funcoes = []) {
+  const groups = new Map();
+  headcountFilteredRows(state, range, filiais, empresas, funcoes).forEach((row) => {
+    const label = String(row.raw.regional || "").trim().toUpperCase() || "SEM REGIONAL";
+    const g = groups.get(label) || { masculino: 0, feminino: 0, total: 0 };
+    if (row.genero === "masculino") g.masculino += 1;
+    else if (row.genero === "feminino") g.feminino += 1;
+    g.total += 1;
+    groups.set(label, g);
+  });
+  return groups;
+}
+
 export function headcountGenderCountInRange(state, range, filiais = [], empresas = [], funcoes = []) {
+  const rows = headcountFilteredRows(state, range, filiais, empresas, funcoes);
+  let masculino = 0;
+  let feminino = 0;
+  rows.forEach((row) => {
+    if (row.genero === "masculino") masculino += 1;
+    else if (row.genero === "feminino") feminino += 1;
+  });
+  return { masculino, feminino, total: rows.length };
+}
+
+function headcountFilteredRows(state, range, filiais, empresas, funcoes) {
   const ym = rangeYm(range);
   let rows = ym ? activeRowsOf(state, ym) : rowsOf(state);
   if (funcoes.length) {
@@ -612,13 +653,7 @@ export function headcountGenderCountInRange(state, range, filiais = [], empresas
     const set = new Set(empresas.map((e) => normUpper(e)));
     rows = rows.filter((row) => set.has(row.empresa));
   }
-  let masculino = 0;
-  let feminino = 0;
-  rows.forEach((row) => {
-    if (row.genero === "masculino") masculino += 1;
-    else if (row.genero === "feminino") feminino += 1;
-  });
-  return { masculino, feminino, total: rows.length };
+  return rows;
 }
 
 export function addHeadcountRecord({

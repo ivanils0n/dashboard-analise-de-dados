@@ -106,7 +106,6 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "funcao", type: "text" },
       { name: "filial", type: "text" },
       { name: "lider_imediato", type: "text" },
-      { name: "regional", type: "text" },
       { name: "motivo", type: "text" },
       { name: "competencia", type: "date", required: true },
       { name: "valor", type: "number", notNull: true, required: true },
@@ -157,6 +156,17 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "data_pagto", type: "date" },
       { name: "filial", type: "text" },
       { name: "mes_referente", type: "date", required: true },
+      { name: "estado_sigla", type: "text", stateRef: true }
+    ]
+  },
+  regionais: {
+    key: "regionais",
+    label: "Regionais",
+    columns: [
+      { name: "id", type: "text" },
+      { name: "filial", type: "text", required: true },
+      { name: "gerente", type: "text" },
+      { name: "supervisor", type: "text" },
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },

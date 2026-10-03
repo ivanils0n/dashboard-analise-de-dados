@@ -11,6 +11,7 @@ import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresa
 import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
+import PermanenciaListaModal from "@/components/dashboard/PermanenciaListaModal.vue";
 import HiringStatusSelect from "@/components/dashboard/HiringStatusSelect.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
@@ -86,11 +87,27 @@ watch(absenteismoFilialOptions, (opts) => {
 
 const FERIAS_VIEWS = [
   { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
-  { value: "filial", label: "Filial", title: "Total por filial" }
+  { value: "filial", label: "Filial", title: "Total por filial" },
+  { value: "regional", label: "Regional", title: "Total por regional" }
 ];
 const feriasView = ref("colaborador");
 
+const PERMANENCIA_VIEWS = [
+  { value: "colaborador", label: "Colaborador", title: "Dias por colaborador" },
+  { value: "regional", label: "Regional", title: "Média de dias por regional" }
+];
+const permanenciaView = ref("colaborador");
+
+const CUSTO_VIEWS = [
+  { value: "empresa", label: "Empresa", title: "Total por empresa" },
+  { value: "regional", label: "Regional", title: "Total por regional" }
+];
+const custoView = ref("empresa");
+
 const headcountView = ref("bar");
+watch(headcountView, (view) => {
+  if (view === "regional") headcountFilialFilter.value = [];
+});
 
 const rescisaoMode = ref("total");
 
@@ -144,7 +161,9 @@ const centerChart = computed(() =>
     headcountFuncaoFilter.value,
     absenteismoFilialFilter.value,
     diariaView.value,
-    feriasView.value
+    feriasView.value,
+    custoView.value,
+    permanenciaView.value
   )
 );
 
@@ -182,8 +201,20 @@ const feriasSummaryItems = computed(() => {
     { label: "Total", value: formatCurrency(s.total), accent: true },
     feriasView.value === "filial"
       ? { label: "Filiais", value: String(s.filiais) }
-      : { label: "Colaboradores", value: String(s.colaboradores) }
+      : feriasView.value === "regional"
+        ? { label: "Regionais", value: String(s.regionais) }
+        : { label: "Colaboradores", value: String(s.colaboradores) }
   ];
+});
+
+const singleCaption = computed(() => {
+  const chart = centerChart.value;
+  if (chart.id === "custo_diaria" && diariaView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
+  if (chart.id === "rescisoes" && rescisaoView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
+  if (chart.id === "tempo_permanencia" && permanenciaView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
+  if (chart.id === "ferias" && feriasView.value === "regional") return chart.data.length === 1 ? String(chart.data[0].label) : "";
+  if (!chart.id || chart.id === "custo_total") return chart.data.length === 1 ? String(chart.data[0].label) : "";
+  return "";
 });
 
 const cardSummaryItems = computed(() => {
@@ -259,19 +290,25 @@ const feriasColabGroup = ref("colaborador");
 const headcountEstadoOpen = ref(false);
 const headcountEstadoSigla = ref("");
 const headcountGenero = ref("");
+const headcountRegional = ref("");
 
 function onCenterBarClick({ index, label, datasetIndex }) {
   if (centerChart.value.id === "headcount") {
     if (!label) return;
     headcountGenero.value = ["masculino", "feminino"][datasetIndex] || "";
-    headcountEstadoSigla.value = label;
+    const porRegional = headcountView.value === "regional";
+    headcountRegional.value = porRegional ? label : "";
+    headcountEstadoSigla.value = porRegional ? filters.current : label;
     headcountEstadoOpen.value = true;
     return;
   }
   if (!centerChart.value.id || centerChart.value.id === "custo_total") {
     if (!label) return;
     custoPessoalEmpresa.value = label;
-    custoPessoalRows.value = props.dashboard.custoPessoalEntriesByEmpresa(label);
+    custoPessoalRows.value =
+      custoView.value === "regional"
+        ? props.dashboard.custoPessoalEntriesByRegional(label)
+        : props.dashboard.custoPessoalEntriesByEmpresa(label);
     custoPessoalOpen.value = true;
     return;
   }
@@ -294,7 +331,10 @@ function onCenterBarClick({ index, label, datasetIndex }) {
   if (centerChart.value.id === "rescisoes") {
     if (!label) return;
     rescisaoFuncaoName.value = label;
-    rescisaoFuncaoRows.value = props.dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
+    rescisaoFuncaoRows.value =
+      rescisaoView.value === "regional"
+        ? props.dashboard.rescisoesEntriesByRegional(label, rescisaoFilters.value)
+        : props.dashboard.rescisoesEntriesByFuncao(label, rescisaoFilters.value);
     rescisaoPorEstado.value = false;
     rescisaoFuncaoOpen.value = true;
     return;
@@ -324,6 +364,12 @@ function onCenterBarClick({ index, label, datasetIndex }) {
   }
   if (centerChart.value.id === "tempo_permanencia") {
     const row = centerChart.value.data[index];
+    if (row && permanenciaView.value === "regional") {
+      permanenciaRegionalName.value = row.label;
+      permanenciaRegionalRows.value = props.dashboard.permanenciaEntriesByRegional(row.label);
+      permanenciaRegionalOpen.value = true;
+      return;
+    }
     if (!row || !row.permanenciaDetail) return;
     permanenciaDetailRecord.value = row.permanenciaDetail;
     permanenciaDetailOpen.value = true;
@@ -354,6 +400,9 @@ function onVacancyDetailEdit(vacancyId) {
   emit("edit-vacancy", vacancyId);
 }
 
+const permanenciaRegionalOpen = ref(false);
+const permanenciaRegionalName = ref("");
+const permanenciaRegionalRows = ref([]);
 const permanenciaDetailOpen = ref(false);
 const permanenciaDetailRecord = ref(null);
 
@@ -361,9 +410,14 @@ const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia"
 const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
 
 const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "rescisoes"];
-const isHorizontalChart = computed(
-  () => HORIZONTAL_CHARTS.includes(centerChart.value.id) && !(centerChart.value.id === "custo_diaria" && diariaView.value === "regional")
-);
+const isHorizontalChart = computed(() => {
+  const id = centerChart.value.id;
+  if (!HORIZONTAL_CHARTS.includes(id)) return false;
+  if (id === "custo_diaria") return diariaView.value !== "regional";
+  if (id === "ferias") return feriasView.value !== "regional";
+  if (id === "tempo_permanencia") return permanenciaView.value !== "regional";
+  return true;
+});
 
 const stackedOnPhone = computed(() => centerChart.value.kind === "pie" || centerChart.value.kind === "table");
 
@@ -467,7 +521,9 @@ function goNextKpi() {
                   <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ centerChart.title }}</h2>
                   <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />
                   <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
+                  <ViewTabs v-if="!centerChart.id || centerChart.id === 'custo_total'" v-model="custoView" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
                   <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
+                  <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
                   <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
                     <HiringStatusSelect v-model="hiringStatusFilter" />
                     <GerenteRegionalFilter
@@ -478,7 +534,7 @@ function goNextKpi() {
                       title="Filtrar Tempo médio de contratação por recrutador"
                     />
                   </div>
-                  <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+                  <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Regional</button></div>
                   <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
                   <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
                   <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
@@ -522,7 +578,7 @@ function goNextKpi() {
                   title="Filtrar Absenteísmo por uma ou mais filiais"
                 />
                 <MultiSelectFilter
-                  v-if="centerChart.id === 'headcount'"
+                  v-if="centerChart.id === 'headcount' && headcountView !== 'regional'"
                   v-model="headcountFilialFilter"
                   :options="headcountFilialOptions"
                   label="Filial"
@@ -615,6 +671,7 @@ function goNextKpi() {
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
               :horizontal="isHorizontalChart"
+              :single-caption="singleCaption"
               fluid
               bars-clickable
               @bar-click="onCenterBarClick"
@@ -731,6 +788,7 @@ function goNextKpi() {
       :open="headcountEstadoOpen"
       :estado="headcountEstadoSigla"
       :genero="headcountGenero"
+      :regional="headcountRegional"
       :filial="headcountFilialFilter"
       :empresa="headcountEmpresaFilter"
       :funcao="headcountFuncaoFilter"
@@ -755,6 +813,13 @@ function goNextKpi() {
       @edit="onVacancyDetailEdit"
     />
 
+    <PermanenciaListaModal
+      v-if="permanenciaRegionalOpen"
+      :open="permanenciaRegionalOpen"
+      :records="permanenciaRegionalRows"
+      :regional="permanenciaRegionalName"
+      @close="permanenciaRegionalOpen = false"
+    />
     <PermanenciaDetailModal
       v-if="permanenciaDetailOpen"
       :open="permanenciaDetailOpen"
@@ -801,13 +866,15 @@ function goNextKpi() {
           <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
           <div v-else class="flex min-w-[10rem] items-center justify-center gap-2">
             <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
-            <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button></div>
+            <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Regional</button></div>
             <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
             <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
           </div>
           <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />
           <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
+          <ViewTabs v-if="!centerChart.id || centerChart.id === 'custo_total'" v-model="custoView" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
           <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
+          <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
           <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
           <GerenteRegionalFilter
             v-if="centerChart.id === 'rescisoes'"
@@ -835,7 +902,7 @@ function goNextKpi() {
             title="Filtrar Absenteísmo por uma ou mais filiais"
           />
           <MultiSelectFilter
-            v-if="centerChart.id === 'headcount'"
+            v-if="centerChart.id === 'headcount' && headcountView !== 'regional'"
             v-model="headcountFilialFilter"
             :options="headcountFilialOptions"
             label="Filial"
@@ -911,6 +978,7 @@ function goNextKpi() {
             :variant="centerChart.variant || 'bar'"
             :horizontal="isHorizontalChart"
             :align-top="centerChart.id === 'tempo_contratacao'"
+            :single-caption="singleCaption"
             fluid
             bars-clickable
             @bar-click="onCenterBarClick"

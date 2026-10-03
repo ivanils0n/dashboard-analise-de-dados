@@ -8,7 +8,8 @@ import { formatDate, normalizeText, filialDisplay } from "@/lib/utils";
 const props = defineProps({
   open: { type: Boolean, default: false },
   records: { type: Array, default: () => [] },
-  periodo: { type: String, default: "" }
+  periodo: { type: String, default: "" },
+  regional: { type: String, default: "" }
 });
 
 const emit = defineEmits(["close"]);
@@ -39,7 +40,7 @@ const dias = (n) => `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, max
 
 <template>
   <Modal
-    :title="`Colaboradores desligados${periodo ? ` — ${periodo}` : ''}`"
+    :title="`Colaboradores desligados${regional ? ` — ${regional}` : periodo ? ` — ${periodo}` : ''}`"
     :subtitle="getIndicatorById('tempo_permanencia')?.calc"
     :open="open"
     max-width="max-w-4xl"

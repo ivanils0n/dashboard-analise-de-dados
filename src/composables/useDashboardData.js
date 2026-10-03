@@ -10,6 +10,7 @@ import {
   turnoverAvgTenureDays,
   headcountCountInRange,
   headcountGenderCountInRange,
+  headcountGenderCountByRegional,
   headcountFilialOptions,
   headcountEmpresaOptions,
   headcountFuncaoOptions,
@@ -17,6 +18,8 @@ import {
   rescisaoFilterOptions,
   rescisoesTotal,
   rescisoesByFuncao,
+  rescisoesByRegional,
+  rescisaoRegionalLabel,
   rescisoesByEstado,
   rescisaoFuncaoLabel,
   turnoverRateStats,
@@ -247,6 +250,33 @@ export function useDashboardData(filter) {
     }).sort((a, b) => b.value - a.value);
   }
 
+  function headcountBarByRegional(filiais = [], empresas = [], funcoes = []) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const st = currentState();
+    const states = st && st !== "todos" ? [st] : STATES;
+    const total = new Map();
+    states.forEach((s) => {
+      headcountGenderCountByRegional(s, range, filiais, empresas, funcoes).forEach((g, label) => {
+        const acc = total.get(label) || { masculino: 0, feminino: 0, total: 0 };
+        acc.masculino += g.masculino;
+        acc.feminino += g.feminino;
+        acc.total += g.total;
+        total.set(label, acc);
+      });
+    });
+    return [...total.entries()]
+      .map(([label, g]) => ({
+        label,
+        value: g.total,
+        series: [
+          { label: "Masculino", value: g.masculino },
+          { label: "Feminino", value: g.feminino },
+          { label: "Total", value: g.total }
+        ]
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+
   function ticketMedioBarByState() {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return STATES.map((s) => ({ label: s, value: ticketMedioFor(s, range) }))
@@ -457,17 +487,40 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.horas - a.horas);
   }
 
-  function custoPessoalEntriesByEmpresa(label) {
+  function custoEntries() {
     const ind = getIndicatorById("custo_total");
-    if (!ind) return [];
-    return filteredEntries(ind).filter((e) => (upperText((e.meta && e.meta.empresa) || "Sem empresa")) === label);
+    return ind ? filteredEntries(ind) : [];
+  }
+
+  function custoPessoalEntriesByEmpresa(label) {
+    return custoEntries().filter((e) => (upperText((e.meta && e.meta.empresa) || "Sem empresa")) === label);
+  }
+
+  function custoPessoalEntriesByRegional(label) {
+    return custoEntries().filter((e) => feriasRegional(e) === label);
+  }
+
+  function custosBarByRegional() {
+    const groups = new Map();
+    custoEntries().forEach((e) => {
+      const label = feriasRegional(e);
+      if (!groups.has(label)) groups.set(label, { value: 0, filiais: new Set() });
+      const g = groups.get(label);
+      g.value += Number(e.value) || 0;
+      g.filiais.add(employeeNameKey(feriasFilial(e)));
+    });
+    return [...groups.entries()]
+      .map(([label, { value, filiais }]) => ({
+        label,
+        value,
+        tooltipValue: `${formatCurrency(value)} · ${filiais.size} ${filiais.size === 1 ? "filial" : "filiais"}`
+      }))
+      .sort((a, b) => b.value - a.value);
   }
 
   function custosBarByEmpresa() {
-    const ind = getIndicatorById("custo_total");
-    if (!ind) return [];
     const byEmpresa = new Map();
-    filteredEntries(ind).forEach((e) => {
+    custoEntries().forEach((e) => {
       const meta = e.meta || {};
       const empresa = upperText(meta.empresa || "Sem empresa");
       byEmpresa.set(empresa, (byEmpresa.get(empresa) || 0) + (Number(e.value) || 0));
@@ -608,11 +661,19 @@ export function useDashboardData(filter) {
     return ind ? filteredEntries(ind) : [];
   }
 
+  function feriasRegional(entry) {
+    return upperText((entry.meta && entry.meta.regional) || "").trim() || "SEM REGIONAL";
+  }
+
   function feriasFilial(entry) {
     return upperText(filialDisplay(entry.meta && entry.meta.filial, entry.meta && entry.meta.estado)) || "SEM FILIAL";
   }
 
   function feriasGroup(entry, view) {
+    if (view === "regional") {
+      const label = feriasRegional(entry);
+      return { key: label, label };
+    }
     if (view === "filial") {
       const label = feriasFilial(entry);
       return { key: employeeNameKey(label), label };
@@ -653,7 +714,7 @@ export function useDashboardData(filter) {
         return {
           label: g.label,
           value: g.value,
-          tooltipValue: view === "filial" ? `${formatCurrency(g.value)} · ${pessoas} ${pessoas === 1 ? "colaborador" : "colaboradores"}` : formatCurrency(g.value)
+          tooltipValue: view !== "colaborador" ? `${formatCurrency(g.value)} · ${pessoas} ${pessoas === 1 ? "colaborador" : "colaboradores"}` : formatCurrency(g.value)
         };
       })
       .sort((a, b) => b.value - a.value);
@@ -662,7 +723,8 @@ export function useDashboardData(filter) {
       summary: {
         total: list.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
         colaboradores: uniqueEmployeeCount(list),
-        filiais: new Set(list.map((e) => employeeNameKey(feriasFilial(e)))).size
+        filiais: new Set(list.map((e) => employeeNameKey(feriasFilial(e)))).size,
+        regionais: new Set(list.map(feriasRegional)).size
       }
     };
   }
@@ -956,6 +1018,29 @@ export function useDashboardData(filter) {
       .sort((a, b) => b.value - a.value);
   }
 
+  function permanenciaEntriesByRegional(label) {
+    return permanenciaDesligadosLista().filter((p) => (upperText(p.regional || "").trim() || "SEM REGIONAL") === label);
+  }
+
+  function turnoverTenureBarByRegional() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const groups = new Map();
+    permanenciaDesligados(currentState(), range).forEach((p) => {
+      const label = upperText(p.regional || "").trim() || "SEM REGIONAL";
+      const g = groups.get(label) || { dias: 0, count: 0 };
+      g.dias += p.dias;
+      g.count += 1;
+      groups.set(label, g);
+    });
+    return [...groups.entries()]
+      .map(([label, { dias, count }]) => ({
+        label,
+        value: Math.round((dias / count) * 10) / 10,
+        tooltipValue: `${(dias / count).toFixed(1)} dias · ${count} ${count === 1 ? "desligado" : "desligados"}`
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+
   function rescisoesBarByFuncao(mode = "total", filters) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return rescisoesByFuncao(currentState(), range, mode, filters).map((r) => ({
@@ -963,6 +1048,20 @@ export function useDashboardData(filter) {
       value: r.value,
       tooltipValue: `${formatCurrency(r.value)} · ${r.count} ${r.count === 1 ? "rescisão" : "rescisões"}`
     }));
+  }
+
+  function rescisoesBarByRegional(mode = "total", filters) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return rescisoesByRegional(currentState(), range, mode, filters).map((r) => ({
+      label: r.label,
+      value: r.value,
+      tooltipValue: `${formatCurrency(r.value)} · ${r.count} ${r.count === 1 ? "rescisão" : "rescisões"}`
+    }));
+  }
+
+  function rescisoesEntriesByRegional(label, filters) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return listRescisoes(currentState(), range, filters).filter((r) => rescisaoRegionalLabel(r) === label);
   }
 
   function rescisoesPieByEstado(mode = "total", filters) {
@@ -1097,14 +1196,17 @@ export function useDashboardData(filter) {
 
   const DIARIA_VIEW_LABELS = { colaborador: "colaborador", filial: "filial", regional: "regional" };
 
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador") {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador") {
+    const custoPorRegional = custoView === "regional";
+    const custoSub = `Valor total por ${custoPorRegional ? "regional" : "empresa"}, no período filtrado`;
+    const custoData = () => (custoPorRegional ? custosBarByRegional() : custosBarByEmpresa());
     if (!kpiId) {
       return {
         id: null,
         kind: "bar",
         title: "Custo de Pessoal",
-        sub: "Valor total por empresa, no período filtrado",
-        data: custosBarByEmpresa(),
+        sub: custoSub,
+        data: custoData(),
         valueFormat: "currency",
         faturamento: ticketMedioFaturamento(),
         faturamentoEnabled: true
@@ -1153,8 +1255,11 @@ export function useDashboardData(filter) {
         id: "headcount",
         kind: "bar",
         title: "Headcount",
-        sub: "Por estado",
-        data: headcountBarByState(headcountFilial, headcountEmpresa, headcountFuncao),
+        sub: headcountView === "regional" ? "Por regional" : "Por estado",
+        data:
+          headcountView === "regional"
+            ? headcountBarByRegional(headcountFilial, headcountEmpresa, headcountFuncao)
+            : headcountBarByState(headcountFilial, headcountEmpresa, headcountFuncao),
         valueFormat: ""
       };
     }
@@ -1174,8 +1279,8 @@ export function useDashboardData(filter) {
         id: "custo_total",
         kind: "bar",
         title: "Custo de Pessoal",
-        sub: "Valor total por empresa, no período filtrado",
-        data: custosBarByEmpresa(),
+        sub: custoSub,
+        data: custoData(),
         valueFormat: "currency",
         faturamento: ticketMedioFaturamento(),
         faturamentoEnabled: true
@@ -1216,15 +1321,18 @@ export function useDashboardData(filter) {
         id: "tempo_permanencia",
         kind: "bar",
         title: "Tempo médio de permanência",
-        sub: "Dias entre admissão e desligamento, por colaborador",
-        data: turnoverTenureBarByEmployee(),
+        sub:
+          permanenciaView === "regional"
+            ? "Média de dias entre admissão e desligamento, por regional"
+            : "Dias entre admissão e desligamento, por colaborador",
+        data: permanenciaView === "regional" ? turnoverTenureBarByRegional() : turnoverTenureBarByEmployee(),
         valueFormat: ""
       };
     }
     if (kpiId === "rescisoes") {
       const liquido = rescisaoMode === "liquido";
       const porEstado = rescisaoView === "estado";
-      const by = porEstado ? "estado" : "função";
+      const by = porEstado ? "estado" : rescisaoView === "regional" ? "regional" : "função";
       return {
         id: "rescisoes",
         kind: porEstado ? "pie" : "bar",
@@ -1232,7 +1340,11 @@ export function useDashboardData(filter) {
         sub: liquido
           ? `Valor líquido (só a rescisão) por ${by} no período filtrado`
           : `Rescisão + GRRF/consig + 40% por ${by} no período filtrado`,
-        data: porEstado ? rescisoesPieByEstado(rescisaoMode, rescisaoFilters) : rescisoesBarByFuncao(rescisaoMode, rescisaoFilters),
+        data: porEstado
+          ? rescisoesPieByEstado(rescisaoMode, rescisaoFilters)
+          : rescisaoView === "regional"
+            ? rescisoesBarByRegional(rescisaoMode, rescisaoFilters)
+            : rescisoesBarByFuncao(rescisaoMode, rescisaoFilters),
         valueFormat: "currency"
       };
     }
@@ -1277,7 +1389,7 @@ export function useDashboardData(filter) {
         id: "ferias",
         kind: "bar",
         title: "Férias",
-        sub: `Valor total de férias por ${feriasView === "filial" ? "filial" : "colaborador"}, no mês filtrado`,
+        sub: `Valor total de férias por ${feriasView === "filial" ? "filial" : feriasView === "regional" ? "regional" : "colaborador"}, no mês filtrado`,
         data: rows,
         valueFormat: "currency",
         summary
@@ -1342,6 +1454,7 @@ export function useDashboardData(filter) {
     custoDiariaEntriesByColaborador,
     custoDiariaEntriesBy,
     feriasEntriesBy,
+    custoPessoalEntriesByRegional,
     comparacaoMeses,
     indicatorCurrentValue,
     kpis,
@@ -1351,9 +1464,12 @@ export function useDashboardData(filter) {
     chartPieData,
     turnoverTenureBarByEmployee,
     permanenciaDesligadosLista,
+    permanenciaEntriesByRegional,
     rescisoesBarByFuncao,
     rescisoesPieByEstado,
     rescisoesEntriesByFuncao,
+    rescisoesBarByRegional,
+    rescisoesEntriesByRegional,
     rescisoesEntriesByEstado,
     rescisoesFilterOptions,
     retentionBreakdown,

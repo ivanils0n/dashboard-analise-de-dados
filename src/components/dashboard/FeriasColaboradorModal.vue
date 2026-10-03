@@ -16,6 +16,10 @@ const props = defineProps({
 const porColaborador = computed(() => props.groupBy === "colaborador");
 const colaboradores = computed(() => uniqueEmployeeCount(props.entries));
 
+const filiais = computed(
+  () => new Set(props.entries.map((e) => filialDisplay(e.meta && e.meta.filial, e.meta && e.meta.estado)).filter(Boolean)).size
+);
+
 const emit = defineEmits(["close"]);
 
 const sorted = computed(() =>
@@ -37,6 +41,7 @@ function latest(key) {
 const info = computed(() => [
   { label: "Código", value: latest("codigo") },
   { label: "Filial", value: latest("filial") },
+  { label: "Regional", value: latest("regional") },
   { label: "Banco", value: latest("banco") },
   { label: "Estado", value: latest("estado") }
 ]);
@@ -71,6 +76,7 @@ function pagamento(entry) {
         <div class="text-right text-xs text-zinc-500 dark:text-zinc-400">
           <p>{{ entries.length }} {{ entries.length === 1 ? "pagamento registrado" : "pagamentos registrados" }}</p>
           <p v-if="!porColaborador">{{ colaboradores }} {{ colaboradores === 1 ? "colaborador" : "colaboradores" }}</p>
+          <p v-if="groupBy === 'regional'">{{ filiais }} {{ filiais === 1 ? "filial" : "filiais" }}</p>
         </div>
       </div>
 
@@ -88,8 +94,9 @@ function pagamento(entry) {
               <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Mês referente</th>
                 <th v-if="!porColaborador" class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
+                <th v-if="groupBy !== 'filial'" class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Data de pagamento</th>
-                <th v-if="porColaborador" class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Regional</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Banco</th>
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Valor total</th>
               </tr>
@@ -98,8 +105,9 @@ function pagamento(entry) {
               <tr v-for="e in sorted" :key="e.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ ymShortLabel(e.date) }}</td>
                 <td v-if="!porColaborador" class="whitespace-nowrap px-4 py-2.5 font-medium text-zinc-800 dark:text-zinc-100">{{ cell(e, "employeeName") }}</td>
+                <td v-if="groupBy !== 'filial'" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ cell(e, "filial") }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ pagamento(e) }}</td>
-                <td v-if="porColaborador" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ cell(e, "filial") }}</td>
+                <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ cell(e, "regional") }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ cell(e, "banco") }}</td>
                 <td class="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
                   {{ formatCurrency(e.value) }}
@@ -113,7 +121,7 @@ function pagamento(entry) {
 
     <EmptyState
       v-else
-      :title="porColaborador ? 'Sem férias para este colaborador' : 'Sem férias nesta filial'"
+      :title="porColaborador ? 'Sem férias para este colaborador' : 'Sem férias neste grupo'"
       text="Nenhum pagamento de férias registrado no período filtrado."
     />
   </Modal>

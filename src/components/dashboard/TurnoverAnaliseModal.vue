@@ -553,9 +553,6 @@ const totals = computed(() => [
           <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <header class="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Lançamentos</h3>
-              <span class="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                {{ lancamentos.length }}
-              </span>
             </header>
             <div v-if="lancamentos.length" class="max-h-80 overflow-auto">
               <table class="w-full min-w-max text-left text-sm">

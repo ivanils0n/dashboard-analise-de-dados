@@ -6,6 +6,7 @@ defineEmits(["update:modelValue"]);
 
 const OPTIONS = [
   { value: "funcao", label: "Por função", title: "Barras por função" },
+  { value: "regional", label: "Por regional", title: "Barras por regional" },
   { value: "estado", label: "Por estado", title: "Pizza por estado" }
 ];
 </script>
