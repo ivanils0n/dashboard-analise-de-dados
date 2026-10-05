@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { INDICATORS, getIndicatorById, STATES } from "@/lib/config";
+import { INDICATORS, getIndicatorById, STATES, STATE_COLORS } from "@/lib/config";
 import { getEntriesFor, getAllEntries, getBranches, getOcorrencias, getBeneficios } from "@/lib/store";
 import { TIPOS, isOcorrenciaAusencia, competenciaYm } from "@/lib/absenteismo";
 import {
@@ -333,7 +333,7 @@ export function useDashboardData(filter) {
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
     return STATES.map((s) => ({ label: s, value: ticketMedioFor(s, range) }))
       .filter((r) => r.value !== null)
-      .map((r) => ({ ...r, tooltipValue: formatCurrency(r.value) }))
+      .map((r) => ({ ...r, color: STATE_COLORS[r.label], tooltipValue: formatCurrency(r.value) }))
       .sort((a, b) => b.value - a.value);
   }
 
@@ -919,6 +919,10 @@ export function useDashboardData(filter) {
             filled: total > 0
           };
         }
+        if (ind.id === "custo_total") {
+          const total = custoTotalNoPeriodo(range, uf);
+          return { uf, text: formatValue(fmt, total), sub: "", filled: total > 0 };
+        }
         const value = indicatorCurrentValue(ind);
         const hasValue = value !== null && value !== undefined && !Number.isNaN(Number(value));
         let sub = "";
@@ -1101,7 +1105,7 @@ export function useDashboardData(filter) {
         return {
           id: "absenteismo",
           kind: "bar",
-          title: "Absenteísmo",
+          title: "Saúde e Segurança",
           sub: "Total de cada ocorrência no período filtrado",
           unit: ind.unit,
           valueFormat: "",
@@ -1657,7 +1661,7 @@ export function useDashboardData(filter) {
       return {
         id: "absenteismo",
         kind: "bar",
-        title: "Absenteísmo",
+        title: "Saúde e Segurança",
         sub: "Ocorrências por regional no período filtrado",
         data: absenteismoBarByRegional(absenteismoFilial),
         valueFormat: "",
@@ -1671,7 +1675,7 @@ export function useDashboardData(filter) {
       return {
         id: "absenteismo",
         kind: "pie",
-        title: "Absenteísmo",
+        title: "Saúde e Segurança",
         sub: "Total de cada ocorrência no período filtrado",
         data: rows.filter((r) => r.value > 0).map((r) => ({ label: r.label, value: r.value, color: r.color })),
         center: { value: String(total), caption: total === 1 ? "Ocorrência" : "Ocorrências" },

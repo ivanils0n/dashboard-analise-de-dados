@@ -10,6 +10,12 @@ const props = defineProps({
   showValues: { type: Boolean, default: true }
 });
 
+const UF_FILL = {
+  RO: { base: "fill-red-500/60 hover:fill-red-500/80", hover: "fill-red-500", dot: "bg-red-500" },
+  AM: { base: "fill-blue-500/60 hover:fill-blue-500/80", hover: "fill-blue-500", dot: "bg-blue-500" },
+  PA: { base: "fill-yellow-400/70 hover:fill-yellow-400/90", hover: "fill-yellow-400", dot: "bg-yellow-400" }
+};
+
 const emit = defineEmits(["select"]);
 
 const single = computed(() => props.states.length === 1);
@@ -102,7 +108,7 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
             stroke-linejoin="round"
             class="stroke-white outline-none transition-colors focus-visible:stroke-accent dark:stroke-zinc-900"
             :class="[
-              s.filled ? 'fill-accent/40 hover:fill-accent/60' : 'fill-zinc-200 hover:fill-zinc-300 dark:fill-zinc-700 dark:hover:fill-zinc-600',
+              s.filled ? (UF_FILL[s.uf]?.base || 'fill-accent/40 hover:fill-accent/60') : 'fill-zinc-200 hover:fill-zinc-300 dark:fill-zinc-700 dark:hover:fill-zinc-600',
               'cursor-pointer'
             ]"
             role="button"
@@ -138,7 +144,7 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
             stroke-width="2"
             stroke-linejoin="round"
             class="stroke-white dark:stroke-zinc-900"
-            :class="hoverShape.filled ? 'fill-accent' : 'fill-zinc-300 dark:fill-zinc-600'"
+            :class="hoverShape.filled ? (UF_FILL[hoverShape.uf]?.hover || 'fill-accent') : 'fill-zinc-300 dark:fill-zinc-600'"
           />
           <text
             :x="hoverShape.shape.cx"
@@ -160,7 +166,7 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
         <span class="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
           <span
             class="h-2.5 w-2.5 rounded-sm"
-            :class="s.filled ? 'bg-accent/60' : 'bg-zinc-300 dark:bg-zinc-600'"
+            :class="s.filled ? (UF_FILL[s.uf]?.dot || 'bg-accent/60') : 'bg-zinc-300 dark:bg-zinc-600'"
           ></span>
           {{ s.name }}
         </span>

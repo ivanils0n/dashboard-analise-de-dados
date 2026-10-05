@@ -26,7 +26,7 @@ export const INDICATORS = [
   },
   {
     id: "absenteismo",
-    name: "Absenteísmo",
+    name: "Saúde e Segurança",
     desc: "Faltas, atestados, suspensões, advertências e acidentes de trabalho lançados no Mapa de Absenteísmo",
     calc: "Total de ocorrências lançadas no Mapa de Absenteísmo no período",
     type: "number",
@@ -179,6 +179,7 @@ export const STATES = ["RO", "AM", "PA"];
 export const DEFAULT_STATE = "RO";
 export const DEFAULT_FILTER_STATE = "todos";
 
+export const STATE_COLORS = { RO: "#ef4444", AM: "#3b82f6", PA: "#facc15" };
 export const STATE_NAMES = { RO: "Rondônia", AM: "Amazonas", PA: "Pará" };
 
 export function getIndicatorById(id) {

@@ -43,6 +43,21 @@ const singleText = computed(() => {
   return Number(row.value || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 });
 
+const singleParts = computed(() => {
+  const row = singleRow.value;
+  if (!row || !Array.isArray(row.series)) return [];
+  const parts = row.series.filter((s) => s.label !== "Total");
+  if (parts.length < 2) return [];
+  const sum = parts.reduce((acc, s) => acc + (Number(s.value) || 0), 0);
+  const showPct = sum > 0 && Math.abs(sum - (Number(row.value) || 0)) < 0.5;
+  const formatter = formatterFor(props.valueFormat);
+  return parts.map((s) => ({
+    label: s.label,
+    text: formatter ? formatter(Number(s.value) || 0) : (Number(s.value) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 }),
+    pct: showPct ? `${(((Number(s.value) || 0) / sum) * 100).toFixed(1).replace(".", ",")}%` : ""
+  }));
+});
+
 function singlePayload() {
   const row = singleRow.value;
   return { index: 0, datasetIndex: 0, label: row ? row.label : "", value: row ? row.value : null };
@@ -242,7 +257,19 @@ watch(
       @contextmenu="onSingleContextmenu"
     >
       <span v-if="singleCaption" class="break-words text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ singleCaption }}</span>
+      <span v-else-if="singleRow.label" class="break-words text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ singleRow.label }}</span>
       <span class="break-words text-5xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ singleText }}</span>
+      <div v-if="singleParts.length" class="mt-4 flex flex-wrap items-stretch justify-center gap-3">
+        <div
+          v-for="part in singleParts"
+          :key="part.label"
+          class="min-w-[120px] rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700/70 dark:bg-zinc-800/50"
+        >
+          <div class="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ part.label }}</div>
+          <div class="mt-0.5 text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ part.text }}</div>
+          <div v-if="part.pct" class="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{{ part.pct }}</div>
+        </div>
+      </div>
     </div>
     <ChartEmpty v-if="isEmpty" />
   </div>
