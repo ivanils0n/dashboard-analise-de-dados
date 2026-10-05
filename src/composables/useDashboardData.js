@@ -1419,6 +1419,14 @@ export function useDashboardData(filter) {
 
   const DIARIA_VIEW_LABELS = { colaborador: "colaborador", filial: "filial", regional: "regional" };
 
+  function feriasChartFor(view) {
+    return cockpitChartFor("ferias", "todas", "", "", [], [], "bar", "total", {}, "funcao", [], [], "colaborador", view);
+  }
+
+  function custoChartFor(view) {
+    return cockpitChartFor(null, "todas", "", "", [], [], "bar", "total", {}, "funcao", [], [], "colaborador", "colaborador", view);
+  }
+
   function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador", turnoverView = "geral", retencaoView = "geral", absenteismoView = "motivo") {
     const custoPorRegional = custoView === "regional";
     const custoSub = custoPorRegional ? "Folha + Férias + Rescisões por regional, no período filtrado" : "Valor total por empresa, no período filtrado";
@@ -1766,6 +1774,8 @@ export function useDashboardData(filter) {
     retentionBreakdown,
     vacanciesBarByOpen,
     cockpitChartFor,
+    custoChartFor,
+    feriasChartFor,
     panorama,
     tableRows,
     formatEntryValue,

@@ -5,6 +5,11 @@ import { activeTab, tabDirection } from "@/composables/useDashboardTab";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
 import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
+import ViewTabs from "@/components/dashboard/ViewTabs.vue";
+import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
+import BeneficiosModal from "@/components/dashboard/BeneficiosModal.vue";
+import CustoRegionalModal from "@/components/dashboard/CustoRegionalModal.vue";
+import FeriasColaboradorModal from "@/components/dashboard/FeriasColaboradorModal.vue";
 import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vue";
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
@@ -45,7 +50,7 @@ import { useToast } from "@/composables/useToast";
 import { useDialog } from "@/composables/useDialog";
 import { canEditData, isAdmin } from "@/lib/auth";
 import { getIndicatorById, STATES } from "@/lib/config";
-import { safeSetItem, localStore, normalizeText, ymLabel } from "@/lib/utils";
+import { safeSetItem, localStore, normalizeText, ymLabel, formatCurrency } from "@/lib/utils";
 import { toXLSX, toCSV } from "@/lib/export";
 import { hydrateState, reloadData, warmApi } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
@@ -201,8 +206,95 @@ const custoPessoalOpen = ref(false);
 const custoPessoalEmpresa = ref("");
 const custoPessoalRows = ref([]);
 
+const FERIAS_VIEWS = [
+  { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
+  { value: "filial", label: "Filial", title: "Total por filial" },
+  { value: "regional", label: "Regional", title: "Total por regional" }
+];
+const feriasView = ref("colaborador");
+const feriasChart = computed(() => dashboard.feriasChartFor(feriasView.value));
+const feriasSummaryItems = computed(() => {
+  const s = feriasChart.value.summary;
+  if (!s) return [];
+  return [
+    { label: "Total", value: formatCurrency(s.total), accent: true },
+    feriasView.value === "filial"
+      ? { label: "Filiais", value: String(s.filiais) }
+      : feriasView.value === "regional"
+        ? { label: "Regionais", value: String(s.regionais) }
+        : { label: "Colaboradores", value: String(s.colaboradores) }
+  ];
+});
+const feriasDetalheName = ref("");
+const feriasDetalheGroup = ref("colaborador");
+
+function onFeriasBarClick({ label }) {
+  if (!label) return;
+  feriasDetalheName.value = label;
+  feriasDetalheGroup.value = feriasView.value;
+  feriasRows.value = dashboard.feriasEntriesBy(feriasView.value, label);
+  feriasOpen.value = true;
+}
+
+const CUSTO_VIEWS = [
+  { value: "consolidado", label: "Visão Geral", title: "Folha, Férias, Rescisões e Benefícios" },
+  { value: "empresa", label: "Folha", title: "Folha por empresa" },
+  { value: "regional", label: "Regional", title: "Total por regional" },
+  { value: "beneficios", label: "Benefícios", title: "Total por benefício" }
+];
+const custoView = ref("consolidado");
+const custosChart = computed(() => dashboard.custoChartFor(custoView.value));
+const custosSummaryItems = computed(() => {
+  const c = custosChart.value;
+  if (c.consolidado) return c.consolidado.map((i) => ({ label: i.label, value: formatCurrency(i.value) }));
+  return c.tiles || [];
+});
+
+const beneficiosOpen = ref(false);
+const beneficiosNome = ref("");
+const beneficiosRows = ref([]);
+const custoRegionalOpen = ref(false);
+const custoRegionalNome = ref("");
+const custoRegionalDados = ref({ folha: [], ferias: [], rescisoes: [] });
+const feriasOpen = ref(false);
+const feriasRows = ref([]);
+
+function onCustoPieClick(sliceIndex) {
+  const chart = custosChart.value;
+  const row = sliceIndex != null ? chart.data[sliceIndex] : null;
+  if (!row) return;
+  if (chart.beneficiosView || row.label === "Benefícios") {
+    beneficiosNome.value = chart.beneficiosView ? row.label : "";
+    beneficiosRows.value = dashboard.beneficiosEntries(chart.beneficiosView ? row.label : undefined);
+    beneficiosOpen.value = true;
+    return;
+  }
+  const rows = dashboard.consolidadoEntries(row.label);
+  if (row.label === "Folha") {
+    custoPessoalEmpresa.value = "Todas as empresas";
+    custoPessoalRows.value = rows;
+    custoPessoalOpen.value = true;
+  } else if (row.label === "Férias") {
+    feriasDetalheName.value = "Todos os colaboradores";
+    feriasDetalheGroup.value = "regional";
+    feriasRows.value = rows;
+    feriasOpen.value = true;
+  } else {
+    rescisaoFuncaoName.value = "Todas as funções";
+    rescisaoFuncaoRows.value = rows;
+    rescisaoPorEstado.value = false;
+    rescisaoFuncaoOpen.value = true;
+  }
+}
+
 function onCustoPessoalBarClick({ label }) {
   if (!label) return;
+  if (custoView.value === "regional") {
+    custoRegionalNome.value = label;
+    custoRegionalDados.value = dashboard.custoRegionalDetalhe(label);
+    custoRegionalOpen.value = true;
+    return;
+  }
   custoPessoalEmpresa.value = label;
   custoPessoalRows.value = dashboard.custoPessoalEntriesByEmpresa(label);
   custoPessoalOpen.value = true;
@@ -229,6 +321,9 @@ const storedShowValues = localStore.getItem(SHOW_VALUES_KEY);
 const showValues = ref(storedShowValues === null ? true : storedShowValues === "1");
 watch(showValues, (v) => safeSetItem(localStore, SHOW_VALUES_KEY, v ? "1" : "0"));
 const custosChartRef = ref(null);
+function setCustosRef(el) {
+  custosChartRef.value = el;
+}
 const treinamentoChartRef = ref(null);
 const hiringChartRef = ref(null);
 const panoramaChartRef = ref(null);
@@ -299,7 +394,7 @@ const visibleKpis = computed(() => {
   return kpis.value.filter((k) => normalizeText(`${k.name} ${k.desc || ""}`).includes(q));
 });
 
-const custosBarData = computed(() => dashboard.custosBarByEmpresa());
+const custosBarData = computed(() => custosChart.value.data);
 
 const treinamentoBarData = computed(() => dashboard.treinamentoBarByFilial());
 
@@ -754,7 +849,99 @@ watch(activeTab, (tab) => {
     </div>
     <div ref="scrollRef" data-tour="overview-charts" class="mt-3 grid grid-cols-1 gap-8 lg:grid-cols-12">
       <template v-for="view in gridChartViews" :key="view.card.id">
+        <template v-if="view.card.id === 'ferias'">
+        <section
+          class="min-w-0 lg:col-span-7 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+          data-indicator-card="ferias"
+        >
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Férias</h3>
+              <ViewTabs v-model="feriasView" class="mt-1.5 w-fit" :options="FERIAS_VIEWS" label="Visão das férias" />
+              <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{{ feriasChart.sub }}</span>
+            </div>
+            <SummaryTiles v-if="feriasSummaryItems.length" :items="feriasSummaryItems" compact />
+          </div>
+          <div v-if="feriasChart.data.length" class="h-[420px]">
+            <BarChart
+              :data="feriasChart.data"
+              :show-values="showValues"
+              :show-trend="false"
+              value-format="currency"
+              :horizontal="feriasView !== 'regional'"
+              fluid
+              bars-clickable
+              @bar-click="onFeriasBarClick"
+            />
+          </div>
+          <EmptyState v-else title="Sem férias no período" text="Nenhum pagamento de férias registrado no período e estado filtrados." />
+        </section>
+        <section
+          :ref="setCustosRef"
+          class="min-w-0 lg:col-span-5 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <div class="mb-4 flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de Pessoal</h2>
+              <ViewTabs v-model="custoView" class="mt-1.5 w-fit" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
+              <span class="mt-1 block text-xs text-zinc-400 dark:text-zinc-400">{{ custosChart.sub }}</span>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+            <FaturamentoShareChip v-if="custosFaturamento" :data="custosFaturamento" />
+            <FaturamentoButton compact />
+            <button
+              v-if="custosBarData.length && custosChart.kind !== 'pie'"
+              type="button"
+              class="icon-btn-sm"
+              title="Tela cheia"
+              aria-label="Ver gráfico de Custo de Pessoal em tela cheia"
+              @click="custosBarChartRef?.openFullscreen()"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+                <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+            </button>
+            </div>
+          </div>
+          <SummaryTiles v-if="custosChart.kind === 'pie' && custosSummaryItems.length" class="mb-3" :items="custosSummaryItems" compact grid />
+          <PieChart
+            v-if="custosBarData.length && custosChart.kind === 'pie'"
+            :key="custoView"
+            :data="custosBarData"
+            :show-values="showValues"
+            height="h-[340px]"
+            :center-value="custosChart.center.value"
+            :center-caption="custosChart.center.caption"
+            value-format="currency"
+            clickable
+            @chart-click="onCustoPieClick"
+            @chart-contextmenu="onCustoPieClick"
+          />
+          <BarChart
+            v-else-if="custosBarData.length"
+            ref="custosBarChartRef"
+            :data="custosBarData"
+            :show-values="showValues"
+            value-format="currency"
+            :height-px="340"
+            bars-clickable
+            title="Custo de Pessoal — Evolução dos Indicadores"
+            :subtitle="custosChart.sub"
+            @bar-click="onCustoPessoalBarClick"
+          />
+          <div v-else class="p-6">
+            <EmptyState
+              title="Sem custos no período"
+              text="Nenhum Custo de Pessoal lançado para o período e o estado filtrados."
+            />
+          </div>
+        </section>
+        </template>
         <KpiChartCard
+          v-else
           stacked
           :class="chartSpan(view.card.id)"
           :card="view.card"
@@ -780,56 +967,8 @@ watch(activeTab, (tab) => {
       </template>
     </div>
 
-    <div class="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,0.75fr)]">
+    <div class="mt-8 grid gap-4 lg:grid-cols-2">
 
-      <section
-        ref="custosChartRef"
-        class="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-      >
-        <div class="mb-4 flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <h2 class="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Custo de Pessoal</h2>
-            <span class="text-xs text-zinc-400 dark:text-zinc-400">Valor total por empresa, no período filtrado</span>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-          <FaturamentoShareChip v-if="custosFaturamento" :data="custosFaturamento" />
-          <FaturamentoButton compact />
-          <button
-            v-if="custosBarData.length"
-            type="button"
-            class="icon-btn-sm"
-            title="Tela cheia"
-            aria-label="Ver gráfico de Custo de Pessoal em tela cheia"
-            @click="custosBarChartRef?.openFullscreen()"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-            </svg>
-          </button>
-          </div>
-        </div>
-        <BarChart
-          v-if="custosBarData.length"
-          ref="custosBarChartRef"
-          :data="custosBarData"
-          :show-values="showValues"
-          value-format="currency"
-          :height-px="340"
-          bars-clickable
-          title="Custo de Pessoal — Evolução dos Indicadores"
-          subtitle="Valor total por empresa, no período filtrado"
-          @bar-click="onCustoPessoalBarClick"
-        />
-        <div v-else class="p-6">
-          <EmptyState
-            title="Sem custos no período"
-            text="Nenhum Custo de Pessoal lançado para o período e o estado filtrados."
-          />
-        </div>
-      </section>
 
       <div v-if="ticketChartView" ref="ticketChartRef" class="min-w-0">
         <KpiChartCard
@@ -1170,6 +1309,30 @@ watch(activeTab, (tab) => {
       :records="rescisaoFuncaoRows"
       @close="rescisaoFuncaoOpen = false"
     />
+    <BeneficiosModal
+      v-if="beneficiosOpen"
+      :open="beneficiosOpen"
+      :beneficio="beneficiosNome"
+      :entries="beneficiosRows"
+      @close="beneficiosOpen = false"
+    />
+    <CustoRegionalModal
+      v-if="custoRegionalOpen"
+      :open="custoRegionalOpen"
+      :regional="custoRegionalNome"
+      :folha="custoRegionalDados.folha"
+      :ferias="custoRegionalDados.ferias"
+      :rescisoes="custoRegionalDados.rescisoes"
+      @close="custoRegionalOpen = false"
+    />
+    <FeriasColaboradorModal
+      v-if="feriasOpen"
+      :open="feriasOpen"
+      :colaborador="feriasDetalheName"
+      :group-by="feriasDetalheGroup"
+      :entries="feriasRows"
+      @close="feriasOpen = false"
+    />
     <CustoPessoalEmpresaModal
       v-if="custoPessoalOpen"
       :open="custoPessoalOpen"
@@ -1261,6 +1424,7 @@ watch(activeTab, (tab) => {
       title="Custo de Pessoal — Registros"
       :columns="custosColumns"
       readonly
+      tipos
       @close="custosEntriesOpen = false"
       @edit="onEntriesEdit"
     />

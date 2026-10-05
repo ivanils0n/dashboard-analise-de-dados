@@ -3,7 +3,8 @@ import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } 
 import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import { STATES, STATE_NAMES, getIndicatorById } from "@/lib/config";
-import { getEntriesFor, removeEntry, removeEntries } from "@/lib/store";
+import { getEntriesFor, getBeneficios, removeEntry, removeEntries } from "@/lib/store";
+import { listRescisoes, rescisaoAmount } from "@/lib/employees";
 import { hydrateState } from "@/lib/db";
 import {
   formatDate,
@@ -27,7 +28,8 @@ const props = defineProps({
   indicatorId: { type: String, required: true },
   title: { type: String, default: "" },
   columns: { type: Array, default: () => [] },
-  readonly: { type: Boolean, default: false }
+  readonly: { type: Boolean, default: false },
+  tipos: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["close", "edit"]);
@@ -40,6 +42,7 @@ const canEdit = canEditData() && !props.readonly;
 const indicator = computed(() => getIndicatorById(props.indicatorId) || { id: props.indicatorId });
 
 const form = reactive({
+  tipo: "folha",
   estado: filters.current,
   filial: "todos",
   search: ""
@@ -57,7 +60,79 @@ watch(
   }
 );
 
+const TIPO_OPTIONS = [
+  { value: "folha", label: "Folha" },
+  { value: "ferias", label: "Férias" },
+  { value: "rescisoes", label: "Rescisões" },
+  { value: "beneficios", label: "Benefícios" },
+  { value: "todos", label: "Todos" }
+];
+
+const COLUNAS_POR_TIPO = {
+  todos: [
+    { label: "Mês", month: true },
+    { label: "Tipo", meta: "tipoLabel" },
+    { label: "Nome", meta: "employeeName" },
+    { label: "Empresa", meta: "empresa" },
+    { label: "Filial", meta: "filial" },
+    { label: "Estado", meta: "estado" },
+    { label: "Valor total", value: true }
+  ],
+  ferias: [
+    { label: "Mês", month: true },
+    { label: "Código", meta: "codigo" },
+    { label: "Nome", meta: "employeeName" },
+    { label: "Banco", meta: "banco" },
+    { label: "Filial", meta: "filial" },
+    { label: "Estado", meta: "estado" },
+    { label: "Data de pagamento", period: ["dataPagto"] },
+    { label: "Valor total", value: true }
+  ],
+  rescisoes: [
+    { label: "Mês", month: true },
+    { label: "Nome", meta: "employeeName" },
+    { label: "Empresa", meta: "empresa" },
+    { label: "Filial", meta: "filial" },
+    { label: "Estado", meta: "estado" },
+    { label: "Valor total", value: true }
+  ],
+  beneficios: [
+    { label: "Mês", month: true },
+    { label: "Benefício", meta: "beneficio" },
+    { label: "Estado", meta: "estado" },
+    { label: "Vencimento", period: ["vencimento"] },
+    { label: "Forma de pagamento", meta: "formaPagamento" },
+    { label: "N° da NF", meta: "nf" },
+    { label: "Fusion/Big", meta: "fusionBig" },
+    { label: "Total a pagar", value: true }
+  ]
+};
+
+const activeColumns = computed(() => (props.tipos && form.tipo !== "folha" ? COLUNAS_POR_TIPO[form.tipo] : props.columns));
+
+function sourceEntries() {
+  if (!props.tipos) return getEntriesFor(props.indicatorId, form.estado).slice();
+  const t = form.tipo;
+  const comTipo = (list, tipoLabel) => list.map((e) => ({ ...e, meta: { ...e.meta, tipoLabel } }));
+  const out = [];
+  if (t === "todos" || t === "folha") out.push(...comTipo(getEntriesFor("custo_total", form.estado), "Folha"));
+  if (t === "todos" || t === "ferias") out.push(...comTipo(getEntriesFor("ferias", form.estado), "Férias"));
+  if (t === "todos" || t === "rescisoes") {
+    out.push(
+      ...listRescisoes(form.estado, null).map((r) => ({
+        id: `rescisao-${r.id}`,
+        date: String(r.mesReferencia || r.ultDiaAviso || "").slice(0, 10),
+        value: rescisaoAmount(r, "total"),
+        meta: { employeeName: r.colaborador, empresa: r.empresa, filial: r.filial, estado: r.estado, tipoLabel: "Rescisões" }
+      }))
+    );
+  }
+  if (t === "todos" || t === "beneficios") out.push(...comTipo(getBeneficios(form.estado), "Benefícios"));
+  return out;
+}
+
 function clearFilters() {
+  form.tipo = "folha";
   form.estado = filters.current;
   form.filial = "todos";
   form.search = "";
@@ -143,7 +218,7 @@ function formatValue(entry) {
 }
 
 function filteredByEstadoPeriodoBusca() {
-  let list = getEntriesFor(props.indicatorId, form.estado).slice();
+  let list = sourceEntries();
 
   if (dateFilter.start) list = list.filter((e) => e.date >= dateFilter.start);
   if (dateFilter.end) list = list.filter((e) => e.date <= dateFilter.end);
@@ -151,7 +226,7 @@ function filteredByEstadoPeriodoBusca() {
   const q = normalizeText(form.search).trim();
   if (q) {
     list = list.filter((e) => {
-      const hay = normalizeText(props.columns.map((c) => rawCell(e, c)).join(" "));
+      const hay = normalizeText(activeColumns.value.map((c) => rawCell(e, c)).join(" "));
       return hay.includes(q);
     });
   }
@@ -206,7 +281,7 @@ const rows = computed(() => {
 
 const totalValue = computed(() => rows.value.reduce((sum, e) => sum + (Number(e.value) || 0), 0));
 
-const hasEmployeeColumn = computed(() => props.columns.some((c) => c.meta === "employeeName"));
+const hasEmployeeColumn = computed(() => activeColumns.value.some((c) => c.meta === "employeeName"));
 const employeeCount = computed(() => uniqueEmployeeCount(rows.value));
 
 async function removeRow(entry) {
@@ -342,6 +417,13 @@ watch(rows, () => nextTick(updateTableWidths));
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div v-if="tipos" class="flex flex-col gap-1.5 sm:w-44">
+          <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Tipo de custo</label>
+          <select v-model="form.tipo" class="input-field">
+            <option v-for="t in TIPO_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+          </select>
+        </div>
+
         <div class="flex flex-col gap-1.5 sm:w-56">
           <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Estado</label>
           <select v-model="form.estado" class="input-field">
@@ -407,7 +489,7 @@ watch(rows, () => nextTick(updateTableWidths));
                       @change="toggleSelectAll"
                     />
                   </th>
-                  <th v-for="col in columns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 font-semibold">{{ col.label }}</th>
+                  <th v-for="col in activeColumns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 font-semibold">{{ col.label }}</th>
                   <th v-if="canEdit" class="px-4 py-2.5"></th>
                 </tr>
               </thead>
@@ -422,7 +504,7 @@ watch(rows, () => nextTick(updateTableWidths));
                       @change="toggleRow(entry)"
                     />
                   </td>
-                  <td v-for="col in columns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">
+                  <td v-for="col in activeColumns" :key="col.label" class="whitespace-nowrap px-4 py-2.5 text-zinc-700 dark:text-zinc-300">
                     {{ cellText(entry, col) }}
                   </td>
                   <td v-if="canEdit" class="normal-case px-4 py-2.5 text-right">
