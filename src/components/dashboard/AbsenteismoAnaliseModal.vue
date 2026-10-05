@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import Modal from "@/components/ui/Modal.vue";
+import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue"; import Modal from "@/components/ui/Modal.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import BarChart from "@/components/charts/BarChart.vue";
@@ -10,6 +10,7 @@ import { dateFilter } from "@/composables/useDateFilter";
 import { monthYm, ymLabel } from "@/lib/utils";
 import { STATES, STATE_NAMES } from "@/lib/config";
 import { analiseAbsenteismo } from "@/lib/absenteismoAnalise";
+import { headcountRegionalOptions } from "@/lib/employees";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -29,7 +30,13 @@ watch(
   { immediate: true }
 );
 
-const a = computed(() => analiseAbsenteismo(ym.value, estadoSel.value));
+const regionalSel = ref("");
+const regionalOptions = computed(() => headcountRegionalOptions(estadoSel.value));
+watch(regionalOptions, (opts) => {
+  if (regionalSel.value && !opts.includes(regionalSel.value)) regionalSel.value = "";
+});
+
+const a = computed(() => analiseAbsenteismo(ym.value, estadoSel.value, regionalSel.value));
 const escopo = computed(() => (estadoSel.value === "todos" ? "Todos os estados" : STATE_NAMES[estadoSel.value] || estadoSel.value));
 const periodo = computed(() => ymLabel(ym.value));
 
@@ -73,6 +80,15 @@ const cards = computed(() => {
     },
     { label: "Dias de ausência", value: nf(d.dias, 1), sub: vDias.text, subCls: vDias.cls, tone: "text-zinc-900 dark:text-zinc-100" },
     {
+      label: "Média de dias de atestado",
+      value: d.mediaDiasAtestado == null ? "—" : nf(d.mediaDiasAtestado, 1),
+      sub: d.atestadosComDias
+        ? `${nf(d.atestadosComDias)} ${d.atestadosComDias === 1 ? "atestado" : "atestados"} com dias informados`
+        : "nenhum atestado com dias informados",
+      subCls: "text-zinc-500 dark:text-zinc-400",
+      tone: "text-zinc-900 dark:text-zinc-100"
+    },
+    {
       label: "Média por afetado",
       value: d.mediaPorAfetado == null ? "—" : nf(d.mediaPorAfetado, 1),
       sub: "ocorrências por colaborador afetado",
@@ -87,6 +103,8 @@ const estadoPie = computed(() => a.value.porEstado.map((e) => ({ label: STATE_NA
 const tooltipGrupo = (g) =>
   `${g.ocorrencias} ${g.ocorrencias === 1 ? "ocorrência" : "ocorrências"} · ${nf(g.dias, 1)} dias · ${nf(g.ativos)} ativos · taxa ${fmtPct(g.taxa)}`;
 
+const cidPie = computed(() => a.value.porCid.map((c) => ({ label: c.label, value: c.value })));
+const totalCid = computed(() => a.value.porCid.reduce((s, c) => s + c.value, 0));
 const generoData = computed(() => a.value.porGenero.map((g) => ({ label: g.label, value: g.taxa ?? 0, tooltipValue: tooltipGrupo(g) })));
 const diaMesData = computed(() => a.value.porDiaDoMes.map((d) => ({ label: d.label, value: d.value, tooltipValue: `${d.value} ${d.value === 1 ? "ocorrência" : "ocorrências"}` })));
 const SEMANA_CURTA = { Domingo: "Dom", Segunda: "Seg", Terça: "Ter", Quarta: "Qua", Quinta: "Qui", Sexta: "Sex", Sábado: "Sáb" };
@@ -114,6 +132,10 @@ function onMotivoClick(i) {
 function onEstadoClick(i) {
   const e = a.value.porEstado[idx(i)];
   if (e) abrirDetalhe(`Ocorrências — ${STATE_NAMES[e.label] || e.label}`, e.itens);
+}
+function onCidClick(i) {
+  const c = a.value.porCid[idx(i)];
+  if (c) abrirDetalhe(`Atestados — CID ${c.label}`, c.itens);
 }
 function onGeneroClick({ index }) {
   const g = a.value.porGenero[index];
@@ -149,8 +171,16 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
 </script>
 
 <template>
-  <Modal title="Análise de Absenteísmo" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
+  <Modal title="Análise de Absenteísmo" :subtitle="`${escopo}${regionalSel ? ` · ${regionalSel}` : ''} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
     <template #actions>
+      <div class="flex flex-wrap items-center gap-2">
+      <GerenteRegionalFilter
+        v-model="regionalSel"
+        :options="regionalOptions"
+        label="Regional"
+        all-label="Todas as regionais"
+        title="Filtrar por regional"
+      />
       <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
         <button
           v-for="o in estadoOptions"
@@ -164,6 +194,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
           {{ o.label }}
         </button>
       </div>
+      </div>
     </template>
 
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
@@ -175,7 +206,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
           Ainda não há Headcount de {{ periodo }}: a taxa usa os ativos de {{ ymLabel(a.headcountRef.ym) }}.
         </p>
 
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           <div v-for="c in cards" :key="c.label" :class="[cardCls, 'relative p-5 text-center']">
             <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{{ c.label }}</p>
             <p class="mt-1.5 text-4xl font-bold leading-none tabular-nums" :class="c.tone">{{ c.value }}</p>
@@ -207,25 +238,36 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
               </div>
             </section>
 
-            <section :class="[cardCls, 'md:col-span-2 lg:col-span-1']">
+            <section :class="cardCls">
               <header :class="headCls">
-                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por gênero</h3>
-                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Taxa de absenteísmo sobre os ativos de cada gênero</p>
+                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por CID</h3>
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Atestados de cada CID (clique para ver os atestados)</p>
               </header>
               <div class="p-4">
-                <BarChart :data="generoData" show-values value-format="percent2" :show-trend="false" :height-px="288" bars-clickable @bar-click="onGeneroClick" />
+                <PieChart v-if="totalCid" :data="cidPie" show-values height="h-72" :center-value="String(totalCid)" center-caption="Atestados" value-format="count" clickable @chart-click="onCidClick" />
+                <p v-else class="flex h-72 items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhum atestado com CID informado neste período.</p>
               </div>
             </section>
           </div>
 
-          <div class="grid gap-5 lg:grid-cols-3">
+          <div class="grid gap-5 lg:grid-cols-4">
             <section :class="[cardCls, 'lg:col-span-2']">
               <header :class="headCls">
                 <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Ocorrências por dia do mês</h3>
                 <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Para identificar picos (clique numa barra para ver o dia)</p>
               </header>
               <div class="p-4">
-                <BarChart :data="diaMesData" :show-trend="false" :height-px="280" bars-clickable @bar-click="onDiaMesClick" />
+                <BarChart :data="diaMesData" variant="line" line-x-labels :show-trend="false" :height-px="280" bars-clickable @bar-click="onDiaMesClick" />
+              </div>
+            </section>
+
+            <section :class="cardCls">
+              <header :class="headCls">
+                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por gênero</h3>
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Taxa de absenteísmo sobre os ativos de cada gênero</p>
+              </header>
+              <div class="p-4">
+                <BarChart :data="generoData" show-values value-format="percent2" :show-trend="false" :height-px="288" bars-clickable @bar-click="onGeneroClick" />
               </div>
             </section>
 

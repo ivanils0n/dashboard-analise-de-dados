@@ -218,7 +218,7 @@ function onBodyClick(e) {
   if (row) openCell(row.emp, td.dataset.d);
 }
 
-function onSave({ motivo, observacao, advertencia, acidente }) {
+function onSave({ motivo, observacao, advertencia, acidente, cid, diasAtestado, tipoAcidente, aberturaCat }) {
   const { emp, iso } = editing.value;
   saveOcorrencia({
     date: iso,
@@ -229,6 +229,10 @@ function onSave({ motivo, observacao, advertencia, acidente }) {
     observacao,
     advertencia,
     acidente,
+    cid,
+    diasAtestado,
+    tipoAcidente,
+    aberturaCat,
     estado: emp.estado
   });
   editing.value = null;

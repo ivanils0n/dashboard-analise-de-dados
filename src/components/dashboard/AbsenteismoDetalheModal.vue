@@ -19,7 +19,9 @@ const sorted = computed(() =>
     .slice()
     .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.colaborador).localeCompare(String(b.colaborador), "pt-BR"))
 );
-const totalDias = computed(() => props.rows.reduce((s, o) => s + (Number(o.dias) || 0), 0));
+const soAtestados = computed(() => props.rows.length > 0 && props.rows.every((o) => o.motivo === "Atestado"));
+const soAcidentes = computed(() => props.rows.length > 0 && props.rows.every((o) => o.acidente));
+const totalDias = computed(() => props.rows.reduce((s, o) => s + (Number(o.diasAtestado) || 0), 0));
 const fmtDias = (n) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 
 function chipOf(o) {
@@ -54,8 +56,8 @@ function exportar() {
           <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Ocorrências</p>
           <p class="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ rows.length }}</p>
         </div>
-        <div class="text-right">
-          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Dias de ausência</p>
+        <div v-if="soAtestados" class="text-right">
+          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Dias de atestado</p>
           <p class="text-3xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ fmtDias(totalDias) }}</p>
         </div>
       </div>
@@ -71,7 +73,10 @@ function exportar() {
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Ocorrência</th>
-                <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Dias</th>
+                <th v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 font-semibold">CID</th>
+                <th v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Dias</th>
+                <th v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 font-semibold">Tipo de acidente</th>
+                <th v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 font-semibold">CAT</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Observação</th>
               </tr>
             </thead>
@@ -105,7 +110,10 @@ function exportar() {
                     </span>
                   </span>
                 </td>
-                <td class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ fmtDias(o.dias) }}</td>
+                <td v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.cid || "—" }}</td>
+                <td v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ o.diasAtestado ? fmtDias(o.diasAtestado) : "—" }}</td>
+                <td v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.tipoAcidente || "—" }}</td>
+                <td v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.aberturaCat ? "Aberta" : "Não aberta" }}</td>
                 <td class="max-w-[18rem] truncate px-4 py-2.5 normal-case text-zinc-500 dark:text-zinc-400" :title="o.observacao">{{ o.observacao || "—" }}</td>
               </tr>
             </tbody>

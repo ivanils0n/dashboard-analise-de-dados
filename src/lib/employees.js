@@ -309,7 +309,7 @@ export function rescisoesByFuncao(state, range, mode, filters) {
 }
 
 export function rescisaoRegionalLabel(r) {
-  return regionalLabel(r.regional);
+  return regionalLabel(r.regionalFilial || r.regional);
 }
 
 export function rescisoesByRegional(state, range, mode, filters) {
@@ -549,8 +549,17 @@ export function listHeadcountRecords(state, mesReferencia, { incluirDesligados =
     .map((row) => row.h);
 }
 
-export function headcountCount(state, mesReferencia) {
-  return mesReferencia ? activeRowsOf(state, mesReferencia).length : rowsOf(state).length;
+export function headcountCount(state, mesReferencia, regional = "") {
+  const rows = mesReferencia ? activeRowsOf(state, mesReferencia) : rowsOf(state);
+  return regional ? rows.filter((row) => regionalLabel(row.raw.regional) === regional).length : rows.length;
+}
+
+export function filterByRegional(list, regional) {
+  return regional ? list.filter((h) => regionalLabel(h.regional) === regional) : list;
+}
+
+export function headcountRegionalOptions(state) {
+  return [...new Set(rowsOf(state).map((row) => regionalLabel(row.raw.regional)))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 export function headcountCountInRange(state, range) {

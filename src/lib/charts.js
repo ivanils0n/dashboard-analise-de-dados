@@ -123,6 +123,32 @@ function drawValueLabels(chart) {
     const outside = pieLabelsOutside(chart);
     const fs = pieLabelFontSize(chart);
     if (outside) ctx.font = `700 ${fs}px Inter, sans-serif`;
+    const labelY = {};
+    if (outside) {
+      const gap = fs * (chart.__pieShowPercent ? 2.4 : 1.5);
+      const bySide = { right: [], left: [] };
+      meta.data.forEach((el, i) => {
+        if (ds.data[i] == null) return;
+        const q = el.getProps(["y", "startAngle", "endAngle", "outerRadius"], true);
+        if (q.endAngle - q.startAngle < 0.01) return;
+        const m = (q.startAngle + q.endAngle) / 2;
+        bySide[Math.cos(m) >= 0 ? "right" : "left"].push({ i, y: q.y + Math.sin(m) * (q.outerRadius + fs * 0.9) });
+      });
+      Object.values(bySide).forEach((list) => {
+        list.sort((x, y) => x.y - y.y);
+        for (let k = 1; k < list.length; k++) {
+          if (list[k].y - list[k - 1].y < gap) list[k].y = list[k - 1].y + gap;
+        }
+        const over = list.length ? list[list.length - 1].y - (chart.height - fs) : 0;
+        if (over > 0) list.forEach((it) => (it.y -= over));
+        for (let k = list.length - 2; k >= 0; k--) {
+          if (list[k + 1].y - list[k].y < gap) list[k].y = list[k + 1].y - gap;
+        }
+        const under = list.length ? fs - list[0].y : 0;
+        if (under > 0) list.forEach((it) => (it.y += under));
+        list.forEach((it) => (labelY[it.i] = it.y));
+      });
+    }
     meta.data.forEach((el, i) => {
       const val = ds.data[i];
       if (val == null) return;
@@ -153,7 +179,7 @@ function drawValueLabels(chart) {
       const sx = prop.x + cos * (prop.outerRadius - 2);
       const sy = prop.y + sin * (prop.outerRadius - 2);
       const ex = prop.x + cos * (prop.outerRadius + fs * 0.9);
-      const ey = prop.y + sin * (prop.outerRadius + fs * 0.9);
+      const ey = labelY[i] !== undefined ? labelY[i] : prop.y + sin * (prop.outerRadius + fs * 0.9);
       const tx = ex + (right ? fs * 0.9 : -fs * 0.9);
 
       ctx.save();
@@ -605,7 +631,7 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
   chart.options.scales = {
     x: {
       grid: { display: false },
-      ticks: { display: false }
+      ticks: options.xTicks ? { display: true, color: p.tick, autoSkip: false, maxRotation: 90, font: { size: 11 } } : { display: false }
     },
     y: {
       grid: { color: p.grid },

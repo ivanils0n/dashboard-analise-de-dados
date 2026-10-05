@@ -92,7 +92,11 @@ function absenteismoToRow(entry) {
     motivo: meta.motivo || null,
     observacao: meta.observacao || null,
     advertencia: !!meta.advertencia,
-    acidente_trabalho: !!meta.acidente
+    acidente_trabalho: !!meta.acidente,
+    cid: meta.cid || null,
+    dias_atestado: meta.diasAtestado ?? null,
+    tipo_acidente: meta.tipoAcidente || null,
+    abertura_cat: !!meta.aberturaCat
   };
 }
 
@@ -352,7 +356,7 @@ function regionalText(v) {
 
 let _regionalLookup = null;
 
-function regionalDaFilial(filial, estado) {
+export function regionalDaFilial(filial, estado) {
   return _regionalLookup ? up(_regionalLookup.resolve(filial, estado)) || null : null;
 }
 
@@ -385,6 +389,22 @@ function mapRemoteFerias(row, impliedState) {
       dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
       filial: up(row.filial) || null,
       regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
+      estado: row.estado_sigla || impliedState || null
+    }
+  };
+}
+
+function mapRemoteBeneficios(row, impliedState) {
+  return {
+    id: row.id,
+    date: row.mes_referente ? String(row.mes_referente).slice(0, 10) : "",
+    value: Number(row.total_pagar) || 0,
+    meta: {
+      beneficio: up(row.beneficio) || "SEM BENEFÍCIO",
+      vencimento: row.vencimento ? String(row.vencimento).slice(0, 10) : null,
+      formaPagamento: row.forma_pagamento || null,
+      nf: row.nf != null && row.nf !== "" ? String(row.nf) : null,
+      fusionBig: up(row.fusion_big) || null,
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -445,7 +465,11 @@ function mapRemoteAbsenteismo(row, impliedState) {
         motivo: legacyAdv || legacyAci ? "Presente" : motivo,
         observacao: row.observacao || null,
         advertencia: truthy(row.advertencia) || legacyAdv,
-        acidente: truthy(row.acidente_trabalho) || legacyAci
+        acidente: truthy(row.acidente_trabalho) || legacyAci,
+        cid: row.cid || null,
+        diasAtestado: row.dias_atestado === "" || row.dias_atestado == null ? null : Number(row.dias_atestado),
+        tipoAcidente: row.tipo_acidente || null,
+        aberturaCat: truthy(row.abertura_cat)
       }
     };
   }
@@ -539,6 +563,7 @@ const TABLE_KINDS = {
   treinamentos: { key: "treinamentos", map: mapRemoteTreinamento },
   custo_folha: { key: "custoFolha", map: mapRemoteCustoFolha },
   ferias: { key: "ferias", map: mapRemoteFerias },
+  beneficios: { key: "beneficios", map: mapRemoteBeneficios },
   absenteismo: { key: "absenteismo", map: mapRemoteAbsenteismo }
 };
 const DATA_TABLES = Object.keys(TABLE_KINDS);
@@ -560,6 +585,7 @@ function emptyPayload() {
     treinamentos: [],
     custoFolha: [],
     ferias: [],
+    beneficios: [],
     absenteismo: []
   };
 }

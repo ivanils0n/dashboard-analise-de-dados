@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, STATES } from "@/lib/config";
-import { getEntriesFor, getAllEntries, getBranches, getOcorrencias } from "@/lib/store";
+import { getEntriesFor, getAllEntries, getBranches, getOcorrencias, getBeneficios } from "@/lib/store";
 import { TIPOS, isOcorrenciaAusencia, competenciaYm } from "@/lib/absenteismo";
 import {
   computedSnapshot,
@@ -16,6 +16,7 @@ import {
   headcountEmpresaOptions,
   headcountFuncaoOptions,
   listRescisoes,
+  rescisaoAmount,
   rescisaoFilterOptions,
   rescisoesTotal,
   rescisoesByFuncao,
@@ -30,6 +31,8 @@ import {
   normalizeBranchKey
 } from "@/lib/employees";
 import { regionalLabel } from "@/lib/regionais";
+import { regionalDaFilial } from "@/lib/db";
+import { diasDeAusencia } from "@/lib/absenteismoAnalise";
 import { ACCENT, PIE_SECONDARY } from "@/lib/charts";
 import {
   formatValue,
@@ -90,14 +93,14 @@ export function useDashboardData(filter) {
     );
     return {
       folhaCount: folha.length,
-      folha: folha.reduce((sum, e) => sum + (Number(e.value) || 0), 0),
+      folha: custoTotalNoPeriodo(range, uf),
       headcount: headcountCountInRange(uf, range)
     };
   }
 
   function ticketMedioFor(uf, range) {
-    const { folhaCount, folha, headcount } = ticketMedioParts(uf, range);
-    if (!folhaCount || !headcount) return null;
+    const { folha, headcount } = ticketMedioParts(uf, range);
+    if (!folha || !headcount) return null;
     return folha / headcount;
   }
 
@@ -129,6 +132,52 @@ export function useDashboardData(filter) {
         tooltipValue: `${value} ${value === 1 ? "ocorrência" : "ocorrências"}`
       };
     });
+  }
+
+  function absenteismoBarByRegional(filiais = []) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const groups = new Map();
+    absenteismoOcorrencias(currentState(), range, filiais).forEach((o) => {
+      const label = regionalLabel(regionalDaFilial(o.meta.filial, o.meta.estado));
+      groups.set(label, (groups.get(label) || 0) + 1);
+    });
+    return [...groups.entries()]
+      .map(([label, value]) => ({
+        label,
+        value,
+        tooltipValue: `${value} ${value === 1 ? "ocorrência" : "ocorrências"}`
+      }))
+      .sort((a, b) => b.value - a.value);
+  }
+
+  function absenteismoRowsBy(view, label, filiais = []) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const tipo = view === "motivo" ? TIPOS.find((t) => t.plural === label) : null;
+    return absenteismoOcorrencias(currentState(), range, filiais)
+      .filter((o) =>
+        view === "regional"
+          ? regionalLabel(regionalDaFilial(o.meta.filial, o.meta.estado)) === label
+          : tipo
+            ? tipo.has(o.meta)
+            : true
+      )
+      .map((o) => ({
+        id: o.id,
+        date: o.date,
+        colaborador: o.meta.colaborador,
+        setor: o.meta.setor || "",
+        filial: filialDisplay(o.meta.filial, o.meta.estado).toUpperCase() || "Sem filial",
+        estado: String(o.meta.estado || "").toUpperCase() || "—",
+        motivo: o.meta.motivo,
+        advertencia: !!o.meta.advertencia,
+        acidente: !!o.meta.acidente,
+        observacao: o.meta.observacao || "",
+        tipoAcidente: o.meta.acidente ? o.meta.tipoAcidente || null : null,
+        aberturaCat: !!(o.meta.acidente && o.meta.aberturaCat),
+        cid: o.meta.motivo === "Atestado" && o.meta.cid ? String(o.meta.cid).trim().toUpperCase() : null,
+        diasAtestado: o.meta.motivo === "Atestado" && Number(o.meta.diasAtestado) > 0 ? Number(o.meta.diasAtestado) : null,
+        dias: diasDeAusencia({ motivo: o.meta.motivo, acidente: !!o.meta.acidente })
+      }));
   }
 
   function absenteismoFiliais() {
@@ -298,13 +347,13 @@ export function useDashboardData(filter) {
     const total = faturamento.value;
     if (!total) return null;
     const range = filter.start ? { start: filter.start, end: filter.end } : null;
-    const { folhaCount, folha, headcount } = ticketMedioParts(currentState(), range);
-    const custo = folhaCount && headcount ? folha / headcount : null;
+    const { folha, headcount } = ticketMedioParts(currentState(), range);
+    const custo = folha && headcount ? folha / headcount : null;
     const faturamentoMedio = headcount ? total / headcount : null;
     const pct = custo !== null && faturamentoMedio ? (custo / faturamentoMedio) * 100 : null;
     let motivo = "";
     if (!headcount) motivo = "Sem colaboradores (Headcount) neste mês/estado.";
-    else if (!folhaCount) motivo = "Sem Custo de Pessoal lançado neste mês/estado.";
+    else if (!folha) motivo = "Sem Custo de Pessoal lançado neste mês/estado.";
     return { custo, faturamento: total, faturamentoMedio, headcount, pct, motivo };
   }
 
@@ -504,21 +553,96 @@ export function useDashboardData(filter) {
   }
 
   function custosBarByRegional() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
     const groups = new Map();
+    const get = (label) => {
+      if (!groups.has(label)) groups.set(label, { folha: 0, ferias: 0, rescisoes: 0, filiais: new Set() });
+      return groups.get(label);
+    };
     custoEntries().forEach((e) => {
-      const label = entryRegional(e);
-      if (!groups.has(label)) groups.set(label, { value: 0, filiais: new Set() });
-      const g = groups.get(label);
-      g.value += Number(e.value) || 0;
+      const g = get(entryRegional(e));
+      g.folha += Number(e.value) || 0;
       g.filiais.add(employeeNameKey(feriasFilial(e)));
     });
+    feriasEntries().forEach((e) => {
+      const g = get(entryRegional(e));
+      g.ferias += Number(e.value) || 0;
+      g.filiais.add(employeeNameKey(feriasFilial(e)));
+    });
+    listRescisoes(currentState(), range).forEach((r) => {
+      get(rescisaoRegionalLabel(r)).rescisoes += rescisaoAmount(r, "total");
+    });
     return [...groups.entries()]
-      .map(([label, { value, filiais }]) => ({
-        label,
-        value,
-        tooltipValue: `${formatCurrency(value)} · ${filiais.size} ${filiais.size === 1 ? "filial" : "filiais"}`
-      }))
+      .map(([label, g]) => {
+        const value = g.folha + g.ferias + g.rescisoes;
+        return {
+          label,
+          value,
+          tooltipValue: `${formatCurrency(value)} · Folha ${formatCurrency(g.folha)} · Férias ${formatCurrency(g.ferias)} · Rescisões ${formatCurrency(g.rescisoes)}`
+        };
+      })
+      .sort((x, y) => y.value - x.value);
+  }
+
+  function custoRegionalDetalhe(label) {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return {
+      folha: custoEntries().filter((e) => entryRegional(e) === label),
+      ferias: feriasEntries().filter((e) => entryRegional(e) === label),
+      rescisoes: listRescisoes(currentState(), range).filter((r) => rescisaoRegionalLabel(r) === label)
+    };
+  }
+
+  function custoTotalNoPeriodo(range, st = currentState()) {
+    const start = (range && range.start) || null;
+    const end = (range && range.end) || null;
+    const emPeriodo = (list) => list.filter((e) => !(start && e.date < start) && !(end && e.date > end));
+    const sum = (list) => list.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
+    return (
+      sum(emPeriodo(getEntriesFor("custo_total", st))) +
+      sum(emPeriodo(getEntriesFor("ferias", st))) +
+      sum(emPeriodo(getBeneficios(st))) +
+      rescisoesTotal(st, range, "total")
+    );
+  }
+
+  function custoConsolidado() {
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    const sum = (list) => list.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
+    const itens = [
+      { label: "Folha", value: sum(custoEntries()), color: "#0284c7" },
+      { label: "Férias", value: sum(feriasEntries()), color: "#f59e0b" },
+      { label: "Rescisões", value: rescisoesTotal(currentState(), range, "total"), color: "#dc2626" },
+      { label: "Benefícios", value: sum(beneficiosEntries()), color: "#16a34a" }
+    ];
+    const total = itens.reduce((acc, i) => acc + i.value, 0);
+    return {
+      itens: itens.map((i) => ({ ...i, tooltipValue: formatCurrency(i.value) })),
+      total
+    };
+  }
+
+  function beneficiosEntries(label) {
+    const list = filterByRange(getBeneficios(currentState()));
+    return label ? list.filter((e) => e.meta.beneficio === label) : list;
+  }
+
+  function beneficiosPie() {
+    const groups = new Map();
+    beneficiosEntries().forEach((e) => {
+      groups.set(e.meta.beneficio, (groups.get(e.meta.beneficio) || 0) + (Number(e.value) || 0));
+    });
+    return [...groups.entries()]
+      .map(([label, value]) => ({ label, value, tooltipValue: formatCurrency(value) }))
       .sort((a, b) => b.value - a.value);
+  }
+
+  function consolidadoEntries(label) {
+    if (label === "Folha") return custoEntries();
+    if (label === "Benefícios") return beneficiosEntries();
+    if (label === "Férias") return feriasEntries();
+    const range = filter.start ? { start: filter.start, end: filter.end } : null;
+    return listRescisoes(currentState(), range);
   }
 
   function custosBarByEmpresa() {
@@ -832,6 +956,11 @@ export function useDashboardData(filter) {
         prev = aggregateList(ind, entries.slice(0, -1));
       }
 
+      if (ind.id === "custo_total") {
+        current = custoTotalNoPeriodo(filter.start ? { start: filter.start, end: filter.end } : null);
+        prev = prevMonthRangeForDelta ? custoTotalNoPeriodo(prevMonthRangeForDelta) : null;
+      }
+
       let delta = null;
       if (current !== null && prev !== null) {
         const diff = Number(current) - Number(prev);
@@ -839,7 +968,9 @@ export function useDashboardData(filter) {
       }
 
       const totalCount = entries.length;
-      const countText = ind.computed
+      const countText = ind.id === "custo_total"
+        ? "Folha + Férias + Rescisões + Benefícios"
+        : ind.computed
         ? ""
         : totalCount === 1
           ? "1 lançamento"
@@ -1288,10 +1419,43 @@ export function useDashboardData(filter) {
 
   const DIARIA_VIEW_LABELS = { colaborador: "colaborador", filial: "filial", regional: "regional" };
 
-  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador", turnoverView = "geral", retencaoView = "geral") {
+  function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador", turnoverView = "geral", retencaoView = "geral", absenteismoView = "motivo") {
     const custoPorRegional = custoView === "regional";
-    const custoSub = `Valor total por ${custoPorRegional ? "regional" : "empresa"}, no período filtrado`;
+    const custoSub = custoPorRegional ? "Folha + Férias + Rescisões por regional, no período filtrado" : "Valor total por empresa, no período filtrado";
     const custoData = () => (custoPorRegional ? custosBarByRegional() : custosBarByEmpresa());
+    if ((!kpiId || kpiId === "custo_total") && custoView === "beneficios") {
+      const rows = beneficiosPie();
+      const total = rows.reduce((acc, r) => acc + r.value, 0);
+      const lancamentos = beneficiosEntries().length;
+      return {
+        id: kpiId,
+        kind: "pie",
+        title: "Custo de Pessoal",
+        sub: "Total a pagar por benefício no período filtrado",
+        data: rows,
+        beneficiosView: true,
+        tiles: [
+          { label: "Total", value: formatCurrency(total), accent: true },
+          { label: "Benefícios", value: String(rows.length) },
+          { label: "Lançamentos", value: String(lancamentos) }
+        ],
+        center: { value: formatCurrency(total), caption: "Total" },
+        valueFormat: "currency"
+      };
+    }
+    if ((!kpiId || kpiId === "custo_total") && custoView === "consolidado") {
+      const { itens, total } = custoConsolidado();
+      return {
+        id: kpiId,
+        kind: "pie",
+        title: "Custo de Pessoal",
+        sub: "Folha, Férias, Rescisões e Benefícios no período filtrado",
+        data: itens,
+        consolidado: itens,
+        center: { value: formatCurrency(total), caption: "Total" },
+        valueFormat: "currency"
+      };
+    }
     if (!kpiId) {
       return {
         id: null,
@@ -1481,6 +1645,17 @@ export function useDashboardData(filter) {
         valueFormat: "currency"
       };
     }
+    if (kpiId === "absenteismo" && absenteismoView === "regional") {
+      return {
+        id: "absenteismo",
+        kind: "bar",
+        title: "Absenteísmo",
+        sub: "Ocorrências por regional no período filtrado",
+        data: absenteismoBarByRegional(absenteismoFilial),
+        valueFormat: "",
+        showTrend: false
+      };
+    }
     if (kpiId === "absenteismo") {
       const rows = absenteismoBarByMotivo(absenteismoFilial);
       const range = filter.start ? { start: filter.start, end: filter.end } : null;
@@ -1540,6 +1715,7 @@ export function useDashboardData(filter) {
 
   return {
     absenteismoBarByMotivo,
+    absenteismoRowsBy,
     absenteismoFiliais,
     filteredEntries,
     diariaDailySeries,
@@ -1558,6 +1734,9 @@ export function useDashboardData(filter) {
     ticketMedioFaturamento,
     custosBarByEmpresa,
     custoPessoalEntriesByEmpresa,
+    consolidadoEntries,
+    custoRegionalDetalhe,
+    beneficiosEntries,
     custoContratacaoBarByFuncao,
     custoContratacaoMedioPorFilial,
     custoContratacaoPieCenter,

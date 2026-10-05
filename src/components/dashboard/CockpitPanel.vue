@@ -7,6 +7,9 @@ import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue"
 import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
 import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import FeriasColaboradorModal from "@/components/dashboard/FeriasColaboradorModal.vue";
+import BeneficiosModal from "@/components/dashboard/BeneficiosModal.vue";
+import AbsenteismoDetalheModal from "@/components/dashboard/AbsenteismoDetalheModal.vue";
+import CustoRegionalModal from "@/components/dashboard/CustoRegionalModal.vue";
 import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresaModal.vue";
 import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
@@ -105,6 +108,12 @@ const RETENCAO_VIEWS = [
 ];
 const retencaoView = ref("geral");
 
+const ABSENTEISMO_VIEWS = [
+  { value: "motivo", label: "Motivo", title: "Ocorrências por motivo" },
+  { value: "regional", label: "Regional", title: "Ocorrências por regional" }
+];
+const absenteismoView = ref("motivo");
+
 const TURNOVER_VIEWS = [
   { value: "geral", label: "Geral", title: "Entrada vs Saída geral" },
   { value: "regional", label: "Regional", title: "Entrada vs Saída por regional" }
@@ -113,10 +122,12 @@ const turnoverView = ref("geral");
 const turnoverRegional = ref("");
 
 const CUSTO_VIEWS = [
-  { value: "empresa", label: "Empresa", title: "Total por empresa" },
-  { value: "regional", label: "Regional", title: "Total por regional" }
+  { value: "consolidado", label: "Visão Geral", title: "Folha, Férias, Rescisões e Benefícios" },
+  { value: "empresa", label: "Folha", title: "Folha por empresa" },
+  { value: "regional", label: "Regional", title: "Total por regional" },
+  { value: "beneficios", label: "Benefícios", title: "Total por benefício" }
 ];
-const custoView = ref("empresa");
+const custoView = ref("consolidado");
 
 const headcountView = ref("bar");
 watch(headcountView, (view) => {
@@ -177,7 +188,8 @@ const centerChart = computed(() =>
     custoView.value,
     permanenciaView.value,
     turnoverView.value,
-    retencaoView.value
+    retencaoView.value,
+    absenteismoView.value
   )
 );
 
@@ -238,8 +250,14 @@ const singleCaption = computed(() => {
   return nomeiaBarraUnica && chart.data.length === 1 ? String(chart.data[0].label) : "";
 });
 
+const consolidadoSummaryItems = computed(() =>
+  (centerChart.value.consolidado || []).map((i) => ({ label: i.label, value: formatCurrency(i.value) }))
+);
+
 const cardSummaryItems = computed(() => {
   const id = centerChart.value.id;
+  if (centerChart.value.consolidado) return consolidadoSummaryItems.value;
+  if (centerChart.value.tiles) return centerChart.value.tiles;
   if (id === "ferias") return feriasSummaryItems.value;
   if (id === "tempo_contratacao") return hiringSummaryItems.value;
   if (id === "custo_diaria") return diariaSummaryItems.value;
@@ -299,6 +317,37 @@ const diariaColabName = ref("");
 const diariaColabRows = ref([]);
 const diariaColabGroup = ref("colaborador");
 
+const beneficiosOpen = ref(false);
+const beneficiosNome = ref("");
+const beneficiosRows = ref([]);
+
+const absenteismoDetalhe = ref({ open: false, title: "", subtitle: "", rows: [] });
+
+function abrirAbsenteismoDetalhe(label) {
+  if (!label) return;
+  const view = absenteismoView.value;
+  absenteismoDetalhe.value = {
+    open: true,
+    title: `Absenteísmo — ${label}`,
+    subtitle: view === "regional" ? "Ocorrências da regional no período filtrado" : "Ocorrências do tipo no período filtrado",
+    rows: props.dashboard.absenteismoRowsBy(view, label, absenteismoFilialFilter.value)
+  };
+}
+
+function onPieContext(sliceIndex) {
+  if (centerChart.value.id === "absenteismo") {
+    const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
+    if (row) fullscreenOpen.value = false;
+    if (row) abrirAbsenteismoDetalhe(row.label);
+    return;
+  }
+  onPieClick(sliceIndex);
+}
+
+const custoRegionalOpen = ref(false);
+const custoRegionalNome = ref("");
+const custoRegionalDados = ref({ folha: [], ferias: [], rescisoes: [] });
+
 const custoPessoalOpen = ref(false);
 const custoPessoalEmpresa = ref("");
 const custoPessoalRows = ref([]);
@@ -314,6 +363,10 @@ const headcountGenero = ref("");
 const headcountRegional = ref("");
 
 function onCenterBarClick({ index, label, datasetIndex }) {
+  if (centerChart.value.id === "absenteismo") {
+    onCenterBarContext({ index });
+    return;
+  }
   if (centerChart.value.id === "turnover") {
     if (!label) return;
     turnoverRegional.value = label;
@@ -331,11 +384,14 @@ function onCenterBarClick({ index, label, datasetIndex }) {
   }
   if (!centerChart.value.id || centerChart.value.id === "custo_total") {
     if (!label) return;
+    if (custoView.value === "regional") {
+      custoRegionalNome.value = label;
+      custoRegionalDados.value = props.dashboard.custoRegionalDetalhe(label);
+      custoRegionalOpen.value = true;
+      return;
+    }
     custoPessoalEmpresa.value = label;
-    custoPessoalRows.value =
-      custoView.value === "regional"
-        ? props.dashboard.custoPessoalEntriesByRegional(label)
-        : props.dashboard.custoPessoalEntriesByEmpresa(label);
+    custoPessoalRows.value = props.dashboard.custoPessoalEntriesByEmpresa(label);
     custoPessoalOpen.value = true;
     return;
   }
@@ -410,6 +466,14 @@ function onKpiContext(id) {
 }
 
 function onCenterBarContext({ index }) {
+  if (centerChart.value.id === "absenteismo") {
+    const row = centerChart.value.data[index];
+    if (row) {
+      fullscreenOpen.value = false;
+      abrirAbsenteismoDetalhe(row.label);
+    }
+    return;
+  }
   if (centerChart.value.id === "tempo_contratacao") {
     const row = centerChart.value.data[index];
     if (!row || !row.vacancyId) return;
@@ -446,6 +510,47 @@ const isHorizontalChart = computed(() => {
 const stackedOnPhone = computed(() => centerChart.value.kind === "pie" || centerChart.value.kind === "table");
 
 function onPieClick(sliceIndex) {
+  if (centerChart.value.id === "absenteismo") {
+    onPieContext(sliceIndex);
+    return;
+  }
+  if (centerChart.value.beneficiosView) {
+    const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
+    if (!row) return;
+    fullscreenOpen.value = false;
+    beneficiosNome.value = row.label;
+    beneficiosRows.value = props.dashboard.beneficiosEntries(row.label);
+    beneficiosOpen.value = true;
+    return;
+  }
+  if (centerChart.value.consolidado) {
+    const row = sliceIndex != null ? centerChart.value.data[sliceIndex] : null;
+    if (!row) return;
+    fullscreenOpen.value = false;
+    if (row.label === "Benefícios") {
+      beneficiosNome.value = "";
+      beneficiosRows.value = props.dashboard.beneficiosEntries();
+      beneficiosOpen.value = true;
+      return;
+    }
+    const rows = props.dashboard.consolidadoEntries(row.label);
+    if (row.label === "Folha") {
+      custoPessoalEmpresa.value = "Todas as empresas";
+      custoPessoalRows.value = rows;
+      custoPessoalOpen.value = true;
+    } else if (row.label === "Férias") {
+      feriasColabName.value = "Todos os colaboradores";
+      feriasColabGroup.value = "regional";
+      feriasColabRows.value = rows;
+      feriasColabOpen.value = true;
+    } else {
+      rescisaoFuncaoName.value = "Todas as funções";
+      rescisaoFuncaoRows.value = rows;
+      rescisaoPorEstado.value = false;
+      rescisaoFuncaoOpen.value = true;
+    }
+    return;
+  }
   if (centerChart.value.id === "headcount") {
     headcountGenero.value = ["masculino", "feminino"][sliceIndex] || "";
     headcountEstadoSigla.value = filters.current;
@@ -547,6 +652,7 @@ function goNextKpi() {
                   <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
                   <ViewTabs v-if="!centerChart.id || centerChart.id === 'custo_total'" v-model="custoView" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
                   <ViewTabs v-if="centerChart.id === 'retencao'" v-model="retencaoView" :options="RETENCAO_VIEWS" label="Visão da retenção" />
+                  <ViewTabs v-if="centerChart.id === 'absenteismo'" v-model="absenteismoView" :options="ABSENTEISMO_VIEWS" label="Visão do absenteísmo" />
                   <ViewTabs v-if="centerChart.id === 'turnover'" v-model="turnoverView" :options="TURNOVER_VIEWS" label="Visão do turnover" />
                   <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
                   <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
@@ -660,9 +766,9 @@ function goNextKpi() {
                 :center-value="pieCenter.value"
                 :center-caption="pieCenter.caption"
                 :value-format="centerChart.valueFormat || 'percent'"
-                :clickable="['turnover', 'custo_contratacao', 'headcount', 'rescisoes'].includes(centerChart.id)"
+                :clickable="centerChart.id === 'absenteismo' || !!centerChart.consolidado || !!centerChart.beneficiosView || ['turnover', 'custo_contratacao', 'headcount', 'rescisoes'].includes(centerChart.id)"
                 @chart-click="onPieClick"
-                @chart-contextmenu="onPieClick"
+                @chart-contextmenu="onPieContext"
               />
               <TurnoverSummaryCards v-if="centerChart.summary" class="lg:col-start-3 lg:row-start-1" vertical-from="lg" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
             </div>
@@ -759,6 +865,33 @@ function goNextKpi() {
           </div>
       </div>
     </div>
+
+    <BeneficiosModal
+      v-if="beneficiosOpen"
+      :open="beneficiosOpen"
+      :beneficio="beneficiosNome"
+      :entries="beneficiosRows"
+      @close="beneficiosOpen = false"
+    />
+
+    <AbsenteismoDetalheModal
+      v-if="absenteismoDetalhe.open"
+      :open="absenteismoDetalhe.open"
+      :title="absenteismoDetalhe.title"
+      :subtitle="absenteismoDetalhe.subtitle"
+      :rows="absenteismoDetalhe.rows"
+      @close="absenteismoDetalhe.open = false"
+    />
+
+    <CustoRegionalModal
+      v-if="custoRegionalOpen"
+      :open="custoRegionalOpen"
+      :regional="custoRegionalNome"
+      :folha="custoRegionalDados.folha"
+      :ferias="custoRegionalDados.ferias"
+      :rescisoes="custoRegionalDados.rescisoes"
+      @close="custoRegionalOpen = false"
+    />
 
     <CustoPessoalEmpresaModal
       v-if="custoPessoalOpen"
@@ -884,6 +1017,8 @@ function goNextKpi() {
           </template>
           <SummaryTiles v-else-if="treinamentoSummaryItems.length" :items="treinamentoSummaryItems" compact />
           <SummaryTiles v-else-if="diariaSummaryItems.length" :items="diariaSummaryItems" compact />
+          <SummaryTiles v-else-if="centerChart.consolidado" :items="consolidadoSummaryItems" compact />
+          <SummaryTiles v-else-if="centerChart.tiles" :items="centerChart.tiles" compact />
           <div v-else class="flex min-w-[10rem] items-center justify-center gap-2">
             <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
             <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Regional</button></div>
@@ -894,6 +1029,7 @@ function goNextKpi() {
           <ViewTabs v-if="centerChart.id === 'custo_diaria'" v-model="diariaView" :options="DIARIA_VIEWS" label="Visão das diárias" />
           <ViewTabs v-if="!centerChart.id || centerChart.id === 'custo_total'" v-model="custoView" :options="CUSTO_VIEWS" label="Visão do custo de pessoal" />
           <ViewTabs v-if="centerChart.id === 'retencao'" v-model="retencaoView" :options="RETENCAO_VIEWS" label="Visão da retenção" />
+                  <ViewTabs v-if="centerChart.id === 'absenteismo'" v-model="absenteismoView" :options="ABSENTEISMO_VIEWS" label="Visão do absenteísmo" />
           <ViewTabs v-if="centerChart.id === 'turnover'" v-model="turnoverView" :options="TURNOVER_VIEWS" label="Visão do turnover" />
           <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
           <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
@@ -976,9 +1112,9 @@ function goNextKpi() {
               :center-value="pieCenter.value"
               :center-caption="pieCenter.caption"
               :value-format="centerChart.valueFormat || 'percent'"
-              :clickable="['turnover', 'custo_contratacao', 'headcount', 'rescisoes'].includes(centerChart.id)"
+              :clickable="centerChart.id === 'absenteismo' || !!centerChart.consolidado || !!centerChart.beneficiosView || ['turnover', 'custo_contratacao', 'headcount', 'rescisoes'].includes(centerChart.id)"
               @chart-click="onPieClick"
-              @chart-contextmenu="onPieClick"
+              @chart-contextmenu="onPieContext"
             />
             <TurnoverSummaryCards v-if="centerChart.summary" class="md:col-start-3 md:row-start-1" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
           </div>

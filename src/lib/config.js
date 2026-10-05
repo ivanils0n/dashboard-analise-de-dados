@@ -139,7 +139,7 @@ export const INDICATORS = [
     id: "ticket_medio",
     name: "Custo médio por colaborador",
     desc: "Custo médio de pessoal por colaborador: Custo de Pessoal do mês ÷ Headcount do mês, no estado filtrado",
-    calc: "Custo de Pessoal ÷ total de Headcount (mês e estado filtrados)",
+    calc: "(Folha + Férias + Rescisões + Benefícios) ÷ total de Headcount (mês e estado filtrados)",
     type: "currency",
     unit: "R$",
     decimals: 2,

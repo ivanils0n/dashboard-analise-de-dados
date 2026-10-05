@@ -1,10 +1,10 @@
 <script setup>
-import { computed, ref } from "vue";
-import Modal from "@/components/ui/Modal.vue";
+import { computed, ref, watch } from "vue";
+import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue"; import Modal from "@/components/ui/Modal.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import { STATE_NAMES, STATES } from "@/lib/config";
-import { headcountActiveInRange, headcountCount, headcountMovements, findBranchByShortName } from "@/lib/employees";
+import { headcountActiveInRange, headcountCount, headcountMovements, findBranchByShortName, filterByRegional, headcountRegionalOptions } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, ymLabel } from "@/lib/utils";
@@ -22,6 +22,12 @@ const fmtPct = (v) => formatValue(PERCENT, v);
 const estadoSel = ref(!state.current || state.current === "todos" ? "todos" : state.current);
 const estadoOptions = [{ id: "todos", label: "Todos" }, ...STATES.map((s) => ({ id: s, label: s }))];
 
+const regionalSel = ref("");
+const regionalOptions = computed(() => headcountRegionalOptions(estadoSel.value));
+watch(regionalOptions, (opts) => {
+  if (regionalSel.value && !opts.includes(regionalSel.value)) regionalSel.value = "";
+});
+
 const range = computed(() => (dateFilter.start ? { start: dateFilter.start, end: dateFilter.end } : null));
 const ymAtual = computed(() => (range.value ? String(range.value.end || range.value.start).slice(0, 7) : ""));
 
@@ -35,9 +41,12 @@ function norm(v, fallback) {
   return String(v || "").trim().toUpperCase() || fallback;
 }
 
-const quadro = computed(() => headcountActiveInRange(estadoSel.value, range.value));
+const quadro = computed(() => filterByRegional(headcountActiveInRange(estadoSel.value, range.value), regionalSel.value));
 const total = computed(() => quadro.value.length);
-const movements = computed(() => headcountMovements(estadoSel.value, range.value));
+const movements = computed(() => {
+  const m = headcountMovements(estadoSel.value, range.value);
+  return { ...m, admissoes: filterByRegional(m.admissoes, regionalSel.value), demissoes: filterByRegional(m.demissoes, regionalSel.value) };
+});
 
 function addMonths(ym, delta) {
   const [y, m] = ym.split("-").map(Number);
@@ -78,7 +87,7 @@ const cards = computed(() => {
   let sub = "Quadro do mês filtrado";
   let subTone = "text-zinc-500 dark:text-zinc-400";
   if (ymAtual.value) {
-    const anterior = headcountCount(estadoSel.value, addMonths(ymAtual.value, -1));
+    const anterior = headcountCount(estadoSel.value, addMonths(ymAtual.value, -1), regionalSel.value);
     if (anterior) {
       const diff = t - anterior;
       sub = `${diff > 0 ? "▲ +" : diff < 0 ? "▼ " : "• "}${diff} vs mês anterior`;
@@ -108,7 +117,7 @@ const evolucao = computed(() => {
   const meses = Number(fim.slice(5, 7));
   return Array.from({ length: meses }, (_, i) => `${anoEvolucao.value}-${String(i + 1).padStart(2, "0")}`).map((ym) => ({
     label: ymLabel(ym),
-    value: headcountCount(estadoSel.value, ym)
+    value: headcountCount(estadoSel.value, ym, regionalSel.value)
   }));
 });
 
@@ -192,6 +201,13 @@ function onGeneroClick(sliceIndex) {
   <Modal title="Análise de Headcount" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
     <template #actions>
       <div class="flex items-center gap-2">
+        <GerenteRegionalFilter
+        v-model="regionalSel"
+        :options="regionalOptions"
+        label="Regional"
+        all-label="Todas as regionais"
+        title="Filtrar por regional"
+      />
         <button
           type="button"
           class="hidden rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-100 sm:block dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"

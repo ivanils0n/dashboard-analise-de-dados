@@ -2,6 +2,8 @@ import { getOcorrencias } from "./store";
 import { listHeadcountRecords } from "./employees";
 import { TIPOS, competenciaYm, headcountMonthFor, isOcorrenciaAusencia } from "./absenteismo";
 import { nameKey, ymLabel } from "./utils";
+import { regionalLabel } from "./regionais";
+import { regionalDaFilial } from "./db";
 
 export const DIAS_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const ORDEM_SEMANA = [1, 2, 3, 4, 5, 6, 0];
@@ -31,7 +33,7 @@ const norm = (v) => String(v ?? "").trim().toUpperCase();
 const round1 = (n) => Math.round(n * 10) / 10;
 const pct = (num, den) => (den > 0 ? (num / den) * 100 : null);
 
-export function ocorrenciasDoMes(ym, estado) {
+export function ocorrenciasDoMes(ym, estado, regional = "") {
   const uf = String(estado || "").toUpperCase();
   const todos = !uf || uf === "TODOS";
   return getOcorrencias()
@@ -49,23 +51,30 @@ export function ocorrenciasDoMes(ym, estado) {
       setor: o.meta.setor || "",
       filial: o.meta.filial || "",
       estado: String(o.meta.estado || "").toUpperCase() || "—",
+      regional: regionalLabel(regionalDaFilial(o.meta.filial, o.meta.estado)),
       motivo: o.meta.motivo,
       advertencia: !!o.meta.advertencia,
       acidente: !!o.meta.acidente,
       observacao: o.meta.observacao || "",
+      tipoAcidente: o.meta.acidente ? o.meta.tipoAcidente || null : null,
+      aberturaCat: !!(o.meta.acidente && o.meta.aberturaCat),
+      cid: o.meta.motivo === "Atestado" && o.meta.cid ? norm(o.meta.cid) : null,
+      diasAtestado: o.meta.motivo === "Atestado" && Number(o.meta.diasAtestado) > 0 ? Number(o.meta.diasAtestado) : null,
       dias: diasDeAusencia({ motivo: o.meta.motivo, acidente: !!o.meta.acidente })
     }))
+    .filter((o) => !regional || o.regional === regional)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
-function ativosDoMes(ym, estado) {
+function ativosDoMes(ym, estado, regional = "") {
   const hc = headcountMonthFor(estado, ym);
-  return { rows: listHeadcountRecords(estado, hc.ym), refYm: hc.ym, fallback: hc.fallback };
+  const rows = listHeadcountRecords(estado, hc.ym).filter((h) => !regional || regionalLabel(h.regional) === regional);
+  return { rows, refYm: hc.ym, fallback: hc.fallback };
 }
 
-function resumoDoMes(ym, estado) {
-  const ocs = ocorrenciasDoMes(ym, estado);
-  const ativos = ativosDoMes(ym, estado);
+function resumoDoMes(ym, estado, regional = "") {
+  const ocs = ocorrenciasDoMes(ym, estado, regional);
+  const ativos = ativosDoMes(ym, estado, regional);
   const uteis = diasUteis(ym);
   const dias = ocs.reduce((s, o) => s + o.dias, 0);
   return {
@@ -109,10 +118,10 @@ function agrupar(ocs, ativosRows, labelOc, labelAtivo, uteis, { incluirSemOcorre
 
 const porTaxa = (a, b) => (b.taxa ?? -1) - (a.taxa ?? -1) || b.ocorrencias - a.ocorrencias || a.label.localeCompare(b.label, "pt-BR");
 
-export function analiseAbsenteismo(ym, estado) {
+export function analiseAbsenteismo(ym, estado, regional = "") {
   const uf = String(estado || "todos");
-  const ocs = ocorrenciasDoMes(ym, uf);
-  const ativos = ativosDoMes(ym, uf);
+  const ocs = ocorrenciasDoMes(ym, uf, regional);
+  const ativos = ativosDoMes(ym, uf, regional);
   const uteis = diasUteis(ym);
 
   const hcPorNome = new Map();
@@ -131,10 +140,12 @@ export function analiseAbsenteismo(ym, estado) {
 
   const dias = itens.reduce((s, o) => s + o.dias, 0);
   const afetadosSet = new Set(itens.map((o) => o.key));
+  const atestadosComDias = itens.filter((o) => o.diasAtestado != null);
+  const diasAtestadoTotal = atestadosComDias.reduce((s, o) => s + o.diasAtestado, 0);
   const taxa = pct(dias, ativos.rows.length * uteis);
 
   const prevYm = shiftYm(ym, -1);
-  const prev = resumoDoMes(prevYm, uf);
+  const prev = resumoDoMes(prevYm, uf, regional);
 
   const tipoPrincipal = (o) =>
     TIPOS.find((t) => t.has(o) && o.motivo && o.motivo !== "Presente" && t.value === o.motivo) ||
@@ -155,6 +166,16 @@ export function analiseAbsenteismo(ym, estado) {
   estMap.forEach((list, label) => porEstado.push({ label, value: list.length, itens: list }));
   porEstado.sort((a, b) => b.value - a.value);
 
+  const porCid = [];
+  const cidMap = new Map();
+  itens.forEach((o) => {
+    if (!o.cid) return;
+    if (!cidMap.has(o.cid)) cidMap.set(o.cid, []);
+    cidMap.get(o.cid).push(o);
+  });
+  cidMap.forEach((list, label) => porCid.push({ label, value: list.length, itens: list }));
+  porCid.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR"));
+
   const GENEROS = { masculino: "Masculino", feminino: "Feminino" };
   const porGenero = agrupar(
     itens,
@@ -169,8 +190,8 @@ export function analiseAbsenteismo(ym, estado) {
 
   const porFuncao = agrupar(itens, ativos.rows, (o) => o.setor, (h) => norm(h.funcao) || "SEM FUNÇÃO", uteis).sort(porTaxa);
 
-  const prevItens = ocorrenciasDoMes(prevYm, uf);
-  const prevAtivos = ativosDoMes(prevYm, uf);
+  const prevItens = ocorrenciasDoMes(prevYm, uf, regional);
+  const prevAtivos = ativosDoMes(prevYm, uf, regional);
   const prevFilial = new Map(
     agrupar(
       prevItens.map((o) => ({ ...o, filial: norm(o.filial) || "SEM FILIAL" })),
@@ -207,7 +228,7 @@ export function analiseAbsenteismo(ym, estado) {
 
   const tendencia = Array.from({ length: 6 }, (_, i) => {
     const mes = shiftYm(ym, i - 5);
-    const r = mes === ym ? { ym, total: itens.length, taxa } : resumoDoMes(mes, uf);
+    const r = mes === ym ? { ym, total: itens.length, taxa } : resumoDoMes(mes, uf, regional);
     return { ym: mes, label: ymLabel(mes), total: r.total, taxa: r.taxa };
   });
 
@@ -289,6 +310,8 @@ export function analiseAbsenteismo(ym, estado) {
     dias,
     taxa,
     afetados: afetadosSet.size,
+    mediaDiasAtestado: atestadosComDias.length ? diasAtestadoTotal / atestadosComDias.length : null,
+    atestadosComDias: atestadosComDias.length,
     mediaPorAfetado: afetadosSet.size ? itens.length / afetadosSet.size : null,
     prev,
     variacao: {
@@ -299,6 +322,7 @@ export function analiseAbsenteismo(ym, estado) {
     },
     porMotivo,
     porEstado,
+    porCid,
     porGenero,
     porFuncao,
     porFilial,

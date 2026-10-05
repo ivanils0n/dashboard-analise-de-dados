@@ -159,6 +159,21 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "estado_sigla", type: "text", stateRef: true }
     ]
   },
+  beneficios: {
+    key: "beneficios",
+    label: "Benefícios",
+    columns: [
+      { name: "id", type: "text" },
+      { name: "mes_referente", type: "date", required: true },
+      { name: "beneficio", type: "text", required: true },
+      { name: "estado_sigla", type: "text", stateRef: true },
+      { name: "vencimento", type: "date" },
+      { name: "total_pagar", type: "number", notNull: true, required: true },
+      { name: "forma_pagamento", type: "text" },
+      { name: "nf", type: "text" },
+      { name: "fusion_big", type: "text" }
+    ]
+  },
   regionais: {
     key: "regionais",
     label: "Regionais",
@@ -184,7 +199,11 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "motivo", type: "text", values: ["Falta", "Atestado", "Suspensão", "Presente"] },
       { name: "observacao", type: "text" },
       { name: "advertencia", type: "boolean" },
-      { name: "acidente_trabalho", type: "boolean" }
+      { name: "acidente_trabalho", type: "boolean" },
+      { name: "cid", type: "text" },
+      { name: "dias_atestado", type: "number" },
+      { name: "tipo_acidente", type: "text", values: ["Trajeto", "Em Atividade"] },
+      { name: "abertura_cat", type: "boolean" }
     ]
   }
 };

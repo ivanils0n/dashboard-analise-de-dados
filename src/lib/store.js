@@ -12,6 +12,7 @@ export function emptyData() {
     treinamentos: [],
     custoFolha: [],
     ferias: [],
+    beneficios: [],
     absenteismo: []
   };
 }
@@ -70,6 +71,13 @@ export function getEntriesFor(indicatorId, state) {
     );
   }
   return list;
+}
+
+export function getBeneficios(state) {
+  const list = (data.beneficios || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
+  if (!state || state === "todos") return list;
+  const target = String(state).trim().toUpperCase();
+  return list.filter((e) => String((e.meta && e.meta.estado) || "").trim().toUpperCase() === target);
 }
 
 function _withState(meta, state) {
@@ -142,7 +150,7 @@ export function getOcorrencias() {
   return data.absenteismo.filter(isOcorrencia);
 }
 
-export function saveOcorrencia({ date, colaborador, setor, filial, motivo, observacao, estado, advertencia, acidente }) {
+export function saveOcorrencia({ date, colaborador, setor, filial, motivo, observacao, estado, advertencia, acidente, cid, diasAtestado, tipoAcidente, aberturaCat }) {
   const existing = data.absenteismo.find(
     (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
   );
@@ -155,7 +163,11 @@ export function saveOcorrencia({ date, colaborador, setor, filial, motivo, obser
     estado: estado || null,
     competencia: String(date).slice(0, 7),
     advertencia: !!advertencia,
-    acidente: !!acidente
+    acidente: !!acidente,
+    cid: cid || null,
+    diasAtestado: diasAtestado ?? null,
+    tipoAcidente: tipoAcidente || null,
+    aberturaCat: !!aberturaCat
   };
   if (existing) {
     const updated = { ...existing, meta };
@@ -265,6 +277,7 @@ export function replaceFromCache(cached) {
     d.treinamentos = Array.isArray(cached.treinamentos) ? cached.treinamentos : [];
     d.custoFolha = Array.isArray(cached.custoFolha) ? cached.custoFolha : [];
     d.ferias = Array.isArray(cached.ferias) ? cached.ferias : [];
+    d.beneficios = Array.isArray(cached.beneficios) ? cached.beneficios : [];
     d.absenteismo = Array.isArray(cached.absenteismo) ? cached.absenteismo : [];
   }
   Object.assign(data, d);
@@ -291,6 +304,7 @@ const MERGE_LIST_KEYS = [
   "treinamentos",
   "custoFolha",
   "ferias",
+  "beneficios",
   "absenteismo"
 ];
 

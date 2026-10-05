@@ -1,11 +1,11 @@
 <script setup>
-import { computed, ref } from "vue";
-import Modal from "@/components/ui/Modal.vue";
+import { computed, ref, watch } from "vue";
+import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue"; import Modal from "@/components/ui/Modal.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import TurnoverGrupoModal from "@/components/dashboard/TurnoverGrupoModal.vue";
 import { STATE_NAMES, STATES } from "@/lib/config";
-import { turnoverRateStats, headcountMovements, headcountActiveInRange, findBranchByShortName } from "@/lib/employees";
+import { turnoverRateStats, headcountMovements, headcountActiveInRange, findBranchByShortName, filterByRegional, headcountRegionalOptions } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatDate, ymLabel } from "@/lib/utils";
@@ -23,8 +23,28 @@ const estadoSel = ref(!state.current || state.current === "todos" ? "todos" : st
 const estadoOptions = [{ id: "todos", label: "Todos" }, ...STATES.map((s) => ({ id: s, label: s }))];
 
 const range = computed(() => (dateFilter.start ? { start: dateFilter.start, end: dateFilter.end } : null));
-const stats = computed(() => turnoverRateStats(estadoSel.value, range.value));
-const movements = computed(() => headcountMovements(estadoSel.value, range.value));
+const regionalSel = ref("");
+const regionalOptions = computed(() => headcountRegionalOptions(estadoSel.value));
+watch(regionalOptions, (opts) => {
+  if (regionalSel.value && !opts.includes(regionalSel.value)) regionalSel.value = "";
+});
+
+const filtrarMov = (m) => ({ ...m, admissoes: filterByRegional(m.admissoes, regionalSel.value), demissoes: filterByRegional(m.demissoes, regionalSel.value) });
+const stats = computed(() => {
+  if (!regionalSel.value) return turnoverRateStats(estadoSel.value, range.value);
+  const admissoes = movements.value.admissoes.length;
+  const desligamentos = movements.value.demissoes.length;
+  const headcountAtual = filterByRegional(headcountActiveInRange(estadoSel.value, range.value), regionalSel.value).length;
+  return {
+    admissoes,
+    desligamentos,
+    headcountAtual,
+    turnoverPct: headcountAtual ? ((admissoes + desligamentos) / 2 / headcountAtual) * 100 : null,
+    turnoverEntradaPct: headcountAtual ? (admissoes / headcountAtual) * 100 : null,
+    turnoverSaidaPct: headcountAtual ? (desligamentos / headcountAtual) * 100 : null
+  };
+});
+const movements = computed(() => filtrarMov(headcountMovements(estadoSel.value, range.value)));
 
 const escopo = computed(() => {
   const st = estadoSel.value;
@@ -57,8 +77,8 @@ function groupBy(keyOf, rng = range.value) {
       row[field] += 1;
       map.set(k, row);
     });
-  const mov = rng === range.value ? movements.value : headcountMovements(estadoSel.value, rng);
-  bump(headcountActiveInRange(estadoSel.value, rng), "ativos");
+  const mov = rng === range.value ? movements.value : filtrarMov(headcountMovements(estadoSel.value, rng));
+  bump(filterByRegional(headcountActiveInRange(estadoSel.value, rng), regionalSel.value), "ativos");
   bump(mov.admissoes, "entradas");
   bump(mov.demissoes, "saidas");
   return [...map.entries()].map(([label, r]) => ({
@@ -346,6 +366,14 @@ const totals = computed(() => [
 <template>
   <Modal title="Análise de Turnover" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
     <template #actions>
+      <div class="flex flex-wrap items-center gap-2">
+      <GerenteRegionalFilter
+        v-model="regionalSel"
+        :options="regionalOptions"
+        label="Regional"
+        all-label="Todas as regionais"
+        title="Filtrar por regional"
+      />
       <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
         <button
           v-for="o in estadoOptions"
@@ -360,6 +388,7 @@ const totals = computed(() => [
         >
           {{ o.label }}
         </button>
+      </div>
       </div>
     </template>
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">

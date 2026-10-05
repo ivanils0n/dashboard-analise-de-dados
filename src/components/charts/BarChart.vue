@@ -16,6 +16,7 @@ const props = defineProps({
   fluid: { type: Boolean, default: false },
   barsClickable: { type: Boolean, default: false },
   variant: { type: String, default: "bar" },
+  lineXLabels: { type: Boolean, default: false },
   horizontal: { type: Boolean, default: false },
   alignTop: { type: Boolean, default: false },
   title: { type: String, default: "" },
@@ -131,7 +132,7 @@ function applyOptions() {
 function drawData() {
   if (!chart) return;
   if (props.variant === "line") {
-    updateSeriesLineChart(chart, props.data, { formatter: formatterFor(props.valueFormat) });
+    updateSeriesLineChart(chart, props.data, { formatter: formatterFor(props.valueFormat), xTicks: props.lineXLabels });
   } else {
     updateBarChart(chart, props.data, { trend: props.showTrend });
     if (props.animateTrend && props.showTrend) animateTrendLine(chart);
@@ -261,6 +262,7 @@ watch(
         :value-format="valueFormat"
         :bars-clickable="barsClickable"
         :variant="variant"
+        :line-x-labels="lineXLabels"
         :horizontal="horizontal"
         :align-top="alignTop"
         fluid

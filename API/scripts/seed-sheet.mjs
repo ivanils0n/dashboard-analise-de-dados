@@ -64,8 +64,9 @@ const ENTITY_COLUMNS = {
   ],
   custo_folha: ["id", "codigo", "nome", "banco", "valor_total", "data_pagto", "empresa", "filial", "mes_referente", "estado_sigla"],
   ferias: ["id", "codigo", "nome", "banco", "valor_total", "data_pagto", "filial", "mes_referente", "estado_sigla"],
+  beneficios: ["id", "mes_referente", "beneficio", "estado_sigla", "vencimento", "total_pagar", "forma_pagamento", "nf", "fusion_big"],
   regionais: ["id", "filial", "gerente", "supervisor", "estado_sigla"],
-  absenteismo: ["id", "competencia", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho"]
+  absenteismo: ["id", "competencia", "estado_sigla", "colaborador", "setor", "filial", "data", "motivo", "observacao", "advertencia", "acidente_trabalho", "cid", "dias_atestado", "tipo_acidente", "abertura_cat"]
 };
 const USERS_COLUMNS = ["id", "usuario", "nome", "perfil", "ativo", "senha_hash", "criado_em"];
 

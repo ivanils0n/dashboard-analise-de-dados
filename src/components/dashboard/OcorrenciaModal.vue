@@ -38,14 +38,26 @@ function toggleList() {
   };
   listOpen.value = true;
 }
-const OPTIONS = [{ value: "", label: "Presente" }, ...MOTIVOS.map((m) => ({ value: m.value, label: m.label }))];
+const ACIDENTE = "acidente";
+const OPTIONS = [{ value: "", label: "Presente" }, ...MOTIVOS.map((m) => ({ value: m.value, label: m.label })), { value: ACIDENTE, label: "Acidente de trabalho" }];
+const FLAGS_CAIXA = FLAGS.filter((f) => f.key !== "acidente");
 const currentLabel = computed(() => (OPTIONS.find((o) => o.value === motivo.value) || OPTIONS[0]).label);
 function pick(value) {
   motivo.value = value;
   listOpen.value = false;
 }
 const observacao = ref("");
-const marks = ref({ advertencia: false, acidente: false });
+const marks = ref({ advertencia: false });
+const CID_PADRAO = "A00.0";
+const LIMITE_DIAS = 15;
+const cid = ref("");
+const diasAtestado = ref(1);
+const TIPOS_ACIDENTE = ["Trajeto", "Em Atividade"];
+const tipoAcidente = ref("");
+const aberturaCat = ref(false);
+const isAcidente = computed(() => motivo.value === ACIDENTE);
+const isAtestado = computed(() => motivo.value === "Atestado");
+const superiorQuinze = computed(() => isAtestado.value && Number(diasAtestado.value) > LIMITE_DIAS);
 
 watch(
   () => props.open,
@@ -53,25 +65,34 @@ watch(
     if (!open) return;
     listOpen.value = false;
     const saved = props.current && props.current.meta.motivo;
-    motivo.value = saved && saved !== "Presente" ? saved : "";
+    motivo.value = props.current && props.current.meta.acidente ? ACIDENTE : saved && saved !== "Presente" ? saved : "";
     observacao.value = (props.current && props.current.meta.observacao) || "";
     const meta = (props.current && props.current.meta) || {};
-    marks.value = { advertencia: !!meta.advertencia, acidente: !!meta.acidente };
+    marks.value = { advertencia: !!meta.advertencia };
+    cid.value = meta.cid && meta.cid !== CID_PADRAO ? meta.cid : "";
+    diasAtestado.value = meta.diasAtestado || 1;
+    tipoAcidente.value = meta.tipoAcidente || "";
+    aberturaCat.value = !!meta.aberturaCat;
   },
   { immediate: true }
 );
 
 function submit() {
   const obs = observacao.value.trim();
-  if (!motivo.value && !obs && !marks.value.advertencia && !marks.value.acidente) {
+  const acidente = motivo.value === ACIDENTE;
+  if (!motivo.value && !obs && !marks.value.advertencia) {
     emit("clear");
     return;
   }
   emit("save", {
-    motivo: motivo.value || "Presente",
+    motivo: acidente ? "Presente" : motivo.value || "Presente",
     observacao: obs,
     advertencia: marks.value.advertencia,
-    acidente: marks.value.acidente
+    acidente,
+    cid: isAtestado.value ? cid.value.trim().toUpperCase() || CID_PADRAO : null,
+    tipoAcidente: acidente ? tipoAcidente.value || null : null,
+    aberturaCat: acidente ? aberturaCat.value : false,
+    diasAtestado: isAtestado.value ? Math.max(1, Math.floor(Number(diasAtestado.value) || 1)) : null
   });
 }
 </script>
@@ -134,9 +155,50 @@ function submit() {
         </div>
       </div>
 
+      <div v-if="isAtestado" class="grid gap-4 sm:grid-cols-2">
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <label for="ocCid" class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">CID</label>
+          <input id="ocCid" v-model="cid" type="text" maxlength="10" :class="[inputCls, 'font-semibold uppercase']" :placeholder="CID_PADRAO" />
+        </div>
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <label for="ocDias" class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Dias de atestado</label>
+          <input id="ocDias" v-model.number="diasAtestado" type="number" min="1" step="1" :class="[inputCls, 'font-semibold']" />
+          <p v-if="superiorQuinze" class="text-[11px] font-semibold text-orange-500">Superior a {{ LIMITE_DIAS }} dias</p>
+        </div>
+      </div>
+
+      <div v-if="isAcidente" class="grid gap-4 sm:grid-cols-2">
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tipo de acidente</span>
+          <div class="grid grid-cols-2 gap-2" role="group" aria-label="Tipo de acidente">
+            <button
+              v-for="t in TIPOS_ACIDENTE"
+              :key="t"
+              type="button"
+              class="rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
+              :class="tipoAcidente === t ? 'border-transparent bg-accent/15 text-accent' : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+              :aria-pressed="tipoAcidente === t"
+              @click="tipoAcidente = tipoAcidente === t ? '' : t"
+            >
+              {{ t }}
+            </button>
+          </div>
+        </div>
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">CAT</span>
+          <label
+            class="flex cursor-pointer select-none items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
+            :class="aberturaCat ? 'border-transparent bg-accent/15 text-accent' : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+          >
+            <input v-model="aberturaCat" type="checkbox" class="h-4 w-4 shrink-0 cursor-pointer accent-orange-500" />
+            Abertura de CAT
+          </label>
+        </div>
+      </div>
+
       <div class="grid gap-3 sm:grid-cols-2">
         <label
-          v-for="f in FLAGS"
+          v-for="f in FLAGS_CAIXA"
           :key="f.key"
           class="flex cursor-pointer select-none items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
           :class="marks[f.key] ? f.chip + ' border-transparent' : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800'"
