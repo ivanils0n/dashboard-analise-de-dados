@@ -14,12 +14,13 @@ import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vu
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import TurnoverAnaliseModal from "@/components/dashboard/TurnoverAnaliseModal.vue";
-import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
+import ContratacaoAnaliseModal from "@/components/dashboard/ContratacaoAnaliseModal.vue";import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
 import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
 import PermanenciaListaModal from "@/components/dashboard/PermanenciaListaModal.vue";
+import PermanenciaAnaliseModal from "@/components/dashboard/PermanenciaAnaliseModal.vue";
 import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
 import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresaModal.vue";
 import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
@@ -132,6 +133,14 @@ function openTurnoverDetail(kind) {
 }
 
 const turnoverAnaliseOpen = ref(false);
+const contratacaoAnaliseOpen = ref(false);
+
+function onContratacaoAbrirVagas() {
+  contratacaoAnaliseOpen.value = false;
+  vacancyIndicatorId.value = "tempo_contratacao";
+  vacancyInitialFilial.value = null;
+  vacanciesOpen.value = true;
+}
 
 const tourOpen = ref(false);
 
@@ -303,6 +312,16 @@ function onCustoPessoalBarClick({ label }) {
 const permanenciaListaOpen = ref(false);
 const permanenciaListaRows = ref([]);
 const permanenciaListaPeriodo = ref("");
+const permanenciaAnaliseOpen = ref(false);
+
+function onPermanenciaAbrirLista() {
+  permanenciaAnaliseOpen.value = false;
+  permanenciaListaRows.value = dashboard.permanenciaDesligadosLista();
+  const ini = dateFilter.start ? ymLabel(String(dateFilter.start).slice(0, 7)) : "";
+  const fim = dateFilter.end ? ymLabel(String(dateFilter.end).slice(0, 7)) : "";
+  permanenciaListaPeriodo.value = ini && fim && ini !== fim ? `${ini} a ${fim}` : ini;
+  permanenciaListaOpen.value = true;
+}
 const permanenciaDetailOpen = ref(false);
 const permanenciaDetailRecord = ref(null);
 
@@ -661,19 +680,9 @@ function onKpiContext(id) {
   } else if (id === "turnover") {
     turnoverAnaliseOpen.value = true;
   } else if (id === "tempo_permanencia") {
-    permanenciaListaRows.value = dashboard.permanenciaDesligadosLista();
-    const ini = dateFilter.start ? ymLabel(String(dateFilter.start).slice(0, 7)) : "";
-    const fim = dateFilter.end ? ymLabel(String(dateFilter.end).slice(0, 7)) : "";
-    permanenciaListaPeriodo.value = ini && fim && ini !== fim ? `${ini} a ${fim}` : ini;
-    permanenciaListaOpen.value = true;
-  } else if (id === "tempo_contratacao") {
-    vacancyIndicatorId.value = "tempo_contratacao";
-    vacancyInitialFilial.value = null;
-    vacanciesOpen.value = true;
-  } else if (id === "custo_contratacao") {
-    vacancyIndicatorId.value = "custo_contratacao";
-    vacancyInitialFilial.value = null;
-    vacanciesOpen.value = true;
+    permanenciaAnaliseOpen.value = true;
+  } else if (id === "tempo_contratacao" || id === "custo_contratacao") {
+    contratacaoAnaliseOpen.value = true;
   }
 }
 
@@ -1340,6 +1349,12 @@ watch(activeTab, (tab) => {
       :entries="custoPessoalRows"
       @close="custoPessoalOpen = false"
     />
+    <PermanenciaAnaliseModal
+      v-if="permanenciaAnaliseOpen"
+      :open="permanenciaAnaliseOpen"
+      @close="permanenciaAnaliseOpen = false"
+      @abrir-lista="onPermanenciaAbrirLista"
+    />
     <PermanenciaListaModal
       v-if="permanenciaListaOpen"
       :open="permanenciaListaOpen"
@@ -1358,6 +1373,12 @@ watch(activeTab, (tab) => {
       :open="turnoverDetailOpen"
       :kind="turnoverDetailKind"
       @close="turnoverDetailOpen = false"
+    />
+    <ContratacaoAnaliseModal
+      v-if="contratacaoAnaliseOpen"
+      :open="contratacaoAnaliseOpen"
+      @close="contratacaoAnaliseOpen = false"
+      @abrir-vagas="onContratacaoAbrirVagas"
     />
     <TurnoverAnaliseModal
       v-if="turnoverAnaliseOpen"
