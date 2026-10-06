@@ -14,6 +14,9 @@ import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vu
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import TurnoverAnaliseModal from "@/components/dashboard/TurnoverAnaliseModal.vue";
+import TreinamentoAnaliseModal from "@/components/dashboard/TreinamentoAnaliseModal.vue";
+import FeriasAnaliseModal from "@/components/dashboard/FeriasAnaliseModal.vue";
+import CustoPessoalDetalheModal from "@/components/dashboard/CustoPessoalDetalheModal.vue";
 import ContratacaoAnaliseModal from "@/components/dashboard/ContratacaoAnaliseModal.vue";import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
@@ -81,7 +84,7 @@ const preEditSelectedKpiId = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
 const diariaEntriesOpen = ref(false);
-const treinamentoEntriesOpen = ref(false);
+const treinamentoAnaliseOpen = ref(false);
 const custosEntriesOpen = ref(false);
 const absenteismoAnaliseOpen = ref(false);
 const vacanciesOpen = ref(false);
@@ -266,6 +269,7 @@ const custoRegionalOpen = ref(false);
 const custoRegionalNome = ref("");
 const custoRegionalDados = ref({ folha: [], ferias: [], rescisoes: [] });
 const feriasOpen = ref(false);
+const feriasAnaliseOpen = ref(false);
 const feriasRows = ref([]);
 
 function onCustoPieClick(sliceIndex) {
@@ -365,29 +369,6 @@ const diariaColumns = [
   { label: "Valor pago", value: true }
 ];
 
-const treinamentoColumns = [
-  { label: "Competência", month: true },
-  { label: "Colaborador", meta: "employeeName" },
-  { label: "Cargo", meta: "cargo" },
-  { label: "Loja", meta: "filial" },
-  { label: "Gerente regional", meta: "gerenteRegional" },
-  { label: "Estado", meta: "estado" },
-  { label: "Tema do treinamento", meta: "tema" },
-  { label: "Carga horária", value: true },
-  { label: "Modalidade", meta: "modalidade" }
-];
-
-const custosColumns = [
-  { label: "Mês", month: true },
-  { label: "Código", meta: "codigo" },
-  { label: "Nome", meta: "employeeName" },
-  { label: "Banco", meta: "banco" },
-  { label: "Empresa", meta: "empresa" },
-  { label: "Filial", meta: "filial" },
-  { label: "Estado", meta: "estado" },
-  { label: "Data de pagamento", meta: "dataPagto" },
-  { label: "Valor total", value: true }
-];
 
 const scrollRef = ref(null);
 
@@ -609,7 +590,7 @@ function onEntriesEdit({ indicatorId, entry }) {
   }
   preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
   diariaEntriesOpen.value = false;
-  treinamentoEntriesOpen.value = false;
+  treinamentoAnaliseOpen.value = false;
   custosEntriesOpen.value = false;
   editTarget.value = { indicatorId, entry };
   editVacancyTarget.value = null;
@@ -673,7 +654,8 @@ function onKpiContext(id) {
   else if (id === "horas_regional") {
     regionalGroups.value = dashboard.treinamentoRegionalGroups();
     regionalModalOpen.value = true;
-  } else if (id === "treinamento") treinamentoEntriesOpen.value = true;
+  } else if (id === "treinamento") treinamentoAnaliseOpen.value = true;
+  else if (id === "ferias") feriasAnaliseOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
   else if (id === "absenteismo") {
     absenteismoAnaliseOpen.value = true;
@@ -1429,25 +1411,20 @@ watch(activeTab, (tab) => {
       @close="diariaEntriesOpen = false"
       @edit="onEntriesEdit"
     />
-    <IndicatorEntriesModal
-      v-if="treinamentoEntriesOpen"
-      :open="treinamentoEntriesOpen"
-      indicator-id="treinamento"
-      title="Treinamentos — Lançamentos"
-      :columns="treinamentoColumns"
-      @close="treinamentoEntriesOpen = false"
-      @edit="onEntriesEdit"
+    <FeriasAnaliseModal
+      v-if="feriasAnaliseOpen"
+      :open="feriasAnaliseOpen"
+      @close="feriasAnaliseOpen = false"
     />
-    <IndicatorEntriesModal
+    <TreinamentoAnaliseModal
+      v-if="treinamentoAnaliseOpen"
+      :open="treinamentoAnaliseOpen"
+      @close="treinamentoAnaliseOpen = false"
+    />
+    <CustoPessoalDetalheModal
       v-if="custosEntriesOpen"
       :open="custosEntriesOpen"
-      indicator-id="custo_total"
-      title="Custo de Pessoal — Registros"
-      :columns="custosColumns"
-      readonly
-      tipos
       @close="custosEntriesOpen = false"
-      @edit="onEntriesEdit"
     />
     <AbsenteismoAnaliseModal
       v-if="absenteismoAnaliseOpen"
