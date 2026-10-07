@@ -13,7 +13,7 @@ installLongPressContextMenu();
 if (import.meta.env.PROD) {
   try {
     window.__VUE_DEVTOOLS_GLOBAL_HOOK__ = undefined;
-  } catch (e) {}
+  } catch {}
 }
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
@@ -48,7 +48,7 @@ const upperDirective = {
       target.value = upper;
       try {
         target.setSelectionRange(pos, pos);
-      } catch (err) {
+      } catch {
       }
       target.dispatchEvent(new Event("input", { bubbles: true }));
     };

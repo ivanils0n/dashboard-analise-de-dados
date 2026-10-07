@@ -2,7 +2,7 @@ import { sessionStore } from "./utils";
 
 const AUTH_STORAGE_KEY = "gg-auth";
 
-export function normalizeApiBase(value) {
+function normalizeApiBase(value) {
   let raw = String(value || "").trim();
   if (!raw) return "";
   raw = raw.replace(/\/+$/, "");
@@ -14,7 +14,7 @@ export function normalizeApiBase(value) {
 
 const configuredBase = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || "";
 
-export const API_BASE = normalizeApiBase(configuredBase);
+const API_BASE = normalizeApiBase(configuredBase);
 
 if (import.meta.env.PROD && !API_BASE) {
   console.error(
@@ -30,7 +30,7 @@ function readToken() {
     if (!session || !session.token) return null;
     if (session.expiresAt && Date.now() > session.expiresAt) return null;
     return session.token;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -89,7 +89,7 @@ export async function apiFetch(
   let data = null;
   try {
     data = await res.json();
-  } catch (e) {
+  } catch {
   }
 
   if (!res.ok) {

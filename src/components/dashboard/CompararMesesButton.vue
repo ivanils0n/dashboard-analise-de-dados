@@ -1,7 +1,11 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import Modal from "@/components/ui/Modal.vue";
+import { STATES, STATE_NAMES, getIndicatorById } from "@/lib/config";
+import { useFilters } from "@/composables/useFilters";
 import { formatValue, ymLabel } from "@/lib/utils";
+
+const { state } = useFilters();
 
 const props = defineProps({
   dashboard: { type: Object, required: true },
@@ -9,16 +13,42 @@ const props = defineProps({
 });
 
 const open = ref(false);
-const meses = ref(1);
-const MAX_MESES = 12;
+const meses = ref(3);
+const MESES_OPCOES = [1, 2, 3, 6, 12];
 
-const comparacao = computed(() => (open.value ? props.dashboard.comparacaoMeses(meses.value) : { months: [], rows: [] }));
+const estadoDoDashboard = () => (!state.current || state.current === "todos" ? "todos" : state.current);
+const estadoSel = ref(estadoDoDashboard());
+watch(() => state.current, () => (estadoSel.value = estadoDoDashboard()));
+watch(open, (aberto) => {
+  if (aberto) estadoSel.value = estadoDoDashboard();
+});
+const estadoOptions = [{ id: "todos", label: "Todos estados" }, ...STATES.map((s) => ({ id: s, label: s }))];
+
+const busca = ref("");
+const statusSel = ref("todos");
+const ordem = ref("padrao");
+const expandido = ref(null);
+
+const comparacao = computed(() => {
+  void state.revision;
+  return open.value ? props.dashboard.comparacaoMeses(meses.value, estadoSel.value) : { months: [], rows: [] };
+});
 const months = computed(() => comparacao.value.months);
 const ultimo = computed(() => months.value.length - 1);
 
 function variacao(row, i) {
-  const cur = row.values[i];
-  const base = i === 0 ? row.anterior : row.values[i - 1];
+  return calcVariacao(row, row.values[i], i === 0 ? row.anterior : row.values[i - 1]);
+}
+
+function variacaoPeriodo(row) {
+  const lista = row.values.map((_, i) => variacao(row, i)).filter(Boolean);
+  if (!lista.length) return null;
+  const pct = lista.reduce((s, v) => s + v.pct, 0) / lista.length;
+  const bom = pct === 0 ? null : row.higherIsBetter ? pct > 0 : pct < 0;
+  return { pct, bom };
+}
+
+function calcVariacao(row, cur, base) {
   if (cur === null || base === null || cur === undefined || base === undefined) return null;
   const diff = cur - base;
   if (base === 0) return diff === 0 ? { pct: 0, bom: null } : null;
@@ -27,10 +57,12 @@ function variacao(row, i) {
   return { pct, bom };
 }
 
-function tone(v) {
-  if (!v || v.bom === null) return "text-zinc-400";
-  return v.bom ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
-}
+const CHIP = {
+  bom: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-400",
+  ruim: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400",
+  neutro: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+};
+const chipClass = (v) => (!v || v.bom === null ? CHIP.neutro : v.bom ? CHIP.bom : CHIP.ruim);
 
 function pctText(v) {
   if (!v) return "—";
@@ -39,7 +71,78 @@ function pctText(v) {
   return `${v.pct > 0 ? "▲" : "▼"} ${abs}%`;
 }
 
-const OPCOES = Array.from({ length: MAX_MESES }, (_, i) => i + 1);
+function statusDe(row) {
+  const v = variacaoPeriodo(row);
+  if (!v) return "semdados";
+  if (v.bom === null) return "estavel";
+  return v.bom ? "melhorou" : "piorou";
+}
+
+const linhas = computed(() =>
+  comparacao.value.rows.map((row) => {
+    const v = variacaoPeriodo(row);
+    return { ...row, status: statusDe(row), ultimaVar: v, pctAbs: v ? Math.abs(v.pct) : -1 };
+  })
+);
+
+const contagem = computed(() => {
+  const c = { todos: linhas.value.length, melhorou: 0, piorou: 0, estavel: 0, semdados: 0 };
+  linhas.value.forEach((r) => (c[r.status] += 1));
+  return c;
+});
+
+const filtros = computed(() => [
+  { id: "todos", label: "Todos", dot: "bg-zinc-400" },
+  { id: "melhorou", label: "Melhoraram", dot: "bg-green-500" },
+  { id: "piorou", label: "Pioraram", dot: "bg-red-500" },
+  { id: "estavel", label: "Estáveis", dot: "bg-zinc-300" },
+  { id: "semdados", label: "Sem dados", dot: "bg-zinc-200" }
+]);
+
+const ORDENS = [
+  { id: "padrao", label: "Ordem padrão" },
+  { id: "melhor", label: "Maior melhora" },
+  { id: "pior", label: "Maior piora" },
+  { id: "nome", label: "Nome (A–Z)" }
+];
+
+const visiveis = computed(() => {
+  const termo = busca.value.trim().toLowerCase();
+  let list = linhas.value.filter(
+    (r) => (statusSel.value === "todos" || r.status === statusSel.value) && (!termo || r.name.toLowerCase().includes(termo))
+  );
+  const score = (r) => (r.status === "melhorou" ? r.pctAbs : r.status === "piorou" ? -r.pctAbs : r.status === "estavel" ? 0 : -Infinity);
+  if (ordem.value === "melhor") list = list.slice().sort((a, b) => score(b) - score(a));
+  else if (ordem.value === "pior") list = list.slice().sort((a, b) => (score(a) === -Infinity) - (score(b) === -Infinity) || score(a) - score(b));
+  else if (ordem.value === "nome") list = list.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return list;
+});
+
+function sparkPoints(row) {
+  const vals = [row.anterior, ...row.values];
+  const nums = vals.filter((v) => v !== null && v !== undefined);
+  if (nums.length < 2) return "";
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const w = 88;
+  const h = 26;
+  const pad = 3;
+  return vals
+    .map((v, i) => {
+      if (v === null || v === undefined) return null;
+      const x = pad + (i / (vals.length - 1)) * (w - pad * 2);
+      const y = max === min ? h / 2 : h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+const SPARK_COR = { melhorou: "#16a34a", piorou: "#dc2626", estavel: "#a1a1aa", semdados: "#d4d4d8" };
+
+const escopo = computed(() => (estadoSel.value === "todos" ? "Todos estados" : STATE_NAMES[estadoSel.value] || estadoSel.value));
+
+const descricao = (id) => getIndicatorById(id);
+const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
 </script>
 
 <template>
@@ -60,62 +163,154 @@ const OPCOES = Array.from({ length: MAX_MESES }, (_, i) => i + 1);
   <Modal
     v-if="open"
     title="Comparar indicadores"
-    subtitle="Valores de cada indicador no mês filtrado e nos meses anteriores"
+    :subtitle="months.length ? `${escopo} · ${ymLabel(months[0])} a ${ymLabel(months[ultimo])}` : escopo"
     :open="open"
-    max-width="max-w-6xl"
+    fullscreen
     @close="open = false"
   >
-    <div class="flex flex-col gap-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <label for="cmpMeses" class="text-sm font-medium text-zinc-700 dark:text-zinc-200">Meses para comparar</label>
-        <select
-          id="cmpMeses"
-          v-model.number="meses"
-          class="w-32 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
+    <template #actions>
+      <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
+        <button
+          v-for="o in estadoOptions"
+          :key="o.id"
+          type="button"
+          class="rounded-lg px-3 py-1 text-sm font-semibold transition sm:px-4"
+          :class="estadoSel === o.id
+            ? 'bg-accent text-white shadow-sm'
+            : 'text-zinc-600 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-700'"
+          :aria-pressed="estadoSel === o.id"
+          @click="estadoSel = o.id"
         >
-          <option v-for="n in OPCOES" :key="n" :value="n" class="bg-white text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">{{ n }} {{ n === 1 ? "mês" : "meses" }}</option>
-        </select>
-        <span class="text-xs text-zinc-500 dark:text-zinc-400">
-          {{ ymLabel(months[0]) }} a {{ ymLabel(months[ultimo]) }} — abaixo de cada mês, a variação em % contra o mês imediatamente anterior (ex.: {{ ymLabel(months[ultimo]) }} contra {{ ymLabel(months[ultimo - 1] || months[0]) }}).
-        </span>
+          {{ o.label }}
+        </button>
       </div>
+    </template>
 
-      <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <div class="max-h-[30rem] overflow-auto">
-          <table class="w-full min-w-max text-left text-sm">
-            <thead class="sticky top-0 z-10 bg-white dark:bg-zinc-900">
-              <tr class="border-b border-zinc-100 text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-400">
-                <th class="sticky left-0 z-20 whitespace-nowrap bg-white px-4 py-2.5 font-semibold dark:bg-zinc-900">Indicador</th>
-                <th
-                  v-for="(ym, i) in months"
-                  :key="ym"
-                  class="whitespace-nowrap px-4 py-2.5 text-right font-semibold"
-                  :class="i === ultimo ? 'text-accent' : ''"
+    <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
+      <div class="mx-auto flex max-w-7xl flex-col gap-6">
+        <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <header class="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Período</span>
+              <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Meses para comparar">
+                <button
+                  v-for="n in MESES_OPCOES"
+                  :key="n"
+                  type="button"
+                  class="rounded-lg px-3 py-1 text-sm font-semibold transition"
+                  :class="meses === n
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'text-zinc-600 hover:bg-zinc-200/70 dark:text-zinc-300 dark:hover:bg-zinc-700'"
+                  :aria-pressed="meses === n"
+                  @click="meses = n"
                 >
-                  {{ ymLabel(ym) }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in comparacao.rows" :key="row.id" class="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
-                <td class="sticky left-0 whitespace-nowrap bg-white px-4 py-2.5 font-medium text-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">{{ row.name }}</td>
-                <td
-                  v-for="(v, i) in row.values"
-                  :key="i"
-                  class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums"
-                  :class="i === ultimo ? 'bg-accent/5 font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600 dark:text-zinc-300'"
-                >
-                  {{ formatValue(row, v) }}
-                  <div class="text-[11px] font-medium" :class="tone(variacao(row, i))">{{ pctText(variacao(row, i)) }}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                  {{ n }}{{ n === 1 ? " mês" : "m" }}
+                </button>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button
+                v-for="f in filtros"
+                :key="f.id"
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition"
+                :class="statusSel === f.id
+                  ? 'border-accent bg-accent/10 text-zinc-900 dark:text-zinc-100'
+                  : 'border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+                @click="statusSel = f.id"
+              >
+                <span class="h-2 w-2 rounded-full" :class="f.dot" />
+                {{ f.label }}
+                <span class="tabular-nums text-zinc-400">{{ contagem[f.id] }}</span>
+              </button>
+            </div>
+
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+              <input
+                v-model="busca"
+                type="search"
+                placeholder="Buscar indicador"
+                class="w-44 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-800 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <select
+                v-model="ordem"
+                aria-label="Ordenar"
+                class="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
+              >
+                <option v-for="o in ORDENS" :key="o.id" :value="o.id">{{ o.label }}</option>
+              </select>
+            </div>
+          </header>
+
+          <div class="max-h-[60vh] overflow-auto">
+            <table class="border-separate border-spacing-0 w-full min-w-max text-left text-sm">
+              <thead class="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800">
+                <tr class="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  <th class="sticky left-0 z-20 w-[16rem] min-w-[16rem] bg-zinc-50 px-5 py-2.5 font-semibold dark:bg-zinc-800">Indicador</th>
+                  <th
+                    v-for="(ym, i) in months"
+                    :key="ym"
+                    class="whitespace-nowrap px-4 py-2.5 text-right font-semibold"
+                  >
+                    {{ ymLabel(ym) }}
+                  </th>
+                  <th class="sticky right-[8rem] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent z-20 bg-zinc-50 bg-[linear-gradient(rgba(232,175,62,0.18),rgba(232,175,62,0.18))] px-4 py-2.5 text-center font-bold text-accent shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.25)] dark:bg-zinc-800">Tendência</th>
+                  <th class="sticky right-0 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-accent/40 z-20 w-[8rem] min-w-[8rem] bg-zinc-50 bg-[linear-gradient(rgba(232,175,62,0.18),rgba(232,175,62,0.18))] px-3 py-2.5 text-center font-bold text-accent dark:bg-zinc-800" title="Média das variações mensais (%) dos meses filtrados">Variação média</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="row in visiveis" :key="row.id">
+                  <tr
+                    class="cursor-pointer transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800"
+                    @click="toggle(row.id)"
+                  >
+                    <td class="sticky left-0 w-[16rem] min-w-[16rem] whitespace-nowrap bg-white px-5 py-3 font-medium text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                      <span class="mr-2 inline-block text-[10px] text-zinc-400 transition-transform" :class="expandido === row.id ? 'rotate-90' : ''">▶</span>{{ row.name }}
+                    </td>
+                    <td
+                      v-for="(v, i) in row.values"
+                      :key="i"
+                      class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-300"
+                    >
+                      {{ formatValue(row, v) }}
+                      <div class="mt-0.5 text-[11px] font-medium">
+                        <span class="rounded-full px-1.5 py-0.5" :class="chipClass(variacao(row, i))">{{ pctText(variacao(row, i)) }}</span>
+                      </div>
+                    </td>
+                    <td class="sticky right-[8rem] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent bg-white bg-[linear-gradient(rgba(232,175,62,0.10),rgba(232,175,62,0.10))] px-4 py-3 text-center shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.25)] dark:bg-zinc-900">
+                      <svg v-if="sparkPoints(row)" width="88" height="26" viewBox="0 0 88 26" aria-hidden="true">
+                        <polyline :points="sparkPoints(row)" fill="none" :stroke="SPARK_COR[row.status]" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      <span v-else class="text-zinc-300">—</span>
+                    </td>
+                    <td class="sticky right-0 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-accent/40 w-[8rem] min-w-[8rem] whitespace-nowrap bg-white bg-[linear-gradient(rgba(232,175,62,0.10),rgba(232,175,62,0.10))] px-3 py-3 text-center dark:bg-zinc-900">
+                      <span class="rounded-full px-3 py-1.5 text-sm font-bold tabular-nums" :class="chipClass(row.ultimaVar)">{{ pctText(row.ultimaVar) }}</span>
+                    </td>
+                  </tr>
+                  <tr v-if="expandido === row.id" class="bg-zinc-50/70 dark:bg-zinc-800/30 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800">
+                    <td :colspan="months.length + 3" class="px-5 py-3 text-xs text-zinc-600 dark:text-zinc-300">
+                      <p v-if="descricao(row.id)"><span class="font-semibold text-zinc-800 dark:text-zinc-100">Cálculo:</span> {{ descricao(row.id).calc }}</p>
+                      <p class="mt-1">
+                        <span class="font-semibold text-zinc-800 dark:text-zinc-100">Leitura:</span>
+                        {{ row.higherIsBetter ? "quanto maior, melhor" : "quanto menor, melhor" }} ·
+                        mês anterior ao período: {{ row.anterior === null ? "sem dados" : formatValue(row, row.anterior) }}
+                      </p>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <p v-if="!visiveis.length" class="px-5 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+              Nenhum indicador encontrado para os filtros selecionados.
+            </p>
+          </div>
+        </section>
+
+        <p class="border-t border-zinc-200 pt-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+          Verde = melhora e vermelho = piora, conforme o tipo de cada indicador · A variação em % é contra o mês imediatamente anterior; o primeiro mês é comparado com o mês anterior a ele · "Variação média" = média das variações mensais (%) de todos os meses filtrados, ignorando meses sem base · "—" indica mês sem dados ou sem base (valor zero) · Clique em uma linha para ver o cálculo.
+        </p>
       </div>
-      <p class="text-[11px] text-zinc-400 dark:text-zinc-500">
-        Verde = melhora e vermelho = piora, conforme o tipo de cada indicador. "—" indica mês sem dados ou sem base (valor zero) para calcular. O primeiro mês é comparado com o mês anterior a ele. Respeita o estado selecionado no filtro.
-      </p>
     </div>
   </Modal>
 </template>

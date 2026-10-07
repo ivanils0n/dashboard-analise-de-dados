@@ -250,6 +250,22 @@ const singleCaption = computed(() => {
   return nomeiaBarraUnica && chart.data.length === 1 ? String(chart.data[0].label) : "";
 });
 
+const headcountTriplo = computed(
+  () => centerChart.value.id === "headcount" && headcountView.value === "bar" && centerChart.value.data.length === 1
+);
+const headcountTriploCharts = computed(() => {
+  if (!headcountTriplo.value) return null;
+  const row = centerChart.value.data[0];
+  const [masculino, feminino] = row.series;
+  return {
+    barras: [
+      { label: "Masculino", value: masculino.value, barColor: "#0284c7" },
+      { label: "Feminino", value: feminino.value, barColor: "#db2777" },
+      { label: "Total", value: row.value }
+    ]
+  };
+});
+
 const consolidadoSummaryItems = computed(() =>
   (centerChart.value.consolidado || []).map((i) => ({ label: i.label, value: formatCurrency(i.value) }))
 );
@@ -498,12 +514,15 @@ const permanenciaDetailOpen = ref(false);
 const permanenciaDetailRecord = ref(null);
 
 const NO_TREND_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "ticket_medio", "horas_regional", "rescisoes", "absenteismo", "retencao", "turnover"];
-const showTrend = computed(() => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value));
+const showTrend = computed(
+  () => !!selectedKpiId.value && !NO_TREND_CHARTS.includes(selectedKpiId.value) && !(selectedKpiId.value === "custo_total" && ["empresa", "regional"].includes(custoView.value))
+);
 
 const HORIZONTAL_CHARTS = ["treinamento", "tempo_contratacao", "tempo_permanencia", "custo_diaria", "ferias", "rescisoes"];
-const VERTICAL_WHEN_REGIONAL = ["custo_diaria", "ferias", "tempo_permanencia"];
+const VERTICAL_WHEN_REGIONAL = ["custo_diaria", "tempo_permanencia"];
 const isHorizontalChart = computed(() => {
   const id = centerChart.value.id;
+  if (id === "custo_total" && ["empresa", "regional"].includes(custoView.value)) return true;
   return HORIZONTAL_CHARTS.includes(id) && !(VERTICAL_WHEN_REGIONAL.includes(id) && isRegionalView.value);
 });
 
@@ -751,8 +770,15 @@ function goNextKpi() {
             </div>
             <div class="relative lg:h-auto lg:min-h-0 lg:flex-1" :class="stackedOnPhone ? '' : 'h-[360px] sm:h-[480px]'">
             <div class="h-full lg:absolute lg:inset-0">
+            <BarChart
+              v-if="headcountTriploCharts"
+              :data="headcountTriploCharts.barras"
+              show-values
+              :show-trend="false"
+              fluid
+            />
             <div
-              v-if="centerChart.kind === 'pie'"
+              v-else-if="centerChart.kind === 'pie'"
               class="grid gap-4 lg:h-full lg:grid-rows-1"
               :class="centerChart.summary ? 'lg:grid-cols-[180px_minmax(0,1fr)_180px]' : 'lg:grid-cols-1'"
             >

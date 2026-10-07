@@ -5,7 +5,7 @@ import { nameKey, ymLabel } from "./utils";
 import { regionalLabel } from "./regionais";
 import { regionalDaFilial } from "./db";
 
-export const DIAS_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+const DIAS_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const ORDEM_SEMANA = [1, 2, 3, 4, 5, 6, 0];
 
 const PESO_MOTIVO = { Falta: 1, Atestado: 1, Suspensão: 1 };
@@ -15,13 +15,13 @@ export function diasDeAusencia(o) {
   return Math.max(base, o.acidente ? 1 : 0);
 }
 
-export function shiftYm(ym, delta) {
+function shiftYm(ym, delta) {
   const [y, m] = String(ym).split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function diasUteis(ym) {
+function diasUteis(ym) {
   const [y, m] = String(ym).split("-").map(Number);
   const total = new Date(y, m, 0).getDate();
   let n = 0;
@@ -33,7 +33,7 @@ const norm = (v) => String(v ?? "").trim().toUpperCase();
 const round1 = (n) => Math.round(n * 10) / 10;
 const pct = (num, den) => (den > 0 ? (num / den) * 100 : null);
 
-export function ocorrenciasDoMes(ym, estado, regional = "") {
+function ocorrenciasDoMes(ym, estado, regional = "") {
   const uf = String(estado || "").toUpperCase();
   const todos = !uf || uf === "TODOS";
   return getOcorrencias()

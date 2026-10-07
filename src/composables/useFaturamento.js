@@ -7,7 +7,7 @@ function readStored() {
   try {
     const n = Number(sessionStore.getItem(STORAGE_KEY));
     return Number.isFinite(n) && n > 0 ? n : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -28,5 +28,5 @@ export function clearFaturamento() {
   faturamento.value = null;
   try {
     sessionStore.removeItem(STORAGE_KEY);
-  } catch (e) {}
+  } catch {}
 }

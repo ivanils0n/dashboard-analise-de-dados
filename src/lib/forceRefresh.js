@@ -8,7 +8,7 @@ function isReload() {
     const nav = performance.getEntriesByType("navigation")[0];
     if (nav) return nav.type === "reload";
     return !!(performance.navigation && performance.navigation.type === 1);
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -19,7 +19,7 @@ function clearKeepingAuth(name) {
     const kept = KEEP_KEYS.map((k) => [k, store.getItem(k)]).filter(([, v]) => v !== null);
     store.clear();
     kept.forEach(([k, v]) => store.setItem(k, v));
-  } catch (e) {}
+  } catch {}
 }
 
 function clearAppCaches() {
@@ -29,7 +29,7 @@ function clearAppCaches() {
       .keys()
       .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
       .catch(() => {});
-  } catch (e) {}
+  } catch {}
 }
 
 if (isReload()) {

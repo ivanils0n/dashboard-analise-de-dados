@@ -269,14 +269,33 @@ const tables = computed(() => [
         </p>
 
         <template v-else>
-          <div class="grid gap-5 lg:grid-cols-3">
-            <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+              <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div>
+                  <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por regional</h3>
+                  <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Folha, férias e rescisões por regional</p>
+                </div>
+                <ul class="flex items-center gap-4 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  <li v-for="t in TIPOS.filter((x) => x.id !== 'beneficios')" :key="t.id" class="flex items-center gap-1.5">
+                    <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: t.color }" />{{ t.label }}
+                  </li>
+                </ul>
+              </div>
+            </header>
+            <div class="p-4">
+              <BarChart :data="regionalData" :show-legend="false" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="420" />
+            </div>
+          </section>
+
+          <div class="grid items-stretch gap-5 lg:grid-cols-5">
+            <section class="flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-2">
               <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
                 <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Composição</h3>
                 <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Folha, férias, rescisões e benefícios</p>
               </header>
-              <div class="p-4">
-                <PieChart
+              <div class="flex flex-1 items-center justify-center p-4">
+                <PieChart class="w-full"
                   :data="pieData"
                   show-values
                   height="h-72"
@@ -287,38 +306,28 @@ const tables = computed(() => [
               </div>
             </section>
 
-            <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-2">
+            <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-3">
               <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
-                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por regional</h3>
-                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Folha, férias e rescisões por regional</p>
+                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Principais pontos</h3>
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Filiais com maior custo (folha + férias + rescisões), até 20</p>
               </header>
-              <div class="p-4">
-                <BarChart :data="regionalData" show-values value-format="currency" :show-trend="false" :height-px="288" />
+              <div class="grid gap-5 p-4 lg:grid-cols-3">
+                <ul class="flex flex-col gap-3 lg:col-span-1">
+                  <li
+                    v-for="(i, idx) in insights"
+                    :key="idx"
+                    class="flex items-start gap-3 rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
+                  >
+                    <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="INSIGHT_DOT[i.tone]" />
+                    <span>{{ i.text }}</span>
+                  </li>
+                </ul>
+                <div class="lg:col-span-2">
+                  <BarChart :data="filialData" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="420" />
+                </div>
               </div>
             </section>
           </div>
-
-          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
-              <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Principais pontos</h3>
-              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Filiais com maior custo (folha + férias + rescisões), até 20</p>
-            </header>
-            <div class="grid gap-5 p-4 lg:grid-cols-3">
-              <ul class="flex flex-col gap-3 lg:col-span-1">
-                <li
-                  v-for="(i, idx) in insights"
-                  :key="idx"
-                  class="flex items-start gap-3 rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
-                >
-                  <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="INSIGHT_DOT[i.tone]" />
-                  <span>{{ i.text }}</span>
-                </li>
-              </ul>
-              <div class="lg:col-span-2">
-                <BarChart :data="filialData" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="420" />
-              </div>
-            </div>
-          </section>
 
           <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">

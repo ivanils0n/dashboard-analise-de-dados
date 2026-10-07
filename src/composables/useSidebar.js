@@ -15,7 +15,7 @@ function readCollapsed() {
 export const sidebarCollapsed = ref(readCollapsed());
 
 const tabletQuery = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(max-width: 1023px)") : null;
-export const isTabletWidth = ref(!!(tabletQuery && tabletQuery.matches));
+const isTabletWidth = ref(!!(tabletQuery && tabletQuery.matches));
 if (tabletQuery) {
   const onChange = (e) => {
     isTabletWidth.value = e.matches;

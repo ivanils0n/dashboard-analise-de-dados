@@ -56,29 +56,11 @@ export function formatCurrency(value) {
   return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export function formatAxisValue(indicator, value) {
-  if (indicator.type === "currency") {
-    return "R$ " + Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-  }
-  if (indicator.type === "hours") {
-    return formatHoursClock(value);
-  }
-  const decimals = indicator.decimals ?? 1;
-  return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: decimals });
-}
-
 export function formatDate(isoDate) {
   if (!isoDate) return "—";
   const date = new Date(/T/.test(isoDate) ? isoDate : isoDate + "T00:00:00");
   if (isNaN(date.getTime())) return String(isoDate);
   return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-export function formatShortDate(isoDate) {
-  if (!isoDate) return "—";
-  const date = new Date(/T/.test(isoDate) ? isoDate : isoDate + "T00:00:00");
-  if (isNaN(date.getTime())) return String(isoDate);
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
 export function formatDateTime(iso) {
@@ -221,7 +203,7 @@ export function ymOf(isoDate) {
   return String(isoDate).slice(0, 7);
 }
 
-export function ymOfDate(d = new Date()) {
+function ymOfDate(d = new Date()) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 
@@ -396,12 +378,12 @@ export function safeSetItem(storage, key, value) {
         if (k && k !== key && k.indexOf(DISPOSABLE_PREFIX) === 0) disposable.push(k);
       }
       disposable.forEach((k) => storage.removeItem(k));
-    } catch (e) {}
+    } catch {}
 
     try {
       storage.setItem(key, value);
       return true;
-    } catch (e2) {
+    } catch {
       return false;
     }
   }
@@ -414,7 +396,7 @@ function createWebStore(name) {
     store.setItem(probe, "1");
     store.removeItem(probe);
     return store;
-  } catch (e) {
+  } catch {
     return {
       get length() {
         return 0;

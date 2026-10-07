@@ -13,7 +13,7 @@ export const DataCache = {
     try {
       const raw = sessionStore.getItem(key);
       return raw ? JSON.parse(raw) : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   },
@@ -22,7 +22,7 @@ export const DataCache = {
     try {
       sessionStore.setItem(this.keyFor(tabela, id), JSON.stringify(data));
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   },
@@ -30,13 +30,13 @@ export const DataCache = {
   removeItem(tabela, id) {
     try {
       sessionStore.removeItem(this.keyFor(tabela, id));
-    } catch (e) {}
+    } catch {}
   },
 
   removeKey(key) {
     try {
       sessionStore.removeItem(key);
-    } catch (e) {}
+    } catch {}
   },
 
   keys() {
@@ -62,7 +62,7 @@ export const DataCache = {
   removeLegacy() {
     try {
       sessionStore.removeItem(LEGACY_LOADED_AT_KEY);
-    } catch (e) {}
+    } catch {}
     try {
       const stale = [];
       for (let i = 0; i < localStore.length; i++) {
@@ -70,6 +70,6 @@ export const DataCache = {
         if (key && (key.indexOf(PREFIX) === 0 || key === LEGACY_KEY)) stale.push(key);
       }
       stale.forEach((k) => localStore.removeItem(k));
-    } catch (e) {}
+    } catch {}
   }
 };

@@ -132,7 +132,7 @@ export function filialKeyOfLabel(label) {
   return m ? `cd|${m[1].toUpperCase()}` : branchKeyFor(label);
 }
 
-export function moneyOrNull(value) {
+function moneyOrNull(value) {
   if (value === undefined || value === null || value === "") return null;
   const num = Number(value);
   return isNaN(num) ? null : num;
@@ -147,7 +147,7 @@ export function averageHiringDays(list) {
   return days.reduce((sum, d) => sum + d, 0) / days.length;
 }
 
-export function avgHiringDays(state) {
+function avgHiringDays(state) {
   return averageHiringDays(listVacancies(state));
 }
 
@@ -346,7 +346,7 @@ function monthWithinRange(ym, range) {
   return true;
 }
 
-export function turnoverQuantitiesInRange(state, range) {
+function turnoverQuantitiesInRange(state, range) {
   const { admissoes, demissoes } = headcountMovements(state, range);
   return {
     admitidos: admissoes.length,

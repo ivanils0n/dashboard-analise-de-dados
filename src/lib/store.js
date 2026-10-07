@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { createId, compareDateAsc, nameKey } from "./utils";
 
-export function emptyData() {
+function emptyData() {
   return {
     version: 1,
     vacancies: [],
@@ -45,18 +45,7 @@ function entryList(indicatorId) {
   return key;
 }
 
-const PUBLIC_ENTRY_INDICATORS = Object.keys(ENTRY_LISTS);
-
 const isOcorrencia = (e) => !!(e.meta && e.meta.colaborador);
-
-export function getAllEntries() {
-  const all = {};
-  PUBLIC_ENTRY_INDICATORS.forEach((indicatorId) => {
-    const list = data[ENTRY_LISTS[indicatorId]];
-    all[indicatorId] = indicatorId === "absenteismo" ? list.filter((e) => !isOcorrencia(e)) : list;
-  });
-  return all;
-}
 
 export function getEntriesFor(indicatorId, state) {
   // chama isso genericamente para TODO indicador em INDICATORS, esperando
@@ -93,14 +82,6 @@ export function addEntry(indicatorId, { date, value, meta, state }) {
   data[key].push(entry);
   data[key].sort((a, b) => compareDateAsc(a.date, b.date));
   if (ok()) remote.entryAdded(indicatorId, entry);
-}
-
-export function removeEntry(indicatorId, entryId) {
-  const key = entryList(indicatorId);
-  const entry = data[key].find((e) => e.id === entryId);
-  data[key] = data[key].filter((e) => e.id !== entryId);
-  const estado = entry && entry.meta ? entry.meta.estado : null;
-  if (entry && ok()) remote.entriesRemoved(indicatorId, [entryId], estado);
 }
 
 export function updateEntry(indicatorId, entryId, patch) {

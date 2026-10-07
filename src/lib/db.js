@@ -305,7 +305,7 @@ function entryTableMeta(indicatorId) {
   return meta;
 }
 
-export function registerRemote() {
+function registerRemote() {
   bindRemote({
     entryAdded(indicatorId, entry) {
       const { table, toRow } = entryTableMeta(indicatorId);
@@ -614,7 +614,7 @@ function persistRows(tabela, rows) {
   return true;
 }
 
-export async function hydrate(state) {
+async function hydrate(state) {
   const states = statesOf(state);
   if (states.every((s) => _loadedStates[s])) return true;
   beginLoading();
@@ -862,7 +862,7 @@ export async function bootstrapData(authed) {
   await hydrateOnBoot(DEFAULT_FILTER_STATE);
 }
 
-export function discardPendingWrites() {
+function discardPendingWrites() {
   if (_flushTimer) {
     clearTimeout(_flushTimer);
     _flushTimer = null;

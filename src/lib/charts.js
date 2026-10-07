@@ -1,5 +1,5 @@
 import { Chart, registerables } from "chart.js";
-import { formatValue, formatAxisValue, formatShortDate, formatCurrency } from "./utils";
+import { formatCurrency } from "./utils";
 
 Chart.register(...registerables);
 
@@ -13,11 +13,11 @@ Chart.defaults.transitions.active.animation.duration = REDUCED_MOTION ? 0 : 180;
 Chart.defaults.transitions.resize.animation.duration = 0;
 Chart.defaults.resizeDelay = 120;
 
-export function isDarkTheme() {
+function isDarkTheme() {
   return document.documentElement.classList.contains("dark");
 }
 
-export function chartPalette() {
+function chartPalette() {
   const dark = isDarkTheme();
   return {
     grid: dark ? "#232329" : "#f1f2f5",
@@ -29,9 +29,9 @@ export function chartPalette() {
 }
 
 export const ACCENT = "#E8AF3E";
-export const ACCENT_HOVER = "#B7791F";
+const ACCENT_HOVER = "#B7791F";
 export const PIE_SECONDARY = "#94a3b8";
-const PIE_COLORS = [ACCENT, PIE_SECONDARY, "#b45309", "#64748b", "#f2c766", "#0f766e", "#7c3aed", "#0284c7", "#65a30d", "#db2777"];
+const PIE_COLORS = [ACCENT, PIE_SECONDARY, "#b45309", "#64748b", "#f2c766", "#0f766e", "#7c3aed", "#0284c7", "#65a30d", "#db2777", "#dc2626", "#14b8a6", "#4f46e5", "#d946ef", "#0891b2", "#78716c"];
 
 function scaleTransform(v) {
   const n = Number(v) || 0;
@@ -83,13 +83,13 @@ const valueLabelsPlugin = {
   beforeUpdate(chart) {
     try {
       reservePieLabelSpace(chart);
-    } catch (err) {
+    } catch {
     }
   },
   afterDatasetsDraw(chart) {
     try {
       drawValueLabels(chart);
-    } catch (err) {
+    } catch {
     }
   }
 };
@@ -215,6 +215,22 @@ function drawValueLabels(chart) {
     const isBar = chart.config.type === "bar";
     const perIndex = chart.__valueFormats || [];
     const realBarValues = chart.__realBarValues;
+    let rotateLabels = false;
+    const meta0 = chart.getDatasetMeta(0);
+    if (isBar && !compact && chart.options.indexAxis !== "y" && chart.data.datasets.length === 1 && meta0 && meta0.data.length > 1) {
+      const spacing = Math.abs(meta0.data[1].x - meta0.data[0].x);
+      const maxW = Math.max(
+        ...meta0.data.map((_, i) => {
+          const v = realBarValues ? realBarValues[i] : chart.data.datasets[0].data[i];
+          if (v == null) return 0;
+          return ctx.measureText(perIndex[i] === "currency" ? formatCurrency(v) : label(v)).width;
+        })
+      );
+      if (maxW + 8 > spacing) {
+        if (chart.__rotateValues) rotateLabels = true;
+        else ctx.font = `700 ${Math.max(8, Math.floor((12 * (spacing - 6)) / maxW))}px Inter, sans-serif`;
+      }
+    }
     chart.data.datasets.forEach((ds, di) => {
       const meta = chart.getDatasetMeta(di);
       if (!meta) return;
@@ -226,6 +242,7 @@ function drawValueLabels(chart) {
         if (compact && i !== total - 1 && el.x - lastX < 24) return;
         const offset = isBar ? 5 : compact ? 4 : 9;
         if (isBar && chart.options.indexAxis === "y") {
+          if (chart.data.datasets.length > 1 && !Number(val)) return;
           let tipX = el.x;
           const trend = chart.__trendLine;
           if (trend && Array.isArray(trend.data) && chart.scales.x && trend.data[i] != null) {
@@ -237,7 +254,12 @@ function drawValueLabels(chart) {
           ctx.fillText(fmt === "currency" ? formatCurrency(val) : label(val), tipX + offset, el.y);
           return;
         }
-        let y = el.y - offset;
+        let topY = el.y;
+        const trendV = isBar ? chart.__trendLine : null;
+        if (trendV && Array.isArray(trendV.data) && chart.scales.y && trendV.data[i] != null) {
+          topY = Math.min(topY, chart.scales.y.getPixelForValue(Number(trendV.data[i])) - 6);
+        }
+        let y = topY - offset;
         ctx.textBaseline = "bottom";
         if (y - (compact ? 10 : 13) < 0) {
           ctx.textBaseline = "top";
@@ -245,7 +267,44 @@ function drawValueLabels(chart) {
         }
         const idxFormat = perIndex[i];
         const text = idxFormat === "currency" ? formatCurrency(val) : label(val);
+        if (rotateLabels) {
+          const w = ctx.measureText(text).width;
+          const yScale = chart.scales.y;
+          const baseY = chart.chartArea.bottom;
+          const finalTop = yScale.getPixelForValue(Number(ds.data[i]));
+          const trendPx = trendV && Array.isArray(trendV.data) && trendV.data[i] != null
+            ? yScale.getPixelForValue(Number(trendV.data[i]))
+            : finalTop;
+          const lowestTop = Math.max(finalTop, trendPx);
+          const inside = baseY - lowestTop - 14 >= w;
+          const grown = baseY - finalTop > 0 ? (baseY - el.y) / (baseY - finalTop) : 1;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, Math.min(1, grown)) ** 3;
+          ctx.textBaseline = "middle";
+          if (inside) {
+            ctx.translate(el.x, lowestTop + 8);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = "right";
+            ctx.fillStyle = "#1f2937";
+          } else {
+            ctx.translate(el.x, Math.min(finalTop, trendPx) - 8);
+            ctx.rotate(-Math.PI / 2);
+            ctx.textAlign = "left";
+          }
+          ctx.fillText(text, 0, 0);
+          ctx.restore();
+          lastX = el.x;
+          return;
+        }
         ctx.fillText(text, el.x, y);
+        const delta = isBar && di === 0 && chart.__deltas ? chart.__deltas[i] : null;
+        if (delta && ctx.textBaseline === "bottom") {
+          ctx.save();
+          ctx.font = "700 11px Inter, sans-serif";
+          ctx.fillStyle = delta.color;
+          ctx.fillText(delta.text, el.x, y - 16);
+          ctx.restore();
+        }
         lastX = el.x;
       });
     });
@@ -258,7 +317,7 @@ const meanLinePlugin = {
   afterDatasetsDraw(chart) {
     try {
       drawMeanLine(chart);
-    } catch (err) {
+    } catch {
     }
   }
 };
@@ -293,13 +352,13 @@ function drawMeanLine(chart) {
 
 Chart.register(meanLinePlugin);
 
-export const TREND_COLOR = "#3b82f6";
+const TREND_COLOR = "#3b82f6";
 const trendLinePlugin = {
   id: "trendLine",
   afterDatasetsDraw(chart) {
     try {
       drawTrendLine(chart);
-    } catch (err) {
+    } catch {
     }
   }
 };
@@ -462,18 +521,18 @@ export function createPieChart(canvas) {
   });
 }
 
-export function formatPiePercent(value) {
+function formatPiePercent(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "—";
   return num.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 }
 
-export function formatPieCount(value) {
+function formatPieCount(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "—";
 }
 
-export function formatPieCurrency(value) {
+function formatPieCurrency(value) {
   const num = Number(value);
   return Number.isFinite(num) ? formatCurrency(num) : "—";
 }
@@ -508,9 +567,8 @@ export function setShowValues(chart, display, extra = {}) {
   chart.update();
 }
 
-function buildLineScales(indicator) {
+function buildLineScales() {
   const p = chartPalette();
-  const tickFormatter = indicator ? (value) => formatAxisValue(indicator, value) : (value) => value;
   return {
     x: {
       grid: { display: false },
@@ -519,13 +577,13 @@ function buildLineScales(indicator) {
     y: {
       grid: { color: p.grid },
       border: { display: false },
-      ticks: { color: p.tick, callback: tickFormatter },
+      ticks: { color: p.tick },
       grace: "12%"
     }
   };
 }
 
-export function createLineChart(canvas) {
+function createLineChart(canvas) {
   const p = chartPalette();
   return new Chart(canvas, {
     type: "line",
@@ -547,71 +605,9 @@ export function createLineChart(canvas) {
           displayColors: false
         }
       },
-      scales: buildLineScales(null)
+      scales: buildLineScales()
     }
   });
-}
-
-export function updateLineChart(chart, indicator, entries) {
-  if (!chart) return;
-  chart.options.scales = buildLineScales(indicator);
-  if (chart.options.plugins && chart.options.plugins.tooltip) {
-    chart.options.plugins.tooltip.callbacks = {
-      label: (ctx) => ` ${formatValue(indicator, ctx.parsed.y)}`
-    };
-  }
-
-  if (!entries || !entries.length) {
-    chart.data = { labels: [], datasets: [] };
-    chart.__meanLine = null;
-    chart.update();
-    return;
-  }
-
-  const labels = entries.map((e) => formatShortDate(e.date));
-  const values = entries.map((e) => e.value);
-
-  if (indicator && indicator.id === "tempo_contratacao") {
-    const valid = values.filter((v) => !isNaN(Number(v)));
-    const mean = valid.length
-      ? valid.reduce((s, v) => s + Number(v), 0) / valid.length
-      : null;
-    chart.__meanLine =
-      mean !== null
-        ? { value: Number(mean.toFixed(2)), label: `Média: ${formatValue(indicator, mean)}` }
-        : null;
-  } else {
-    chart.__meanLine = null;
-  }
-
-  const ctx = chart.ctx;
-  const area = chart.chartArea || {};
-  const top = area.top !== undefined ? area.top : 0;
-  const bottom = area.bottom !== undefined ? area.bottom : chart.height || 100;
-  const gradient = ctx.createLinearGradient(0, top, 0, bottom);
-  gradient.addColorStop(0, "rgba(232, 175, 62, 0.38)");
-  gradient.addColorStop(0.55, "rgba(232, 175, 62, 0.14)");
-  gradient.addColorStop(1, "rgba(232, 175, 62, 0.02)");
-
-  chart.data = {
-    labels,
-    datasets: [
-      {
-        label: indicator.name,
-        data: values,
-        borderColor: ACCENT,
-        backgroundColor: gradient,
-        fill: true,
-        tension: 0.35,
-        borderWidth: 2.5,
-        pointBackgroundColor: ACCENT,
-        pointBorderWidth: 0,
-        pointRadius: 4,
-        pointHoverRadius: 6
-      }
-    ]
-  };
-  chart.update();
 }
 
 export function createSeriesLineChart(canvas) {
@@ -799,7 +795,7 @@ export function createBarChart(canvas, options = {}) {
 
 const BAR_SERIES_COLORS = ["#0284c7", "#db2777", ACCENT];
 
-function updateGroupedBarChart(chart, panorama) {
+function updateGroupedBarChart(chart, panorama, options = {}) {
   const p = chartPalette();
   const names = panorama[0].series.map((s) => s.label);
   chart.__valueFormats = [];
@@ -818,14 +814,14 @@ function updateGroupedBarChart(chart, panorama) {
     }))
   };
   chart.options.plugins.legend = {
-    display: true,
+    display: options.legend !== false,
     position: "bottom",
     labels: { color: p.tick, boxWidth: 12, boxHeight: 12, font: { size: 11 } }
   };
   chart.options.plugins.tooltip.displayColors = true;
   chart.options.plugins.tooltip.callbacks = {
     label: (context) => {
-      const value = context.parsed.y ?? context.parsed.x;
+      const value = chart.options.indexAxis === "y" ? context.parsed.x : context.parsed.y;
       const fmt = chart.__valueLabels && chart.__valueLabels.formatter;
       return `${context.dataset.label}: ${typeof fmt === "function" ? fmt(value) : value}`;
     }
@@ -836,9 +832,10 @@ function updateGroupedBarChart(chart, panorama) {
 export function updateBarChart(chart, panorama, options = {}) {
   if (!chart || !panorama) return;
   const grouped = panorama.length > 0 && Array.isArray(panorama[0].series);
+  chart.__rotateValues = !!options.rotate;
   chart.options.plugins.legend = { display: false };
   chart.options.plugins.tooltip.displayColors = false;
-  if (grouped) return updateGroupedBarChart(chart, panorama);
+  if (grouped) return updateGroupedBarChart(chart, panorama, options);
   const labels = panorama.map((p) => p.label);
   const values = panorama.map((p) => (p.value === null ? 0 : p.value));
   const tooltips = panorama.map((p) =>
@@ -846,6 +843,8 @@ export function updateBarChart(chart, panorama, options = {}) {
   );
   chart.__valueFormats = panorama.map((p) => p.format || null);
   chart.__realBarValues = values;
+  chart.__deltas = panorama.some((p) => p.delta) ? panorama.map((p) => p.delta || null) : null;
+  if (chart.options.indexAxis !== "y") chart.options.layout.padding = { ...(chart.options.layout.padding || {}), top: chart.__deltas ? 42 : 24 };
 
   chart.data = {
     labels,
@@ -853,8 +852,8 @@ export function updateBarChart(chart, panorama, options = {}) {
       {
         label: "Último valor",
         data: values.map(scaleTransform),
-        backgroundColor: ACCENT,
-        hoverBackgroundColor: ACCENT_HOVER,
+        backgroundColor: panorama.map((p) => p.barColor || ACCENT),
+        hoverBackgroundColor: panorama.map((p) => p.barColor || ACCENT_HOVER),
         borderRadius: 6,
           barPercentage: 0.65
       }
@@ -913,7 +912,7 @@ const centerTextPlugin = {
         ctx.fillText(info.caption, arc.x, arc.y + valueSize * 0.55 + gap * 0.4);
       }
       ctx.restore();
-    } catch (err) {
+    } catch {
     }
   }
 };

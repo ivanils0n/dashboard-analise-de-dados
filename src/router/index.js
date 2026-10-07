@@ -80,7 +80,7 @@ export function prefetchRoutes() {
     Object.values(views).forEach((load) => {
       try {
         load().catch(() => {});
-      } catch (err) {
+      } catch {
       }
     });
   };

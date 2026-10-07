@@ -14,10 +14,11 @@ import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vu
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
 import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import TurnoverAnaliseModal from "@/components/dashboard/TurnoverAnaliseModal.vue";
+import DiariaAnaliseModal from "@/components/dashboard/DiariaAnaliseModal.vue";
 import TreinamentoAnaliseModal from "@/components/dashboard/TreinamentoAnaliseModal.vue";
 import FeriasAnaliseModal from "@/components/dashboard/FeriasAnaliseModal.vue";
 import CustoPessoalDetalheModal from "@/components/dashboard/CustoPessoalDetalheModal.vue";
-import ContratacaoAnaliseModal from "@/components/dashboard/ContratacaoAnaliseModal.vue";import IndicatorEntriesModal from "@/components/dashboard/IndicatorEntriesModal.vue";
+import ContratacaoAnaliseModal from "@/components/dashboard/ContratacaoAnaliseModal.vue";
 import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
 import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
 import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
@@ -39,7 +40,6 @@ import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
-import RegionalTreinamentosModal from "@/components/dashboard/RegionalTreinamentosModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
@@ -83,7 +83,6 @@ const launchOpen = ref(false);
 const preEditSelectedKpiId = ref(null);
 const editTarget = ref(null);
 const editVacancyTarget = ref(null);
-const diariaEntriesOpen = ref(false);
 const treinamentoAnaliseOpen = ref(false);
 const custosEntriesOpen = ref(false);
 const absenteismoAnaliseOpen = ref(false);
@@ -136,6 +135,7 @@ function openTurnoverDetail(kind) {
 }
 
 const turnoverAnaliseOpen = ref(false);
+const diariaAnaliseOpen = ref(false);
 const contratacaoAnaliseOpen = ref(false);
 
 function onContratacaoAbrirVagas() {
@@ -355,19 +355,9 @@ const treinamentoBarChartRef = ref(null);
 const regionalBarChartRef = ref(null);
 const regionalChartRef = ref(null);
 
-const regionalModalOpen = ref(false);
-const regionalGroups = ref([]);
 const hiringBarChartRef = ref(null);
 const permanenciaBarChartRef = ref(null);
 
-const diariaColumns = [
-  { label: "Mês", monthYear: true },
-  { label: "Colaborador", meta: "employeeName" },
-  { label: "Filial", meta: "filial" },
-  { label: "Regional", meta: "estado" },
-  { label: "Diária", meta: "motivo" },
-  { label: "Valor pago", value: true }
-];
 
 
 const scrollRef = ref(null);
@@ -583,20 +573,6 @@ function onVacancyEdit(vacancyId) {
   launchOpen.value = true;
 }
 
-function onEntriesEdit({ indicatorId, entry }) {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
-  preEditSelectedKpiId.value = dashboard.selectedKpiId.value;
-  diariaEntriesOpen.value = false;
-  treinamentoAnaliseOpen.value = false;
-  custosEntriesOpen.value = false;
-  editTarget.value = { indicatorId, entry };
-  editVacancyTarget.value = null;
-  launchOpen.value = true;
-}
-
 function onSaved() {
   dashboard.selectKpi(preEditSelectedKpiId.value);
   preEditSelectedKpiId.value = null;
@@ -650,11 +626,8 @@ function onSelectKpi(id) {
 function onKpiContext(id) {
   if (id === "headcount") {
     headcountAnaliseOpen.value = true;
-  } else if (id === "custo_diaria") diariaEntriesOpen.value = true;
-  else if (id === "horas_regional") {
-    regionalGroups.value = dashboard.treinamentoRegionalGroups();
-    regionalModalOpen.value = true;
-  } else if (id === "treinamento") treinamentoAnaliseOpen.value = true;
+  } else if (id === "custo_diaria") diariaAnaliseOpen.value = true;
+  else if (id === "treinamento") treinamentoAnaliseOpen.value = true;
   else if (id === "ferias") feriasAnaliseOpen.value = true;
   else if (id === "custo_total") custosEntriesOpen.value = true;
   else if (id === "absenteismo") {
@@ -1362,16 +1335,15 @@ watch(activeTab, (tab) => {
       @close="contratacaoAnaliseOpen = false"
       @abrir-vagas="onContratacaoAbrirVagas"
     />
+    <DiariaAnaliseModal
+      v-if="diariaAnaliseOpen"
+      :open="diariaAnaliseOpen"
+      @close="diariaAnaliseOpen = false"
+    />
     <TurnoverAnaliseModal
       v-if="turnoverAnaliseOpen"
       :open="turnoverAnaliseOpen"
       @close="turnoverAnaliseOpen = false"
-    />
-    <RegionalTreinamentosModal
-      v-if="regionalModalOpen"
-      :open="regionalModalOpen"
-      :groups="regionalGroups"
-      @close="regionalModalOpen = false"
     />
     <DashboardTour :open="tourOpen" :tab="activeTab === 'cockpit' ? 'cockpit' : 'overview'" @close="tourOpen = false" />
     <HeadcountAnaliseModal
@@ -1401,15 +1373,6 @@ watch(activeTab, (tab) => {
       :colaborador="diariaColabName"
       :entries="diariaColabRows"
       @close="diariaColabOpen = false"
-    />
-    <IndicatorEntriesModal
-      v-if="diariaEntriesOpen"
-      :open="diariaEntriesOpen"
-      indicator-id="custo_diaria"
-      title="Custo médio da diária geral — Lançamentos"
-      :columns="diariaColumns"
-      @close="diariaEntriesOpen = false"
-      @edit="onEntriesEdit"
     />
     <FeriasAnaliseModal
       v-if="feriasAnaliseOpen"

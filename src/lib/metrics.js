@@ -29,7 +29,7 @@ export function diariaDivisor(list) {
   return uniqueEmployeeCount(list) + unnamed;
 }
 
-export function aggregationKind(ind) {
+function aggregationKind(ind) {
   if (!ind) return "last";
   if (SUM_INDICATORS.has(ind.id)) return "sum";
   if (AVG_INDICATORS.has(ind.id)) return "avg";

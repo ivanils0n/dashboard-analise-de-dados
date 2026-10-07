@@ -115,10 +115,21 @@ const anoEvolucao = computed(() => Number((ymAtual.value || new Date().toISOStri
 const evolucao = computed(() => {
   const fim = ymAtual.value || new Date().toISOString().slice(0, 7);
   const meses = Number(fim.slice(5, 7));
-  return Array.from({ length: meses }, (_, i) => `${anoEvolucao.value}-${String(i + 1).padStart(2, "0")}`).map((ym) => ({
-    label: ymLabel(ym),
-    value: headcountCount(estadoSel.value, ym, regionalSel.value)
-  }));
+  return Array.from({ length: meses }, (_, i) => `${anoEvolucao.value}-${String(i + 1).padStart(2, "0")}`).map((ym) => {
+    const value = headcountCount(estadoSel.value, ym, regionalSel.value);
+    const anterior = headcountCount(estadoSel.value, addMonths(ym, -1), regionalSel.value);
+    const diff = value - anterior;
+    return {
+      label: ymLabel(ym),
+      value,
+      delta: anterior
+        ? {
+            text: `${diff > 0 ? "▲ +" : diff < 0 ? "▼ " : "• "}${diff}`,
+            color: diff > 0 ? "#16a34a" : diff < 0 ? "#dc2626" : "#a1a1aa"
+          }
+        : null
+    };
+  });
 });
 
 const quadroGenero = computed(() => {

@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { INDICATORS, getIndicatorById, STATES, STATE_COLORS } from "@/lib/config";
-import { getEntriesFor, getAllEntries, getBranches, getOcorrencias, getBeneficios } from "@/lib/store";
+import { getEntriesFor, getBranches, getOcorrencias, getBeneficios } from "@/lib/store";
 import { TIPOS, isOcorrenciaAusencia, competenciaYm } from "@/lib/absenteismo";
 import {
   computedSnapshot,
@@ -41,8 +41,6 @@ import {
   aggregateByDay,
   aggregateByMonth,
   formatMonthLabel,
-  normalizeText,
-  compareDateDesc,
   daysBetween,
   todayISO,
   singleMonthOfRange,
@@ -506,39 +504,6 @@ export function useDashboardData(filter) {
     );
   }
 
-  function treinamentoRegionalGroups() {
-    const ind = getIndicatorById("treinamento");
-    if (!ind) return [];
-    const groups = new Map();
-    filteredEntries(ind).forEach((e) => {
-      const meta = e.meta || {};
-      const regional = regionalLabel(meta.gerenteRegional);
-      if (!groups.has(regional)) groups.set(regional, { regional, horas: 0, nomes: new Set(), treinamentos: [] });
-      const g = groups.get(regional);
-      const horas = Number(e.value) || 0;
-      const colaborador = upperText(meta.employeeName || "") || "SEM COLABORADOR";
-      g.horas += horas;
-      g.nomes.add(colaborador);
-      g.treinamentos.push({
-        id: e.id,
-        data: e.date,
-        colaborador,
-        cargo: meta.cargo || "",
-        filial: treinamentoFilialLabel(meta),
-        tema: meta.tema || "",
-        modalidade: meta.modalidade || "",
-        horas
-      });
-    });
-    return [...groups.values()]
-      .map(({ nomes, treinamentos, ...g }) => ({
-        ...g,
-        colaboradores: nomes.size,
-        treinamentos: treinamentos.sort((a, b) => String(b.data).localeCompare(String(a.data)))
-      }))
-      .sort((a, b) => b.horas - a.horas);
-  }
-
   function custoEntries() {
     const ind = getIndicatorById("custo_total");
     return ind ? filteredEntries(ind) : [];
@@ -546,10 +511,6 @@ export function useDashboardData(filter) {
 
   function custoPessoalEntriesByEmpresa(label) {
     return custoEntries().filter((e) => (upperText((e.meta && e.meta.empresa) || "Sem empresa")) === label);
-  }
-
-  function custoPessoalEntriesByRegional(label) {
-    return custoEntries().filter((e) => entryRegional(e) === label);
   }
 
   function custosBarByRegional() {
@@ -659,25 +620,6 @@ export function useDashboardData(filter) {
         tooltipValue: formatCurrency(value)
       }))
       .sort((a, b) => b.value - a.value);
-  }
-
-  function custoContratacaoBarByFuncao() {
-    const ind = getIndicatorById("custo_contratacao");
-    if (!ind) return [];
-    return filteredEntries(ind)
-      .map((e) => {
-        const meta = e.meta || {};
-        const value = Number(e.value) || 0;
-        return {
-          label: upperText(meta.vacancyName || meta.funcao || "Sem função"),
-          value,
-          tooltipValue: `${formatCurrency(value)} — ${formatDate(e.date)}`,
-          vacancyId: meta.vacancyId || null,
-          date: String(e.date || "")
-        };
-      })
-      .filter((r) => r.value > 0)
-      .sort((a, b) => a.date.localeCompare(b.date));
   }
 
   const PIE_MAX_FILIAIS = 8;
@@ -873,7 +815,17 @@ export function useDashboardData(filter) {
     return inMonth.length ? aggregateList(ind, inMonth) : null;
   }
 
-  function comparacaoMeses(count) {
+  function comparacaoMeses(count, estado = "") {
+    if (!estado) return comparacaoMesesBase(count);
+    stateOverride = estado;
+    try {
+      return comparacaoMesesBase(count);
+    } finally {
+      stateOverride = null;
+    }
+  }
+
+  function comparacaoMesesBase(count) {
     const base = String(filter.end || filter.start || todayISO()).slice(0, 7);
     const todos = Array.from({ length: count + 2 }, (_, i) => addMonthsYm(base, i - count - 1));
     const months = todos.slice(1);
@@ -1363,46 +1315,6 @@ export function useDashboardData(filter) {
       });
   });
 
-  function tableRows(query) {
-    const q = normalizeText(query).trim();
-    const all = getAllEntries();
-    const rows = [];
-    const stateTarget = String(currentState() || "").trim().toUpperCase();
-    const matchesState = (e) =>
-      stateTarget === "TODOS" ||
-      String((e.meta && e.meta.estado) || "").trim().toUpperCase() === stateTarget;
-    const inDateRange = (e) => {
-      if (filter.start && e.date < filter.start) return false;
-      if (filter.end && e.date > filter.end) return false;
-      return true;
-    };
-    const nameMatches = new Map();
-    const matchesQuery = (e, ind) => {
-      if (!q) return true;
-      if (!nameMatches.has(ind.id)) nameMatches.set(ind.id, normalizeText(ind.name).includes(q));
-      if (nameMatches.get(ind.id)) return true;
-      const meta = e.meta;
-      if (!meta || typeof meta !== "object") return false;
-      return Object.values(meta).some((v) => typeof v === "string" && normalizeText(v).includes(q));
-    };
-    const collect = (list, ind) => {
-      (list || []).forEach((e) => {
-        if (!inDateRange(e)) return;
-        if (!matchesState(e)) return;
-        if (!matchesQuery(e, ind)) return;
-        rows.push({ entry: e, ind });
-      });
-    };
-    INDICATORS.forEach((ind) => collect(all[ind.id], ind));
-
-    rows.sort(
-      (a, b) =>
-        compareDateDesc(a.entry.date, b.entry.date) ||
-        String(b.entry.id || "").localeCompare(String(a.entry.id || ""))
-    );
-    return rows;
-  }
-
   function formatEntryValue(ind, entry) {
     if (ind.form === "treinamento" && entry.meta) {
       const parts = [entry.meta.employeeName || "", entry.meta.tema || ""].filter(Boolean);
@@ -1735,7 +1647,6 @@ export function useDashboardData(filter) {
     treinamentoGerentesRegionais,
     treinamentoFilialEntries,
     treinamentoRegionalEntries,
-    treinamentoRegionalGroups,
     vagasRecrutadores,
     headcountFiliais,
     headcountEmpresas,
@@ -1744,12 +1655,10 @@ export function useDashboardData(filter) {
     ticketMedioBarByState,
     ticketMedioPieCenter,
     ticketMedioFaturamento,
-    custosBarByEmpresa,
     custoPessoalEntriesByEmpresa,
     consolidadoEntries,
     custoRegionalDetalhe,
     beneficiosEntries,
-    custoContratacaoBarByFuncao,
     custoContratacaoMedioPorFilial,
     custoContratacaoPieCenter,
     kpiValueByEstado,
@@ -1757,9 +1666,7 @@ export function useDashboardData(filter) {
     custoDiariaEntriesByColaborador,
     custoDiariaEntriesBy,
     feriasEntriesBy,
-    custoPessoalEntriesByRegional,
     comparacaoMeses,
-    indicatorCurrentValue,
     kpis,
     selectedKpiId,
     selectKpi,
@@ -1781,7 +1688,6 @@ export function useDashboardData(filter) {
     custoChartFor,
     feriasChartFor,
     panorama,
-    tableRows,
     formatEntryValue,
     formatDate
   };

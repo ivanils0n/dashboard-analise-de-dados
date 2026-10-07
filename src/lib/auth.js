@@ -23,7 +23,7 @@ function readSession() {
   try {
     const raw = sessionStore.getItem(AUTH_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -35,7 +35,7 @@ function writeSession(data) {
 function clearSession() {
   try {
     sessionStore.removeItem(AUTH_STORAGE_KEY);
-  } catch (e) {}
+  } catch {}
 }
 
 function clearLegacyKeys() {
@@ -49,7 +49,7 @@ function clearLegacyKeys() {
         }
       }
       toRemove.forEach((k) => store.removeItem(k));
-    } catch (e) {}
+    } catch {}
   };
   scan(sessionStore);
   scan(localStore);
@@ -60,7 +60,7 @@ let _expiredHandled = false;
 const PROFILE_CHECK_TTL_MS = 60 * 60 * 1000;
 let _lastProfileCheck = 0;
 
-export function getToken() {
+function getToken() {
   const data = readSession();
   if (!data || !data.token) return null;
   if (!data.expiresAt || Date.now() > data.expiresAt) {
@@ -91,7 +91,7 @@ export function canEditData() {
   return !!(p && (p.perfil === "admin" || p.perfil === "analista"));
 }
 
-export async function loadProfile() {
+async function loadProfile() {
   try {
     const data = await apiFetch("/api/auth/me");
     const row = data && data.data && data.data.user;
@@ -140,7 +140,7 @@ function saveSession(token, profile) {
 
 let _expiryTimer = null;
 
-export function clearExpiryTimer() {
+function clearExpiryTimer() {
   if (_expiryTimer) {
     clearTimeout(_expiryTimer);
     _expiryTimer = null;
@@ -223,7 +223,7 @@ export function logout() {
   performFullCleanup();
 }
 
-export function handleSessionExpired() {
+function handleSessionExpired() {
   if (_expiredHandled) return;
   _expiredHandled = true;
   authState.endReason = "expired";
@@ -243,7 +243,7 @@ export function startAuthPolling() {
   }, 30 * 1000);
 }
 
-export function stopAuthPolling() {
+function stopAuthPolling() {
   if (_pollTimer) {
     clearInterval(_pollTimer);
     _pollTimer = null;

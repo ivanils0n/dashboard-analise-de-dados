@@ -21,7 +21,9 @@ const props = defineProps({
   alignTop: { type: Boolean, default: false },
   title: { type: String, default: "" },
   subtitle: { type: String, default: "" },
-  singleCaption: { type: String, default: "" }
+  singleCaption: { type: String, default: "" },
+  showLegend: { type: Boolean, default: true },
+  rotateValues: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["bar-click", "bar-contextmenu"]);
@@ -77,7 +79,8 @@ const expandOpen = ref(false);
 
 const ROW_PX = 30;
 const isHorizontal = computed(() => props.horizontal && props.variant !== "line");
-const rowsHeightPx = computed(() => props.data.length * ROW_PX + 48);
+const seriesPerRow = computed(() => (props.data[0] && Array.isArray(props.data[0].series) ? props.data[0].series.length : 1));
+const rowsHeightPx = computed(() => props.data.length * (seriesPerRow.value > 1 ? seriesPerRow.value * 24 + 12 : ROW_PX) + 48);
 const rootStyle = computed(() => (props.fluid ? undefined : { height: props.heightPx + "px" }));
 const canvasBoxStyle = computed(() => {
   if (!isHorizontal.value) return { height: "100%" };
@@ -149,7 +152,7 @@ function drawData() {
   if (props.variant === "line") {
     updateSeriesLineChart(chart, props.data, { formatter: formatterFor(props.valueFormat), xTicks: props.lineXLabels });
   } else {
-    updateBarChart(chart, props.data, { trend: props.showTrend });
+    updateBarChart(chart, props.data, { trend: props.showTrend, legend: props.showLegend, rotate: props.rotateValues });
     if (props.animateTrend && props.showTrend) animateTrendLine(chart);
     else chart.__trendProgress = undefined;
   }
@@ -227,7 +230,7 @@ watch(
 );
 
 watch(
-  () => props.showTrend,
+  () => [props.showTrend, props.showLegend, props.rotateValues],
   () => refreshData()
 );
 </script>
