@@ -8,7 +8,7 @@ import { STATE_NAMES, STATES } from "@/lib/config";
 import { turnoverRateStats, headcountMovements, headcountActiveInRange, findBranchByShortName, filterByRegional, headcountRegionalOptions } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
-import { formatValue, formatDate, ymLabel } from "@/lib/utils";
+import { formatValue, formatDate, ymLabel, firstDayOfYm, lastDayOfYm } from "@/lib/utils";
 
 defineProps({
   open: { type: Boolean, default: false }
@@ -109,6 +109,27 @@ const funcaoData = computed(() =>
     ]
   }))
 );
+
+const admissoesPorMes = computed(() => {
+  const fim = String(dateFilter.end || dateFilter.start || new Date().toISOString()).slice(0, 7);
+  const meses = Array.from({ length: Number(fim.slice(5, 7)) }, (_, i) => `${fim.slice(0, 4)}-${String(i + 1).padStart(2, "0")}`);
+  const rows = meses.map((ym, i) => {
+    const mov = headcountMovements(estadoSel.value, { start: firstDayOfYm(ym), end: lastDayOfYm(ym) });
+    const adm = filterByRegional(mov.admissoes, regionalSel.value).length;
+    const des = filterByRegional(mov.demissoes, regionalSel.value).length;
+    return {
+      label: ymLabel(ym),
+      value: adm,
+      tooltipValue: `${adm} ${adm === 1 ? "admissão" : "admissões"}`,
+      value2: des,
+      tooltipValue2: `${des} ${des === 1 ? "desligamento" : "desligamentos"}`,
+      ...(i === 0 ? { seriesLabel: "Admissões", seriesLabel2: "Desligamentos" } : {})
+    };
+  });
+  let ultimo = rows.length - 1;
+  while (ultimo > 0 && rows[ultimo].value === 0 && rows[ultimo].value2 === 0) ultimo -= 1;
+  return rows.slice(0, ultimo + 1);
+});
 
 const GENERO_LABEL = { masculino: "Masculino", feminino: "Feminino" };
 const generoKey = (h) => GENERO_LABEL[String(h.genero || "").trim().toLowerCase()] || "Não informado";
@@ -458,6 +479,16 @@ const totals = computed(() => [
             </div>
           </section>
         </div>
+
+        <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+            <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Admissões e desligamentos por mês</h3>
+            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Do início do ano até o último mês com dados</p>
+          </header>
+          <div class="p-4">
+            <BarChart :data="admissoesPorMes" variant="line" line-x-labels :show-trend="false" :height-px="280" />
+          </div>
+        </section>
 
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">

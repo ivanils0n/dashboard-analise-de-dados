@@ -96,6 +96,33 @@ const valueLabelsPlugin = {
 
 Chart.register(valueLabelsPlugin);
 
+const seriesLineLabelsPlugin = {
+  id: "seriesLineLabels",
+  afterDatasetsDraw(chart) {
+    if (!chart.__seriesLabels || chart.data.datasets.length < 2) return;
+    const { ctx } = chart;
+    const p = chartPalette();
+    const [a, b] = chart.data.datasets;
+    ctx.save();
+    ctx.font = "700 12px Inter, sans-serif";
+    ctx.textAlign = "center";
+    chart.data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (!meta.visible) return;
+      meta.data.forEach((el, i) => {
+        const other = di === 0 ? b.data[i] : a.data[i];
+        const above = ds.data[i] > other || (ds.data[i] === other && di === 0);
+        ctx.fillStyle = p.tick;
+        ctx.textBaseline = above ? "bottom" : "top";
+        ctx.fillText(String(ds.data[i]), el.x, el.y + (above ? -9 : 9));
+      });
+    });
+    ctx.restore();
+  }
+};
+
+Chart.register(seriesLineLabelsPlugin);
+
 function drawValueLabels(chart) {
   const local = chart.__valueLabels || {};
   const opts = (chart.options.plugins && chart.options.plugins.valueLabels) || {};
@@ -637,9 +664,19 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
       grace: "12%"
     }
   };
+  const hasSecond = rows.some((r) => r.value2 !== undefined);
+  chart.__seriesLabels = hasSecond;
+  const values2 = rows.map((r) => (r.value2 == null ? 0 : r.value2));
+  const tooltips2 = rows.map((r) => r.tooltipValue2);
   chart.options.plugins.tooltip.callbacks = {
-    label: (context) => String(tooltips[context.dataIndex] ?? formatter(values[context.dataIndex]))
+    label: (context) =>
+      context.datasetIndex === 1
+        ? String(tooltips2[context.dataIndex] ?? formatter(values2[context.dataIndex]))
+        : String(tooltips[context.dataIndex] ?? formatter(values[context.dataIndex]))
   };
+  chart.options.plugins.legend = hasSecond
+    ? { display: true, position: "top", labels: { color: p.tick, usePointStyle: true, boxWidth: 8 } }
+    : { display: false };
 
   chart.__meanLine = null;
   chart.__trendLine = null;
@@ -653,19 +690,37 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
     labels,
     datasets: [
       {
-        label: "Valor",
+        label: (rows[0] && rows[0].seriesLabel) || "Valor",
         data: values,
-        borderColor: ACCENT,
-        backgroundColor: gradient,
-        fill: true,
+        borderColor: hasSecond ? "#16a34a" : ACCENT,
+        backgroundColor: hasSecond ? "#16a34a" : gradient,
+        fill: !hasSecond,
         tension: 0.3,
         borderWidth: 2.5,
-        pointBackgroundColor: ACCENT,
+        pointBackgroundColor: hasSecond ? "#16a34a" : ACCENT,
         pointBorderWidth: 0,
         pointRadius: 4,
         pointHoverRadius: 6,
         pointHitRadius: 14
-      }
+      },
+      ...(hasSecond
+        ? [
+            {
+              label: (rows[0] && rows[0].seriesLabel2) || "Valor 2",
+              data: values2,
+              borderColor: "#dc2626",
+              backgroundColor: "#dc2626",
+              fill: false,
+              tension: 0.3,
+              borderWidth: 2.5,
+              pointBackgroundColor: "#dc2626",
+              pointBorderWidth: 0,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              pointHitRadius: 14
+            }
+          ]
+        : [])
     ]
   };
   chart.update();
