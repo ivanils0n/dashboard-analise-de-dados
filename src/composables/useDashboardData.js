@@ -86,7 +86,7 @@ export function useDashboardData(filter) {
   function ticketMedioParts(uf, range) {
     const start = (range && range.start) || null;
     const end = (range && range.end) || null;
-    const folha = getEntriesFor("custo_total", uf).filter(
+    const folha = stateEntries("custo_total", uf).filter(
       (e) => !(start && e.date < start) && !(end && e.date > end)
     );
     return {
@@ -225,6 +225,16 @@ export function useDashboardData(filter) {
     if (!cached) {
       cached = computed(() => getEntriesFor(indicatorId, targetState));
       stateEntriesCache.set(key, cached);
+    }
+    return cached.value;
+  }
+
+  const beneficiosCache = new Map();
+  function beneficiosDoEstado(targetState) {
+    let cached = beneficiosCache.get(targetState);
+    if (!cached) {
+      cached = computed(() => getBeneficios(targetState));
+      beneficiosCache.set(targetState, cached);
     }
     return cached.value;
   }
@@ -560,10 +570,10 @@ export function useDashboardData(filter) {
     const emPeriodo = (list) => list.filter((e) => !(start && e.date < start) && !(end && e.date > end));
     const sum = (list) => list.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
     return {
-      folha: sum(emPeriodo(getEntriesFor("custo_total", st))),
-      ferias: sum(emPeriodo(getEntriesFor("ferias", st))),
+      folha: sum(emPeriodo(stateEntries("custo_total", st))),
+      ferias: sum(emPeriodo(stateEntries("ferias", st))),
       rescisoes: rescisoesTotal(st, range, "total"),
-      beneficios: sum(emPeriodo(getBeneficios(st)))
+      beneficios: sum(emPeriodo(beneficiosDoEstado(st)))
     };
   }
 
@@ -842,15 +852,69 @@ export function useDashboardData(filter) {
     const porMes = todos.map((ym) =>
       custoComponentesNoPeriodo({ start: firstDayOfYm(ym), end: lastDayOfYm(ym) }, currentState())
     );
-    return [
+    const componentes = [
       { key: "folha", label: "Folha" },
       { key: "ferias", label: "Férias" },
       { key: "rescisoes", label: "Rescisões" },
       { key: "beneficios", label: "Benefícios" }
-    ].map(({ key, label }) => {
+    ];
+    const detalhes = componentes.map(({ key, label }) => {
       const vals = porMes.map((c) => (c[key] > 0 ? c[key] : null));
       return { label, higherIsBetter: false, anterior: vals[0], values: vals.slice(1) };
     });
+    const faltantes = porMes
+      .slice(1)
+      .map((c) => componentes.filter(({ key }) => !(c[key] > 0)).map(({ label }) => label));
+    return { detalhes, faltantes };
+  }
+
+  function serieDoIndicador(ind, todos) {
+    const vals = todos.map((ym) => {
+      const v = indicatorValueForMonth(ind, ym);
+      return v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v);
+    });
+    return { anterior: vals[0], values: vals.slice(1) };
+  }
+
+  function estadosDoIndicador(ind, todos) {
+    const anterior = stateOverride;
+    try {
+      return STATES.map((uf) => {
+        stateOverride = uf;
+        return { label: uf, higherIsBetter: ind.higherIsBetter !== false, ...serieDoIndicador(ind, todos) };
+      });
+    } finally {
+      stateOverride = anterior;
+    }
+  }
+
+  function comparacaoDetalhe(id, count, estado = "") {
+    const anterior = stateOverride;
+    stateOverride = estado || null;
+    try {
+      const base = String(filter.end || filter.start || todayISO()).slice(0, 7);
+      const todos = Array.from({ length: count + 2 }, (_, i) => addMonthsYm(base, i - count - 1));
+      if (id !== "custo_total") {
+        const ind = getIndicatorById(id);
+        return ind ? { estados: estadosDoIndicador(ind, todos) } : {};
+      }
+      const serie = (lista, key) => {
+        const vals = lista.map((c) => (c[key] > 0 ? c[key] : null));
+        return { higherIsBetter: false, anterior: vals[0], values: vals.slice(1) };
+      };
+      const porUf = STATES.map((uf) => ({
+        uf,
+        meses: todos.map((ym) => custoComponentesNoPeriodo({ start: firstDayOfYm(ym), end: lastDayOfYm(ym) }, uf))
+      }));
+      const estadosPorComponente = {};
+      ["Folha:folha", "Férias:ferias", "Rescisões:rescisoes", "Benefícios:beneficios"].forEach((par) => {
+        const [label, key] = par.split(":");
+        estadosPorComponente[label] = porUf.map(({ uf, meses }) => ({ label: uf, ...serie(meses, key) }));
+      });
+      return { estadosPorComponente };
+    } finally {
+      stateOverride = anterior;
+    }
   }
 
   function comparacaoMesesBase(count) {
@@ -863,14 +927,8 @@ export function useDashboardData(filter) {
       type: ind.type,
       decimals: ind.decimals,
       higherIsBetter: ind.higherIsBetter !== false,
-      ...(() => {
-        const vals = todos.map((ym) => {
-          const v = indicatorValueForMonth(ind, ym);
-          return v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v);
-        });
-        return { anterior: vals[0], values: vals.slice(1) };
-      })(),
-      ...(ind.id === "custo_total" ? { detalhes: custoDetalhesPorMes(todos) } : {})
+      ...serieDoIndicador(ind, todos),
+      ...(ind.id === "custo_total" ? custoDetalhesPorMes(todos) : {})
     }));
     return { months, rows };
   }
@@ -1697,6 +1755,7 @@ export function useDashboardData(filter) {
     custoDiariaEntriesBy,
     feriasEntriesBy,
     comparacaoMeses,
+    comparacaoDetalhe,
     kpis,
     selectedKpiId,
     selectKpi,

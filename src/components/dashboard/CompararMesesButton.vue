@@ -34,6 +34,13 @@ const comparacao = computed(() => {
   return open.value ? props.dashboard.comparacaoMeses(meses.value, estadoSel.value) : { months: [], rows: [] };
 });
 const months = computed(() => comparacao.value.months);
+const outrosEstados = (lista) => (lista || []).filter((e) => e.label !== estadoSel.value);
+const detalheExpandido = computed(() => {
+  void state.revision;
+  return open.value && expandido.value
+    ? props.dashboard.comparacaoDetalhe(expandido.value, meses.value, estadoSel.value)
+    : {};
+});
 const ultimo = computed(() => months.value.length - 1);
 
 function variacao(row, i) {
@@ -187,7 +194,7 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
     </template>
 
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
-      <div class="mx-auto flex max-w-7xl flex-col gap-6">
+      <div class="mx-auto flex w-full max-w-[1900px] flex-col gap-4">
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
             <div class="flex items-center gap-2">
@@ -243,11 +250,11 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
             </div>
           </header>
 
-          <div class="max-h-[60vh] overflow-auto">
+          <div class="max-h-[calc(100vh-15rem)] overflow-auto">
             <table class="border-separate border-spacing-0 w-full min-w-max text-left text-sm">
               <thead class="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800">
                 <tr class="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  <th class="sticky left-0 z-20 w-[16rem] min-w-[16rem] bg-zinc-50 px-5 py-2.5 font-semibold dark:bg-zinc-800">Indicador</th>
+                  <th class="sticky left-0 z-20 w-[clamp(12rem,18vw,22rem)] min-w-[12rem] bg-zinc-50 px-5 py-2.5 font-semibold dark:bg-zinc-800">Indicador</th>
                   <th
                     v-for="(ym, i) in months"
                     :key="ym"
@@ -265,7 +272,7 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
                     class="cursor-pointer transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800"
                     @click="toggle(row.id)"
                   >
-                    <td class="sticky left-0 w-[16rem] min-w-[16rem] whitespace-nowrap bg-white px-5 py-3 font-medium text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                    <td class="sticky left-0 w-[clamp(12rem,18vw,22rem)] min-w-[12rem] whitespace-nowrap bg-white px-5 py-3 font-medium text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
                       <span class="mr-2 inline-block text-[10px] text-zinc-400 transition-transform" :class="expandido === row.id ? 'rotate-90' : ''">▶</span>{{ row.name }}
                     </td>
                     <td
@@ -275,6 +282,11 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
                     >
                       {{ formatValue(row, v) }}
                       <div class="mt-0.5 text-[11px] font-medium">
+                        <span
+                          v-if="row.faltantes?.[i]?.length"
+                          class="mr-1 cursor-help rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                          :title="`Custo incompleto neste mês: sem lançamentos de ${row.faltantes[i].join(', ')}`"
+                        >⚠ incompleto</span>
                         <span class="rounded-full px-1.5 py-0.5" :class="chipClass(variacao(row, i))">{{ pctText(variacao(row, i)) }}</span>
                       </div>
                     </td>
@@ -289,12 +301,11 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
                     </td>
                   </tr>
                   <template v-if="expandido === row.id && row.detalhes">
+                    <template v-for="d in row.detalhes" :key="d.label">
                     <tr
-                      v-for="d in row.detalhes"
-                      :key="d.label"
                       class="bg-zinc-50/70 dark:bg-zinc-800/30 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800"
                     >
-                      <td class="sticky left-0 w-[16rem] min-w-[16rem] whitespace-nowrap bg-zinc-50 py-2 pl-10 pr-5 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ d.label }}</td>
+                      <td class="sticky left-0 w-[clamp(12rem,18vw,22rem)] min-w-[12rem] whitespace-nowrap bg-zinc-50 py-2 pl-10 pr-5 font-medium text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ d.label }}</td>
                       <td
                         v-for="(v, i) in d.values"
                         :key="i"
@@ -313,6 +324,61 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
                       </td>
                       <td class="sticky right-0 w-[8rem] min-w-[8rem] whitespace-nowrap bg-zinc-50 px-3 py-2 text-center dark:bg-zinc-900">
                         <span class="rounded-full px-3 py-1 text-sm font-bold tabular-nums" :class="chipClass(variacaoPeriodo(d))">{{ pctText(variacaoPeriodo(d)) }}</span>
+                      </td>
+                    </tr>
+                    <tr
+                      v-for="e in outrosEstados(detalheExpandido.estadosPorComponente?.[d.label])"
+                      :key="`${d.label}-${e.label}`"
+                      class="bg-zinc-50/70 dark:bg-zinc-800/30 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800"
+                    >
+                      <td class="sticky left-0 w-[clamp(12rem,18vw,22rem)] min-w-[12rem] whitespace-nowrap bg-zinc-50 py-2 pl-16 pr-5 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">{{ e.label }}</td>
+                      <td
+                        v-for="(v, i) in e.values"
+                        :key="i"
+                        class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300"
+                      >
+                        {{ v === null ? "—" : formatValue(row, v) }}
+                        <div class="mt-0.5 text-[11px] font-medium">
+                          <span class="rounded-full px-1.5 py-0.5" :class="chipClass(calcVariacao(row, v, i === 0 ? e.anterior : e.values[i - 1]))">{{ pctText(calcVariacao(row, v, i === 0 ? e.anterior : e.values[i - 1])) }}</span>
+                        </div>
+                      </td>
+                      <td class="sticky right-[8rem] bg-zinc-50 px-4 py-2 text-center dark:bg-zinc-900">
+                        <svg v-if="sparkPoints(e)" width="88" height="26" viewBox="0 0 88 26" aria-hidden="true">
+                          <polyline :points="sparkPoints(e)" fill="none" :stroke="SPARK_COR[statusDe(e)]" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span v-else class="text-zinc-300">—</span>
+                      </td>
+                      <td class="sticky right-0 w-[8rem] min-w-[8rem] whitespace-nowrap bg-zinc-50 px-3 py-2 text-center dark:bg-zinc-900">
+                        <span class="rounded-full px-3 py-1 text-sm font-bold tabular-nums" :class="chipClass(variacaoPeriodo(e))">{{ pctText(variacaoPeriodo(e)) }}</span>
+                      </td>
+                    </tr>
+                    </template>
+                  </template>
+                  <template v-if="expandido === row.id && detalheExpandido.estados">
+                    <tr
+                      v-for="e in outrosEstados(detalheExpandido.estados)"
+                      :key="`${row.id}-${e.label}`"
+                      class="bg-zinc-50/70 dark:bg-zinc-800/30 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800"
+                    >
+                      <td class="sticky left-0 w-[clamp(12rem,18vw,22rem)] min-w-[12rem] whitespace-nowrap bg-zinc-50 py-2 pl-10 pr-5 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">{{ e.label }}</td>
+                      <td
+                        v-for="(v, i) in e.values"
+                        :key="i"
+                        class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300"
+                      >
+                        {{ v === null ? "—" : formatValue(row, v) }}
+                        <div class="mt-0.5 text-[11px] font-medium">
+                          <span class="rounded-full px-1.5 py-0.5" :class="chipClass(calcVariacao(row, v, i === 0 ? e.anterior : e.values[i - 1]))">{{ pctText(calcVariacao(row, v, i === 0 ? e.anterior : e.values[i - 1])) }}</span>
+                        </div>
+                      </td>
+                      <td class="sticky right-[8rem] bg-zinc-50 px-4 py-2 text-center dark:bg-zinc-900">
+                        <svg v-if="sparkPoints(e)" width="88" height="26" viewBox="0 0 88 26" aria-hidden="true">
+                          <polyline :points="sparkPoints(e)" fill="none" :stroke="SPARK_COR[statusDe(e)]" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span v-else class="text-zinc-300">—</span>
+                      </td>
+                      <td class="sticky right-0 w-[8rem] min-w-[8rem] whitespace-nowrap bg-zinc-50 px-3 py-2 text-center dark:bg-zinc-900">
+                        <span class="rounded-full px-3 py-1 text-sm font-bold tabular-nums" :class="chipClass(variacaoPeriodo(e))">{{ pctText(variacaoPeriodo(e)) }}</span>
                       </td>
                     </tr>
                   </template>
