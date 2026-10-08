@@ -583,6 +583,10 @@ export function useDashboardData(filter) {
     };
   }
 
+  function custoFaltantes() {
+    return custoConsolidado().itens.filter((i) => !(i.value > 0)).map((i) => i.label);
+  }
+
   function beneficiosEntries(label) {
     const list = filterByRange(getBeneficios(currentState()));
     return label ? list.filter((e) => e.meta.beneficio === label) : list;
@@ -809,6 +813,10 @@ export function useDashboardData(filter) {
   function indicatorValueForMonth(ind, ym) {
     const range = { start: firstDayOfYm(ym), end: lastDayOfYm(ym) };
     if (ind.computed) return computedValue(ind, range);
+    if (ind.id === "custo_total") {
+      const total = custoTotalNoPeriodo(range, currentState());
+      return total > 0 ? total : null;
+    }
     const inMonth = scopeEntries(ind, stateEntries(ind.id, currentState())).filter(
       (e) => e.date >= range.start && e.date <= range.end
     );
@@ -1657,6 +1665,7 @@ export function useDashboardData(filter) {
     ticketMedioFaturamento,
     custoPessoalEntriesByEmpresa,
     consolidadoEntries,
+    custoFaltantes,
     custoRegionalDetalhe,
     beneficiosEntries,
     custoContratacaoMedioPorFilial,

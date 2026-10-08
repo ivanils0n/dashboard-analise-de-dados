@@ -266,6 +266,13 @@ const headcountTriploCharts = computed(() => {
   };
 });
 
+const custoAvisoIncompleto = computed(() => {
+  if (selectedKpiId.value !== "custo_total") return "";
+  const faltantes = props.dashboard.custoFaltantes();
+  if (!faltantes.length) return "";
+  return `Custo de Pessoal incompleto no período: sem lançamentos de ${faltantes.join(", ")}.`;
+});
+
 const consolidadoSummaryItems = computed(() =>
   (centerChart.value.consolidado || []).map((i) => ({ label: i.label, value: formatCurrency(i.value) }))
 );
@@ -830,6 +837,13 @@ function goNextKpi() {
             />
             </div>
             </div>
+            <p
+              v-if="custoAvisoIncompleto"
+              role="alert"
+              class="mt-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+            >
+              <span aria-hidden="true">⚠</span>{{ custoAvisoIncompleto }}
+            </p>
             <HiringGoalsLegend
               v-if="centerChart.id === 'tempo_contratacao'"
               size="md"

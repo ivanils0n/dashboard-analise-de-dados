@@ -127,7 +127,7 @@ export const INDICATORS = [
     id: "custo_total",
     name: "Custo de Pessoal",
     desc: "Valor pago por colaborador (nome, banco, data de pagamento, empresa, filial e mês referente), lido da aba \"custo_folha\" da planilha",
-    calc: "Soma do valor total pago no mês referente filtrado",
+    calc: "Folha + Férias + Rescisões + Benefícios no mês filtrado",
     type: "currency",
     unit: "R$",
     decimals: 2,
