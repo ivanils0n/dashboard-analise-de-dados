@@ -255,8 +255,8 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
                   >
                     {{ ymLabel(ym) }}
                   </th>
-                  <th class="sticky right-[8rem] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent z-20 bg-zinc-50 bg-[linear-gradient(rgba(232,175,62,0.18),rgba(232,175,62,0.18))] px-4 py-2.5 text-center font-bold text-accent shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.25)] dark:bg-zinc-800">Tendência</th>
-                  <th class="sticky right-0 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-accent/40 z-20 w-[8rem] min-w-[8rem] bg-zinc-50 bg-[linear-gradient(rgba(232,175,62,0.18),rgba(232,175,62,0.18))] px-3 py-2.5 text-center font-bold text-accent dark:bg-zinc-800" title="Média das variações mensais (%) dos meses filtrados">Variação média</th>
+                  <th class="sticky right-[8rem] z-20 bg-zinc-50 px-4 py-2.5 text-center font-semibold shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.25)] dark:bg-zinc-800">Tendência</th>
+                  <th class="sticky right-0 z-20 w-[8rem] min-w-[8rem] bg-zinc-50 px-3 py-2.5 text-center font-semibold dark:bg-zinc-800" title="Média das variações mensais (%) dos meses filtrados">Variação média</th>
                 </tr>
               </thead>
               <tbody>
@@ -278,16 +278,44 @@ const toggle = (id) => (expandido.value = expandido.value === id ? null : id);
                         <span class="rounded-full px-1.5 py-0.5" :class="chipClass(variacao(row, i))">{{ pctText(variacao(row, i)) }}</span>
                       </div>
                     </td>
-                    <td class="sticky right-[8rem] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent bg-white bg-[linear-gradient(rgba(232,175,62,0.10),rgba(232,175,62,0.10))] px-4 py-3 text-center shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.25)] dark:bg-zinc-900">
+                    <td class="sticky right-[8rem] bg-white px-4 py-3 text-center shadow-[-6px_0_10px_-6px_rgba(0,0,0,0.25)] dark:bg-zinc-900">
                       <svg v-if="sparkPoints(row)" width="88" height="26" viewBox="0 0 88 26" aria-hidden="true">
                         <polyline :points="sparkPoints(row)" fill="none" :stroke="SPARK_COR[row.status]" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                       <span v-else class="text-zinc-300">—</span>
                     </td>
-                    <td class="sticky right-0 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-accent/40 w-[8rem] min-w-[8rem] whitespace-nowrap bg-white bg-[linear-gradient(rgba(232,175,62,0.10),rgba(232,175,62,0.10))] px-3 py-3 text-center dark:bg-zinc-900">
+                    <td class="sticky right-0 w-[8rem] min-w-[8rem] whitespace-nowrap bg-white px-3 py-3 text-center dark:bg-zinc-900">
                       <span class="rounded-full px-3 py-1.5 text-sm font-bold tabular-nums" :class="chipClass(row.ultimaVar)">{{ pctText(row.ultimaVar) }}</span>
                     </td>
                   </tr>
+                  <template v-if="expandido === row.id && row.detalhes">
+                    <tr
+                      v-for="d in row.detalhes"
+                      :key="d.label"
+                      class="bg-zinc-50/70 dark:bg-zinc-800/30 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800"
+                    >
+                      <td class="sticky left-0 w-[16rem] min-w-[16rem] whitespace-nowrap bg-zinc-50 py-2 pl-10 pr-5 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ d.label }}</td>
+                      <td
+                        v-for="(v, i) in d.values"
+                        :key="i"
+                        class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-300"
+                      >
+                        {{ v === null ? "—" : formatValue(row, v) }}
+                        <div class="mt-0.5 text-[11px] font-medium">
+                          <span class="rounded-full px-1.5 py-0.5" :class="chipClass(calcVariacao(row, v, i === 0 ? d.anterior : d.values[i - 1]))">{{ pctText(calcVariacao(row, v, i === 0 ? d.anterior : d.values[i - 1])) }}</span>
+                        </div>
+                      </td>
+                      <td class="sticky right-[8rem] bg-zinc-50 px-4 py-2 text-center dark:bg-zinc-900">
+                        <svg v-if="sparkPoints(d)" width="88" height="26" viewBox="0 0 88 26" aria-hidden="true">
+                          <polyline :points="sparkPoints(d)" fill="none" :stroke="SPARK_COR[statusDe(d)]" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span v-else class="text-zinc-300">—</span>
+                      </td>
+                      <td class="sticky right-0 w-[8rem] min-w-[8rem] whitespace-nowrap bg-zinc-50 px-3 py-2 text-center dark:bg-zinc-900">
+                        <span class="rounded-full px-3 py-1 text-sm font-bold tabular-nums" :class="chipClass(variacaoPeriodo(d))">{{ pctText(variacaoPeriodo(d)) }}</span>
+                      </td>
+                    </tr>
+                  </template>
                   <tr v-if="expandido === row.id" class="bg-zinc-50/70 dark:bg-zinc-800/30 [&>td]:border-t [&>td]:border-zinc-100 dark:[&>td]:border-zinc-800">
                     <td :colspan="months.length + 3" class="px-5 py-3 text-xs text-zinc-600 dark:text-zinc-300">
                       <p v-if="descricao(row.id)"><span class="font-semibold text-zinc-800 dark:text-zinc-100">Cálculo:</span> {{ descricao(row.id).calc }}</p>

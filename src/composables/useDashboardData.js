@@ -554,17 +554,22 @@ export function useDashboardData(filter) {
     };
   }
 
-  function custoTotalNoPeriodo(range, st = currentState()) {
+  function custoComponentesNoPeriodo(range, st = currentState()) {
     const start = (range && range.start) || null;
     const end = (range && range.end) || null;
     const emPeriodo = (list) => list.filter((e) => !(start && e.date < start) && !(end && e.date > end));
     const sum = (list) => list.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
-    return (
-      sum(emPeriodo(getEntriesFor("custo_total", st))) +
-      sum(emPeriodo(getEntriesFor("ferias", st))) +
-      sum(emPeriodo(getBeneficios(st))) +
-      rescisoesTotal(st, range, "total")
-    );
+    return {
+      folha: sum(emPeriodo(getEntriesFor("custo_total", st))),
+      ferias: sum(emPeriodo(getEntriesFor("ferias", st))),
+      rescisoes: rescisoesTotal(st, range, "total"),
+      beneficios: sum(emPeriodo(getBeneficios(st)))
+    };
+  }
+
+  function custoTotalNoPeriodo(range, st = currentState()) {
+    const c = custoComponentesNoPeriodo(range, st);
+    return c.folha + c.ferias + c.beneficios + c.rescisoes;
   }
 
   function custoConsolidado() {
@@ -833,6 +838,21 @@ export function useDashboardData(filter) {
     }
   }
 
+  function custoDetalhesPorMes(todos) {
+    const porMes = todos.map((ym) =>
+      custoComponentesNoPeriodo({ start: firstDayOfYm(ym), end: lastDayOfYm(ym) }, currentState())
+    );
+    return [
+      { key: "folha", label: "Folha" },
+      { key: "ferias", label: "Férias" },
+      { key: "rescisoes", label: "Rescisões" },
+      { key: "beneficios", label: "Benefícios" }
+    ].map(({ key, label }) => {
+      const vals = porMes.map((c) => (c[key] > 0 ? c[key] : null));
+      return { label, higherIsBetter: false, anterior: vals[0], values: vals.slice(1) };
+    });
+  }
+
   function comparacaoMesesBase(count) {
     const base = String(filter.end || filter.start || todayISO()).slice(0, 7);
     const todos = Array.from({ length: count + 2 }, (_, i) => addMonthsYm(base, i - count - 1));
@@ -849,7 +869,8 @@ export function useDashboardData(filter) {
           return v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v);
         });
         return { anterior: vals[0], values: vals.slice(1) };
-      })()
+      })(),
+      ...(ind.id === "custo_total" ? { detalhes: custoDetalhesPorMes(todos) } : {})
     }));
     return { months, rows };
   }
