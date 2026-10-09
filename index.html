@@ -23,17 +23,31 @@
   <script>
     (function () {
       var NOVO = "https://dash.ibds.net.br";
+      var CHAVE = "gg-novo-dominio-ok";
+      var TTL = 30 * 60 * 1000;
       // não remover a checagem de hostname: sem ela o domínio novo redireciona para si mesmo em loop
       if (!/\.pages\.dev$/.test(location.hostname)) return;
       var destino = NOVO + location.pathname + location.search + location.hash;
-      var img = new Image();
-      var timer = setTimeout(function () { img.onload = img.onerror = null; }, 4000);
-      img.onload = function () {
-        clearTimeout(timer);
-        location.replace(destino);
-      };
-      img.onerror = function () { clearTimeout(timer); };
-      img.src = NOVO + "/favicon.png?t=" + Date.now();
+      try {
+        var ok = Number(localStorage.getItem(CHAVE));
+        if (ok && Date.now() - ok < TTL) { location.replace(destino); return; }
+      } catch (e) {}
+      // não liberar o carregamento do app antes desta checagem: ele mostraria o login antes de redirecionar
+      window.__ggRedirect = new Promise(function (resolve) {
+        var img = new Image();
+        var timer = setTimeout(function () { img.onload = img.onerror = null; resolve(); }, 3000);
+        img.onload = function () {
+          clearTimeout(timer);
+          try { localStorage.setItem(CHAVE, String(Date.now())); } catch (e) {}
+          location.replace(destino);
+        };
+        img.onerror = function () {
+          clearTimeout(timer);
+          try { localStorage.removeItem(CHAVE); } catch (e) {}
+          resolve();
+        };
+        img.src = NOVO + "/favicon.png?t=" + Date.now();
+      });
     })();
   </script>
   <style>
