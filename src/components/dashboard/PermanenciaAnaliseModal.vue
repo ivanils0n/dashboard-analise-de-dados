@@ -297,7 +297,7 @@ const totals = computed(() => [
       </div>
     </template>
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
-      <div class="mx-auto flex max-w-7xl flex-col gap-6">
+      <div class="mx-auto flex max-w-[110rem] flex-col gap-6">
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="t in totals"

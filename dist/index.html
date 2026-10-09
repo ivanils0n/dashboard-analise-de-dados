@@ -20,6 +20,22 @@
   <script>
     document.documentElement.classList.toggle("dark", localStorage.getItem("gg-theme") === "dark");
   </script>
+  <script>
+    (function () {
+      var NOVO = "https://dash.ibds.net.br";
+      // não remover a checagem de hostname: sem ela o domínio novo redireciona para si mesmo em loop
+      if (!/\.pages\.dev$/.test(location.hostname)) return;
+      var destino = NOVO + location.pathname + location.search + location.hash;
+      var img = new Image();
+      var timer = setTimeout(function () { img.onload = img.onerror = null; }, 4000);
+      img.onload = function () {
+        clearTimeout(timer);
+        location.replace(destino);
+      };
+      img.onerror = function () { clearTimeout(timer); };
+      img.src = NOVO + "/favicon.png?t=" + Date.now();
+    })();
+  </script>
   <style>
     #app-loading {
       position: fixed;
@@ -103,10 +119,10 @@
       100% { transform: translateX(380%); }
     }
   </style>
-  <script type="module" crossorigin src="./assets/app-DJ_eR6lj.js"></script>
+  <script type="module" crossorigin src="./assets/app-DJixxJfb.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/vue-uzM6BlFQ.js">
   <link rel="modulepreload" crossorigin href="./assets/vue-router-DDdUTCkH.js">
-  <link rel="stylesheet" crossorigin href="./assets/app-8R5jOSYg.css">
+  <link rel="stylesheet" crossorigin href="./assets/app-B3QCI_ua.css">
 </head>
 <body>
   <div id="app"></div>
@@ -119,6 +135,6 @@
       <p>Carregando informações...</p>
       <div class="gg-progress"><span class="gg-progress-fill"></span></div>
     </div>
-  </div>
+  </div>
 </body>
 </html>
