@@ -198,7 +198,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
     </template>
 
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
-      <div class="mx-auto flex max-w-7xl flex-col gap-6">
+      <div class="mx-auto flex max-w-[120rem] flex-col gap-6">
         <p
           v-if="a.headcountRef.fallback"
           class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"

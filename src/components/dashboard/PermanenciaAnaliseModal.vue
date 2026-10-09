@@ -297,7 +297,7 @@ const totals = computed(() => [
       </div>
     </template>
     <div class="-m-3 min-h-full bg-zinc-50 p-3 sm:-m-6 sm:p-6 dark:bg-zinc-950/60">
-      <div class="mx-auto flex max-w-7xl flex-col gap-6">
+      <div class="mx-auto flex max-w-[120rem] flex-col gap-6">
         <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="t in totals"
@@ -497,7 +497,7 @@ const totals = computed(() => [
       </div>
     </div>
 
-    <Modal v-if="grupo" open :title="grupo.title" :subtitle="grupo.subtitle" max-width="max-w-4xl" @close="grupo = null">
+    <Modal v-if="grupo" open :title="grupo.title" :subtitle="grupo.subtitle" max-width="max-w-6xl" @close="grupo = null">
       <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div class="max-h-[28rem] overflow-auto">
           <table class="w-full min-w-max text-left text-sm">
