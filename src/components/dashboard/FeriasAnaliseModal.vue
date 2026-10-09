@@ -24,23 +24,31 @@ const regionalSel = ref("");
 
 const upper = (v, fallback) => String(v || "").trim().toUpperCase() || fallback;
 
+function toRow(e) {
+  const m = e.meta || {};
+  return {
+    id: e.id,
+    data: String(e.date || "").slice(0, 10),
+    mes: String(e.date || "").slice(0, 7),
+    colaborador: upper(m.employeeName, "SEM COLABORADOR"),
+    codigo: String(m.codigo || ""),
+    filial: upper(filialDisplay(m.filial, m.estado), "SEM FILIAL"),
+    regional: upper(m.regional, "SEM REGIONAL"),
+    banco: upper(m.banco, "NÃO INFORMADO"),
+    pagamento: m.dataPagto || "",
+    estado: upper(m.estado, ""),
+    valor: Number(e.value) || 0
+  };
+}
+
 const entriesEstado = computed(() => {
   void state.revision;
-  return getEntriesFor("ferias", estadoSel.value).map((e) => {
-    const m = e.meta || {};
-    return {
-      id: e.id,
-      data: String(e.date || "").slice(0, 10),
-      mes: String(e.date || "").slice(0, 7),
-      colaborador: upper(m.employeeName, "SEM COLABORADOR"),
-      codigo: String(m.codigo || ""),
-      filial: upper(filialDisplay(m.filial, m.estado), "SEM FILIAL"),
-      regional: upper(m.regional, "SEM REGIONAL"),
-      banco: upper(m.banco, "NÃO INFORMADO"),
-      pagamento: m.dataPagto || "",
-      valor: Number(e.value) || 0
-    };
-  });
+  return getEntriesFor("ferias", estadoSel.value).map(toRow);
+});
+
+const entriesTodos = computed(() => {
+  void state.revision;
+  return getEntriesFor("ferias", "todos").map(toRow);
 });
 
 const regionalOptions = computed(() =>
@@ -166,6 +174,42 @@ const totals = computed(() => [
   }
 ]);
 
+const UF_COR = { RO: "#ef4444", AM: "#3b82f6", PA: "#eab308" };
+
+const estadoRows = computed(() => {
+  const atual = entriesTodos.value.filter((r) => inRange(r, dateFilter.start, dateFilter.end));
+  const antes = prevRange.value ? entriesTodos.value.filter((r) => inRange(r, prevRange.value.start, prevRange.value.end)) : null;
+  const total = soma(atual);
+  const prevMap = antes ? new Map(groupBy((r) => r.estado, antes).map((r) => [r.label, r])) : null;
+  const atualMap = new Map(groupBy((r) => r.estado, atual).map((r) => [r.label, r]));
+  return STATES.map((uf) => {
+    const g = atualMap.get(uf) || { valor: 0, pagamentos: 0, colaboradores: 0 };
+    const anterior = prevMap ? (prevMap.get(uf) || { valor: 0 }).valor : null;
+    return {
+      uf,
+      nome: STATE_NAMES[uf] || uf,
+      valor: g.valor,
+      colaboradores: g.colaboradores,
+      pct: total > 0 ? (g.valor / total) * 100 : 0,
+      anterior,
+      delta: anterior === null ? null : g.valor - anterior
+    };
+  });
+});
+
+const estadoData = computed(() =>
+  estadoRows.value.map((r) => {
+    if (r.anterior === null) return { label: r.uf, value: r.valor, barColor: UF_COR[r.uf] };
+    return {
+      label: r.uf,
+      series: [
+        { label: "Mês anterior", value: r.anterior, color: "#a1a1aa" },
+        { label: periodo.value, value: r.valor, color: "#E8AF3E" }
+      ]
+    };
+  })
+);
+
 const tables = computed(() => [
   { title: "Por filial", col: "Filial", rows: filialRows.value, delta: true },
   { title: "Por regional", col: "Regional", rows: regionalRows.value },
@@ -220,6 +264,51 @@ const tables = computed(() => [
         </p>
 
         <template v-else>
+          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+              <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Comparativo por estado</h3>
+              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Valor de férias de cada estado no período{{ prevRange ? ", comparado ao mês anterior" : "" }} · considera todos os estados e regionais
+              </p>
+            </header>
+            <div class="grid gap-5 p-4 lg:grid-cols-3">
+              <div class="lg:col-span-2">
+                <BarChart :data="estadoData" show-values value-format="currency" :show-trend="false" :height-px="288" />
+              </div>
+              <ul class="flex flex-col gap-3">
+                <li
+                  v-for="r in estadoRows"
+                  :key="r.uf"
+                  class="rounded-xl border px-4 py-3 transition"
+                  :class="estadoSel === r.uf
+                    ? 'border-accent/60 bg-accent/5 dark:bg-accent/10'
+                    : 'border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50'"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                      <span class="h-2.5 w-2.5 rounded-sm" :style="{ backgroundColor: UF_COR[r.uf] }" />
+                      {{ r.nome }}
+                    </span>
+                    <span class="text-xs font-semibold tabular-nums text-zinc-500 dark:text-zinc-400">{{ fmtPct(r.pct) }} do total</span>
+                  </div>
+                  <div class="mt-1 flex items-baseline justify-between gap-3">
+                    <span class="text-lg font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ formatCurrency(r.valor) }}</span>
+                    <span
+                      v-if="r.delta !== null"
+                      class="text-xs font-semibold tabular-nums"
+                      :class="r.delta > 0 ? 'text-amber-600 dark:text-amber-400' : r.delta < 0 ? 'text-green-600 dark:text-green-400' : 'text-zinc-500 dark:text-zinc-400'"
+                    >
+                      {{ fmtDelta(r.delta) }} vs. mês anterior
+                    </span>
+                  </div>
+                  <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ r.colaboradores }} {{ r.colaboradores === 1 ? "colaborador" : "colaboradores" }}
+                  </p>
+                </li>
+              </ul>
+            </div>
+          </section>
+
           <div class="grid gap-5 lg:grid-cols-3">
             <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">

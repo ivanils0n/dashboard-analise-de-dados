@@ -93,8 +93,19 @@ watch(
 function onKeydown(e) {
   if (e.key === "Escape") drawerOpen.value = false;
 }
-onMounted(() => document.addEventListener("keydown", onKeydown));
-onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
+const asideRef = ref(null);
+function onPointerDownOutside(e) {
+  if (collapsedTarget.value || !asideRef.value || asideRef.value.contains(e.target)) return;
+  sidebarCollapsed.value = true;
+}
+onMounted(() => {
+  document.addEventListener("keydown", onKeydown);
+  ["pointerdown", "mousedown"].forEach((t) => document.addEventListener(t, onPointerDownOutside, true));
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeydown);
+  ["pointerdown", "mousedown"].forEach((t) => document.removeEventListener(t, onPointerDownOutside, true));
+});
 
 const drawerSections = computed(() =>
   [
@@ -193,13 +204,14 @@ const drawerSections = computed(() =>
     </Transition>
   </header>
 
+  <div class="hidden shrink-0 md:block md:w-16" aria-hidden="true"></div>
+
   <aside
-    class="z-30 hidden w-full flex-wrap md:flex items-center gap-3 border-b border-zinc-800 bg-[#0a0a0a] px-4 py-3 transition-[width] duration-200 md:sticky md:top-0 md:h-screen md:shrink-0 md:flex-col md:flex-nowrap md:items-stretch md:gap-0 md:self-start md:border-b-0 md:border-r"
-    :class="collapsedTarget ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4'"
+    ref="asideRef"
+    class="z-30 hidden w-full flex-wrap md:flex items-center gap-3 border-b border-zinc-800 bg-[#0a0a0a] px-4 py-3 transition-[width] duration-200 md:fixed md:inset-y-0 md:left-0 md:h-screen md:shrink-0 md:flex-col md:flex-nowrap md:items-stretch md:gap-0 md:self-start md:border-b-0 md:border-r"
+    :class="collapsedTarget ? 'md:w-16 md:px-2 md:py-4' : 'md:w-44 md:p-4 md:shadow-2xl md:shadow-black/60'"
     aria-label="Painel de controle"
   >
-    <span class="sidebar-flare sidebar-flare-top" aria-hidden="true"></span>
-    <span class="sidebar-flare sidebar-flare-bottom" aria-hidden="true"></span>
     <div class="flex items-center gap-2 md:pb-4" :class="collapsed ? 'md:justify-center' : 'md:justify-between'">
       <a href="#/dashboard" class="flex min-w-0 items-center md:flex-1 md:justify-center" :class="collapsed && 'md:hidden'" aria-label="Gente & Gestão — Dashboard">
         <img src="/logo.png" alt="Gente & Gestão" class="h-12 w-auto max-w-[180px] object-contain md:h-auto md:max-h-16 md:w-full" />
@@ -310,26 +322,8 @@ const drawerSections = computed(() =>
 </template>
 
 <style scoped>
-.sidebar-flare {
-  position: absolute;
-  left: 100%;
-  width: 24px;
-  height: 24px;
-  pointer-events: none;
-}
-.sidebar-flare-top {
-  top: 0;
-  background: radial-gradient(circle at 100% 100%, transparent 23px, #0a0a0a 24px);
-}
-.sidebar-flare-bottom {
-  bottom: 0;
-  background: radial-gradient(circle at 100% 0, transparent 23px, #0a0a0a 24px);
-}
 @media (max-width: 767px) {
-  .sidebar-flare {
-    display: none;
   }
-}
 .drawer-enter-active,
 .drawer-leave-active {
   transition: opacity 0.2s ease;

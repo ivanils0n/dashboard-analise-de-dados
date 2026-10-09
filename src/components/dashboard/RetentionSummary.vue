@@ -23,19 +23,19 @@ const retencaoText = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col items-center gap-4 text-center" :class="large ? 'gap-6 text-lg' : 'text-base'">
-    <dl class="flex flex-col" :class="large ? 'gap-5' : 'gap-4'">
+  <div class="flex flex-col items-center text-center" :class="large ? 'gap-6 text-lg' : 'gap-2.5 text-base'">
+    <dl class="flex flex-col" :class="large ? 'gap-5' : 'gap-1.5'">
       <div class="flex flex-col items-center">
         <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Headcount final</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-3xl'">{{ num(tableData?.headcountFinal) }}</dd>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'">{{ num(tableData?.headcountFinal) }}</dd>
       </div>
       <div class="flex flex-col items-center">
         <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Novas contratações</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-3xl'">{{ num(tableData?.novasContratacoes) }}</dd>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'">{{ num(tableData?.novasContratacoes) }}</dd>
       </div>
       <div class="flex flex-col items-center">
         <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Headcount inicial</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-3xl'">{{ num(tableData?.headcountInicial) }}</dd>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'">{{ num(tableData?.headcountInicial) }}</dd>
       </div>
     </dl>
     <div
@@ -55,8 +55,8 @@ const retencaoText = computed(() => {
       {{ tableData.headcountFinal }}.
     </div>
     <div
-      class="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-      :class="large ? 'text-xl' : 'text-lg'"
+      class="rounded-lg border border-zinc-200 bg-zinc-50 px-4 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+      :class="large ? 'py-3 text-xl' : 'py-2 text-base'"
     >
       <div class="font-semibold text-zinc-500 dark:text-zinc-400">Cálculo</div>
       <div class="mt-1 tabular-nums">
@@ -65,7 +65,7 @@ const retencaoText = computed(() => {
     </div>
     <div class="flex flex-col items-center">
       <span class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Retenção</span>
-      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-6xl'">{{ retencaoText }}</strong>
+      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-5xl'">{{ retencaoText }}</strong>
     </div>
   </div>
 </template>

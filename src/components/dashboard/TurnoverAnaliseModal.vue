@@ -498,7 +498,7 @@ const totals = computed(() => [
             </p>
           </header>
           <div class="p-4">
-            <BarChart :data="funcaoData" show-values value-format="percent" :show-trend="false" horizontal align-top :height-px="480" bars-clickable @bar-click="onFuncaoClick" />
+            <BarChart :data="funcaoData" show-values value-format="percent" :show-trend="false" horizontal align-top :height-px="400" bars-clickable @bar-click="onFuncaoClick" />
           </div>
         </section>
 

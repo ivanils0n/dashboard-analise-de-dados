@@ -41,6 +41,7 @@ import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
+import DashboardSideActions from "@/components/dashboard/DashboardSideActions.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
@@ -146,6 +147,7 @@ function onContratacaoAbrirVagas() {
 }
 
 const tourOpen = ref(false);
+const sideActionsExpanded = ref(false);
 
 const headcountAnaliseOpen = ref(false);
 
@@ -364,8 +366,9 @@ const scrollRef = ref(null);
 
 const CHART_ORDER = ["headcount", "turnover", "absenteismo", "custo_contratacao", "retencao"];
 function chartSpan(id) {
-  if (id === "turnover") return "lg:col-span-5";
-  if (id === "headcount_genero" || id === "custo_contratacao" || id === "retencao") return "lg:col-span-4";
+  if (id === "turnover" || id === "custo_contratacao") return "lg:col-span-5";
+  if (id === "retencao") return "lg:col-span-3";
+  if (id === "headcount_genero") return "lg:col-span-4";
   return CHART_ORDER.includes(id) ? "lg:col-span-4" : "lg:col-span-12";
 }
 const orderedKpiChartCards = computed(() => {
@@ -681,21 +684,35 @@ watch(activeTab, (tab) => {
 </script>
 
 <template>
-  <div>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6 sm:gap-4">
+  <div class="md:pr-16">
+    <h1 class="sr-only hidden md:block">Gente &amp; Gestão</h1>
+    <DashboardSideActions
+      v-model:expanded="sideActionsExpanded"
+      :range="df"
+      :show-values="showValues"
+      :show-hide-values="activeTab === 'cockpit'"
+      :can-refresh="canRefreshCache"
+      :reloading="reloading"
+      :can-export="canEdit"
+      @reload="handleReload"
+      @tour="tourOpen = true"
+      @toggle-values="toggleShowValues"
+      @export="onMenuClick"
+    />
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3 sm:mb-4 sm:gap-4 md:hidden">
       <div class="flex items-center gap-3">
-        <h1 class="text-xl font-bold text-zinc-900 sm:text-2xl dark:text-zinc-100">Gente &amp; Gestão</h1>
+        <h1 class="text-lg font-bold text-zinc-900 sm:text-xl dark:text-zinc-100">Gente &amp; Gestão</h1>
         <button
           v-if="canRefreshCache"
           type="button"
           data-tour="refresh"
-          class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          class="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           aria-label="Recarregar dados"
           title="Recarregar dados"
           :disabled="reloading"
           @click="handleReload"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="reloading ? 'animate-spin' : ''">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :class="reloading ? 'animate-spin' : ''">
             <path d="M21 12a9 9 0 1 1-2.64-6.36" />
             <polyline points="21 3 21 9 15 9" />
           </svg>
@@ -708,16 +725,16 @@ watch(activeTab, (tab) => {
         class="flex min-w-0 flex-1 items-center justify-center empty:hidden max-sm:basis-full"
       ></div>
 
-      <div class="flex w-full flex-wrap items-center justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+      <div class="flex w-full flex-wrap items-center [&>[data-tour=period]>button]:py-[5px] [&>[data-tour=period]>button]:text-xs [&>select]:py-[5px] [&>select]:text-xs justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
         <button
           type="button"
           data-tour="tour-button"
-          class="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          class="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           aria-label="Tour pela dashboard"
           title="Tour pela dashboard"
           @click="tourOpen = true"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="16" x2="12" y2="12" />
             <line x1="12" y1="8" x2="12.01" y2="8" />
@@ -727,7 +744,7 @@ watch(activeTab, (tab) => {
           v-if="activeTab === 'cockpit'"
           type="button"
           data-tour="hide-values"
-          class="whitespace-nowrap rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          class="whitespace-nowrap rounded-lg border border-zinc-300 px-3 py-[5px] text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           @click="toggleShowValues"
         >
           {{ showValues ? "Ocultar valores" : "Mostrar valores" }}
@@ -738,14 +755,14 @@ watch(activeTab, (tab) => {
         <div v-if="canEdit" data-tour="menu" class="relative ml-auto sm:ml-0" @click.stop>
         <button
           type="button"
-          class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          class="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           aria-haspopup="true"
           :aria-expanded="menuOpen"
           title="Menu de ações"
           aria-label="Menu de ações"
           @click="menuOpen = !menuOpen"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="4" y1="6" x2="20" y2="6" />
             <line x1="4" y1="12" x2="20" y2="12" />
             <line x1="4" y1="18" x2="20" y2="18" />

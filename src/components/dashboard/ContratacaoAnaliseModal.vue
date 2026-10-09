@@ -299,9 +299,11 @@ const filialInsights = computed(() => {
 
 const INSIGHT_DOT = { red: "bg-red-500", amber: "bg-amber-500", green: "bg-green-500", zinc: "bg-zinc-400" };
 
+const totalVagas = (rows) => rows.reduce((s, r) => s + r.total, 0);
+
 const tables = computed(() => [
   { title: "Por tipo de contratação", col: "Tipo", rows: tipoRows.value },
-  { title: "Por recrutador", col: "Recrutador", rows: recrutadorRows.value },
+  { title: "Por recrutador", col: "Recrutador", rows: recrutadorRows.value, pct: true, totalVagas: totalVagas(recrutadorRows.value) },
   { title: "Por motivo", col: "Motivo", rows: motivoRows.value }
 ]);
 
@@ -537,6 +539,7 @@ const totals = computed(() => [
                     <tr class="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       <th class="px-5 py-2.5 font-semibold">{{ t.col }}</th>
                       <th class="px-4 py-2.5 text-right font-semibold">Vagas</th>
+                      <th v-if="t.pct" class="px-4 py-2.5 text-right font-semibold" title="Participação no total de vagas do período">%</th>
                       <th class="px-4 py-2.5 text-right font-semibold">Abertas</th>
                       <th class="px-4 py-2.5 text-right font-semibold">Fechadas</th>
                       <th class="px-4 py-2.5 text-right font-semibold">Tempo médio</th>
@@ -551,6 +554,7 @@ const totals = computed(() => [
                     >
                       <td class="whitespace-nowrap px-5 py-2.5 font-medium text-zinc-900 dark:text-zinc-100">{{ r.label }}</td>
                       <td class="px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ r.total }}</td>
+                      <td v-if="t.pct" class="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-accent-hover dark:text-accent-light">{{ t.totalVagas ? fmtPct((r.total / t.totalVagas) * 100) : "—" }}</td>
                       <td class="px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ r.abertas }}</td>
                       <td class="px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ r.fechadas }}</td>
                       <td class="whitespace-nowrap px-4 py-2.5 text-right font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{{ fmtDias(r.tempoMedio) }}</td>

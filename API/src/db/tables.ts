@@ -59,7 +59,8 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "mes_referente", type: "date", required: true },
       { name: "empresa", type: "text" },
       { name: "filial", type: "text" },
-      { name: "estado_sigla", type: "text", stateRef: true }
+      { name: "estado_sigla", type: "text", stateRef: true },
+      { name: "data_nascimento", type: "date" }
     ]
   },
   rescisoes: {

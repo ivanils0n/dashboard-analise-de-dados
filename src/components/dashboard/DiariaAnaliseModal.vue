@@ -2,7 +2,6 @@
 import { computed, ref, watch } from "vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import Modal from "@/components/ui/Modal.vue";
-import PieChart from "@/components/charts/PieChart.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import { STATE_NAMES, STATES } from "@/lib/config";
 import { getEntriesFor } from "@/lib/store";
@@ -124,7 +123,7 @@ const regionalData = computed(() => barOf(regionalRows.value));
 const filialData = computed(() => barOf(filialRows.value));
 const funcaoData = computed(() => barOf(funcaoRows.value));
 const colaboradorData = computed(() => barOf(colaboradorRows.value.slice(0, 15)));
-const motivoData = computed(() => motivoRows.value.map((r) => ({ label: r.label, value: r.valor })));
+const motivoData = computed(() => barOf(motivoRows.value));
 
 const fmtDelta = (d) => `${d > 0 ? "+" : d < 0 ? "-" : ""}${formatCurrency(Math.abs(d))}`;
 const fmtPct = (v) => `${v.toFixed(1).replace(".", ",")}%`;
@@ -237,14 +236,7 @@ const tables = computed(() => [
                 <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Valor pago por motivo da diária</p>
               </header>
               <div class="p-4">
-                <PieChart
-                  :data="motivoData"
-                  show-values
-                  height="h-72"
-                  :center-value="formatCurrency(totalValor)"
-                  center-caption="Total"
-                  value-format="currency"
-                />
+                <BarChart :data="motivoData" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="288" />
               </div>
             </section>
 

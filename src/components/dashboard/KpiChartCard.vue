@@ -53,7 +53,7 @@ function onPieClick(sliceIndex) {
   }
 }
 
-const STACKED_HEIGHT_PX = 340;
+const STACKED_HEIGHT_PX = 300;
 
 const chartRef = ref(null);
 const fullscreenOpen = ref(false);
@@ -126,7 +126,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
         class="min-w-0 md:flex-1"
         :data="pieData"
         :show-values="showValues"
-        :height="stacked ? 'h-[380px]' : 'h-60'"
+        :height="stacked ? 'h-[320px]' : 'h-60'"
         :center-value="centerInfo.value"
         :center-caption="centerInfo.caption"
         :value-format="card.valueFormat || 'percent'"
@@ -134,7 +134,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
         @chart-click="onPieClick"
         @chart-contextmenu="onPieClick"
       />
-      <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" @select="onTurnoverDetail" />
+      <TurnoverSummaryCards v-if="turnoverSummary" :summary="turnoverSummary" :compact="stacked" @select="onTurnoverDetail" />
     </div>
     <BarChart
       v-else-if="card.kind === 'bar'"

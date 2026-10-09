@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, nextTick } from "vue";
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, onActivated } from "vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
@@ -611,6 +611,47 @@ function openTurnoverDetail(kind) {
   turnoverDetailOpen.value = true;
 }
 
+const middleRowRef = ref(null);
+const bottomKpisRef = ref(null);
+const cockpitHeight = ref(540);
+const COCKPIT_MIN_H = 280;
+const COCKPIT_GAP = 16;
+const COCKPIT_BOTTOM_MARGIN = 16;
+
+function fitToViewport() {
+  const row = middleRowRef.value;
+  if (!row) return;
+  const top = row.getBoundingClientRect().top + window.scrollY;
+  const bottom = bottomKpisRef.value?.offsetHeight || 0;
+  const free = window.innerHeight - top - (bottom ? bottom + COCKPIT_GAP : 0) - COCKPIT_BOTTOM_MARGIN;
+  cockpitHeight.value = Math.max(COCKPIT_MIN_H, Math.floor(free));
+}
+
+let fitObserver = null;
+let fitRaf = 0;
+function scheduleFit() {
+  if (fitRaf) cancelAnimationFrame(fitRaf);
+  fitRaf = requestAnimationFrame(() => {
+    fitRaf = 0;
+    fitToViewport();
+  });
+}
+
+onMounted(() => {
+  window.addEventListener("resize", scheduleFit);
+  if (typeof ResizeObserver !== "undefined") {
+    fitObserver = new ResizeObserver(scheduleFit);
+    fitObserver.observe(document.body);
+  }
+  scheduleFit();
+});
+onActivated(scheduleFit);
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", scheduleFit);
+  fitObserver?.disconnect();
+  if (fitRaf) cancelAnimationFrame(fitRaf);
+});
+
 const fullscreenOpen = ref(false);
 const navIds = computed(() => [null, ...kpis.value.map((k) => k.id)]);
 
@@ -661,6 +702,7 @@ function goNextKpi() {
               v-for="kpi in topKpis"
               :key="kpi.id"
               class="!w-full"
+              compact
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
               @select="select"
@@ -668,8 +710,12 @@ function goNextKpi() {
             />
           </div>
 
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[280px_minmax(0,1fr)_280px]">
-          <section data-tour="cockpit-chart" class="order-first flex min-w-0 md:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 lg:h-[540px] flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div
+            ref="middleRowRef"
+            class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[280px_minmax(0,1fr)_280px] xl:[grid-template-rows:var(--cockpit-h)]"
+            :style="{ '--cockpit-h': `${cockpitHeight}px` }"
+          >
+          <section data-tour="cockpit-chart" class="order-first flex min-h-0 min-w-0 md:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 lg:h-[540px] xl:h-full flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div class="min-w-0" :class="summaryInCard ? 'basis-full' : ['treinamento', 'rescisoes'].includes(centerChart.id) ? 'flex-1' : ''">
                 <div class="flex flex-wrap items-center gap-2">
@@ -787,12 +833,12 @@ function goNextKpi() {
             <div
               v-else-if="centerChart.kind === 'pie'"
               class="grid gap-4 lg:h-full lg:grid-rows-1"
-              :class="centerChart.summary ? 'lg:grid-cols-[180px_minmax(0,1fr)_180px]' : 'lg:grid-cols-1'"
+              :class="centerChart.summary ? 'lg:grid-cols-[minmax(0,1fr)_180px]' : 'lg:grid-cols-1'"
             >
               <PieChart
                 :key="centerChart.id"
                 class="min-h-0 min-w-0 lg:row-start-1"
-                :class="centerChart.summary ? 'lg:col-start-2' : ''"
+                :class="centerChart.summary ? 'lg:col-start-1' : ''"
                 :data="centerChart.data"
                 :show-values="showValues"
                 height="h-[280px] md:h-[400px] lg:h-full"
@@ -803,7 +849,7 @@ function goNextKpi() {
                 @chart-click="onPieClick"
                 @chart-contextmenu="onPieContext"
               />
-              <TurnoverSummaryCards v-if="centerChart.summary" class="lg:col-start-3 lg:row-start-1" vertical-from="lg" show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
+              <TurnoverSummaryCards v-if="centerChart.summary" class="lg:col-start-2 lg:row-start-1" vertical-from="lg" compact show-cost :show-geral="false" :summary="centerChart.summary" @select="openTurnoverDetail" />
             </div>
             <RetentionPanel v-else-if="centerChart.kind === 'table'" :data="centerChart.data" />
             <BarChart
@@ -854,13 +900,14 @@ function goNextKpi() {
       <UfMapCard
         data-tour="cockpit-map"
         class="xl:col-start-1 xl:row-start-1"
+        fluid
         title="Mapa por estado"
         :subtitle="centerChart.id === 'custo_diaria' ? `${centerChart.title} — valor total` : centerChart.title"
         :states="mapStates"
         @select="setState"
       />
 
-      <aside data-tour="cockpit-indicators" class="flex flex-col xl:col-start-3 xl:row-start-1 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-[12rem] xl:flex-1">
+      <aside data-tour="cockpit-indicators" class="flex flex-col xl:col-start-3 xl:row-start-1 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-0">
         <h2 class="mb-2 text-center text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
         <div class="mb-2">
           <CompararMesesButton :dashboard="dashboard" compact />
@@ -892,11 +939,12 @@ function goNextKpi() {
       </aside>
           </div>
 
-          <div class="hidden grid-cols-2 gap-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
+          <div ref="bottomKpisRef" class="hidden grid-cols-2 gap-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
             <CockpitKpiButton
               v-for="kpi in bottomKpis"
               :key="kpi.id"
               class="!w-full"
+              compact
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
               @select="select"

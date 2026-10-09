@@ -127,7 +127,8 @@ function headcountToRow(h) {
     mes_referente: h.mesReferente ? `${String(h.mesReferente).slice(0, 7)}-01` : null,
     empresa: h.empresa || null,
     filial: h.filial || null,
-    estado_sigla: h.estado || null
+    estado_sigla: h.estado || null,
+    data_nascimento: h.dataNascimento ? String(h.dataNascimento).slice(0, 10) : null
   };
 }
 
@@ -539,7 +540,8 @@ function mapRemoteHeadcount(row, impliedState) {
     empresa: row.empresa != null ? up(row.empresa) : null,
     filial: up(row.filial) || null,
     regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
-    estado: row.estado_sigla || impliedState || null
+    estado: row.estado_sigla || impliedState || null,
+    dataNascimento: row.data_nascimento ? String(row.data_nascimento).slice(0, 10) : null
   };
 }
 

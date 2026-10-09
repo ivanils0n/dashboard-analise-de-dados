@@ -7,7 +7,8 @@ const props = defineProps({
   states: { type: Array, default: () => [] },
   title: { type: String, default: "Mapa por estado" },
   subtitle: { type: String, default: "" },
-  showValues: { type: Boolean, default: true }
+  showValues: { type: Boolean, default: true },
+  fluid: { type: Boolean, default: false }
 });
 
 const UF_FILL = {
@@ -85,16 +86,18 @@ const hoverShape = computed(() => shapes.value.find((s) => s.uf === hoverUf.valu
 <template>
   <div
     class="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    :class="fluid ? 'xl:min-h-0 xl:overflow-hidden' : ''"
   >
     <div class="mb-3 text-center">
       <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ title }}</h3>
       <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ subtitle }}</span>
     </div>
 
-    <div class="flex min-h-[220px] flex-1 items-center justify-center">
+    <div class="flex min-h-[220px] flex-1 items-center justify-center" :class="fluid ? 'xl:min-h-0' : ''">
       <svg
         :viewBox="viewBox"
         class="max-h-[320px] w-full"
+        :class="fluid ? 'xl:h-full xl:max-h-none' : ''"
         preserveAspectRatio="xMidYMid meet"
         role="img"
         :aria-label="`Mapa: ${shapes.map((s) => s.name).join(', ')}`"

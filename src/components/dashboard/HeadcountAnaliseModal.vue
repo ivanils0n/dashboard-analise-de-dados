@@ -7,7 +7,8 @@ import { STATE_NAMES, STATES } from "@/lib/config";
 import { headcountActiveInRange, headcountCount, headcountMovements, findBranchByShortName, filterByRegional, headcountRegionalOptions } from "@/lib/employees";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
-import { formatValue, ymLabel } from "@/lib/utils";
+import { formatValue, ymLabel, lastDayOfYm } from "@/lib/utils";
+import { FAIXAS_IDADE, idadeEm } from "@/lib/faixaEtaria";
 
 defineProps({
   open: { type: Boolean, default: false }
@@ -43,10 +44,6 @@ function norm(v, fallback) {
 
 const quadro = computed(() => filterByRegional(headcountActiveInRange(estadoSel.value, range.value), regionalSel.value));
 const total = computed(() => quadro.value.length);
-const movements = computed(() => {
-  const m = headcountMovements(estadoSel.value, range.value);
-  return { ...m, admissoes: filterByRegional(m.admissoes, regionalSel.value), demissoes: filterByRegional(m.demissoes, regionalSel.value) };
-});
 
 function addMonths(ym, delta) {
   const [y, m] = ym.split("-").map(Number);
@@ -78,12 +75,19 @@ const tempoMedioCasa = computed(() => {
   return anos ? `${anos}a ${resto}m` : `${resto} meses`;
 });
 
+const acumuladoAno = computed(() => {
+  const ym = ymAtual.value || new Date().toISOString().slice(0, 7);
+  const ano = ym.slice(0, 4);
+  const m = headcountMovements(estadoSel.value, { start: `${ano}-01-01`, end: lastDayOfYm(ym) });
+  const admissoes = filterByRegional(m.admissoes, regionalSel.value).length;
+  const desligamentos = filterByRegional(m.demissoes, regionalSel.value).length;
+  return { ano, ate: ymLabel(ym), admissoes, desligamentos, saldo: admissoes - desligamentos };
+});
+
 const cards = computed(() => {
   const t = total.value;
   const fem = quadro.value.filter((h) => generoKey(h) === "Feminino").length;
-  const adm = movements.value.admissoes.length;
-  const desl = movements.value.demissoes.length;
-  const saldo = adm - desl;
+  const masc = quadro.value.filter((h) => generoKey(h) === "Masculino").length;
   let sub = "Quadro do mês filtrado";
   let subTone = "text-zinc-500 dark:text-zinc-400";
   if (ymAtual.value) {
@@ -96,16 +100,20 @@ const cards = computed(() => {
   return [
     { label: "Colaboradores ativos", value: String(t), sub, subTone, tone: "text-zinc-900 dark:text-zinc-100" },
     {
-      label: "Feminino",
-      value: t ? fmtPct((fem / t) * 100) : "—",
-      sub: `${fem} de ${t} colaboradores`,
+      label: "Feminino · Masculino",
+      split: [
+        { caption: "Feminino", value: t ? fmtPct((fem / t) * 100) : "—", tone: "text-pink-600 dark:text-pink-400" },
+        { caption: "Masculino", value: t ? fmtPct((masc / t) * 100) : "—", tone: "text-sky-600 dark:text-sky-400" }
+      ],
+      sub: `${fem} feminino · ${masc} masculino de ${t}`,
       tone: "text-zinc-900 dark:text-zinc-100"
     },
     { label: "Tempo médio de casa", value: tempoMedioCasa.value, sub: "Dos colaboradores ativos", tone: "text-zinc-900 dark:text-zinc-100" },
     {
-      label: "Saldo do período",
-      value: `${saldo > 0 ? "+" : ""}${saldo}`,
-      sub: `${adm} admissões · ${desl} desligamentos`,
+      label: `Acumulado ${acumuladoAno.value.ano}`,
+      value: `${acumuladoAno.value.saldo > 0 ? "+" : ""}${acumuladoAno.value.saldo}`,
+      sub: `${acumuladoAno.value.admissoes} admissões · ${acumuladoAno.value.desligamentos} desligamentos`,
+      detail: `Saldo de janeiro até ${acumuladoAno.value.ate}`,
       tone: "text-zinc-900 dark:text-zinc-100"
     }
   ];
@@ -172,6 +180,33 @@ const quadroTempoCasa = computed(() => {
   });
   const rows = FAIXAS_CASA.map((f, i) => ({ label: f.label, value: counts[i] }));
   if (semData) rows.push({ label: "Sem data", value: semData });
+  return rows;
+});
+
+const COR_TOTAL = "#E8AF3E";
+
+const quadroFaixaEtaria = computed(() => {
+  const vazio = () => ({ feminino: 0, masculino: 0, total: 0 });
+  const grupos = FAIXAS_IDADE.map(vazio);
+  const semData = vazio();
+  quadro.value.forEach((h) => {
+    const idade = idadeEm(h, dataReferencia.value);
+    const alvo = idade === null ? semData : grupos[FAIXAS_IDADE.findIndex((f) => idade <= f.max)];
+    const g = generoKey(h);
+    if (g === "Feminino") alvo.feminino += 1;
+    else if (g === "Masculino") alvo.masculino += 1;
+    alvo.total += 1;
+  });
+  const toRow = (label, c) => ({
+    label,
+    series: [
+      { label: "Feminino", value: c.feminino, color: GENERO_COR.Feminino },
+      { label: "Masculino", value: c.masculino, color: GENERO_COR.Masculino },
+      { label: "Total", value: c.total, color: COR_TOTAL }
+    ]
+  });
+  const rows = FAIXAS_IDADE.map((f, i) => toRow(f.label, grupos[i]));
+  if (semData.total) rows.push(toRow("Sem data", semData));
   return rows;
 });
 
@@ -253,22 +288,44 @@ function onGeneroClick(sliceIndex) {
             class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-5 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
           >
             <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{{ c.label }}</p>
-            <p class="mt-1.5 text-4xl font-bold leading-none tabular-nums" :class="c.tone">{{ c.value }}</p>
+            <div v-if="c.split" class="mt-1.5 flex items-start justify-center divide-x divide-zinc-200 dark:divide-zinc-700">
+              <div v-for="p in c.split" :key="p.caption" class="px-4">
+                <p class="text-4xl font-bold leading-none tabular-nums" :class="p.tone">{{ p.value }}</p>
+                <p class="mt-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ p.caption }}</p>
+              </div>
+            </div>
+            <p v-else class="mt-1.5 text-4xl font-bold leading-none tabular-nums" :class="c.tone">{{ c.value }}</p>
             <p class="mt-2 text-xs font-medium" :class="c.subTone || 'text-zinc-500 dark:text-zinc-400'">{{ c.sub }}</p>
+            <p v-if="c.detail" class="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">{{ c.detail }}</p>
           </div>
         </div>
 
-        <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
-            <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Evolução do quadro</h3>
-            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Colaboradores ativos mês a mês em {{ anoEvolucao }}, de janeiro até o mês filtrado
-            </p>
-          </header>
-          <div class="p-4">
-            <BarChart :data="evolucao" show-values :show-trend="false" :height-px="288" />
-          </div>
-        </section>
+        <div class="grid items-start gap-5 xl:grid-cols-2">
+          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+              <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Evolução do quadro</h3>
+              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Colaboradores ativos mês a mês em {{ anoEvolucao }}, de janeiro até o mês filtrado
+              </p>
+            </header>
+            <div class="p-4">
+              <BarChart :data="evolucao" show-values :show-trend="false" :height-px="288" />
+            </div>
+          </section>
+
+          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+              <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Faixa etária</h3>
+              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Colaboradores ativos por faixa de idade, de 10 em 10 anos até 51 anos ou mais, com a idade calculada até o fim do mês filtrado
+              </p>
+            </header>
+            <div v-if="total" class="p-4">
+              <BarChart :data="quadroFaixaEtaria" show-values :show-trend="false" :height-px="288" />
+            </div>
+            <p v-else class="px-5 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">Sem quadro ativo no período.</p>
+          </section>
+        </div>
 
         <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
@@ -308,7 +365,7 @@ function onGeneroClick(sliceIndex) {
             <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Colaboradores ativos em cada função</p>
           </header>
           <div class="p-4">
-            <BarChart :data="quadroFuncao" show-values :show-trend="false" horizontal align-top :height-px="420" />
+            <BarChart :data="quadroFuncao" show-values :show-trend="false" horizontal align-top :height-px="320" />
           </div>
         </section>
 
@@ -351,8 +408,8 @@ function onGeneroClick(sliceIndex) {
         </section>
 
         <p class="border-t border-zinc-200 pt-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-          Ativos = quadro ativo do mês filtrado · Tempo de casa contado até o fim do mês filtrado · Saldo = admissões −
-          desligamentos do período · Fonte: Headcount
+          Ativos = quadro ativo do mês filtrado · Tempo de casa e idade contados até o fim do mês filtrado · Acumulado = admissões −
+          desligamentos de janeiro até o mês filtrado · Fonte: Headcount
         </p>
       </div>
     </div>

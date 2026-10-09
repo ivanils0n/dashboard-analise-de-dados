@@ -4,7 +4,8 @@ import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue } from "@/lib/utils";
 
 const props = defineProps({
-  summary: { type: Object, required: true }
+  summary: { type: Object, required: true },
+  compact: { type: Boolean, default: false }
 });
 
 const CURRENCY = { type: "currency", decimals: 2 };
@@ -15,9 +16,11 @@ const anual = computed(() => (mensal.value === null || mensal.value === undefine
 
 <template>
   <div
-    class="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    class="flex flex-1 flex-col items-center justify-center rounded-2xl border border-zinc-200 bg-white px-3 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    :class="compact ? 'gap-0.5 py-1.5' : 'gap-1.5 py-3'"
   >
     <span
+      v-if="!compact"
       class="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
     >
       <KpiIcon id="custo_contratacao" />
@@ -25,7 +28,7 @@ const anual = computed(() => (mensal.value === null || mensal.value === undefine
     <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">Custo de admissões</span>
     <div class="flex flex-col items-center">
       <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Custo mensal</span>
-      <span class="max-w-full break-words text-xl font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100">
+      <span class="max-w-full break-words font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100" :class="compact ? 'text-lg' : 'text-xl'">
         {{ formatValue(CURRENCY, mensal) }}
       </span>
     </div>

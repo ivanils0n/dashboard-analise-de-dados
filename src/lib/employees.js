@@ -676,7 +676,8 @@ export function addHeadcountRecord({
   mesReferente = null,
   empresa = null,
   filial = null,
-  estado
+  estado,
+  dataNascimento = null
 }) {
   const record = {
     id: createId(),
@@ -689,7 +690,8 @@ export function addHeadcountRecord({
     mesReferente: mesReferente ? String(mesReferente).slice(0, 7) : null,
     empresa: empresa != null ? String(empresa).toUpperCase() : null,
     filial: filial || null,
-    estado: estado || null
+    estado: estado || null,
+    dataNascimento: dataNascimento || null
   };
   upsertHeadcount(record);
   return record;
@@ -697,7 +699,7 @@ export function addHeadcountRecord({
 
 export function updateHeadcountRecord(
   id,
-  { codigo, colaborador, funcao, dataAdmissao, genero, dataDesligamento, mesReferente, empresa, filial, estado }
+  { codigo, colaborador, funcao, dataAdmissao, genero, dataDesligamento, mesReferente, empresa, filial, estado, dataNascimento }
 ) {
   const record = getHeadcountById(id);
   if (!record) return null;
@@ -712,7 +714,8 @@ export function updateHeadcountRecord(
     mesReferente: mesReferente !== undefined ? (mesReferente ? String(mesReferente).slice(0, 7) : null) : record.mesReferente,
     empresa: empresa !== undefined ? (empresa != null ? String(empresa).toUpperCase() : null) : record.empresa,
     filial: filial !== undefined ? filial || null : record.filial,
-    estado: estado !== undefined ? estado || null : record.estado
+    estado: estado !== undefined ? estado || null : record.estado,
+    dataNascimento: dataNascimento !== undefined ? dataNascimento || null : record.dataNascimento
   };
   upsertHeadcount(updated);
   flush();

@@ -46,7 +46,8 @@ const ENTITY_COLUMNS = {
   vagas: ["id", "nome", "aberta_em", "fechada_em", "salario", "tipo_contratacao", "filial", "estado_sigla", "recrutador", "motivo_contratacao"],
   headcount: [
     "id", "codigo", "colaborador", "funcao", "data_admissao",
-    "genero", "data_desligamento", "mes_referente", "empresa", "filial", "estado_sigla"
+    "genero", "data_desligamento", "mes_referente", "empresa", "filial", "estado_sigla",
+    "data_nascimento"
   ],
   rescisoes: [
     "id", "empresa", "estado", "colaborador", "filial", "funcao", "admissao", "gerente_imediato",
