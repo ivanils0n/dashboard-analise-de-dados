@@ -20,6 +20,59 @@
   <script>
     document.documentElement.classList.toggle("dark", localStorage.getItem("gg-theme") === "dark");
   </script>
+  <script>
+    (function () {
+      var NOVO = "https://dash.ibds.net.br";
+      var PADRAO = "https://gente-gestao-modenaearaujo.pages.dev";
+      var API = "https://api-gente-gestao.ivanils0n.workers.dev/";
+      var CHAVE = "gg-novo-dominio-ok";
+      var CHAVE_SEM = "gg-sem-dominio-novo";
+      var TTL = 30 * 60 * 1000;
+      var TTL_SEM = 10 * 60 * 1000;
+      var caminho = location.pathname + location.search + location.hash;
+
+      if (location.hostname === "dash.ibds.net.br") {
+        // não remover a marca semdash=1: é ela que impede o domínio padrão de mandar o usuário de volta para cá em loop
+        window.__ggRedirect = new Promise(function (resolve) {
+          var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+          var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 5000);
+          fetch(API, { cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+            .then(function () { clearTimeout(timer); resolve(); })
+            .catch(function () {
+              clearTimeout(timer);
+              location.replace(PADRAO + location.pathname + "?semdash=1" + location.hash);
+            });
+        });
+        return;
+      }
+
+      // não remover a checagem de hostname: sem ela o domínio novo redireciona para si mesmo em loop
+      if (!/\.pages\.dev$/.test(location.hostname)) return;
+      try {
+        if (/[?&]semdash=1/.test(location.search)) localStorage.setItem(CHAVE_SEM, String(Date.now()));
+        var sem = Number(localStorage.getItem(CHAVE_SEM));
+        if (sem && Date.now() - sem < TTL_SEM) return;
+        var ok = Number(localStorage.getItem(CHAVE));
+        if (ok && Date.now() - ok < TTL) { location.replace(NOVO + caminho); return; }
+      } catch (e) {}
+      // não liberar o carregamento do app antes desta checagem: ele mostraria o login antes de redirecionar
+      window.__ggRedirect = new Promise(function (resolve) {
+        var img = new Image();
+        var timer = setTimeout(function () { img.onload = img.onerror = null; resolve(); }, 3000);
+        img.onload = function () {
+          clearTimeout(timer);
+          try { localStorage.setItem(CHAVE, String(Date.now())); } catch (e) {}
+          location.replace(NOVO + caminho);
+        };
+        img.onerror = function () {
+          clearTimeout(timer);
+          try { localStorage.removeItem(CHAVE); } catch (e) {}
+          resolve();
+        };
+        img.src = NOVO + "/favicon.png?t=" + Date.now();
+      });
+    })();
+  </script>
   <style>
     #app-loading {
       position: fixed;
@@ -103,10 +156,10 @@
       100% { transform: translateX(380%); }
     }
   </style>
-  <script type="module" crossorigin src="./assets/app-DJ_eR6lj.js"></script>
+  <script type="module" crossorigin src="./assets/app-BbWQwyJ-.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/vue-uzM6BlFQ.js">
   <link rel="modulepreload" crossorigin href="./assets/vue-router-DDdUTCkH.js">
-  <link rel="stylesheet" crossorigin href="./assets/app-8R5jOSYg.css">
+  <link rel="stylesheet" crossorigin href="./assets/app-B3QCI_ua.css">
 </head>
 <body>
   <div id="app"></div>

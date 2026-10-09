@@ -63,7 +63,7 @@ const upperDirective = {
   }
 };
 
-bootstrap().then(() => {
+(window.__ggRedirect || Promise.resolve()).then(bootstrap).then(() => {
   const app = createApp(App);
   app.directive("upper", upperDirective);
   app.config.errorHandler = (err, instance, info) => {
