@@ -371,15 +371,31 @@ export function useDashboardData(filter) {
     else if (statusFilter === "fechadas") vacs = vacs.filter((v) => v.closeAt);
     if (recrutadorFilter) vacs = vacs.filter((v) => v.recrutador === recrutadorFilter);
     const inRange = filterByRange(vacs.map((v) => ({ ...v, date: String(v.openAt).slice(0, 10) })));
-    return inRange
-      .map((v) => ({ v, days: daysBetween(v.openAt, v.closeAt || todayISO()) }))
-      .filter(({ days }) => days !== null && Number.isFinite(days) && days >= 0)
-      .map(({ v, days }) => {
+    const groups = new Map();
+    inRange.forEach((v) => {
+      const days = daysBetween(v.openAt, v.closeAt || todayISO());
+      if (days === null || !Number.isFinite(days) || days < 0) return;
+      const label = upperText(v.name || "Vaga");
+      let g = groups.get(label);
+      if (!g) groups.set(label, (g = { label, total: 0, count: 0, abertas: 0, id: v.id, ids: [] }));
+      g.ids.push(v.id);
+      g.total += days;
+      g.count += 1;
+      if (!v.closeAt) g.abertas += 1;
+    });
+    return [...groups.values()]
+      .map((g) => {
+        const avg = g.total / g.count;
+        const tooltipValue =
+          g.count === 1
+            ? `${avg.toFixed(1)} dias${g.abertas ? " (em aberto)" : ""}`
+            : `${avg.toFixed(1)} dias (média de ${g.count} vagas${g.abertas ? `, ${g.abertas} em aberto` : ""})`;
         return {
-          label: upperText(v.name || "Vaga"),
-          value: Number(days.toFixed(1)),
-          tooltipValue: `${days.toFixed(1)} dias${v.closeAt ? "" : " (em aberto)"}`,
-          vacancyId: v.id
+          label: g.label,
+          value: Number(avg.toFixed(1)),
+          tooltipValue,
+          vacancyId: g.count === 1 ? g.id : null,
+          vacancyIds: g.ids
         };
       })
       .sort((a, b) => b.value - a.value);

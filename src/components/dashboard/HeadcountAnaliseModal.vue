@@ -349,7 +349,7 @@ function onGeneroClick(sliceIndex) {
             </div>
             <div>
               <p class="mb-1 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">Por empresa</p>
-              <BarChart :data="quadroEmpresa" show-values :show-trend="false" horizontal align-top :height-px="256" />
+              <BarChart :data="quadroEmpresa" show-values :show-trend="false" horizontal align-top virtual :height-px="256" />
             </div>
             <div class="md:col-span-2 lg:col-span-1">
               <p class="mb-1 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">Por tempo de casa</p>
@@ -365,7 +365,7 @@ function onGeneroClick(sliceIndex) {
             <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Colaboradores ativos em cada função</p>
           </header>
           <div class="p-4">
-            <BarChart :data="quadroFuncao" show-values :show-trend="false" horizontal align-top :height-px="320" />
+            <BarChart :data="quadroFuncao" show-values :show-trend="false" horizontal align-top virtual :height-px="320" />
           </div>
         </section>
 

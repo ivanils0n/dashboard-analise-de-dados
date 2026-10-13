@@ -1,4 +1,5 @@
 <script setup>
+import CountUpText from "@/components/ui/CountUpText.vue";
 import { computed } from "vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import { formatValue } from "@/lib/utils";
@@ -29,13 +30,13 @@ const anual = computed(() => (mensal.value === null || mensal.value === undefine
     <div class="flex flex-col items-center">
       <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Custo mensal</span>
       <span class="max-w-full break-words font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100" :class="compact ? 'text-lg' : 'text-xl'">
-        {{ formatValue(CURRENCY, mensal) }}
+        <CountUpText :text="formatValue(CURRENCY, mensal)" />
       </span>
     </div>
     <div class="flex flex-col items-center">
       <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Custo anual</span>
       <span class="max-w-full break-words text-sm font-semibold leading-tight tabular-nums text-zinc-600 dark:text-zinc-300">
-        {{ formatValue(CURRENCY, anual) }}
+        <CountUpText :text="formatValue(CURRENCY, anual)" />
       </span>
     </div>
   </div>

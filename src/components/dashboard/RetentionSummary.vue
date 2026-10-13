@@ -1,4 +1,5 @@
 <script setup>
+import CountUpText from "@/components/ui/CountUpText.vue";
 import { computed } from "vue";
 
 const props = defineProps({
@@ -27,15 +28,15 @@ const retencaoText = computed(() => {
     <dl class="flex flex-col" :class="large ? 'gap-5' : 'gap-1.5'">
       <div class="flex flex-col items-center">
         <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Headcount final</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'">{{ num(tableData?.headcountFinal) }}</dd>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'"><CountUpText :text="num(tableData?.headcountFinal)" /></dd>
       </div>
       <div class="flex flex-col items-center">
         <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Novas contratações</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'">{{ num(tableData?.novasContratacoes) }}</dd>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'"><CountUpText :text="num(tableData?.novasContratacoes)" /></dd>
       </div>
       <div class="flex flex-col items-center">
         <dt class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Headcount inicial</dt>
-        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'">{{ num(tableData?.headcountInicial) }}</dd>
+        <dd class="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" :class="large ? 'text-4xl' : 'text-2xl'"><CountUpText :text="num(tableData?.headcountInicial)" /></dd>
       </div>
     </dl>
     <div
@@ -65,7 +66,7 @@ const retencaoText = computed(() => {
     </div>
     <div class="flex flex-col items-center">
       <span class="text-zinc-500 dark:text-zinc-400" :class="large ? 'text-base' : 'text-sm'">Retenção</span>
-      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-5xl'">{{ retencaoText }}</strong>
+      <strong class="font-bold tabular-nums text-accent dark:text-accent-light" :class="large ? 'text-7xl' : 'text-5xl'"><CountUpText :text="retencaoText" /></strong>
     </div>
   </div>
 </template>

@@ -213,7 +213,7 @@ const drawerSections = computed(() =>
     aria-label="Painel de controle"
   >
     <div class="flex items-center gap-2 md:pb-4" :class="collapsed ? 'md:justify-center' : 'md:justify-between'">
-      <a href="#/dashboard" class="flex min-w-0 items-center md:flex-1 md:justify-center" :class="collapsed && 'md:hidden'" aria-label="Gente & Gestão — Dashboard">
+      <a href="#/dashboard" class="flex min-w-0 items-center md:flex-1 md:justify-center" :class="collapsedTarget && 'md:hidden'" aria-label="Gente & Gestão — Dashboard">
         <img src="/logo.png" alt="Gente & Gestão" class="h-12 w-auto max-w-[180px] object-contain md:h-auto md:max-h-16 md:w-full" />
       </a>
       <button

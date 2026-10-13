@@ -1,4 +1,5 @@
 <script setup>
+import CountUpText from "@/components/ui/CountUpText.vue";
 import { computed } from "vue";
 import MiniLineChart from "@/components/charts/MiniLineChart.vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
@@ -112,7 +113,7 @@ function onKeydown(e) {
 
     <div v-if="kpi.kind === 'pie'" class="flex flex-1 flex-col items-center justify-center px-1 py-6">
       <p class="text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
-        {{ formatValue({ type: "percent", decimals: 1 }, kpi.totalPct) }}
+        <CountUpText :text="formatValue({ type: 'percent', decimals: 1 }, kpi.totalPct)" />
       </p>
     </div>
 
@@ -135,7 +136,7 @@ function onKeydown(e) {
       class="flex flex-1 flex-col items-center justify-center px-1 py-6"
     >
       <p
-        class="max-w-full break-words text-center font-bold leading-tight text-zinc-900 dark:text-zinc-100"
+        class="max-w-full break-words text-center font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100"
         :class="kpi.id === 'custo_total' ? 'text-2xl' : 'text-3xl'"
       >
         <span v-if="currencyPrefix" class="block text-sm font-semibold text-zinc-400">{{ currencyPrefix }}</span>
@@ -146,7 +147,7 @@ function onKeydown(e) {
 
     <div v-else>
       <MiniLineChart :entries="kpi.entries" :show-values="showValues" />
-      <p class="mt-2 break-words text-center text-3xl font-bold leading-tight text-zinc-900 dark:text-zinc-100">
+      <p class="mt-2 break-words text-center text-3xl tabular-nums font-bold leading-tight text-zinc-900 dark:text-zinc-100">
         <span v-if="currencyPrefix" class="block text-sm font-semibold text-zinc-400">{{ currencyPrefix }}</span>
         {{ valueText }}
       </p>

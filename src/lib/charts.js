@@ -7,9 +7,10 @@ const REDUCED_MOTION =
   typeof window !== "undefined" &&
   window.matchMedia &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-Chart.defaults.animation.duration = REDUCED_MOTION ? 0 : 500;
-Chart.defaults.animation.easing = "easeOutQuart";
-Chart.defaults.transitions.active.animation.duration = REDUCED_MOTION ? 0 : 180;
+Chart.defaults.animation.duration = REDUCED_MOTION ? 0 : 750;
+Chart.defaults.animation.easing = "easeOutCubic";
+Chart.defaults.transitions.active.animation.duration = REDUCED_MOTION ? 0 : 200;
+Chart.defaults.plugins.tooltip.animation = { duration: REDUCED_MOTION ? 0 : 150, easing: "easeOutCubic" };
 Chart.defaults.transitions.resize.animation.duration = 0;
 Chart.defaults.resizeDelay = 120;
 
@@ -122,6 +123,42 @@ const seriesLineLabelsPlugin = {
 };
 
 Chart.register(seriesLineLabelsPlugin);
+
+const LINE_REVEAL_MS = REDUCED_MOTION ? 0 : 900;
+const lineRevealPlugin = {
+  id: "lineReveal",
+  beforeDatasetsDraw(chart) {
+    chart.__revealClipped = false;
+    if (!LINE_REVEAL_MS || chart.config.type !== "line" || !chart.chartArea) return;
+    if (chart.__revealDone) return;
+    if (!chart.data.datasets.some((ds) => (ds.data || []).length)) return;
+    const now = performance.now();
+    if (chart.__revealStart == null) chart.__revealStart = now;
+    const t = Math.min(1, (now - chart.__revealStart) / LINE_REVEAL_MS);
+    if (t >= 1) {
+      chart.__revealDone = true;
+      return;
+    }
+    const e = 1 - Math.pow(1 - t, 3);
+    const { left, right } = chart.chartArea;
+    const { ctx } = chart;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, left + (right - left) * e, chart.height);
+    ctx.clip();
+    chart.__revealClipped = true;
+    requestAnimationFrame(() => {
+      if (chart.ctx) chart.draw();
+    });
+  },
+  afterDatasetsDraw(chart) {
+    if (!chart.__revealClipped) return;
+    chart.ctx.restore();
+    chart.__revealClipped = false;
+  }
+};
+
+Chart.register(lineRevealPlugin);
 
 function drawValueLabels(chart) {
   const local = chart.__valueLabels || {};
@@ -515,12 +552,13 @@ export function createPieChart(canvas) {
       maintainAspectRatio: false,
       cutout: "58%",
       layout: { padding: PIE_LAYOUT_PADDING },
+      animation: { duration: REDUCED_MOTION ? 0 : 900, easing: "easeOutQuart" },
       animations: {
         x: { duration: 0 },
         y: { duration: 0 },
         innerRadius: { duration: 0 },
         outerRadius: { duration: 0 },
-        offset: { duration: 150 }
+        offset: { duration: REDUCED_MOTION ? 0 : 200, easing: "easeOutCubic" }
       },
       plugins: {
         valueLabels: { display: false },
@@ -726,17 +764,33 @@ export function updateSeriesLineChart(chart, rows, options = {}) {
   chart.update();
 }
 
-const BAR_ANIMATION_MS = REDUCED_MOTION ? 0 : 550;
+const BAR_ANIMATION_MS = REDUCED_MOTION ? 0 : 700;
 const BAR_STAGGER_MAX_MS = 70;
 const BAR_HOVER_GROW_PX = REDUCED_MOTION ? 0 : 8;
 const BAR_HOVER_MS = 160;
+const BAR_HOVER_MAX_FRAME_MS = 34;
+const BAR_HOVER_MAX_BARS = 80;
+const ACTIVE_TRANSITION_MS = REDUCED_MOTION ? 0 : 200;
+
+function barCount(chart) {
+  return chart.data.datasets.reduce((n, ds) => n + ((ds.data && ds.data.length) || 0), 0);
+}
+
+function tuneHoverForSize(chart) {
+  const many = barCount(chart) > BAR_HOVER_MAX_BARS;
+  chart.__barGrowOff = many;
+  chart.config.options.transitions = {
+    ...(chart.config.options.transitions || {}),
+    active: { animation: { duration: many ? 0 : ACTIVE_TRANSITION_MS } }
+  };
+}
 const barHoverGrow = {
   id: "barHoverGrow",
   beforeDatasetsDraw(chart) {
-    if (!BAR_HOVER_GROW_PX) return;
-    const state = chart.__barGrow || (chart.__barGrow = { p: new Map(), t: performance.now(), saved: [] });
+    if (!BAR_HOVER_GROW_PX || chart.__barGrowOff) return;
+    const state = chart.__barGrow || (chart.__barGrow = { p: new Map(), t: performance.now(), saved: [], raf: 0 });
     const now = performance.now();
-    const step = Math.min(1, (now - state.t) / BAR_HOVER_MS);
+    const step = Math.min(BAR_HOVER_MAX_FRAME_MS, now - state.t) / BAR_HOVER_MS;
     state.t = now;
     const active = new Set(chart.getActiveElements().map((a) => `${a.datasetIndex}:${a.index}`));
     let animating = false;
@@ -767,19 +821,28 @@ const barHoverGrow = {
         }
       });
     });
-    if (animating) requestAnimationFrame(() => chart.draw());
+    if (animating && !state.raf) {
+      state.raf = requestAnimationFrame(() => {
+        state.raf = 0;
+        if (chart.ctx) chart.draw();
+      });
+    }
   },
   afterDatasetsDraw(chart) {
     const state = chart.__barGrow;
     if (!state) return;
     state.saved.forEach((s) => Object.assign(s.el, { x: s.x, y: s.y, width: s.width, height: s.height }));
     state.saved.length = 0;
+  },
+  afterDestroy(chart) {
+    const state = chart.__barGrow;
+    if (state && state.raf) cancelAnimationFrame(state.raf);
   }
 };
 const BAR_STAGGER_TOTAL_MS = 900;
 
 function barStaggerDelay(context) {
-  if (context.type !== "data" || context.mode !== "default") return 0;
+  if (context.type !== "data" || context.mode !== "default" || context.chart.__barsEntered) return 0;
   const count = (context.chart.data.labels || []).length || 1;
   const step = Math.min(BAR_STAGGER_MAX_MS, BAR_STAGGER_TOTAL_MS / count);
   return context.dataIndex * step;
@@ -827,7 +890,7 @@ export function createBarChart(canvas, options = {}) {
     data: { labels: [], datasets: [] },
     options: {
       indexAxis: horizontal ? "y" : "x",
-      animation: { duration: BAR_ANIMATION_MS, easing: "easeOutQuart", delay: barStaggerDelay },
+      animation: { duration: BAR_ANIMATION_MS, easing: "easeOutCubic", delay: barStaggerDelay },
       responsive: true,
       maintainAspectRatio: false,
       layout: { padding: horizontal ? { right: 80 } : { top: 24 } },
@@ -881,7 +944,24 @@ function updateGroupedBarChart(chart, panorama, options = {}) {
       return `${context.dataset.label}: ${typeof fmt === "function" ? fmt(value) : value}`;
     }
   };
-  chart.update();
+  tuneHoverForSize(chart);
+  applyValueMax(chart, options.valueMax);
+  chart.update(options.animate === false ? "none" : undefined);
+}
+
+function applyValueMax(chart, max) {
+  const axis = chart.options.indexAxis === "y" ? "x" : "y";
+  const scale = chart.options.scales && chart.options.scales[axis];
+  if (scale) scale.max = Number.isFinite(max) && max > 0 ? max : undefined;
+}
+
+export function barValueMax(panorama) {
+  let max = 0;
+  panorama.forEach((row) => {
+    if (Array.isArray(row.series)) row.series.forEach((s) => (max = Math.max(max, Number(s.value) || 0)));
+    else max = Math.max(max, scaleTransform(row.value === null ? 0 : row.value));
+  });
+  return max * 1.12;
 }
 
 export function updateBarChart(chart, panorama, options = {}) {
@@ -890,7 +970,11 @@ export function updateBarChart(chart, panorama, options = {}) {
   chart.__rotateValues = !!options.rotate;
   chart.options.plugins.legend = { display: false };
   chart.options.plugins.tooltip.displayColors = false;
-  if (grouped) return updateGroupedBarChart(chart, panorama, options);
+  if (grouped) {
+    updateGroupedBarChart(chart, panorama, options);
+    markBarsEntered(chart);
+    return;
+  }
   const labels = panorama.map((p) => p.label);
   const values = panorama.map((p) => (p.value === null ? 0 : p.value));
   const tooltips = panorama.map((p) =>
@@ -931,7 +1015,14 @@ export function updateBarChart(chart, panorama, options = {}) {
 
   chart.__meanLine = null;
 
-  chart.update();
+  tuneHoverForSize(chart);
+  applyValueMax(chart, options.valueMax);
+  chart.update(options.animate === false ? "none" : undefined);
+  markBarsEntered(chart);
+}
+
+function markBarsEntered(chart) {
+  if ((chart.data.labels || []).length) chart.__barsEntered = true;
 }
 
 const centerTextPlugin = {

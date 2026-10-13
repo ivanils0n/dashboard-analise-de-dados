@@ -453,7 +453,7 @@ const totals = computed(() => [
             </p>
           </header>
           <div class="max-h-[32rem] overflow-y-auto p-4">
-            <BarChart :data="funcaoData" show-values :show-trend="false" horizontal align-top :height-px="Math.max(240, funcaoData.length * 36)" bars-clickable @bar-click="onFuncaoClick" />
+            <BarChart :data="funcaoData" show-values :show-trend="false" horizontal align-top virtual :height-px="funcaoData.length > 30 ? 420 : Math.max(240, funcaoData.length * 36)" bars-clickable @bar-click="onFuncaoClick" />
           </div>
         </section>
 

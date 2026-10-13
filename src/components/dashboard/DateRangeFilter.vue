@@ -15,7 +15,9 @@ import {
 const props = defineProps({
   range: { type: Object, required: true },
   title: { type: String, default: "Mês" },
-  align: { type: String, default: "right" }
+  align: { type: String, default: "right" },
+  iconOnly: { type: Boolean, default: false },
+  triggerClass: { type: String, default: "" }
 });
 
 const emit = defineEmits(["apply"]);
@@ -35,6 +37,12 @@ const label = computed(() => {
 });
 
 const active = computed(() => !!currentRangeYm.value);
+
+const monthShort = computed(() => {
+  const ym = currentRangeYm.value;
+  const m = ym ? Number(ym.split("-")[1]) : 0;
+  return m >= 1 && m <= 12 ? MONTHS_SHORT[m - 1] : "";
+});
 
 const years = yearOptions(5, 1);
 
@@ -77,13 +85,41 @@ function onDocClick() {
   open.value = false;
 }
 
-onMounted(() => document.addEventListener("click", onDocClick));
-onUnmounted(() => document.removeEventListener("click", onDocClick));
+function onKeydown(e) {
+  if (e.key === "Escape") open.value = false;
+}
+
+onMounted(() => {
+  document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onKeydown);
+});
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+  document.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>
   <div class="relative" @click.stop>
     <button
+      v-if="iconOnly"
+      type="button"
+      :class="[triggerClass, open && '!bg-zinc-800 !text-zinc-100']"
+      :aria-expanded="open"
+      :aria-label="`${title}: ${label}`"
+      :title="`${title}: ${label}`"
+      @click="toggle"
+    >
+      <span v-if="monthShort" class="text-sm font-bold uppercase tracking-wide">{{ monthShort }}</span>
+      <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </svg>
+    </button>
+    <button
+      v-else
       type="button"
       class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition"
       :class="active
@@ -107,8 +143,8 @@ onUnmounted(() => document.removeEventListener("click", onDocClick));
 
     <div
       v-if="open"
-      class="absolute z-40 mt-2 w-64 rounded-xl border border-zinc-200 bg-white shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
-      :class="align === 'right' ? 'right-0' : 'left-0'"
+      class="absolute z-40 w-64 rounded-xl border border-zinc-200 bg-white shadow-xl slide-up dark:border-zinc-800 dark:bg-zinc-900"
+      :class="align === 'left-of' ? 'right-full top-0 mr-3' : ['mt-2', align === 'right' ? 'right-0' : 'left-0']"
     >
       <div class="flex flex-col gap-2 p-3">
         <div class="flex items-center justify-between gap-2">

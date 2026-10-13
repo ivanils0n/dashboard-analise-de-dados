@@ -36,7 +36,7 @@ const valueText = computed(() => {
   <button
     v-if="compact"
     type="button"
-    class="kpi-card kpi-fluid no-callout flex min-w-0 flex-col items-center justify-center rounded-xl border bg-white text-center shadow-sm dark:bg-zinc-900"
+    class="kpi-card kpi-enter kpi-fluid no-callout flex min-w-0 flex-col items-center justify-center rounded-xl border bg-white text-center shadow-sm dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"
@@ -69,7 +69,7 @@ const valueText = computed(() => {
   <button
     v-else
     type="button"
-    class="kpi-card no-callout flex w-[200px] min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-2xl border bg-white px-2 py-2.5 sm:px-3 text-center shadow-sm dark:bg-zinc-900"
+    class="kpi-card kpi-enter no-callout flex w-[200px] min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-2xl border bg-white px-2 py-2.5 sm:px-3 text-center shadow-sm dark:bg-zinc-900"
     :class="selected
       ? 'border-accent ring-2 ring-accent/30'
       : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'"

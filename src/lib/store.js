@@ -1,4 +1,4 @@
-import { reactive } from "vue";
+import { reactive, shallowReactive, toRaw, markRaw } from "vue";
 import { createId, compareDateAsc, nameKey } from "./utils";
 
 function emptyData() {
@@ -18,6 +18,32 @@ function emptyData() {
 }
 
 const data = reactive(emptyData());
+
+const listRevs = shallowReactive({});
+const bumpList = (key) => {
+  listRevs[key] = (listRevs[key] || 0) + 1;
+};
+
+const sortedMemo = new Map();
+
+function memoList(memoKey, key, build) {
+  const list = data[key] || [];
+  const rev = listRevs[key] || 0;
+  const src = toRaw(list);
+  const hit = sortedMemo.get(memoKey);
+  if (hit && hit.src === src && hit.rev === rev) return hit.list.slice();
+  const built = build(list);
+  sortedMemo.set(memoKey, { src, rev, list: built });
+  return built.slice();
+}
+
+const byDateAsc = (list) => list.slice().sort((a, b) => compareDateAsc(a.date, b.date));
+
+function filterByEstado(list, state) {
+  if (!state || state === "todos") return list;
+  const target = String(state).trim().toUpperCase();
+  return list.filter((e) => String((e.meta && e.meta.estado) || "").trim().toUpperCase() === target);
+}
 
 export function useData() {
   return data;
@@ -51,22 +77,15 @@ export function getEntriesFor(indicatorId, state) {
   // chama isso genericamente para TODO indicador em INDICATORS, esperando
   const key = ENTRY_LISTS[indicatorId];
   if (!key) return [];
-  let list = (data[key] || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
-  if (indicatorId === "absenteismo") list = list.filter((e) => !isOcorrencia(e));
-  if (state && state !== "todos") {
-    const target = String(state).trim().toUpperCase();
-    list = list.filter(
-      (e) => String((e.meta && e.meta.estado) || "").trim().toUpperCase() === target
-    );
-  }
-  return list;
+  return memoList(`${indicatorId}|${state || ""}`, key, (list) => {
+    let out = byDateAsc(list);
+    if (indicatorId === "absenteismo") out = out.filter((e) => !isOcorrencia(e));
+    return filterByEstado(out, state);
+  });
 }
 
 export function getBeneficios(state) {
-  const list = (data.beneficios || []).slice().sort((a, b) => compareDateAsc(a.date, b.date));
-  if (!state || state === "todos") return list;
-  const target = String(state).trim().toUpperCase();
-  return list.filter((e) => String((e.meta && e.meta.estado) || "").trim().toUpperCase() === target);
+  return memoList(`beneficios|${state || ""}`, "beneficios", (list) => filterByEstado(byDateAsc(list), state));
 }
 
 function _withState(meta, state) {
@@ -78,9 +97,10 @@ function _withState(meta, state) {
 
 export function addEntry(indicatorId, { date, value, meta, state }) {
   const key = entryList(indicatorId);
-  const entry = { id: createId(), date, value: Number(value), meta: _withState(meta, state) };
+  const entry = markRaw({ id: createId(), date, value: Number(value), meta: _withState(meta, state) });
   data[key].push(entry);
   data[key].sort((a, b) => compareDateAsc(a.date, b.date));
+  bumpList(key);
   if (ok()) remote.entryAdded(indicatorId, entry);
 }
 
@@ -90,12 +110,13 @@ export function updateEntry(indicatorId, entryId, patch) {
   if (idx < 0) return;
   const previous = data[key][idx];
   const { state, ...fields } = patch;
-  const updated = { ...previous, ...fields };
+  const updated = markRaw({ ...previous, ...fields });
   if ("state" in patch) {
     updated.meta = _withState(fields.meta !== undefined ? fields.meta : previous.meta, state);
   }
   data[key][idx] = updated;
   data[key].sort((a, b) => compareDateAsc(a.date, b.date));
+  bumpList(key);
   if (!ok()) return;
   remote.entryUpdated(indicatorId, updated);
 }
@@ -131,12 +152,13 @@ export function getOcorrencias() {
   return data.absenteismo.filter(isOcorrencia);
 }
 
-export function saveOcorrencia({ date, colaborador, setor, filial, motivo, observacao, estado, advertencia, acidente, cid, diasAtestado, tipoAcidente, aberturaCat }) {
+export function saveOcorrencia({ date, colaborador, codigo, setor, filial, motivo, observacao, estado, advertencia, acidente, cid, diasAtestado, tipoAcidente, aberturaCat }) {
   const existing = data.absenteismo.find(
     (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
   );
   const meta = {
     colaborador,
+    codigo: codigo || null,
     setor: setor || null,
     filial: filial || null,
     motivo,
@@ -151,14 +173,16 @@ export function saveOcorrencia({ date, colaborador, setor, filial, motivo, obser
     aberturaCat: !!aberturaCat
   };
   if (existing) {
-    const updated = { ...existing, meta };
+    const updated = markRaw({ ...existing, meta });
     const idx = data.absenteismo.indexOf(existing);
     data.absenteismo[idx] = updated;
+    bumpList("absenteismo");
     if (ok()) remote.entryUpdated("absenteismo", updated);
     return updated;
   }
-  const entry = { id: createId(), date, value: 0, meta };
+  const entry = markRaw({ id: createId(), date, value: 0, meta });
   data.absenteismo.push(entry);
+  bumpList("absenteismo");
   if (ok()) remote.entryAdded("absenteismo", entry);
   return entry;
 }
@@ -181,6 +205,7 @@ export function getVacancies() {
 }
 
 export function upsertVacancy(vacancy) {
+  markRaw(vacancy);
   const idx = data.vacancies.findIndex((v) => v.id === vacancy.id);
   if (idx >= 0) data.vacancies[idx] = vacancy;
   else data.vacancies.push(vacancy);
@@ -206,6 +231,7 @@ export function getHeadcounts() {
 }
 
 export function upsertHeadcount(record) {
+  markRaw(record);
   const idx = data.headcounts.findIndex((h) => h.id === record.id);
   if (idx >= 0) data.headcounts[idx] = record;
   else data.headcounts.push(record);
@@ -227,6 +253,7 @@ export function getBranches() {
 }
 
 export function upsertBranch(branch) {
+  markRaw(branch);
   const idx = data.branches.findIndex((b) => b.id === branch.id);
   if (idx >= 0) data.branches[idx] = branch;
   else data.branches.push(branch);
@@ -249,17 +276,18 @@ export function resetData() {
 
 export function replaceFromCache(cached) {
   const d = emptyData();
+  const rawList = (list) => (Array.isArray(list) ? list.map((item) => markRaw(item)) : []);
   if (cached && typeof cached === "object") {
-    d.vacancies = Array.isArray(cached.vacancies) ? cached.vacancies : [];
-    d.rescisoes = Array.isArray(cached.rescisoes) ? cached.rescisoes : [];
-    d.headcounts = Array.isArray(cached.headcounts) ? cached.headcounts : [];
-    d.branches = Array.isArray(cached.branches) ? cached.branches : [];
-    d.diarias = Array.isArray(cached.diarias) ? cached.diarias : [];
-    d.treinamentos = Array.isArray(cached.treinamentos) ? cached.treinamentos : [];
-    d.custoFolha = Array.isArray(cached.custoFolha) ? cached.custoFolha : [];
-    d.ferias = Array.isArray(cached.ferias) ? cached.ferias : [];
-    d.beneficios = Array.isArray(cached.beneficios) ? cached.beneficios : [];
-    d.absenteismo = Array.isArray(cached.absenteismo) ? cached.absenteismo : [];
+    d.vacancies = rawList(cached.vacancies);
+    d.rescisoes = rawList(cached.rescisoes);
+    d.headcounts = rawList(cached.headcounts);
+    d.branches = rawList(cached.branches);
+    d.diarias = rawList(cached.diarias);
+    d.treinamentos = rawList(cached.treinamentos);
+    d.custoFolha = rawList(cached.custoFolha);
+    d.ferias = rawList(cached.ferias);
+    d.beneficios = rawList(cached.beneficios);
+    d.absenteismo = rawList(cached.absenteismo);
   }
   Object.assign(data, d);
 }
@@ -271,7 +299,7 @@ function mergeNewItems(current, incoming) {
   incoming.forEach((item) => {
     if (known.has(item.id)) return;
     known.add(item.id);
-    fresh.push({ ...item });
+    fresh.push(markRaw({ ...item }));
   });
   return fresh.length ? current.concat(fresh) : null;
 }

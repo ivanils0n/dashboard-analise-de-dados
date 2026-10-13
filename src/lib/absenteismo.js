@@ -97,8 +97,9 @@ export function monthEmployees(state, ym, period) {
     .filter((h) => !h.dataDesligamento || h.dataDesligamento >= startIso)
     .map((h) => ({
       nome: String(h.colaborador).trim(),
+      codigo: h.codigo != null ? String(h.codigo).trim() : "",
       key: nameKey(h.colaborador),
-      busca: normalizeText(h.colaborador),
+      busca: normalizeText(`${h.colaborador} ${h.codigo ?? ""}`),
       setorKey: String(h.funcao || "").trim().toUpperCase(),
       filial: h.filial || "",
       filialKey: String(h.filial || "").trim().toUpperCase(),

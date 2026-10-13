@@ -2,7 +2,7 @@
 import { onMounted, onBeforeUnmount, onActivated, watch, ref, computed, nextTick } from "vue";
 import Modal from "@/components/ui/Modal.vue";
 import ChartEmpty from "@/components/charts/ChartEmpty.vue";
-import { createBarChart, updateBarChart, createSeriesLineChart, updateSeriesLineChart, animateTrendLine, cancelTrendAnimation } from "@/lib/charts";
+import { createBarChart, updateBarChart, barValueMax, createSeriesLineChart, updateSeriesLineChart, animateTrendLine, cancelTrendAnimation } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
 import { formatCurrency, formatHoursClock } from "@/lib/utils";
 
@@ -23,7 +23,8 @@ const props = defineProps({
   subtitle: { type: String, default: "" },
   singleCaption: { type: String, default: "" },
   showLegend: { type: Boolean, default: true },
-  rotateValues: { type: Boolean, default: false }
+  rotateValues: { type: Boolean, default: false },
+  virtual: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["bar-click", "bar-contextmenu"]);
@@ -88,6 +89,49 @@ const canvasBoxStyle = computed(() => {
   return { height: `max(100%, ${rowsHeightPx.value}px)` };
 });
 
+const VIRTUAL_MIN_ROWS = 30;
+const LEGEND_PX = 28;
+const rootEl = ref(null);
+const rootH = ref(0);
+const virtualOn = computed(
+  () => props.virtual && isHorizontal.value && props.data.length > VIRTUAL_MIN_ROWS && (!props.fluid || rootH.value > 0)
+);
+const rowPx = computed(() => (seriesPerRow.value > 1 ? seriesPerRow.value * 24 + 12 : ROW_PX));
+const legendItems = computed(() =>
+  virtualOn.value && props.showLegend && props.data[0] && Array.isArray(props.data[0].series)
+    ? props.data[0].series.map((s) => ({ label: s.label, color: s.color }))
+    : []
+);
+const viewportPx = computed(() => (props.fluid ? rootH.value : props.heightPx) - (legendItems.value.length ? LEGEND_PX : 0));
+const visibleRows = computed(() => Math.min(props.data.length, Math.ceil(viewportPx.value / rowPx.value) + 1));
+const axisExtraPx = ref(8);
+const scrollTop = ref(0);
+const windowStart = computed(() =>
+  virtualOn.value
+    ? Math.max(0, Math.min(Math.floor(scrollTop.value / rowPx.value), props.data.length - visibleRows.value))
+    : 0
+);
+const totalPx = computed(() => props.data.length * rowPx.value + axisExtraPx.value);
+const virtualCanvasStyle = computed(() => ({
+  height: `${visibleRows.value * rowPx.value + axisExtraPx.value}px`,
+  transform: `translateY(${windowStart.value * rowPx.value - scrollTop.value}px)`
+}));
+const scroller = ref(null);
+
+function onVirtualScroll(evt) {
+  if (virtualOn.value) scrollTop.value = evt.target.scrollTop;
+}
+
+function measureAxisExtra() {
+  const area = chart && chart.chartArea;
+  if (!area) return;
+  const extra = Math.round(chart.height - (area.bottom - area.top));
+  if (extra > 0 && Math.abs(extra - axisExtraPx.value) > 1) {
+    axisExtraPx.value = extra;
+    nextTick(() => chart && chart.resize());
+  }
+}
+
 function openFullscreen() {
   expandOpen.value = true;
 }
@@ -101,13 +145,13 @@ function onCanvasClick(evt) {
   if (!chart) return;
   const points = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, true);
   if (!points.length) return;
-  const index = points[0].index;
+  const index = points[0].index + windowStart.value;
   const realValues = chart.__realBarValues;
   emit("bar-click", {
     index,
     datasetIndex: points[0].datasetIndex,
-    label: chart.data.labels[index],
-    value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
+    label: chart.data.labels[index - windowStart.value],
+    value: realValues ? realValues[index - windowStart.value] : chart.data.datasets[0] ? chart.data.datasets[0].data[index - windowStart.value] : null
   });
 }
 
@@ -116,13 +160,13 @@ function onCanvasContextmenu(evt) {
   const points = chart.getElementsAtEventForMode(evt, "nearest", { intersect: true }, true);
   if (!points.length) return;
   evt.preventDefault();
-  const index = points[0].index;
+  const index = points[0].index + windowStart.value;
   const realValues = chart.__realBarValues;
   emit("bar-contextmenu", {
     index,
     datasetIndex: points[0].datasetIndex,
-    label: chart.data.labels[index],
-    value: realValues ? realValues[index] : chart.data.datasets[0] ? chart.data.datasets[0].data[index] : null
+    label: chart.data.labels[index - windowStart.value],
+    value: realValues ? realValues[index - windowStart.value] : chart.data.datasets[0] ? chart.data.datasets[0].data[index - windowStart.value] : null
   });
 }
 
@@ -147,10 +191,15 @@ function applyOptions() {
   }
 }
 
-function drawData() {
+function drawData(animate = true) {
   if (!chart) return;
   if (props.variant === "line") {
     updateSeriesLineChart(chart, props.data, { formatter: formatterFor(props.valueFormat), xTicks: props.lineXLabels });
+  } else if (virtualOn.value) {
+    const rows = props.data.slice(windowStart.value, windowStart.value + visibleRows.value);
+    updateBarChart(chart, rows, { trend: false, legend: false, rotate: props.rotateValues, animate, valueMax: barValueMax(props.data) });
+    chart.__trendProgress = undefined;
+    measureAxisExtra();
   } else {
     updateBarChart(chart, props.data, { trend: props.showTrend, legend: props.showLegend, rotate: props.rotateValues });
     if (props.animateTrend && props.showTrend) animateTrendLine(chart);
@@ -185,8 +234,21 @@ function unmountChart() {
   }
 }
 
-onMounted(mountChart);
-onBeforeUnmount(unmountChart);
+let rootObserver = null;
+onMounted(() => {
+  if (props.fluid && typeof ResizeObserver !== "undefined" && rootEl.value) {
+    rootObserver = new ResizeObserver(() => {
+      if (rootEl.value) rootH.value = rootEl.value.clientHeight;
+    });
+    rootObserver.observe(rootEl.value);
+    rootH.value = rootEl.value.clientHeight;
+  }
+  mountChart();
+});
+onBeforeUnmount(() => {
+  if (rootObserver) rootObserver.disconnect();
+  unmountChart();
+});
 
 onActivated(() => {
   if (chart) chart.resize();
@@ -210,6 +272,15 @@ watch(
   () => refreshData(),
   { deep: true }
 );
+
+watch([windowStart, visibleRows], () => {
+  if (virtualOn.value) drawData(false);
+});
+
+watch(virtualOn, () => {
+  scrollTop.value = 0;
+  if (scroller.value) scroller.value.scrollTop = 0;
+});
 
 watch(
   () => props.showValues,
@@ -237,18 +308,34 @@ watch(
 
 <template>
   <div
+    ref="rootEl"
     class="relative w-full"
-    :class="[fluid ? 'h-full' : '', isHorizontal ? 'overflow-y-auto overflow-x-hidden' : '']"
+    :class="[fluid ? 'h-full' : '', isHorizontal && !virtualOn ? 'overflow-y-auto overflow-x-hidden' : '', virtualOn ? 'flex flex-col' : '']"
     :style="rootStyle"
   >
-    <div class="relative w-full" :class="singleRow ? 'invisible' : ''" :style="canvasBoxStyle">
-      <canvas
-        ref="canvas"
-        :class="barsClickable ? 'cursor-pointer' : ''"
-        aria-hidden="true"
-        @click="onCanvasClick"
-        @contextmenu="onCanvasContextmenu"
-      ></canvas>
+    <div v-if="legendItems.length" class="flex h-7 shrink-0 items-center justify-center gap-4 text-[11px] text-zinc-500 dark:text-zinc-400">
+      <span v-for="item in legendItems" :key="item.label" class="inline-flex items-center gap-1.5">
+        <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: item.color }"></span>{{ item.label }}
+      </span>
+    </div>
+    <div
+      ref="scroller"
+      :class="virtualOn ? 'min-h-0 flex-1 overflow-y-auto overflow-x-hidden' : 'contents'"
+      @scroll.passive="onVirtualScroll"
+    >
+      <div :class="virtualOn ? 'relative w-full' : 'contents'" :style="virtualOn ? { height: `${totalPx}px` } : undefined">
+        <div :class="virtualOn ? 'sticky top-0 w-full overflow-hidden' : 'contents'" :style="virtualOn ? { height: `${viewportPx}px` } : undefined">
+          <div class="relative w-full" :class="singleRow ? 'invisible' : ''" :style="virtualOn ? virtualCanvasStyle : canvasBoxStyle">
+            <canvas
+              ref="canvas"
+              :class="barsClickable ? 'cursor-pointer' : ''"
+              aria-hidden="true"
+              @click="onCanvasClick"
+              @contextmenu="onCanvasContextmenu"
+            ></canvas>
+          </div>
+        </div>
+      </div>
     </div>
     <div
       v-if="singleRow"
@@ -294,6 +381,7 @@ watch(
         :variant="variant"
         :line-x-labels="lineXLabels"
         :horizontal="horizontal"
+        :virtual="virtual"
         :align-top="alignTop"
         fluid
         @bar-click="emit('bar-click', $event)"

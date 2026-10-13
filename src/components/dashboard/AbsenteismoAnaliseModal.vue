@@ -300,7 +300,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
               <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Taxa de absenteísmo sobre os ativos de cada função, do maior para o menor</p>
             </header>
             <div class="p-4">
-              <BarChart :data="funcaoData" show-values value-format="percent2" :show-trend="false" horizontal align-top :height-px="funcaoHeight" bars-clickable @bar-click="onFuncaoClick" />
+              <BarChart :data="funcaoData" show-values value-format="percent2" :show-trend="false" horizontal align-top virtual :height-px="funcaoHeight" bars-clickable @bar-click="onFuncaoClick" />
             </div>
           </section>
 

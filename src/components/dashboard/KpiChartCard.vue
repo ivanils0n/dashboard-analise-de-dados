@@ -149,6 +149,7 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
       :bars-clickable="card.id === 'custo_contratacao' || card.id === 'custo_diaria' || card.id === 'headcount'"
       :variant="card.variant || 'bar'"
       :horizontal="!!card.horizontal"
+      virtual
       @bar-click="emit('bar-click', $event)"
     />
     <RetentionSummary v-else-if="card.kind === 'table'" :table-data="tableData" />

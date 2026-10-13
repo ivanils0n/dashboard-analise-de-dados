@@ -58,7 +58,7 @@ const hintCls = "text-[11px] text-zinc-400 dark:text-zinc-500";
           <option v-for="t in TIPOS" :key="t.value" :value="t.value">{{ t.label }}</option>
         </select>
       </header>
-      <BarChart :data="porColaborador" horizontal align-top show-values :show-trend="false" :height-px="380" />
+      <BarChart :data="porColaborador" horizontal align-top virtual show-values :show-trend="false" :height-px="380" />
     </section>
 
     <section :class="cardCls">

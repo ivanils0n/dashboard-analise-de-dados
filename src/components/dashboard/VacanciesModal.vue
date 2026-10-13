@@ -275,15 +275,22 @@ function onBarScroll() {
   wrap.scrollLeft = bar.scrollLeft;
 }
 
-onMounted(() => {
-  nextTick(updateTableWidths);
-  if (typeof ResizeObserver !== "undefined") {
-    resizeObserver = new ResizeObserver(updateTableWidths);
+function observeTable() {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
     if (tableWrapRef.value) resizeObserver.observe(tableWrapRef.value);
     if (tableElRef.value) resizeObserver.observe(tableElRef.value);
   }
+  nextTick(updateTableWidths);
+}
+
+onMounted(() => {
+  if (typeof ResizeObserver !== "undefined") resizeObserver = new ResizeObserver(updateTableWidths);
+  observeTable();
   window.addEventListener("resize", updateTableWidths);
 });
+
+watch([tableWrapRef, tableElRef], observeTable);
 
 onBeforeUnmount(() => {
   if (resizeObserver) resizeObserver.disconnect();

@@ -1,4 +1,5 @@
 <script setup>
+import CountUpText from "@/components/ui/CountUpText.vue";
 defineProps({
   items: { type: Array, default: () => [] },
   compact: { type: Boolean, default: false },
@@ -32,7 +33,7 @@ defineProps({
           compact ? 'text-lg' : 'text-2xl',
           item.accent ? 'text-accent-hover dark:text-accent-light' : 'text-zinc-900 dark:text-zinc-100'
         ]"
-      >{{ item.value }}</span>
+      ><CountUpText :text="item.value" /></span>
     </div>
   </div>
 </template>

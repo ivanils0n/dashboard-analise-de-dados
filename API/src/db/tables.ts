@@ -194,6 +194,7 @@ export const ENTITIES: Record<string, EntityDef> = {
       { name: "competencia", type: "date", required: true },
       { name: "estado_sigla", type: "text", stateRef: true },
       { name: "colaborador", type: "text" },
+      { name: "codigo", type: "text" },
       { name: "setor", type: "text" },
       { name: "filial", type: "text" },
       { name: "data", type: "date" },

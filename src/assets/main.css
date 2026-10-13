@@ -10,6 +10,11 @@
   --color-ice: #eef3f9;
 }
 
+:root {
+  --gg-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --gg-ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
 ::-webkit-scrollbar {
   width: 12px;
   height: 14px;
@@ -45,16 +50,18 @@ body {
   to { opacity: 1; }
 }
 .fade-in {
-  animation: gg-fade-in 0.25s ease-out both;
+  animation: gg-fade-in 0.25s ease-out backwards;
 }
 
-.page-enter-active,
+.page-enter-active {
+  transition: opacity 0.26s var(--gg-ease-out), transform 0.32s var(--gg-ease-out);
+}
 .page-leave-active {
-  transition: opacity 0.16s cubic-bezier(0.22, 1, 0.36, 1), transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.12s var(--gg-ease-in), transform 0.12s var(--gg-ease-in);
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(10px);
 }
 .page-leave-to {
   opacity: 0;
@@ -62,11 +69,11 @@ body {
 }
 
 @keyframes gg-slide-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
 }
 .slide-up {
-  animation: gg-slide-up 0.22s ease-out both;
+  animation: gg-slide-up 0.26s var(--gg-ease-out) backwards;
 }
 
 @keyframes gg-mac-overlay-in {
@@ -78,27 +85,37 @@ body {
   to { opacity: 0; }
 }
 @keyframes gg-mac-window-in {
-  0% { opacity: 0; transform: scale(0.92); }
-  45% { opacity: 1; }
-  70% { transform: scale(1.012); }
-  100% { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: none; }
 }
 @keyframes gg-mac-window-out {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.94); }
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+@media (max-width: 639px) {
+  @keyframes gg-mac-window-in {
+    from { opacity: 0; transform: translateY(48px); }
+    50% { opacity: 1; }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes gg-mac-window-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(32px); }
+  }
 }
 .mac-modal-enter-active {
-  animation: gg-mac-overlay-in 0.24s ease-out backwards;
+  animation: gg-mac-overlay-in 0.26s ease-out backwards;
 }
 .mac-modal-leave-active {
-  animation: gg-mac-overlay-out 0.17s ease-in forwards;
+  animation: gg-mac-overlay-out 0.16s ease-in forwards;
   pointer-events: none;
 }
 .mac-modal-enter-active .mac-panel {
-  animation: gg-mac-window-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: gg-mac-window-in 0.38s var(--gg-ease-out) backwards;
 }
 .mac-modal-leave-active .mac-panel {
-  animation: gg-mac-window-out 0.17s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: gg-mac-window-out 0.16s var(--gg-ease-in) forwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .mac-modal-enter-active,
@@ -110,17 +127,18 @@ body {
 }
 
 @keyframes gg-kpi-in {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(16px) scale(0.97); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
 }
-.kpi-enter {
-  animation: gg-kpi-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
-  animation-delay: calc(var(--i, 0) * 45ms);
+.kpi-enter,
+.visual-enter {
+  animation: gg-kpi-in 0.6s var(--gg-ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
 }
 .kpi-card {
   position: relative;
   isolation: isolate;
-  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s ease;
+  transition: transform 0.22s var(--gg-ease-out), border-color 0.18s ease;
 }
 .kpi-card::after {
   content: "";
@@ -135,7 +153,7 @@ body {
 }
 @media (hover: hover) {
   .kpi-card:hover {
-    transform: scale(1.05);
+    transform: translateY(-3px);
     z-index: 10;
     will-change: transform;
   }
@@ -145,10 +163,12 @@ body {
 }
 .kpi-card:active {
   transform: scale(0.98);
+  transition-duration: 0.08s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .kpi-enter,
+  .visual-enter,
   .slide-up,
   .fade-in,
   .is-flash {

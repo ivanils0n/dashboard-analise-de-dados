@@ -1,4 +1,5 @@
 <script setup>
+import CountUpText from "@/components/ui/CountUpText.vue";
 import { computed } from "vue";
 import KpiIcon from "@/components/dashboard/KpiIcon.vue";
 import TurnoverCostCard from "@/components/dashboard/TurnoverCostCard.vue";
@@ -66,7 +67,7 @@ const cards = computed(() => [
         <KpiIcon :id="card.id" />
       </span>
       <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ card.label }}</span>
-      <span class="font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100" :class="compact ? 'text-xl' : 'text-xl sm:text-2xl'">{{ card.value }}</span>
+      <span class="font-bold leading-tight tabular-nums text-zinc-900 dark:text-zinc-100" :class="compact ? 'text-xl' : 'text-xl sm:text-2xl'"><CountUpText :text="card.value" /></span>
       <span class="text-xs text-zinc-400">{{ card.rate }}</span>
     </button>
   </div>

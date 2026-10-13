@@ -11,7 +11,7 @@ import { dateFilter } from "@/composables/useDateFilter";
 import { hydrateState, warmApi } from "@/lib/db";
 import { beginLoading, endLoading } from "@/composables/useLoading";
 import { monthYm } from "@/lib/utils";
-import { useMonthOcorrencias } from "@/lib/absenteismo";
+import { useMonthOcorrencias, TIPOS } from "@/lib/absenteismo";
 
 /* Altura fixa (tela toda): quem rola é a tabela do mapa (ou a área dos gráficos), nunca a
    página — assim o toque no celular não disputa rolagem com a página. 7rem = cabeçalho do
@@ -24,6 +24,12 @@ const ym = computed(() => (dateFilter.start ? String(dateFilter.end || dateFilte
 const ocorrencias = useMonthOcorrencias(ym, () => filters.current);
 
 const tab = ref("mapa");
+
+const tipoSel = ref("");
+const ocorrenciasFiltradas = computed(() => {
+  const t = TIPOS.find((x) => x.value === tipoSel.value);
+  return t ? ocorrencias.value.filter((o) => t.has(o)) : ocorrencias.value;
+});
 
 onActivated(() => {
   warmApi();
@@ -47,7 +53,7 @@ onActivated(() => {
       </div>
     </div>
 
-    <AbsenteismoMapa v-show="tab === 'mapa'" class="min-h-0 flex-1" :estado="filters.current" :ym="ym">
+    <AbsenteismoMapa v-show="tab === 'mapa'" class="min-h-0 flex-1" :estado="filters.current" :ym="ym" :tipo="tipoSel">
       <template #after-filters>
         <AbsenteismoTabs v-model="tab" />
       </template>
@@ -55,11 +61,11 @@ onActivated(() => {
     <template v-if="tab === 'graficos'">
       <AbsenteismoTabs v-model="tab" />
       <div class="min-h-0 flex-1 overflow-y-auto pb-2">
-        <div class="mb-3 md:hidden"><AbsenteismoKpis :ocorrencias="ocorrencias" /></div>
-        <AbsenteismoGraficos :ocorrencias="ocorrencias" />
+        <div class="mb-3 md:hidden"><AbsenteismoKpis :ocorrencias="ocorrencias" :selected="tipoSel" @select="tipoSel = $event" /></div>
+        <AbsenteismoGraficos :ocorrencias="ocorrenciasFiltradas" />
       </div>
     </template>
 
-    <div class="hidden shrink-0 md:block"><AbsenteismoKpis :ocorrencias="ocorrencias" /></div>
+    <div class="hidden shrink-0 md:block"><AbsenteismoKpis :ocorrencias="ocorrencias" :selected="tipoSel" @select="tipoSel = $event" /></div>
   </div>
 </template>

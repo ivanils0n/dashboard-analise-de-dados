@@ -12,7 +12,7 @@ import {
   getHeadcountById
 } from "./store";
 import { computed, toRaw } from "vue";
-import { createId, nowLocalISO, daysBetween, sameState, ymLabel, filialDisplay } from "./utils";
+import { createId, nowLocalISO, daysBetween, sameState, ymLabel, filialDisplay, nameKey } from "./utils";
 import { flush } from "./db";
 import { regionalLabel } from "./regionais";
 
@@ -164,8 +164,51 @@ export function computedSnapshot(indId, state) {
 
 export function syncAll() {}
 
+const VACANCY_TEXT_FIELDS = ["name", "filial", "recrutador", "motivoContratacao", "tipoContratacao"];
+const hasDiacritics = (s) => s.normalize("NFD") !== s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+function canonicalTexts(list, field) {
+  const groups = new Map();
+  list.forEach((v) => {
+    const raw = String(v[field] ?? "").replace(/\s+/g, " ").trim();
+    if (!raw) return;
+    const key = nameKey(raw);
+    let variants = groups.get(key);
+    if (!variants) groups.set(key, (variants = new Map()));
+    const upper = raw.toUpperCase();
+    variants.set(upper, (variants.get(upper) || 0) + 1);
+  });
+  const canon = new Map();
+  groups.forEach((variants, key) => {
+    let best = null;
+    let bestScore = -1;
+    variants.forEach((count, text) => {
+      const score = (hasDiacritics(text) ? 1e9 : 0) + count;
+      if (score > bestScore) {
+        best = text;
+        bestScore = score;
+      }
+    });
+    canon.set(key, best);
+  });
+  return canon;
+}
+
+const unifiedVacancies = computed(() => {
+  const list = getVacancies();
+  const maps = Object.fromEntries(VACANCY_TEXT_FIELDS.map((f) => [f, canonicalTexts(list, f)]));
+  return list.map((v) => {
+    const out = { ...v };
+    VACANCY_TEXT_FIELDS.forEach((f) => {
+      const raw = String(v[f] ?? "").trim();
+      if (raw) out[f] = maps[f].get(nameKey(raw)) || v[f];
+    });
+    return out;
+  });
+});
+
 export function listVacancies(state) {
-  return filterByState(getVacancies(), state)
+  return filterByState(unifiedVacancies.value, state)
     .slice()
     .sort((a, b) => String(b.openAt || "").localeCompare(String(a.openAt || "")));
 }

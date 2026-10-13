@@ -14,7 +14,7 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 
 <template>
   <Teleport to="body">
-    <Transition name="mac-modal" :duration="{ enter: 320, leave: 170 }">
+    <Transition name="mac-modal" :duration="{ enter: 380, leave: 160 }">
     <div
       v-if="state.visible"
       class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"

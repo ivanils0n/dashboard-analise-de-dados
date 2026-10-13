@@ -355,7 +355,7 @@ const tables = computed(() => [
                 </li>
               </ul>
               <div class="lg:col-span-2">
-                <BarChart :data="filialData" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="360" />
+                <BarChart :data="filialData" show-values value-format="currency" :show-trend="false" horizontal align-top virtual :height-px="360" />
               </div>
             </div>
           </section>
@@ -366,7 +366,7 @@ const tables = computed(() => [
               <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Os 15 colaboradores com maior valor de férias no período</p>
             </header>
             <div class="p-4">
-              <BarChart :data="colaboradorData" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="420" />
+              <BarChart :data="colaboradorData" show-values value-format="currency" :show-trend="false" horizontal align-top virtual :height-px="420" />
             </div>
           </section>
 

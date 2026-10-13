@@ -1,8 +1,9 @@
 <script setup>
-import { computed, nextTick, ref, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import { useFilters } from "@/composables/useFilters";
+import { STATES } from "@/lib/config";
 
 const props = defineProps({
   expanded: { type: Boolean, default: false },
@@ -16,25 +17,42 @@ const props = defineProps({
 
 const emit = defineEmits(["update:expanded", "reload", "tour", "toggle-values", "export"]);
 
-const { state: filters } = useFilters();
+const { state: filters, setState } = useFilters();
 const stateLabel = computed(() => (filters.current && filters.current !== "todos" ? filters.current : "Todos"));
 
 const asideRef = ref(null);
+const stateMenuOpen = ref(false);
+const stateMenuRef = ref(null);
+const stateOptions = [{ value: "todos", label: "Todos" }, ...STATES.map((s) => ({ value: s, label: s }))];
+
+function chooseState(value) {
+  setState(value);
+  stateMenuOpen.value = false;
+}
+
 function onPointerDownOutside(e) {
+  if (stateMenuOpen.value && stateMenuRef.value && !stateMenuRef.value.contains(e.target)) stateMenuOpen.value = false;
   if (!props.expanded || !asideRef.value || asideRef.value.contains(e.target)) return;
   emit("update:expanded", false);
 }
-onMounted(() => ["pointerdown", "mousedown"].forEach((t) => document.addEventListener(t, onPointerDownOutside, true)));
-onBeforeUnmount(() => ["pointerdown", "mousedown"].forEach((t) => document.removeEventListener(t, onPointerDownOutside, true)));
-
-async function expandAndOpen(selector) {
-  emit("update:expanded", true);
-  await nextTick();
-  setTimeout(() => {
-    const el = document.querySelector(`[data-side-actions] ${selector}`);
-    if (el && el.offsetParent) el.tagName === "SELECT" ? el.focus() : el.click();
-  }, 220);
+function onKeydown(e) {
+  if (e.key === "Escape") stateMenuOpen.value = false;
 }
+onMounted(() => {
+  ["pointerdown", "mousedown"].forEach((t) => document.addEventListener(t, onPointerDownOutside, true));
+  document.addEventListener("keydown", onKeydown);
+});
+onBeforeUnmount(() => {
+  ["pointerdown", "mousedown"].forEach((t) => document.removeEventListener(t, onPointerDownOutside, true));
+  document.removeEventListener("keydown", onKeydown);
+});
+
+watch(
+  () => props.expanded,
+  () => {
+    stateMenuOpen.value = false;
+  }
+);
 </script>
 
 <template>
@@ -75,21 +93,56 @@ async function expandAndOpen(selector) {
         <StateFilter data-tour="state" class="mt-1 w-full !px-3 !py-2 !text-[13px]" />
       </template>
       <template v-else>
-        <button type="button" data-tour="period" class="side-btn" title="Período" aria-label="Período" @click="expandAndOpen('[data-tour=period] > button')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-        </button>
-        <button type="button" data-tour="state" class="side-btn flex-col !gap-0.5" :title="`Estado: ${stateLabel}`" aria-label="Filtro por Estado" @click="expandAndOpen('select[data-tour=state]')">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-            <circle cx="12" cy="10" r="3" />
-          </svg>
-          <span class="text-[9px] font-bold uppercase leading-none">{{ stateLabel }}</span>
-        </button>
+        <DateRangeFilter
+          data-tour="period"
+          :range="range"
+          title="Período"
+          icon-only
+          align="left-of"
+          trigger-class="side-btn w-full"
+        />
+        <div ref="stateMenuRef" class="relative">
+          <button
+            type="button"
+            data-tour="state"
+            class="side-btn w-full flex-col !gap-0.5"
+            :class="stateMenuOpen && '!bg-zinc-800 !text-zinc-100'"
+            :title="`Estado: ${stateLabel}`"
+            aria-label="Filtro por Estado"
+            aria-haspopup="listbox"
+            :aria-expanded="stateMenuOpen"
+            @click="stateMenuOpen = !stateMenuOpen"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span class="text-[9px] font-bold uppercase leading-none">{{ stateLabel }}</span>
+          </button>
+          <div
+            v-if="stateMenuOpen"
+            class="slide-up absolute right-full top-0 z-40 mr-3 w-40 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 py-1 shadow-xl"
+            role="listbox"
+            aria-label="Filtro por Estado"
+          >
+            <p class="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Estado</p>
+            <button
+              v-for="o in stateOptions"
+              :key="o.value"
+              type="button"
+              role="option"
+              :aria-selected="filters.current === o.value"
+              class="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] font-medium transition"
+              :class="filters.current === o.value ? 'bg-accent/15 text-accent-light' : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'"
+              @click="chooseState(o.value)"
+            >
+              {{ o.label }}
+              <svg v-if="filters.current === o.value" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </template>
     </div>
 
@@ -194,7 +247,7 @@ async function expandAndOpen(selector) {
 .side-bar {
   background-color: #0a0a0a;
 }
-.side-btn {
+.side-bar :deep(.side-btn) {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -206,26 +259,26 @@ async function expandAndOpen(selector) {
   color: rgb(161 161 170);
   transition: background-color 0.15s, color 0.15s;
 }
-.side-btn:hover:not(:disabled) {
+.side-bar :deep(.side-btn:hover:not(:disabled)) {
   background-color: rgb(39 39 42);
   color: rgb(228 228 231);
 }
-.side-btn:disabled {
+.side-bar :deep(.side-btn:disabled) {
   cursor: not-allowed;
   opacity: 0.5;
 }
-.side-btn-wide {
+.side-bar :deep(.side-btn-wide) {
   justify-content: flex-start;
   padding-left: 0.75rem;
   padding-right: 0.75rem;
   text-align: left;
 }
-.side-btn-outline {
+.side-bar :deep(.side-btn-outline) {
   border: 1px solid rgb(63 63 70);
   font-weight: 500;
   color: rgb(228 228 231);
 }
-.side-btn svg {
+.side-bar :deep(.side-btn svg) {
   flex-shrink: 0;
 }
 .side-filter :deep(> button) {

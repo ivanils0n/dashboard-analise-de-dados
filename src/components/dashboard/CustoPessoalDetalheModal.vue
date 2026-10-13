@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import Modal from "@/components/ui/Modal.vue";
 import PieChart from "@/components/charts/PieChart.vue";
@@ -9,6 +9,7 @@ import { getEntriesFor, getBeneficios } from "@/lib/store";
 import { listRescisoes, rescisaoAmount, rescisaoRegionalLabel } from "@/lib/employees";
 import { regionalLabel } from "@/lib/regionais";
 import { dateFilter } from "@/composables/useDateFilter";
+import { useProgressiveList } from "@/composables/useProgressiveList";
 import { useFilters } from "@/composables/useFilters";
 import { filialDisplay, formatCurrency, ymLabel, ymShortLabel } from "@/lib/utils";
 
@@ -77,13 +78,13 @@ const todasLinhas = computed(() => {
 const regionalOptions = computed(() =>
   [...new Set(todasLinhas.value.map((l) => l.regional).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"))
 );
-watch(regionalOptions, (opts) => {
-  if (regionalSel.value && !opts.includes(regionalSel.value)) regionalSel.value = "";
-});
+const regionalAtiva = computed(() =>
+  regionalSel.value && regionalOptions.value.includes(regionalSel.value) ? regionalSel.value : ""
+);
 
 const noPeriodo = (l, start, end) => !(start && l.data < start) && !(end && l.data > end);
 const filtrar = (start, end) =>
-  todasLinhas.value.filter((l) => noPeriodo(l, start, end) && (!regionalSel.value || l.regional === regionalSel.value));
+  todasLinhas.value.filter((l) => noPeriodo(l, start, end) && (!regionalAtiva.value || l.regional === regionalAtiva.value));
 
 const linhas = computed(() => filtrar(dateFilter.start, dateFilter.end));
 
@@ -198,6 +199,7 @@ const insights = computed(() => {
 const lancamentos = computed(() =>
   linhas.value.slice().sort((a, b) => b.data.localeCompare(a.data) || a.colaborador.localeCompare(b.colaborador, "pt-BR"))
 );
+const lancamentosVisiveis = useProgressiveList(lancamentos);
 
 const TIPO_CLS = {
   folha: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400",
@@ -223,7 +225,8 @@ const tables = computed(() => [
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
         <GerenteRegionalFilter
-          v-model="regionalSel"
+          :model-value="regionalAtiva"
+          @update:model-value="regionalSel = $event"
           :options="regionalOptions"
           label="Regional"
           all-label="Todas as regionais"
@@ -260,7 +263,7 @@ const tables = computed(() => [
           </div>
         </div>
 
-        <p v-if="regionalSel" class="-mt-3 text-center text-xs text-zinc-400 dark:text-zinc-500">
+        <p v-if="regionalAtiva" class="-mt-3 text-center text-xs text-zinc-400 dark:text-zinc-500">
           Benefícios não têm regional e ficam fora do total quando uma regional está selecionada.
         </p>
 
@@ -284,7 +287,7 @@ const tables = computed(() => [
               </div>
             </header>
             <div class="p-4">
-              <BarChart :data="regionalData" :show-legend="false" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="420" />
+              <BarChart :data="regionalData" :show-legend="false" show-values value-format="currency" :show-trend="false" horizontal align-top virtual :height-px="420" />
             </div>
           </section>
 
@@ -323,7 +326,7 @@ const tables = computed(() => [
                   </li>
                 </ul>
                 <div class="lg:col-span-2">
-                  <BarChart :data="filialData" show-values value-format="currency" :show-trend="false" horizontal align-top :height-px="420" />
+                  <BarChart :data="filialData" show-values value-format="currency" :show-trend="false" horizontal align-top virtual :height-px="420" />
                 </div>
               </div>
             </section>
@@ -429,7 +432,7 @@ const tables = computed(() => [
                   </thead>
                   <tbody class="uppercase">
                     <tr
-                      v-for="l in lancamentos"
+                      v-for="l in lancamentosVisiveis"
                       :key="l.id"
                       class="border-t border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
                     >

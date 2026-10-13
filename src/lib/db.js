@@ -86,6 +86,7 @@ function absenteismoToRow(entry) {
     competencia: `${String(entry.date).slice(0, 7)}-01`,
     estado_sigla: meta.estado || null,
     colaborador: meta.colaborador || null,
+    codigo: meta.codigo || null,
     setor: meta.setor || null,
     filial: meta.filial || null,
     data: entry.date,
@@ -164,16 +165,8 @@ function _enqueue(table, id, op) {
   if (pending && pending.created && op.type === "upsert") op = { ...op, created: true, updated: false };
   _queue[table].set(id, op);
   _schedule();
-  const cached =
-    op.type === "upsert" ? DataCache.setItem(table, id, op.row) : (DataCache.removeItem(table, id), true);
+  const cached = op.type === "upsert" ? DataCache.setEdit(table, id, op.row) : DataCache.markRemoved(table, id);
   if (!cached) DataCache.resetAll();
-  if (op.type === "upsert") {
-    const { base } = splitTable(table);
-    STATES.forEach((s) => {
-      const other = `${base}_${s.toLowerCase()}`;
-      if (other !== table) DataCache.removeItem(other, id);
-    });
-  }
 }
 
 function _schedule(delay = FLUSH_DELAY_MS) {
@@ -461,6 +454,7 @@ function mapRemoteAbsenteismo(row, impliedState) {
         estado: row.estado_sigla || impliedState || null,
         competencia: row.competencia ? String(row.competencia).slice(0, 7) : date.slice(0, 7),
         colaborador: String(up(row.colaborador)).replace(/\s+/g, " ").trim(),
+        codigo: row.codigo != null && String(row.codigo).trim() !== "" ? String(row.codigo).trim() : null,
         setor: up(row.setor) || null,
         filial: up(row.filial) || null,
         motivo: legacyAdv || legacyAci ? "Presente" : motivo,
@@ -604,18 +598,6 @@ function addRowToPayload(payload, tabela, row, estado) {
 
 const _loadedStates = {};
 
-let _cacheDirty = false;
-
-function persistRows(tabela, rows) {
-  for (let i = 0; i < rows.length; i++) {
-    if (!DataCache.setItem(tabela, rows[i].id, rows[i])) {
-      _cacheDirty = true;
-      return false;
-    }
-  }
-  return true;
-}
-
 async function hydrate(state) {
   const states = statesOf(state);
   if (states.every((s) => _loadedStates[s])) return true;
@@ -690,11 +672,7 @@ async function fetchTablesOnce(bases) {
 
   const payloads = { RO: emptyPayload(), AM: emptyPayload(), PA: emptyPayload() };
   const failed = [];
-  let persisted = true;
-
-  DataCache.removeTables(
-    results.filter((r) => !r.error).flatMap(({ base }) => STATES.map((s) => `${base}_${s.toLowerCase()}`))
-  );
+  const snapshots = {};
 
   results.forEach(({ base, data, error }) => {
     if (error) {
@@ -703,13 +681,13 @@ async function fetchTablesOnce(bases) {
     }
     const kind = TABLE_KINDS[base];
     const buckets = bucketByEstado(data);
+    snapshots[base] = data;
     STATES.forEach((s) => {
-      const tabela = `${base}_${s.toLowerCase()}`;
-      if (persisted) persisted = persistRows(tabela, buckets[s]);
       payloads[s][kind.key] = buckets[s].map((row) => kind.map(row, s));
     });
   });
-  if (!persisted) _cacheDirty = true;
+  DataCache.clearEdits(Object.keys(snapshots));
+  DataCache.scheduleTables(snapshots);
 
   STATES.forEach((s) => mergeFromRemote(payloads[s]));
   bases.forEach((base) => {
@@ -759,10 +737,6 @@ async function _hydrateStates(states) {
   const ok = await hydrateAllTables();
 
   if (ok) {
-    if (_cacheDirty) {
-      DataCache.resetAll();
-      _cacheDirty = false;
-    }
     STATES.forEach((s) => {
       _loadedStates[s] = true;
     });
@@ -796,22 +770,38 @@ async function _hydrateState(pending) {
 }
 
 function loadLocalIntoMemory() {
-  const keys = DataCache.keys();
-  if (!keys.length) return false;
+  const tables = DataCache.readTables();
+  const edits = DataCache.readEdits();
+  if (!Object.keys(tables).length && !edits.length) return false;
+
+  const rowsByTabela = {};
+  Object.keys(tables).forEach((base) => {
+    const buckets = bucketByEstado(tables[base]);
+    STATES.forEach((s) => {
+      rowsByTabela[`${base}_${s.toLowerCase()}`] = new Map(buckets[s].map((row) => [String(row.id), row]));
+    });
+  });
+  edits.forEach(({ tabela, id, row }) => {
+    const { base } = splitTable(tabela);
+    STATES.forEach((s) => {
+      const other = rowsByTabela[`${base}_${s.toLowerCase()}`];
+      if (other) other.delete(id);
+    });
+    if (!row) return;
+    if (!rowsByTabela[tabela]) rowsByTabela[tabela] = new Map();
+    rowsByTabela[tabela].set(id, row);
+  });
 
   const payload = emptyPayload();
   const tablesSeen = {};
-
-  keys.forEach((key) => {
-    const item = DataCache.readItem(key);
-    if (!item || !item.id) return;
-    const rest = key.slice("ggd:".length);
-    const sep = rest.indexOf(":");
-    if (sep < 0) return;
-    const tabela = rest.slice(0, sep);
+  Object.keys(rowsByTabela).forEach((tabela) => {
+    const rows = rowsByTabela[tabela];
+    if (!rows.size) return;
     tablesSeen[tabela] = true;
     const { estado } = splitTable(tabela);
-    addRowToPayload(payload, tabela, item, estado);
+    rows.forEach((row) => {
+      if (row && row.id) addRowToPayload(payload, tabela, row, estado);
+    });
   });
 
   replaceFromCache(payload);
@@ -879,7 +869,6 @@ export function resetLocalState() {
   discardPendingWrites();
   resetData();
   clearLoadedTracking();
-  _cacheDirty = false;
   DataCache.resetAll();
 }
 
@@ -888,8 +877,7 @@ export async function reloadData() {
 
   const previous = STATES.filter((s) => _loadedStates[s]);
   DataCache.removeLegacy();
-  DataCache.resetAll();
-  _cacheDirty = false;
+  DataCache.cancelPending();
   _regionalLookup = null;
   resetData();
   clearLoadedTracking();

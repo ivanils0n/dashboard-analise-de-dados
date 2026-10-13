@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 
 defineProps({
   title: { type: String, required: true },
@@ -15,13 +15,32 @@ function onKeydown(e) {
   if (e.key === "Escape") emit("close");
 }
 
-onMounted(() => document.addEventListener("keydown", onKeydown));
-onUnmounted(() => document.removeEventListener("keydown", onKeydown));
+const ready = ref(false);
+let readyTimer = null;
+let readyFrame = 0;
+function markReady() {
+  clearTimeout(readyTimer);
+  cancelAnimationFrame(readyFrame);
+  ready.value = true;
+}
+
+onMounted(() => {
+  document.addEventListener("keydown", onKeydown);
+  readyFrame = requestAnimationFrame(() => {
+    readyTimer = setTimeout(markReady, 0);
+  });
+  readyTimer = setTimeout(markReady, 80);
+});
+onUnmounted(() => {
+  document.removeEventListener("keydown", onKeydown);
+  clearTimeout(readyTimer);
+  cancelAnimationFrame(readyFrame);
+});
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="mac-modal" appear :duration="{ enter: 320, leave: 170 }">
+    <Transition name="mac-modal" appear :duration="{ enter: 380, leave: 160 }">
     <div
       class="fixed inset-0 z-[60] flex bg-black/50"
       :class="fullscreen ? 'p-0' : 'items-end justify-center overflow-y-auto p-0 sm:items-start sm:p-4 sm:py-10'"
@@ -47,7 +66,7 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
             </h2>
             <p v-if="subtitle" class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{{ subtitle }}</p>
           </div>
-          <div v-if="$slots.actions" class="ml-auto flex min-w-0 items-center">
+          <div v-if="ready && $slots.actions" class="fade-in ml-auto flex min-w-0 items-center">
             <slot name="actions" />
           </div>
           <button
@@ -60,8 +79,14 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
           </button>
         </div>
 
-        <div class="min-h-0 min-w-0 flex-1 overflow-y-auto" :class="fullscreen ? 'p-3 sm:p-6' : 'px-4 py-4 sm:px-6 sm:py-5'">
-          <slot />
+        <div
+          class="min-h-0 min-w-0 flex-1 overflow-y-auto"
+          :class="[fullscreen ? 'p-3 sm:p-6' : 'px-4 py-4 sm:px-6 sm:py-5', ready && 'fade-in']"
+        >
+          <slot v-if="ready" />
+          <div v-else class="flex min-h-[12rem] items-center justify-center" aria-busy="true">
+            <span class="h-7 w-7 animate-spin rounded-full border-2 border-zinc-200 border-t-accent dark:border-zinc-700 dark:border-t-accent" aria-hidden="true"></span>
+          </div>
         </div>
       </div>
     </div>

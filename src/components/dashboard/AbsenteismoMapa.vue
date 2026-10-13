@@ -6,6 +6,7 @@ import { saveOcorrencia, removeOcorrencia, getOcorrencias } from "@/lib/store";
 import {
   MOTIVOS,
   FLAGS,
+  TIPOS,
   PRESENTE,
   cellInfo,
   isoOf,
@@ -22,7 +23,8 @@ import { canEditData } from "@/lib/auth";
 
 const props = defineProps({
   estado: { type: String, default: "todos" },
-  ym: { type: String, required: true }
+  ym: { type: String, required: true },
+  tipo: { type: String, default: "" }
 });
 
 const { show: toast } = useToast();
@@ -41,6 +43,25 @@ const employees = computed(() => monthEmployees(props.estado, props.ym, period.v
 const index = useOcorrenciaIndex();
 
 const headcountInfo = computed(() => headcountMonthFor(props.estado, props.ym));
+
+const tipoDef = computed(() => TIPOS.find((t) => t.value === props.tipo) || null);
+const colaboradoresDoTipo = computed(() => {
+  const t = tipoDef.value;
+  if (!t) return null;
+  const uf = String(props.estado || "").toUpperCase();
+  const all = !uf || uf === "TODOS";
+  const keys = new Set();
+  getOcorrencias().forEach((o) => {
+    if (
+      competenciaYm(o.meta, o.date) === props.ym &&
+      (all || String(o.meta.estado || "").toUpperCase() === uf) &&
+      t.has(o.meta)
+    ) {
+      keys.add(nameKey(o.meta.colaborador));
+    }
+  });
+  return keys;
+});
 
 const orphans = computed(() => {
   const keys = new Set(employees.value.map((e) => e.key));
@@ -81,8 +102,10 @@ onBeforeUnmount(() => clearTimeout(searchTimer));
 
 const rows = computed(() => {
   const q = normalizeText(searchDebounced.value).trim();
+  const doTipo = colaboradoresDoTipo.value;
   return employees.value.filter(
     (e) =>
+      (!doTipo || doTipo.has(e.key)) &&
       (!q || e.busca.includes(q)) &&
       (!setor.value || e.setorKey === setor.value) &&
       (!filial.value || e.filialKey === filial.value)
@@ -139,7 +162,7 @@ onBeforeUnmount(() => {
   if (raf) cancelAnimationFrame(raf);
 });
 
-watch([() => props.ym, () => props.estado, setor, filial, searchDebounced], () => {
+watch([() => props.ym, () => props.estado, () => props.tipo, setor, filial, searchDebounced], () => {
   scrollRow.value = 0;
   if (scroller.value) scroller.value.scrollTop = 0;
 });
@@ -159,16 +182,22 @@ const range = computed(() => {
 });
 const visibleRows = computed(() => rows.value.slice(range.value.first, range.value.last));
 
+const poolSize = computed(() => CHUNK + Math.ceil(viewH.value / ROW_H) + OVERSCAN * 2 + 1);
+
 const visibleModel = computed(() => {
   const ds = days.value;
   const idx = index.value;
-  return visibleRows.value.map((emp) => {
+  const t = tipoDef.value;
+  const first = range.value.first;
+  const pool = poolSize.value;
+  return visibleRows.value.map((emp, i) => {
     const cells = ds.map((d) => {
-      const o = idx.get(`${emp.key}|${d.iso}`);
+      const found = idx.get(`${emp.key}|${d.iso}`);
+      const o = found && (!t || t.has(found.meta)) ? found : null;
       return { d, info: o ? cellInfo(o.meta) : null, obs: (o && o.meta.observacao) || "", desl: isDesligado(emp, d.iso) };
     });
     const sig = cells.map((c) => (c.info ? `${c.info.primary.letter}${c.info.flags.map((f) => f.key[0]).join("")}${c.obs}` : c.desl ? "x" : "")).join("|");
-    return { emp, cells, sig };
+    return { emp, cells, sig, slot: (first + i) % pool };
   });
 });
 
@@ -188,7 +217,7 @@ function scrollToToday() {
   const el = scroller.value;
   const th = el && el.querySelector(`th[data-iso="${todayIso.value}"]`);
   if (!th) return;
-  const nameCol = el.querySelector("th").getBoundingClientRect().width;
+  const nameCol = [...el.querySelectorAll("thead th")].slice(0, 2).reduce((w, h) => w + h.getBoundingClientRect().width, 0);
   const left = th.offsetLeft - nameCol - (el.clientWidth - nameCol) / 2 + th.getBoundingClientRect().width / 2;
   el.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
 }
@@ -223,6 +252,7 @@ function onSave({ motivo, observacao, advertencia, acidente, cid, diasAtestado, 
   saveOcorrencia({
     date: iso,
     colaborador: emp.nome,
+    codigo: emp.codigo || null,
     setor: emp.setor,
     filial: emp.filial,
     motivo,
@@ -252,7 +282,7 @@ function onClear() {
         v-model="search"
         type="search"
         :class="[inputCls, 'order-1 min-w-0 flex-1 basis-40 sm:w-56 sm:flex-none sm:basis-auto lg:w-64']"
-        placeholder="Buscar colaborador..."
+        placeholder="Buscar colaborador ou código..."
         aria-label="Buscar colaborador"
       />
       <select v-model="setor" :class="[inputCls, 'order-3 min-w-0 basis-[calc(50%-0.25rem)] sm:order-2 sm:basis-auto']" aria-label="Filtrar por setor">
@@ -348,7 +378,12 @@ function onClear() {
           <thead class="sticky top-0 z-20">
             <tr>
               <th
-                class="sticky left-0 z-30 min-w-[8.5rem] max-w-[8.5rem] border-b border-r border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-400 sm:min-w-[12rem] sm:max-w-[12rem] sm:px-3 md:min-w-[15rem] md:max-w-[15rem] md:px-4 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500"
+                class="sticky left-0 z-30 w-[3.75rem] min-w-[3.75rem] max-w-[3.75rem] border-b border-r border-zinc-200 bg-white px-1.5 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-400 sm:w-[4.5rem] sm:min-w-[4.5rem] sm:max-w-[4.5rem] sm:px-2 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500"
+              >
+                Código
+              </th>
+              <th
+                class="sticky left-[3.75rem] z-30 min-w-[8.5rem] max-w-[8.5rem] sm:left-[4.5rem] border-b border-r border-zinc-200 bg-white px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-400 sm:min-w-[12rem] sm:max-w-[12rem] sm:px-3 md:min-w-[15rem] md:max-w-[15rem] md:px-4 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500"
               >
                 Colaborador
               </th>
@@ -369,17 +404,24 @@ function onClear() {
             </tr>
           </thead>
           <tbody @click="onBodyClick">
-            <tr v-if="range.top" aria-hidden="true"><td :colspan="days.length + 1" :style="{ height: range.top + 'px', padding: 0 }"></td></tr>
+            <tr v-if="range.top" aria-hidden="true"><td :colspan="days.length + 2" :style="{ height: range.top + 'px', padding: 0 }"></td></tr>
             <tr
               v-for="row in visibleModel"
-              :key="row.emp.key"
+              :key="row.slot"
               v-memo="[row.emp.key, row.sig, row.emp.desligamento, canEdit, ym]"
               :data-k="row.emp.key"
               class="group"
               :style="{ height: ROW_H + 'px' }"
             >
               <td
-                class="sticky left-0 z-10 max-w-[8.5rem] border-b border-r border-zinc-200 px-2 text-left sm:max-w-[12rem] sm:px-3 md:max-w-[15rem] md:px-4 dark:border-zinc-700"
+                class="sticky left-0 z-10 w-[3.75rem] min-w-[3.75rem] max-w-[3.75rem] truncate border-b border-r border-zinc-200 px-1.5 text-left text-[11px] font-medium tabular-nums sm:w-[4.5rem] sm:min-w-[4.5rem] sm:max-w-[4.5rem] sm:px-2 dark:border-zinc-700"
+                :class="row.emp.desligamento ? 'bg-rose-50 text-rose-700 dark:bg-[#2b171b] dark:text-rose-300' : 'bg-white text-zinc-500 group-hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-400 dark:group-hover:bg-zinc-800'"
+                :title="row.emp.codigo"
+              >
+                {{ row.emp.codigo || "—" }}
+              </td>
+              <td
+                class="sticky left-[3.75rem] z-10 max-w-[8.5rem] sm:left-[4.5rem] border-b border-r border-zinc-200 px-2 text-left sm:max-w-[12rem] sm:px-3 md:max-w-[15rem] md:px-4 dark:border-zinc-700"
                 :class="row.emp.desligamento ? 'bg-rose-50 dark:bg-[#2b171b]' : 'bg-white group-hover:bg-zinc-50 dark:bg-zinc-900 dark:group-hover:bg-zinc-800'"
               >
                 <div class="flex items-center gap-1.5">
@@ -426,7 +468,7 @@ function onClear() {
                 </div>
               </td>
             </tr>
-            <tr v-if="range.bottom" aria-hidden="true"><td :colspan="days.length + 1" :style="{ height: range.bottom + 'px', padding: 0 }"></td></tr>
+            <tr v-if="range.bottom" aria-hidden="true"><td :colspan="days.length + 2" :style="{ height: range.bottom + 'px', padding: 0 }"></td></tr>
           </tbody>
         </table>
       </div>
@@ -434,7 +476,7 @@ function onClear() {
     <EmptyState
       v-else
       title="Nenhum colaborador encontrado"
-      text="Sem colaboradores no Headcount para este mês, busca ou setor."
+      :text="tipoDef ? `Nenhum colaborador com ${(tipoDef.plural || tipoDef.label).toLowerCase()} neste mês, busca ou setor.` : 'Sem colaboradores no Headcount para este mês, busca ou setor.'"
     />
 
     <OcorrenciaModal

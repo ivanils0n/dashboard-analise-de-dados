@@ -1,25 +1,15 @@
 <script setup>
+import CountUpText from "@/components/ui/CountUpText.vue";
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, onActivated } from "vue";
+import { lazyModal } from "@/lib/lazyModals";
 import BarChart from "@/components/charts/BarChart.vue";
 import PieChart from "@/components/charts/PieChart.vue";
 import Modal from "@/components/ui/Modal.vue";
-import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
-import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
-import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
-import FeriasColaboradorModal from "@/components/dashboard/FeriasColaboradorModal.vue";
-import BeneficiosModal from "@/components/dashboard/BeneficiosModal.vue";
-import AbsenteismoDetalheModal from "@/components/dashboard/AbsenteismoDetalheModal.vue";
-import CustoRegionalModal from "@/components/dashboard/CustoRegionalModal.vue";
-import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresaModal.vue";
 import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
-import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
-import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
-import PermanenciaListaModal from "@/components/dashboard/PermanenciaListaModal.vue";
 import HiringStatusSelect from "@/components/dashboard/HiringStatusSelect.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
 import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
 import ViewTabs from "@/components/dashboard/ViewTabs.vue";
-import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
@@ -30,9 +20,22 @@ import UfMapCard from "@/components/dashboard/UfMapCard.vue";
 import TurnoverSummaryCards from "@/components/dashboard/TurnoverSummaryCards.vue";
 import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vue";
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
-import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
 import { useFilters } from "@/composables/useFilters";
 import { formatValue, formatCurrency, formatHoursClock } from "@/lib/utils";
+
+const TrainingFilialModal = lazyModal(() => import("@/components/dashboard/TrainingFilialModal.vue"));
+const HeadcountEstadoModal = lazyModal(() => import("@/components/dashboard/HeadcountEstadoModal.vue"));
+const DiariaColaboradorModal = lazyModal(() => import("@/components/dashboard/DiariaColaboradorModal.vue"));
+const FeriasColaboradorModal = lazyModal(() => import("@/components/dashboard/FeriasColaboradorModal.vue"));
+const BeneficiosModal = lazyModal(() => import("@/components/dashboard/BeneficiosModal.vue"));
+const AbsenteismoDetalheModal = lazyModal(() => import("@/components/dashboard/AbsenteismoDetalheModal.vue"));
+const CustoRegionalModal = lazyModal(() => import("@/components/dashboard/CustoRegionalModal.vue"));
+const CustoPessoalEmpresaModal = lazyModal(() => import("@/components/dashboard/CustoPessoalEmpresaModal.vue"));
+const VacancyDetailModal = lazyModal(() => import("@/components/dashboard/VacancyDetailModal.vue"));
+const PermanenciaDetailModal = lazyModal(() => import("@/components/dashboard/PermanenciaDetailModal.vue"));
+const PermanenciaListaModal = lazyModal(() => import("@/components/dashboard/PermanenciaListaModal.vue"));
+const RescisaoFuncaoModal = lazyModal(() => import("@/components/dashboard/RescisaoFuncaoModal.vue"));
+const TurnoverDetailModal = lazyModal(() => import("@/components/dashboard/TurnoverDetailModal.vue"));
 
 const props = defineProps({
   dashboard: { type: Object, required: true },
@@ -462,8 +465,9 @@ function onCenterBarClick({ index, label, datasetIndex }) {
   }
   if (centerChart.value.id === "tempo_contratacao") {
     const row = centerChart.value.data[index];
-    if (!row || !row.vacancyId) return;
+    if (!row || !(row.vacancyIds && row.vacancyIds.length)) return;
     vacancyDetailId.value = row.vacancyId;
+    vacancyDetailIds.value = row.vacancyIds;
     vacancyDetailFallback.value = null;
     vacancyDetailOpen.value = true;
     return;
@@ -507,6 +511,7 @@ function onCenterBarContext({ index }) {
 
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
+const vacancyDetailIds = ref([]);
 const vacancyDetailFallback = ref(null);
 
 function onVacancyDetailEdit(vacancyId) {
@@ -675,9 +680,10 @@ function goNextKpi() {
       <div class="flex flex-col gap-4">
           <div class="grid auto-cols-[82%] grid-flow-col grid-rows-3 gap-2 overflow-x-auto overscroll-x-contain pb-1 snap-x snap-mandatory [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden" aria-label="Indicadores">
             <CockpitKpiButton
-              v-for="kpi in kpis"
+              v-for="(kpi, i) in kpis"
               :key="kpi.id"
               class="!w-full snap-start"
+              :style="{ '--i': i }"
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
               @select="select"
@@ -687,9 +693,10 @@ function goNextKpi() {
 
           <div class="hidden gap-2 md:grid md:grid-cols-3 lg:hidden" aria-label="Indicadores">
             <CockpitKpiButton
-              v-for="kpi in kpis"
+              v-for="(kpi, i) in kpis"
               :key="kpi.id"
               class="!w-full"
+              :style="{ '--i': i }"
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
               @select="select"
@@ -699,9 +706,10 @@ function goNextKpi() {
 
           <div class="hidden grid-cols-2 gap-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': topKpis.length }">
             <CockpitKpiButton
-              v-for="kpi in topKpis"
+              v-for="(kpi, i) in topKpis"
               :key="kpi.id"
               class="!w-full"
+              :style="{ '--i': i }"
               compact
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
@@ -715,7 +723,7 @@ function goNextKpi() {
             class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[280px_minmax(0,1fr)_280px] xl:[grid-template-rows:var(--cockpit-h)]"
             :style="{ '--cockpit-h': `${cockpitHeight}px` }"
           >
-          <section data-tour="cockpit-chart" class="order-first flex min-h-0 min-w-0 md:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 lg:h-[540px] xl:h-full flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <section data-tour="cockpit-chart" :style="{ '--i': topKpis.length + 1 }" class="visual-enter order-first flex min-h-0 min-w-0 md:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 lg:h-[540px] xl:h-full flex-col rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div class="min-w-0" :class="summaryInCard ? 'basis-full' : ['treinamento', 'rescisoes'].includes(centerChart.id) ? 'flex-1' : ''">
                 <div class="flex flex-wrap items-center gap-2">
@@ -728,13 +736,14 @@ function goNextKpi() {
                   <ViewTabs v-if="centerChart.id === 'turnover'" v-model="turnoverView" :options="TURNOVER_VIEWS" label="Visão do turnover" />
                   <ViewTabs v-if="centerChart.id === 'ferias'" v-model="feriasView" :options="FERIAS_VIEWS" label="Visão das férias" />
                   <ViewTabs v-if="centerChart.id === 'tempo_permanencia'" v-model="permanenciaView" :options="PERMANENCIA_VIEWS" label="Visão do tempo de permanência" />
-                  <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
-                    <HiringStatusSelect v-model="hiringStatusFilter" />
+                  <div v-if="centerChart.id === 'tempo_contratacao'" class="flex flex-wrap items-center gap-2">
+                    <HiringStatusSelect v-model="hiringStatusFilter" compact />
                     <GerenteRegionalFilter
                       v-model="hiringRecrutadorFilter"
+                      compact
                       :options="hiringRecrutadorOptions"
                       label="Recrutador"
-                      all-label="Todos os recrutadores"
+                      all-label="Recrutador"
                       title="Filtrar Tempo médio de contratação por recrutador"
                     />
                   </div>
@@ -860,6 +869,7 @@ function goNextKpi() {
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
               :horizontal="isHorizontalChart"
+              virtual
               align-top
               fluid
               bars-clickable
@@ -875,6 +885,7 @@ function goNextKpi() {
               :value-format="centerChart.valueFormat"
               :variant="centerChart.variant || 'bar'"
               :horizontal="isHorizontalChart"
+              virtual
               :single-caption="singleCaption"
               fluid
               bars-clickable
@@ -899,7 +910,8 @@ function goNextKpi() {
 
       <UfMapCard
         data-tour="cockpit-map"
-        class="xl:col-start-1 xl:row-start-1"
+        class="visual-enter xl:col-start-1 xl:row-start-1"
+        :style="{ '--i': topKpis.length }"
         fluid
         title="Mapa por estado"
         :subtitle="centerChart.id === 'custo_diaria' ? `${centerChart.title} — valor total` : centerChart.title"
@@ -907,7 +919,7 @@ function goNextKpi() {
         @select="setState"
       />
 
-      <aside data-tour="cockpit-indicators" class="flex flex-col xl:col-start-3 xl:row-start-1 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-0">
+      <aside data-tour="cockpit-indicators" :style="{ '--i': topKpis.length + 2 }" class="visual-enter flex flex-col xl:col-start-3 xl:row-start-1 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 xl:min-h-0">
         <h2 class="mb-2 text-center text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Indicadores</h2>
         <div class="mb-2">
           <CompararMesesButton :dashboard="dashboard" compact />
@@ -932,7 +944,7 @@ function goNextKpi() {
             @contextmenu.prevent="onKpiContext(kpi.id)"
           >
             <span class="truncate">{{ kpi.name }}</span>
-            <span class="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100">{{ indicatorValueText(kpi) }}</span>
+            <CountUpText class="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100" :text="indicatorValueText(kpi)" />
           </li>
         </ul>
         </div>
@@ -941,9 +953,10 @@ function goNextKpi() {
 
           <div ref="bottomKpisRef" class="hidden grid-cols-2 gap-2 lg:grid lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" :style="{ '--n': bottomKpis.length }">
             <CockpitKpiButton
-              v-for="kpi in bottomKpis"
+              v-for="(kpi, i) in bottomKpis"
               :key="kpi.id"
               class="!w-full"
+              :style="{ '--i': topKpis.length + 3 + i }"
               compact
               :kpi="kpi"
               :selected="selectedKpiId === kpi.id"
@@ -1049,6 +1062,7 @@ function goNextKpi() {
       v-if="vacancyDetailOpen"
       :open="vacancyDetailOpen"
       :vacancy-id="vacancyDetailId"
+      :vacancy-ids="vacancyDetailIds"
       :fallback="vacancyDetailFallback"
       @close="vacancyDetailOpen = false"
       @edit="onVacancyDetailEdit"
@@ -1215,6 +1229,7 @@ function goNextKpi() {
             :value-format="centerChart.valueFormat"
             :variant="centerChart.variant || 'bar'"
             :horizontal="isHorizontalChart"
+            virtual
             :align-top="centerChart.id === 'tempo_contratacao'"
             :single-caption="singleCaption"
             fluid

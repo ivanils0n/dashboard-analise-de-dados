@@ -356,7 +356,7 @@ export function formatHoursClock(value) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-const DISPOSABLE_PREFIX = "ggd:";
+const DISPOSABLE_PREFIXES = ["ggd:", "ggt:", "ggo:"];
 
 export function safeSetItem(storage, key, value) {
   try {
@@ -375,7 +375,7 @@ export function safeSetItem(storage, key, value) {
       const disposable = [];
       for (let i = 0; i < storage.length; i++) {
         const k = storage.key(i);
-        if (k && k !== key && k.indexOf(DISPOSABLE_PREFIX) === 0) disposable.push(k);
+        if (k && k !== key && DISPOSABLE_PREFIXES.some((p) => k.indexOf(p) === 0)) disposable.push(k);
       }
       disposable.forEach((k) => storage.removeItem(k));
     } catch {}

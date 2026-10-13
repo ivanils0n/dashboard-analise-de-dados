@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from "vue";
+import { lazyModal, prefetchModals } from "@/lib/lazyModals";
 import { sidebarHidden } from "@/composables/useSidebar";
 import { activeTab, tabDirection } from "@/composables/useDashboardTab";
 import KpiCard from "@/components/dashboard/KpiCard.vue";
@@ -7,39 +8,15 @@ import KpiChartCard from "@/components/dashboard/KpiChartCard.vue";
 import UfMapCard from "@/components/dashboard/UfMapCard.vue";
 import ViewTabs from "@/components/dashboard/ViewTabs.vue";
 import SummaryTiles from "@/components/dashboard/SummaryTiles.vue";
-import BeneficiosModal from "@/components/dashboard/BeneficiosModal.vue";
-import CustoRegionalModal from "@/components/dashboard/CustoRegionalModal.vue";
-import FeriasColaboradorModal from "@/components/dashboard/FeriasColaboradorModal.vue";
 import FaturamentoShareChip from "@/components/dashboard/FaturamentoShareChip.vue";
 import FaturamentoButton from "@/components/layout/FaturamentoButton.vue";
-import TurnoverDetailModal from "@/components/dashboard/TurnoverDetailModal.vue";
-import TurnoverAnaliseModal from "@/components/dashboard/TurnoverAnaliseModal.vue";
-import DiariaAnaliseModal from "@/components/dashboard/DiariaAnaliseModal.vue";
-import TreinamentoAnaliseModal from "@/components/dashboard/TreinamentoAnaliseModal.vue";
-import FeriasAnaliseModal from "@/components/dashboard/FeriasAnaliseModal.vue";
-import CustoPessoalDetalheModal from "@/components/dashboard/CustoPessoalDetalheModal.vue";
-import ContratacaoAnaliseModal from "@/components/dashboard/ContratacaoAnaliseModal.vue";
-import VacanciesModal from "@/components/dashboard/VacanciesModal.vue";
-import FiliaisOutrasModal from "@/components/dashboard/FiliaisOutrasModal.vue";
-import VacancyDetailModal from "@/components/dashboard/VacancyDetailModal.vue";
-import PermanenciaDetailModal from "@/components/dashboard/PermanenciaDetailModal.vue";
-import PermanenciaListaModal from "@/components/dashboard/PermanenciaListaModal.vue";
-import PermanenciaAnaliseModal from "@/components/dashboard/PermanenciaAnaliseModal.vue";
 import CompararMesesButton from "@/components/dashboard/CompararMesesButton.vue";
-import CustoPessoalEmpresaModal from "@/components/dashboard/CustoPessoalEmpresaModal.vue";
-import TrainingFilialModal from "@/components/dashboard/TrainingFilialModal.vue";
-import HeadcountEstadoModal from "@/components/dashboard/HeadcountEstadoModal.vue";
-import AbsenteismoAnaliseModal from "@/components/dashboard/AbsenteismoAnaliseModal.vue";
-import HeadcountAnaliseModal from "@/components/dashboard/HeadcountAnaliseModal.vue";
 import DashboardTour from "@/components/dashboard/DashboardTour.vue";
-import LaunchModal from "@/components/dashboard/LaunchModal.vue";
-import DiariaColaboradorModal from "@/components/dashboard/DiariaColaboradorModal.vue";
 import HiringGoalsLegend from "@/components/dashboard/HiringGoalsLegend.vue";
 import CockpitPanel from "@/components/dashboard/CockpitPanel.vue";
 import HiringStatusPills from "@/components/dashboard/HiringStatusPills.vue";
 import GerenteRegionalFilter from "@/components/dashboard/GerenteRegionalFilter.vue";
 import RescisaoModeToggle from "@/components/dashboard/RescisaoModeToggle.vue";
-import RescisaoFuncaoModal from "@/components/dashboard/RescisaoFuncaoModal.vue";
 import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import DashboardSideActions from "@/components/dashboard/DashboardSideActions.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
@@ -60,6 +37,31 @@ import { toXLSX, toCSV } from "@/lib/export";
 import { hydrateState, reloadData, warmApi } from "@/lib/db";
 import { syncAll } from "@/lib/employees";
 import { apiFetch } from "@/lib/api";
+
+const BeneficiosModal = lazyModal(() => import("@/components/dashboard/BeneficiosModal.vue"));
+const CustoRegionalModal = lazyModal(() => import("@/components/dashboard/CustoRegionalModal.vue"));
+const FeriasColaboradorModal = lazyModal(() => import("@/components/dashboard/FeriasColaboradorModal.vue"));
+const TurnoverDetailModal = lazyModal(() => import("@/components/dashboard/TurnoverDetailModal.vue"));
+const TurnoverAnaliseModal = lazyModal(() => import("@/components/dashboard/TurnoverAnaliseModal.vue"));
+const DiariaAnaliseModal = lazyModal(() => import("@/components/dashboard/DiariaAnaliseModal.vue"));
+const TreinamentoAnaliseModal = lazyModal(() => import("@/components/dashboard/TreinamentoAnaliseModal.vue"));
+const FeriasAnaliseModal = lazyModal(() => import("@/components/dashboard/FeriasAnaliseModal.vue"));
+const CustoPessoalDetalheModal = lazyModal(() => import("@/components/dashboard/CustoPessoalDetalheModal.vue"));
+const ContratacaoAnaliseModal = lazyModal(() => import("@/components/dashboard/ContratacaoAnaliseModal.vue"));
+const VacanciesModal = lazyModal(() => import("@/components/dashboard/VacanciesModal.vue"));
+const FiliaisOutrasModal = lazyModal(() => import("@/components/dashboard/FiliaisOutrasModal.vue"));
+const VacancyDetailModal = lazyModal(() => import("@/components/dashboard/VacancyDetailModal.vue"));
+const PermanenciaDetailModal = lazyModal(() => import("@/components/dashboard/PermanenciaDetailModal.vue"));
+const PermanenciaListaModal = lazyModal(() => import("@/components/dashboard/PermanenciaListaModal.vue"));
+const PermanenciaAnaliseModal = lazyModal(() => import("@/components/dashboard/PermanenciaAnaliseModal.vue"));
+const CustoPessoalEmpresaModal = lazyModal(() => import("@/components/dashboard/CustoPessoalEmpresaModal.vue"));
+const TrainingFilialModal = lazyModal(() => import("@/components/dashboard/TrainingFilialModal.vue"));
+const HeadcountEstadoModal = lazyModal(() => import("@/components/dashboard/HeadcountEstadoModal.vue"));
+const AbsenteismoAnaliseModal = lazyModal(() => import("@/components/dashboard/AbsenteismoAnaliseModal.vue"));
+const HeadcountAnaliseModal = lazyModal(() => import("@/components/dashboard/HeadcountAnaliseModal.vue"));
+const LaunchModal = lazyModal(() => import("@/components/dashboard/LaunchModal.vue"));
+const DiariaColaboradorModal = lazyModal(() => import("@/components/dashboard/DiariaColaboradorModal.vue"));
+const RescisaoFuncaoModal = lazyModal(() => import("@/components/dashboard/RescisaoFuncaoModal.vue"));
 
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
@@ -181,12 +183,14 @@ function onDiariaBarClick({ label }) {
 
 const vacancyDetailOpen = ref(false);
 const vacancyDetailId = ref(null);
+const vacancyDetailIds = ref([]);
 const vacancyDetailFallback = ref(null);
 
 function onHiringBarClick({ index }) {
   const row = hiringBarData.value[index];
-  if (!row || !row.vacancyId) return;
+  if (!row || !(row.vacancyIds && row.vacancyIds.length)) return;
   vacancyDetailId.value = row.vacancyId;
+  vacancyDetailIds.value = row.vacancyIds;
   vacancyDetailFallback.value = null;
   vacancyDetailOpen.value = true;
 }
@@ -663,6 +667,7 @@ function onDocumentClick() {
 
 onMounted(() => {
   document.addEventListener("click", onDocumentClick);
+  prefetchModals();
 });
 onUnmounted(() => {
   document.removeEventListener("click", onDocumentClick);
@@ -850,6 +855,7 @@ watch(activeTab, (tab) => {
               :show-trend="false"
               value-format="currency"
               :horizontal="feriasView !== 'regional'"
+              virtual
               fluid
               bars-clickable
               @bar-click="onFeriasBarClick"
@@ -1014,6 +1020,7 @@ watch(activeTab, (tab) => {
         :show-trend="false"
         :height-px="520"
         horizontal
+        virtual
         bars-clickable
         title="Treinamento — Carga horária por filial"
         subtitle="Soma das horas de treinamento por filial no período filtrado"
@@ -1058,6 +1065,7 @@ watch(activeTab, (tab) => {
         :show-trend="false"
         :height-px="520"
         horizontal
+        virtual
         bars-clickable
         title="Regional Treinamentos"
         subtitle="Horas de treinamento por gerente regional no período filtrado"
@@ -1111,6 +1119,7 @@ watch(activeTab, (tab) => {
         :show-trend="false"
         :height-px="520"
         horizontal
+        virtual
         align-top
         bars-clickable
         title="Tempo médio de contratação"
@@ -1160,6 +1169,7 @@ watch(activeTab, (tab) => {
         :show-trend="false"
         :height-px="520"
         horizontal
+        virtual
         bars-clickable
         title="Tempo médio de permanência"
         subtitle="Dias entre admissão e desligamento, por colaborador"
@@ -1234,6 +1244,7 @@ watch(activeTab, (tab) => {
         :show-trend="false"
         :height-px="520"
         horizontal
+        virtual
         bars-clickable
         title="Rescisões"
         :subtitle="rescisoesSub"
@@ -1278,6 +1289,7 @@ watch(activeTab, (tab) => {
       v-if="vacancyDetailOpen"
       :open="vacancyDetailOpen"
       :vacancy-id="vacancyDetailId"
+      :vacancy-ids="vacancyDetailIds"
       :fallback="vacancyDetailFallback"
       @close="vacancyDetailOpen = false"
       @edit="onVacancyDetailEdit"
