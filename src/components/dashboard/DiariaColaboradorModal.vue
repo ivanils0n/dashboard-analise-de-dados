@@ -14,7 +14,7 @@ const props = defineProps({
 });
 
 const porColaborador = computed(() => props.groupBy === "colaborador");
-const GROUP_NAMES = { colaborador: "Colaborador", filial: "Filial", regional: "Regional" };
+const GROUP_NAMES = { colaborador: "Colaborador", filial: "Filial", regional: "Ger. Geral" };
 const groupName = computed(() => GROUP_NAMES[props.groupBy] || GROUP_NAMES.colaborador);
 const colaboradores = computed(() => diariaDivisor(props.entries));
 
@@ -39,7 +39,7 @@ function latest(key) {
 const info = computed(() => [
   { label: "Função", value: latest("funcao") },
   { label: "Filial", value: latest("filial") },
-  { label: "Regional", value: latest("regional") || latest("estado") }
+  { label: "Ger. Geral", value: latest("regional") || latest("estado") }
 ]);
 
 function competencia(entry) {

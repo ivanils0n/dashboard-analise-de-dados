@@ -41,7 +41,7 @@ function latest(key) {
 const info = computed(() => [
   { label: "Código", value: latest("codigo") },
   { label: "Filial", value: latest("filial") },
-  { label: "Regional", value: latest("regional") },
+  { label: "Ger. Geral", value: latest("regional") },
   { label: "Banco", value: latest("banco") },
   { label: "Estado", value: latest("estado") }
 ]);
@@ -96,7 +96,7 @@ function pagamento(entry) {
                 <th v-if="!porColaborador" class="whitespace-nowrap px-4 py-2.5 font-semibold">Colaborador</th>
                 <th v-if="groupBy !== 'filial'" class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Data de pagamento</th>
-                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Regional</th>
+                <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Ger. Geral</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Banco</th>
                 <th class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Valor total</th>
               </tr>

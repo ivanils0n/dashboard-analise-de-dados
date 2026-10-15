@@ -83,7 +83,7 @@ const resumo = computed(() => [
 
 <template>
   <Modal
-    :title="`Custo de Pessoal — ${regional || 'Regional'}`"
+    :title="`Custo de Pessoal — ${regional || 'Ger. Geral'}`"
     subtitle="Folha, Férias e Rescisões da regional no período filtrado"
     :open="open"
     max-width="max-w-4xl"

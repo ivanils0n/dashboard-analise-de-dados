@@ -94,32 +94,32 @@ watch(absenteismoFilialOptions, (opts) => {
 const FERIAS_VIEWS = [
   { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
   { value: "filial", label: "Filial", title: "Total por filial" },
-  { value: "regional", label: "Regional", title: "Total por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Total por Ger. Geral" }
 ];
 const feriasView = ref("colaborador");
 
 const PERMANENCIA_VIEWS = [
   { value: "colaborador", label: "Colaborador", title: "Dias por colaborador" },
   { value: "filial", label: "Filial", title: "Média de dias por filial" },
-  { value: "regional", label: "Regional", title: "Média de dias por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Média de dias por Ger. Geral" }
 ];
 const permanenciaView = ref("colaborador");
 
 const RETENCAO_VIEWS = [
   { value: "geral", label: "Geral", title: "Retenção geral" },
-  { value: "regional", label: "Regional", title: "Retenção por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Retenção por Ger. Geral" }
 ];
 const retencaoView = ref("geral");
 
 const ABSENTEISMO_VIEWS = [
   { value: "motivo", label: "Motivo", title: "Ocorrências por motivo" },
-  { value: "regional", label: "Regional", title: "Ocorrências por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Ocorrências por Ger. Geral" }
 ];
 const absenteismoView = ref("motivo");
 
 const TURNOVER_VIEWS = [
   { value: "geral", label: "Geral", title: "Entrada vs Saída geral" },
-  { value: "regional", label: "Regional", title: "Entrada vs Saída por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Entrada vs Saída por Ger. Geral" }
 ];
 const turnoverView = ref("geral");
 const turnoverRegional = ref("");
@@ -127,7 +127,7 @@ const turnoverRegional = ref("");
 const CUSTO_VIEWS = [
   { value: "consolidado", label: "Visão Geral", title: "Folha, Férias, Rescisões e Benefícios" },
   { value: "empresa", label: "Folha", title: "Folha por empresa" },
-  { value: "regional", label: "Regional", title: "Total por regional" },
+  { value: "regional", label: "Ger. Geral", title: "Total por Ger. Geral" },
   { value: "beneficios", label: "Benefícios", title: "Total por benefício" }
 ];
 const custoView = ref("consolidado");
@@ -156,7 +156,7 @@ const rescisaoPorEstado = ref(false);
 const DIARIA_VIEWS = [
   { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
   { value: "filial", label: "Filial", title: "Total por filial" },
-  { value: "regional", label: "Regional", title: "Total por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Total por Ger. Geral" }
 ];
 const diariaView = ref("colaborador");
 
@@ -231,7 +231,7 @@ const feriasSummaryItems = computed(() => {
     feriasView.value === "filial"
       ? { label: "Filiais", value: String(s.filiais) }
       : feriasView.value === "regional"
-        ? { label: "Regionais", value: String(s.regionais) }
+        ? { label: "Ger. Gerais", value: String(s.regionais) }
         : { label: "Colaboradores", value: String(s.colaboradores) }
   ];
 });
@@ -747,8 +747,8 @@ function goNextKpi() {
                       title="Filtrar Tempo médio de contratação por recrutador"
                     />
                   </div>
-                  <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Regional</button></div>
-                  <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
+                  <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Ger. Geral</button></div>
+                  <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Ger. Geral</button></div>
                   <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
                   <RescisaoModeToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoMode" />
                   <div v-if="centerChart.id === 'rescisoes'" class="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -1123,8 +1123,8 @@ function goNextKpi() {
           <SummaryTiles v-else-if="centerChart.tiles" :items="centerChart.tiles" compact />
           <div v-else class="flex min-w-[10rem] items-center justify-center gap-2">
             <span class="text-center text-sm font-semibold text-zinc-600 dark:text-zinc-300">{{ centerChart.title }}</span>
-            <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Regional</button></div>
-            <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Regional</button></div>
+            <div v-if="centerChart.id === 'headcount'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Tipo de gráfico"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'bar' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'bar'">Barras</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'pie' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'pie'">Pizza</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="headcountView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="headcountView = 'regional'">Ger. Geral</button></div>
+            <div v-if="centerChart.id === 'treinamento' || centerChart.id === 'horas_regional'" class="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700" role="group" aria-label="Visão do Treinamento"><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'filial' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'filial'">Filial</button><button type="button" class="px-3 py-1.5 text-xs font-medium transition" :class="treinamentoView === 'regional' ? 'bg-accent/15 text-accent' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'" @click="treinamentoView = 'regional'">Ger. Geral</button></div>
             <RescisaoViewToggle v-if="centerChart.id === 'rescisoes'" v-model="rescisaoView" />
           </div>
           <ViewTabs v-if="CONTRATACAO_CHARTS.includes(centerChart.id)" v-model="contratacaoView" :options="CONTRATACAO_VIEWS" label="Visão da Contratação" />

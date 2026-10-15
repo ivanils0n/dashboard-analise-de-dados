@@ -150,7 +150,7 @@ const columns = [
   { label: "Função", get: (r) => text(r.funcao) },
   { label: "Admissão", get: (r) => date(r.admissao) },
   { label: "Gerente imediato", get: (r) => text(r.gerenteImediato) },
-  { label: "Regional", get: (r) => text(r.regional) },
+  { label: "Ger. Geral", get: (r) => text(r.regional) },
   { label: "Motivo", get: (r) => text(r.motivo), clamp: true, width: "min-w-[12rem] max-w-[16rem]" },
   { label: "Justificativa apurada", get: (r) => text(r.justificativaApurada), clamp: true, width: "min-w-[16rem] max-w-[22rem]" },
   { label: "Ponderações", get: (r) => text(r.ponderacoes), clamp: true, width: "min-w-[16rem] max-w-[22rem]" },
@@ -230,10 +230,10 @@ const columns = [
         <MultiSelectFilter
           v-model="regionais"
           :options="regionalOptions"
-          label="Regional"
-          all-label="Todas as regionais"
-          plural-label="regionais"
-          title="Filtrar por uma ou mais regionais"
+          label="Ger. Geral"
+          all-label="Todos os Ger. Gerais"
+          plural-label="Ger. Gerais"
+          title="Filtrar por um ou mais Ger. Gerais"
         />
         <MultiSelectFilter
           v-model="motivos"

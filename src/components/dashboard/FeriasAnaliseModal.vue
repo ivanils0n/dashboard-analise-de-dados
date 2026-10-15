@@ -142,7 +142,7 @@ const insights = computed(() => {
   const topRegional = regionalRows.value[0];
   list.push({
     tone: "zinc",
-    text: `Regional com maior gasto: ${topRegional.label} (${formatCurrency(topRegional.valor)}).`
+    text: `Ger. Geral com maior gasto: ${topRegional.label} (${formatCurrency(topRegional.valor)}).`
   });
   if (prevRows.value) {
     const antes = soma(prevRows.value);
@@ -212,7 +212,7 @@ const estadoData = computed(() =>
 
 const tables = computed(() => [
   { title: "Por filial", col: "Filial", rows: filialRows.value, delta: true },
-  { title: "Por regional", col: "Regional", rows: regionalRows.value },
+  { title: "Por Ger. Geral", col: "Ger. Geral", rows: regionalRows.value },
   { title: "Por banco", col: "Banco", rows: bancoRows.value }
 ]);
 </script>
@@ -224,9 +224,9 @@ const tables = computed(() => [
         <GerenteRegionalFilter
           v-model="regionalSel"
           :options="regionalOptions"
-          label="Regional"
-          all-label="Todas as regionais"
-          title="Filtrar por regional"
+          label="Ger. Geral"
+          all-label="Todos os Ger. Gerais"
+          title="Filtrar por Ger. Geral"
         />
         <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
           <button
@@ -329,8 +329,8 @@ const tables = computed(() => [
 
             <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-2">
               <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
-                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por regional</h3>
-                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Valor de férias por regional</p>
+                <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por Ger. Geral</h3>
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Valor de férias por Ger. Geral</p>
               </header>
               <div class="p-4">
                 <BarChart :data="regionalData" show-values value-format="currency" :show-trend="false" :height-px="288" />
@@ -426,7 +426,7 @@ const tables = computed(() => [
                     <tr class="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       <th class="px-5 py-2.5 font-semibold">Colaborador</th>
                       <th class="px-4 py-2.5 font-semibold">Filial</th>
-                      <th class="px-4 py-2.5 font-semibold">Regional</th>
+                      <th class="px-4 py-2.5 font-semibold">Ger. Geral</th>
                       <th class="px-4 py-2.5 font-semibold">Mês referente</th>
                       <th class="px-4 py-2.5 font-semibold">Pagamento</th>
                       <th class="px-5 py-2.5 text-right font-semibold">Valor</th>

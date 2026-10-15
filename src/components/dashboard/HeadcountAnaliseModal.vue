@@ -250,9 +250,9 @@ function onGeneroClick(sliceIndex) {
         <GerenteRegionalFilter
         v-model="regionalSel"
         :options="regionalOptions"
-        label="Regional"
-        all-label="Todas as regionais"
-        title="Filtrar por regional"
+        label="Ger. Geral"
+        all-label="Todos os Ger. Gerais"
+        title="Filtrar por Ger. Geral"
       />
         <button
           type="button"

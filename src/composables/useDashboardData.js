@@ -1448,7 +1448,7 @@ export function useDashboardData(filter) {
 
   function cockpitChartFor(kpiId, hiringStatus, treinamentoGerente, hiringRecrutador, headcountFilial, headcountEmpresa, headcountView, rescisaoMode, rescisaoFilters, rescisaoView, headcountFuncao = [], absenteismoFilial = [], diariaView = "colaborador", feriasView = "colaborador", custoView = "empresa", permanenciaView = "colaborador", turnoverView = "geral", retencaoView = "geral", absenteismoView = "motivo") {
     const custoPorRegional = custoView === "regional";
-    const custoSub = custoPorRegional ? "Folha + Férias + Rescisões por regional, no período filtrado" : "Valor total por empresa, no período filtrado";
+    const custoSub = custoPorRegional ? "Folha + Férias + Rescisões por Ger. Geral, no período filtrado" : "Valor total por empresa, no período filtrado";
     const custoData = () => (custoPorRegional ? custosBarByRegional() : custosBarByEmpresa());
     if ((!kpiId || kpiId === "custo_total") && custoView === "beneficios") {
       const rows = beneficiosPie();
@@ -1502,7 +1502,7 @@ export function useDashboardData(filter) {
           id: "turnover",
           kind: "bar",
           title: "Turnover",
-          sub: "Entrada vs Saída por regional (% do headcount ativo)",
+          sub: "Entrada vs Saída por Ger. Geral (% do headcount ativo)",
           data: turnoverBarByRegional(),
           valueFormat: "percent"
         };
@@ -1548,7 +1548,7 @@ export function useDashboardData(filter) {
         id: "headcount",
         kind: "bar",
         title: "Headcount",
-        sub: headcountView === "regional" ? "Por regional" : "Por estado",
+        sub: headcountView === "regional" ? "Por Ger. Geral" : "Por estado",
         data:
           headcountView === "regional"
             ? headcountBarByRegional(headcountFilial, headcountEmpresa, headcountFuncao)
@@ -1646,7 +1646,7 @@ export function useDashboardData(filter) {
         id: "retencao",
         kind: "bar",
         title: "Retenção",
-        sub: "Taxa de retenção por regional: (Headcount final − novas contratações) ÷ Headcount inicial",
+        sub: "Taxa de retenção por Ger. Geral: (Headcount final − novas contratações) ÷ Headcount inicial",
         data: retentionBarByRegional(),
         valueFormat: "percent"
       };
@@ -1677,7 +1677,7 @@ export function useDashboardData(filter) {
         id: "absenteismo",
         kind: "bar",
         title: "Saúde e Segurança",
-        sub: "Ocorrências por regional no período filtrado",
+        sub: "Ocorrências por Ger. Geral no período filtrado",
         data: absenteismoBarByRegional(absenteismoFilial),
         valueFormat: "",
         showTrend: false

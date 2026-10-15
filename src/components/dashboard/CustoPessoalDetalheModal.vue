@@ -178,7 +178,7 @@ const insights = computed(() => {
   list.push({ tone: "zinc", text: `${maior.label} é o maior componente: ${fmtPct(maior.pct)} do custo (${formatCurrency(maior.valor)}).` });
   if (regionalRows.value.length) {
     const top = regionalRows.value[0];
-    list.push({ tone: "zinc", text: `Regional com maior custo: ${top.label} (${formatCurrency(top.total)}, sem benefícios).` });
+    list.push({ tone: "zinc", text: `Ger. Geral com maior custo: ${top.label} (${formatCurrency(top.total)}, sem benefícios).` });
   }
   if (totaisPrev.value) {
     const antes = Object.values(totaisPrev.value).reduce((s, v) => s + v, 0);
@@ -214,7 +214,7 @@ const cards = computed(() => [
 ]);
 
 const tables = computed(() => [
-  { title: "Por regional", col: "Regional", rows: regionalRows.value },
+  { title: "Por Ger. Geral", col: "Ger. Geral", rows: regionalRows.value },
   { title: "Por empresa", col: "Empresa", rows: empresaRows.value, soFolhaRescisao: true },
   { title: "Por filial", col: "Filial", rows: filialRows.value, delta: true }
 ]);
@@ -228,9 +228,9 @@ const tables = computed(() => [
           :model-value="regionalAtiva"
           @update:model-value="regionalSel = $event"
           :options="regionalOptions"
-          label="Regional"
-          all-label="Todas as regionais"
-          title="Filtrar por regional"
+          label="Ger. Geral"
+          all-label="Todos os Ger. Gerais"
+          title="Filtrar por Ger. Geral"
         />
         <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
           <button
@@ -276,8 +276,8 @@ const tables = computed(() => [
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
               <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <div>
-                  <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por regional</h3>
-                  <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Folha, férias e rescisões por regional</p>
+                  <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por Ger. Geral</h3>
+                  <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Folha, férias e rescisões por Ger. Geral</p>
                 </div>
                 <ul class="flex items-center gap-4 text-xs font-medium text-zinc-600 dark:text-zinc-300">
                   <li v-for="t in TIPOS.filter((x) => x.id !== 'beneficios')" :key="t.id" class="flex items-center gap-1.5">
@@ -452,7 +452,7 @@ const tables = computed(() => [
         </template>
 
         <p class="border-t border-zinc-200 pt-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-          Custo de pessoal = folha + férias + rescisões (valor total) + benefícios no período filtrado · Regional e filial consideram só folha, férias e rescisões.
+          Custo de pessoal = folha + férias + rescisões (valor total) + benefícios no período filtrado · Ger. Geral e filial consideram só folha, férias e rescisões.
         </p>
       </div>
     </div>

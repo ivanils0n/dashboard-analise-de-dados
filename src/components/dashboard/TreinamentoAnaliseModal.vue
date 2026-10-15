@@ -170,9 +170,9 @@ const tables = computed(() => [
         <GerenteRegionalFilter
           v-model="regionalSel"
           :options="regionalOptions"
-          label="Regional"
-          all-label="Todas as regionais"
-          title="Filtrar por regional"
+          label="Ger. Geral"
+          all-label="Todos os Ger. Gerais"
+          title="Filtrar por Ger. Geral"
         />
         <div class="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800" role="group" aria-label="Filtrar por estado">
           <button

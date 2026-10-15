@@ -227,7 +227,7 @@ const custoPessoalRows = ref([]);
 const FERIAS_VIEWS = [
   { value: "colaborador", label: "Colaborador", title: "Total por colaborador" },
   { value: "filial", label: "Filial", title: "Total por filial" },
-  { value: "regional", label: "Regional", title: "Total por regional" }
+  { value: "regional", label: "Ger. Geral", title: "Total por Ger. Geral" }
 ];
 const feriasView = ref("colaborador");
 const feriasChart = computed(() => dashboard.feriasChartFor(feriasView.value));
@@ -239,7 +239,7 @@ const feriasSummaryItems = computed(() => {
     feriasView.value === "filial"
       ? { label: "Filiais", value: String(s.filiais) }
       : feriasView.value === "regional"
-        ? { label: "Regionais", value: String(s.regionais) }
+        ? { label: "Ger. Gerais", value: String(s.regionais) }
         : { label: "Colaboradores", value: String(s.colaboradores) }
   ];
 });
@@ -257,7 +257,7 @@ function onFeriasBarClick({ label }) {
 const CUSTO_VIEWS = [
   { value: "consolidado", label: "Visão Geral", title: "Folha, Férias, Rescisões e Benefícios" },
   { value: "empresa", label: "Folha", title: "Folha por empresa" },
-  { value: "regional", label: "Regional", title: "Total por regional" },
+  { value: "regional", label: "Ger. Geral", title: "Total por Ger. Geral" },
   { value: "beneficios", label: "Benefícios", title: "Total por benefício" }
 ];
 const custoView = ref("consolidado");
