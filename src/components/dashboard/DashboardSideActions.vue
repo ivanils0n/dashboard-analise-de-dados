@@ -4,6 +4,7 @@ import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import { useFilters } from "@/composables/useFilters";
 import { STATES } from "@/lib/config";
+import { links, loadLinks, openLink } from "@/composables/useLinks";
 
 const props = defineProps({
   expanded: { type: Boolean, default: false },
@@ -38,7 +39,10 @@ function onPointerDownOutside(e) {
 function onKeydown(e) {
   if (e.key === "Escape") stateMenuOpen.value = false;
 }
+const LINK_ICON = ["M2 4h20v12H2z", "M8 20h8", "M12 16v4", "M6 12l3-3 2 2 4-4"];
+
 onMounted(() => {
+  loadLinks();
   ["pointerdown", "mousedown"].forEach((t) => document.addEventListener(t, onPointerDownOutside, true));
   document.addEventListener("keydown", onKeydown);
 });
@@ -64,7 +68,7 @@ watch(
     aria-label="Filtros e ações"
   >
 
-    <div class="flex items-center gap-2 pb-4" :class="expanded ? 'justify-between' : 'justify-center'">
+    <div class="flex shrink-0 items-center gap-2 pb-4" :class="expanded ? 'justify-between' : 'justify-center'">
       <button
         type="button"
         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
@@ -86,7 +90,7 @@ watch(
       />
     </div>
 
-    <div class="flex flex-col gap-1 border-t border-zinc-800 pt-4">
+    <div class="flex shrink-0 flex-col gap-1 border-t border-zinc-800 pt-4">
       <p v-if="expanded" class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Filtros</p>
       <template v-if="expanded">
         <DateRangeFilter data-tour="period" class="side-filter" :range="range" title="Período" />
@@ -146,7 +150,9 @@ watch(
       </template>
     </div>
 
-    <div class="mt-4 flex flex-col gap-1 border-t border-zinc-800 pt-4">
+    <!-- Não colocar a seção "Filtros" dentro desta área com scroll: os menus de Período e Estado abrem para fora da barra e seriam cortados. -->
+    <div class="side-scroll mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden" :class="expanded ? '-mx-4 px-4' : '-mx-2 px-2'">
+    <div class="flex flex-col gap-1 border-t border-zinc-800 pt-4">
       <p v-if="expanded" class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Ações</p>
       <button
         v-if="showHideValues"
@@ -222,7 +228,27 @@ watch(
       </template>
     </div>
 
-    <div class="mt-auto flex flex-col gap-1 border-t border-zinc-800 pt-4">
+    <div v-if="links.length" class="mt-4 flex flex-col gap-1 border-t border-zinc-800 pt-4">
+      <p v-if="expanded" class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Relatórios</p>
+      <button
+        v-for="link in links"
+        :key="link.id"
+        type="button"
+        @click="openLink(link)"
+        class="side-btn"
+        :class="expanded && 'side-btn-wide'"
+        :title="link.nome"
+        :aria-label="link.nome"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="d in LINK_ICON" :key="d" :d="d" />
+        </svg>
+        <span v-if="expanded" class="truncate">{{ link.nome }}</span>
+      </button>
+    </div>
+    </div>
+
+    <div class="mt-4 flex shrink-0 flex-col gap-1 border-t border-zinc-800 pt-4">
       <button
         type="button"
         data-tour="tour-button"
@@ -280,6 +306,10 @@ watch(
 }
 .side-bar :deep(.side-btn svg) {
   flex-shrink: 0;
+}
+.side-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(63 63 70) transparent;
 }
 .side-filter :deep(> button) {
   width: 100%;

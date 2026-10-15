@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth";
 import usersRoutes from "./routes/users";
 import dataRoutes from "./routes/data";
 import cacheRoutes from "./routes/cache";
+import linksRoutes, { linkRedirect } from "./routes/links";
 
 const app = new Hono<AppEnv>();
 
@@ -38,6 +39,8 @@ app.route("/api/users", usersRoutes);
 
 app.route("/api/data", dataRoutes);
 app.route("/api/cache", cacheRoutes);
+app.route("/api/links", linksRoutes);
+app.route("/r", linkRedirect);
 
 app.notFound((c) => c.json({ success: false, error: { message: "Rota não encontrada." } }, 404));
 

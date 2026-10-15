@@ -1,5 +1,6 @@
 <script setup>
 import SideBar from "./SideBar.vue";
+import LinkViewerModal from "./LinkViewerModal.vue";
 </script>
 
 <template>
@@ -16,5 +17,6 @@ import SideBar from "./SideBar.vue";
         </router-view>
       </main>
     </div>
+    <LinkViewerModal />
   </div>
 </template>

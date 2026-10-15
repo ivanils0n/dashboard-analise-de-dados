@@ -36,35 +36,42 @@ function base64UrlToString(value: string): string {
   return decoder.decode(base64UrlToBytes(value));
 }
 
-let cachedKey: { secret: string; key: Promise<CryptoKey> } | null = null;
+const keyCache = new Map<string, Promise<CryptoKey>>();
 
 function hmacKey(secret: string): Promise<CryptoKey> {
-  if (!cachedKey || cachedKey.secret !== secret) {
-    const key = crypto.subtle.importKey(
+  let key = keyCache.get(secret);
+  if (!key) {
+    key = crypto.subtle.importKey(
       "raw",
       encoder.encode(secret),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign", "verify"]
     );
-    cachedKey = { secret, key };
-    key.catch(() => {
-      if (cachedKey && cachedKey.key === key) cachedKey = null;
-    });
+    keyCache.set(secret, key);
+    key.catch(() => keyCache.delete(secret));
   }
-  return cachedKey.key;
+  return key;
 }
 
 export async function signToken(payload: TokenInput, secret: string): Promise<string> {
+  return signPayload(payload, secret, TOKEN_TTL_SECONDS);
+}
+
+export async function signPayload(payload: object, secret: string, ttlSeconds: number): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "HS256", typ: "JWT" };
-  const body = { ...payload, iat: now, exp: now + TOKEN_TTL_SECONDS };
+  const body = { ...payload, iat: now, exp: now + ttlSeconds };
   const data = `${stringToBase64Url(JSON.stringify(header))}.${stringToBase64Url(JSON.stringify(body))}`;
   const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), encoder.encode(data));
   return `${data}.${bytesToBase64Url(new Uint8Array(signature))}`;
 }
 
 export async function verifyToken(token: string, secret: string): Promise<TokenPayload | null> {
+  return verifyPayload<TokenPayload>(token, secret);
+}
+
+export async function verifyPayload<T extends { exp?: number }>(token: string, secret: string): Promise<T | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const data = `${parts[0]}.${parts[1]}`;
@@ -78,7 +85,7 @@ export async function verifyToken(token: string, secret: string): Promise<TokenP
     );
     if (!valid) return null;
 
-    const payload = JSON.parse(base64UrlToString(parts[1])) as TokenPayload;
+    const payload = JSON.parse(base64UrlToString(parts[1])) as T;
     if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
     return payload;
   } catch {

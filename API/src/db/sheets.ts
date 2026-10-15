@@ -247,7 +247,7 @@ export function valuesToRow(columns: ColumnDef[], values: unknown[]): SheetRow {
   return row;
 }
 
-async function readRawSheets(
+export async function readRawSheets(
   env: Bindings,
   names: string[],
   clientSignal?: AbortSignal

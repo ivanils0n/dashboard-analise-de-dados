@@ -6,7 +6,8 @@ defineProps({
   subtitle: { type: String, default: "" },
   maxWidth: { type: String, default: "max-w-2xl" },
   fullscreen: { type: Boolean, default: false },
-  centered: { type: Boolean, default: false }
+  centered: { type: Boolean, default: false },
+  flush: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(["close"]);
@@ -55,7 +56,8 @@ onUnmounted(() => {
         aria-modal="true"
         :aria-label="title"
       >
-        <div class="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-100 px-4 py-3 sm:px-6 sm:py-4 dark:border-zinc-800">
+        <div class="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-100 px-4 dark:border-zinc-800"
+          :class="flush ? 'py-2 sm:px-4' : 'py-3 sm:px-6 sm:py-4'">
           <span v-if="centered" class="w-10 shrink-0 sm:w-8" aria-hidden="true"></span>
           <div :class="centered && 'min-w-0 flex-1 text-center'">
             <h2
@@ -81,7 +83,7 @@ onUnmounted(() => {
 
         <div
           class="min-h-0 min-w-0 flex-1 overflow-y-auto"
-          :class="[fullscreen ? 'p-3 sm:p-6' : 'px-4 py-4 sm:px-6 sm:py-5', ready && 'fade-in']"
+          :class="[flush ? 'p-0' : fullscreen ? 'p-3 sm:p-6' : 'px-4 py-4 sm:px-6 sm:py-5', ready && 'fade-in']"
         >
           <slot v-if="ready" />
           <div v-else class="flex min-h-[12rem] items-center justify-center" aria-busy="true">
