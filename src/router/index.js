@@ -35,7 +35,7 @@ const routes = [
         path: "filiais",
         name: "filiais",
         component: views.filiais,
-        meta: { requiresAuth: true }
+        meta: { requiresAuth: true, adminOnly: true }
       },
       {
         path: "rescisoes",
@@ -102,13 +102,10 @@ router.beforeEach(async (to) => {
   }
   if (to.meta.requiresAuth) {
     if (!isAuthenticated()) return { name: "login", query: { redirect: to.fullPath } };
-    if (to.meta.adminOnly || to.meta.editOnly) {
+    if (to.meta.adminOnly) {
       const profile = await ensureProfile();
       if (!isAuthenticated()) return { name: "login" };
-      if (profile) {
-        if (to.meta.adminOnly && profile.perfil !== "admin") return { name: "dashboard" };
-        if (to.meta.editOnly && profile.perfil === "visitante") return { name: "dashboard" };
-      }
+      if (profile && profile.perfil !== "admin") return { name: "dashboard" };
     }
   }
   return true;

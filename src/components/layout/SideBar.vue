@@ -24,7 +24,6 @@ onBeforeUnmount(() => clearTimeout(expandTimer));
 
 const profile = computed(() => authState.profile || getProfile() || {});
 const isAdmin = computed(() => profile.value.perfil === "admin");
-const isVisitor = computed(() => profile.value.perfil === "visitante");
 
 const items = [
   {
@@ -74,11 +73,10 @@ const detailItems = [
   }
 ];
 
-const visibleItems = computed(() =>
-  isAdmin.value ? items : isVisitor.value ? [] : items.filter((i) => i.name !== "usuarios")
-);
+const ADMIN_ONLY = new Set(["filiais", "usuarios"]);
+const visibleItems = computed(() => (isAdmin.value ? items : items.filter((i) => !ADMIN_ONLY.has(i.name))));
 
-const visibleDetailItems = computed(() => (isVisitor.value ? [] : detailItems));
+const visibleDetailItems = computed(() => detailItems);
 
 
 const showStateFilter = computed(() => route.name === "filiais");

@@ -244,7 +244,7 @@ function onGeneroClick(sliceIndex) {
 </script>
 
 <template>
-  <Modal title="Análise de Headcount" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
+  <Modal title="Análise de Headcount" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen pdf @close="emit('close')">
     <template #actions>
       <div class="flex items-center gap-2">
         <GerenteRegionalFilter

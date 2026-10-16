@@ -5,6 +5,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import { useFilters } from "@/composables/useFilters";
+import { dateFilter } from "@/composables/useDateFilter";
 import { hydrateState } from "@/lib/db";
 import { beginLoading, endLoading } from "@/composables/useLoading";
 import { listVacancies } from "@/lib/employees";
@@ -19,8 +20,13 @@ onActivated(() => {
     .finally(endLoading);
 });
 
+const vigenteYm = computed(() => String(dateFilter.end || dateFilter.start || "").slice(0, 7));
+
 const search = ref("");
-const meses = ref([]);
+const meses = ref(vigenteYm.value ? [vigenteYm.value] : []);
+watch(vigenteYm, (ym) => {
+  meses.value = ym ? [ym] : [];
+});
 const situacoes = ref([]);
 const filiais = ref([]);
 const recrutadores = ref([]);
@@ -49,12 +55,20 @@ const base = computed(() => {
   });
 });
 
-function uniqueSorted(key) {
+const baseDoMes = computed(() =>
+  meses.value.length ? base.value.filter((r) => meses.value.includes(r.mes)) : base.value
+);
+
+function uniqueSorted(key, fonte = baseDoMes) {
   const set = new Set();
-  base.value.forEach((r) => r[key] && set.add(r[key]));
+  fonte.value.forEach((r) => r[key] && set.add(r[key]));
   return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
-const mesOptions = computed(() => uniqueSorted("mes").reverse());
+const mesOptions = computed(() => {
+  const opcoes = new Set(uniqueSorted("mes", base));
+  if (vigenteYm.value) opcoes.add(vigenteYm.value);
+  return [...opcoes].sort().reverse();
+});
 const situacaoOptions = computed(() => uniqueSorted("situacao"));
 const filialOptions = computed(() => uniqueSorted("filial"));
 const recrutadorOptions = computed(() => uniqueSorted("recrutador"));
@@ -65,31 +79,13 @@ function prune(selected, options) {
     selected.value = selected.value.filter((v) => options.includes(v));
   }
 }
-watch([mesOptions, situacaoOptions, filialOptions, recrutadorOptions, tipoOptions], () => {
-  prune(meses, mesOptions.value);
+// Não podar meses: sem vagas no mês vigente a lista deve ficar vazia, não voltar a mostrar todos os meses.
+watch([situacaoOptions, filialOptions, recrutadorOptions, tipoOptions], () => {
   prune(situacoes, situacaoOptions.value);
   prune(filiais, filialOptions.value);
   prune(recrutadores, recrutadorOptions.value);
   prune(tipos, tipoOptions.value);
 });
-
-function previousYm() {
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-let monthDefaulted = false;
-watch(
-  mesOptions,
-  (options) => {
-    if (monthDefaulted || !options.length) return;
-    monthDefaulted = true;
-    const prev = previousYm();
-    if (options.includes(prev)) meses.value = [prev];
-  },
-  { immediate: true }
-);
 
 const rows = computed(() => {
   const q = normalizeText(search.value).trim();
@@ -122,7 +118,8 @@ const summary = computed(() => {
 const hasFilter = computed(
   () =>
     search.value ||
-    meses.value.length ||
+    meses.value.length !== (vigenteYm.value ? 1 : 0) ||
+    (vigenteYm.value && meses.value[0] !== vigenteYm.value) ||
     situacoes.value.length ||
     filiais.value.length ||
     recrutadores.value.length ||
@@ -130,7 +127,7 @@ const hasFilter = computed(
 );
 function clearFilters() {
   search.value = "";
-  meses.value = [];
+  meses.value = vigenteYm.value ? [vigenteYm.value] : [];
   situacoes.value = [];
   filiais.value = [];
   recrutadores.value = [];

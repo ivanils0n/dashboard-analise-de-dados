@@ -4,6 +4,7 @@ import Modal from "@/components/ui/Modal.vue";
 import ChartEmpty from "@/components/charts/ChartEmpty.vue";
 import { createBarChart, updateBarChart, barValueMax, createSeriesLineChart, updateSeriesLineChart, animateTrendLine, cancelTrendAnimation } from "@/lib/charts";
 import { isDark } from "@/composables/useTheme";
+import { pdfExpand } from "@/composables/usePdfMode";
 import { formatCurrency, formatHoursClock } from "@/lib/utils";
 
 const props = defineProps({
@@ -82,7 +83,9 @@ const ROW_PX = 30;
 const isHorizontal = computed(() => props.horizontal && props.variant !== "line");
 const seriesPerRow = computed(() => (props.data[0] && Array.isArray(props.data[0].series) ? props.data[0].series.length : 1));
 const rowsHeightPx = computed(() => props.data.length * (seriesPerRow.value > 1 ? seriesPerRow.value * 24 + 12 : ROW_PX) + 48);
-const rootStyle = computed(() => (props.fluid ? undefined : { height: props.heightPx + "px" }));
+const rootStyle = computed(() =>
+  props.fluid || (pdfExpand.value && isHorizontal.value) ? undefined : { height: props.heightPx + "px" }
+);
 const canvasBoxStyle = computed(() => {
   if (!isHorizontal.value) return { height: "100%" };
   if (props.alignTop) return { height: `${rowsHeightPx.value}px` };
@@ -94,7 +97,7 @@ const LEGEND_PX = 28;
 const rootEl = ref(null);
 const rootH = ref(0);
 const virtualOn = computed(
-  () => props.virtual && isHorizontal.value && props.data.length > VIRTUAL_MIN_ROWS && (!props.fluid || rootH.value > 0)
+  () => !pdfExpand.value && props.virtual && isHorizontal.value && props.data.length > VIRTUAL_MIN_ROWS && (!props.fluid || rootH.value > 0)
 );
 const rowPx = computed(() => (seriesPerRow.value > 1 ? seriesPerRow.value * 24 + 12 : ROW_PX));
 const legendItems = computed(() =>
@@ -280,6 +283,14 @@ watch([windowStart, visibleRows], () => {
 watch(virtualOn, () => {
   scrollTop.value = 0;
   if (scroller.value) scroller.value.scrollTop = 0;
+});
+
+watch(pdfExpand, async () => {
+  if (!chart || !isHorizontal.value) return;
+  await nextTick();
+  if (!chart) return;
+  chart.resize();
+  drawData(false);
 });
 
 watch(

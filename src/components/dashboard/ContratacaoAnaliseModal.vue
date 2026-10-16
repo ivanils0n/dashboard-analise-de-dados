@@ -356,7 +356,7 @@ const totals = computed(() => [
 </script>
 
 <template>
-  <Modal title="Análise de Contratação" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
+  <Modal title="Análise de Contratação" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen pdf @close="emit('close')">
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
         <button

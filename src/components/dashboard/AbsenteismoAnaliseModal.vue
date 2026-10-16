@@ -174,7 +174,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
 </script>
 
 <template>
-  <Modal title="Análise de Absenteísmo" :subtitle="`${escopo}${regionalSel ? ` · ${regionalSel}` : ''} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
+  <Modal title="Análise de Absenteísmo" :subtitle="`${escopo}${regionalSel ? ` · ${regionalSel}` : ''} · ${periodo}`" :open="open" fullscreen pdf @close="emit('close')">
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
       <GerenteRegionalFilter

@@ -22,7 +22,7 @@ Dashboard de **lançamento e análise de dados de Gente e Gestão (RH)**. Design
 - **Exportação e importação**: botão de menu com **XLSX** (4 planilhas: `Indicadores`, `Lançamentos`, `Equipe` e `Filiais`), **CSV** e **Baixar template**; **Importar planilha** verifica duplicados (dados já existentes são ignorados).
 - **Apresentação**: modo de slides com gráficos por indicador e navegação.
 - **Persistência**: `sessionStorage` como cache offline + sincronização com a **planilha Google Sheets** via API (download completo, sem sync incremental).
-- **Autenticação** por perfil (admin / analista / visitante) e controle de acesso por rota.
+- **Autenticação** por perfil (admin / analista) e controle de acesso por rota.
 
 ## Indicadores e origem dos dados
 
@@ -130,7 +130,7 @@ A autenticação é **própria** (não há Supabase Auth):
 - Login em `POST /api/auth/login` (`usuario`/`senha`) → devolve um **JWT (HS256)** com validade de 6h.
 - A senha é guardada como **PBKDF2-SHA256** (100.000 iterações) na coluna `senha_hash` da aba `usuarios`.
 - O JWT fica apenas no `sessionStorage` (chave `gg-auth`); nada de tokens em disco.
-- Perfis: `admin` (tudo), `analista` (edita dados) e `visitante` (somente leitura).
+- Perfis: `admin` (tudo, incluindo as abas Filiais e Usuários) e `analista` (edita dados, sem acesso às abas Filiais e Usuários).
 
 > O usuário inicial é criado pelo script de seed (`npm run seed` em `API/`). Veja `API/README.md`.
 

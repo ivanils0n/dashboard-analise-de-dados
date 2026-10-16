@@ -337,6 +337,44 @@ function registerRemote() {
   });
 }
 
+// Grafias alternativas de filial: a chave é o nome sem acento, espaço ou pontuação.
+// Não remover: sem isso a filial vira duas nas contagens e rankings.
+const FILIAL_ALIASES = {
+  senadorlemos: "S. LEMOS",
+  lemos: "S. LEMOS",
+  autazmirim: "AUTAZ",
+  alvaromaia: "A.MAIA",
+  pmiranda: "PEDRO MIRANDA",
+  burguerking: "BURGUER KING (SATELITE)",
+  buguerking: "BURGUER KING (SATELITE)",
+  almirante: "ALMIRANTE BARROSO",
+  candeias1: "CND1",
+  rolimdemoura1: "RLM1",
+  rolimdemoura01: "RLM1",
+  rolim: "RLM1",
+  alvorada: "ADO",
+  opo1: "OPO",
+  portocalama: "PVH27",
+  portoguapore: "PVH26"
+};
+
+// ARI seguido de número é ARQ (ARI3 = ARQ3); GMI, GMI1 e GM01 são o GM1. ARI sem número é outra filial: não incluir.
+const FILIAL_REGRAS = [
+  [/^ar[iq]0*(\d+)$/, (m) => `ARQ${m[1]}`],
+  [/^gmi?0*(\d*)$/, (m) => `GM${m[1] || "1"}`]
+];
+
+function filialCanonica(v) {
+  if (v == null) return v;
+  const key = String(v).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+  if (FILIAL_ALIASES[key]) return FILIAL_ALIASES[key];
+  for (const [regra, formatar] of FILIAL_REGRAS) {
+    const m = key.match(regra);
+    if (m) return formatar(m);
+  }
+  return String(v).toUpperCase();
+}
+
 function up(v) {
   return v == null ? v : String(v).toUpperCase();
 }
@@ -362,9 +400,9 @@ function mapRemoteDiaria(row, impliedState) {
     meta: {
       employeeName: up(row.nome_colaborador) || "",
       funcao: up(row.funcao) || null,
-      filial: up(row.filial) || null,
+      filial: filialCanonica(row.filial) || null,
       liderImediato: up(row.lider_imediato) || null,
-      regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
+      regional: regionalDaFilial(filialCanonica(row.filial), row.estado_sigla || impliedState),
       motivo: motivoKey(row.motivo),
       estado: row.estado_sigla || impliedState || null
     }
@@ -381,8 +419,8 @@ function mapRemoteFerias(row, impliedState) {
       codigo: row.codigo != null ? String(row.codigo) : null,
       banco: row.banco || null,
       dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
-      filial: up(row.filial) || null,
-      regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
+      filial: filialCanonica(row.filial) || null,
+      regional: regionalDaFilial(filialCanonica(row.filial), row.estado_sigla || impliedState),
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -412,7 +450,7 @@ function mapRemoteTreinamento(row, impliedState) {
     meta: {
       employeeName: up(row.nome_colaborador) || "",
       cargo: up(row.cargo) || null,
-      filial: up(row.filial) || null,
+      filial: filialCanonica(row.filial) || null,
       gerenteRegional: regionalText(row.gerente_regional),
       tema: up(row.tema) || null,
       modalidade: row.modalidade || null,
@@ -432,8 +470,8 @@ function mapRemoteCustoFolha(row, impliedState) {
       banco: row.banco || null,
       dataPagto: row.data_pagto ? String(row.data_pagto).slice(0, 10) : null,
       empresa: up(row.empresa) || null,
-      filial: up(row.filial) || null,
-      regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
+      filial: filialCanonica(row.filial) || null,
+      regional: regionalDaFilial(filialCanonica(row.filial), row.estado_sigla || impliedState),
       estado: row.estado_sigla || impliedState || null
     }
   };
@@ -463,7 +501,7 @@ function mapRemoteAbsenteismo(row, impliedState) {
         colaborador: String(up(row.colaborador)).replace(/\s+/g, " ").trim(),
         codigo: row.codigo != null && String(row.codigo).trim() !== "" ? String(row.codigo).trim() : null,
         setor: up(row.setor) || null,
-        filial: up(row.filial) || null,
+        filial: filialCanonica(row.filial) || null,
         motivo: legacyAdv || legacyAci ? "Presente" : motivo,
         observacao: row.observacao || null,
         advertencia: truthy(row.advertencia) || legacyAdv,
@@ -491,7 +529,7 @@ function mapRemoteVacancy(row, impliedState) {
     closeAt: row.fechada_em,
     salario: row.salario != null ? Number(row.salario) : null,
     tipoContratacao: row.tipo_contratacao ? String(row.tipo_contratacao).trim().toLowerCase() : null,
-    filial: up(row.filial) || null,
+    filial: filialCanonica(row.filial) || null,
     estado: row.estado_sigla || impliedState || null,
     recrutador: up(row.recrutador) || null,
     motivoContratacao: up(row.motivo_contratacao) || null
@@ -511,12 +549,12 @@ function mapRemoteRescisao(row, impliedState) {
     empresa: up(row.empresa) || null,
     estado: row.estado || impliedState || null,
     colaborador: up(row.colaborador) ?? "",
-    filial: up(row.filial) || null,
+    filial: filialCanonica(row.filial) || null,
     funcao: up(row.funcao) || null,
     admissao: row.admissao ? String(row.admissao).slice(0, 10) : null,
     gerenteImediato: motivoKey(row.gerente_imediato),
     regional: motivoKey(regionalText(row.regional)),
-    regionalFilial: regionalDaFilial(row.filial, row.estado || impliedState),
+    regionalFilial: regionalDaFilial(filialCanonica(row.filial), row.estado || impliedState),
     motivo: up(row.motivo) || null,
     justificativaApurada: up(row.justificativa_apurada) || null,
     ponderacoes: up(row.ponderacoes) || null,
@@ -539,8 +577,8 @@ function mapRemoteHeadcount(row, impliedState) {
     dataDesligamento: row.data_desligamento ? String(row.data_desligamento).slice(0, 10) : null,
     mesReferente: row.mes_referente ? String(row.mes_referente).slice(0, 10) : null,
     empresa: row.empresa != null ? up(row.empresa) : null,
-    filial: up(row.filial) || null,
-    regional: regionalDaFilial(row.filial, row.estado_sigla || impliedState),
+    filial: filialCanonica(row.filial) || null,
+    regional: regionalDaFilial(filialCanonica(row.filial), row.estado_sigla || impliedState),
     estado: row.estado_sigla || impliedState || null,
     dataNascimento: row.data_nascimento ? String(row.data_nascimento).slice(0, 10) : null
   };

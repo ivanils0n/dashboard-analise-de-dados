@@ -25,7 +25,7 @@ const form = reactive({
   senha: ""
 });
 
-const PERFIL_LABELS = { admin: "Administrador", analista: "Analista", visitante: "Visitante" };
+const PERFIL_LABELS = { admin: "Administrador", analista: "Analista" };
 
 async function load() {
   loading.value = true;

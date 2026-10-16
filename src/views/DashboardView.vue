@@ -25,6 +25,7 @@ import PieChart from "@/components/charts/PieChart.vue";
 import RescisaoViewToggle from "@/components/dashboard/RescisaoViewToggle.vue";
 import Badge from "@/components/ui/Badge.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import { useRouter } from "vue-router";
 import { useDashboardData } from "@/composables/useDashboardData";
 import { useDateFilter, dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
@@ -61,8 +62,11 @@ const AbsenteismoAnaliseModal = lazyModal(() => import("@/components/dashboard/A
 const HeadcountAnaliseModal = lazyModal(() => import("@/components/dashboard/HeadcountAnaliseModal.vue"));
 const LaunchModal = lazyModal(() => import("@/components/dashboard/LaunchModal.vue"));
 const DiariaColaboradorModal = lazyModal(() => import("@/components/dashboard/DiariaColaboradorModal.vue"));
+const CalculosModal = lazyModal(() => import("@/components/dashboard/CalculosModal.vue"));
+const calculosOpen = ref(false);
 const RescisaoFuncaoModal = lazyModal(() => import("@/components/dashboard/RescisaoFuncaoModal.vue"));
 
+const router = useRouter();
 const { dateFilter: df } = useDateFilter();
 const { state: filters, setState } = useFilters();
 const { show: toast, hide: hideToast } = useToast();
@@ -645,6 +649,8 @@ function onKpiContext(id) {
     permanenciaAnaliseOpen.value = true;
   } else if (id === "tempo_contratacao" || id === "custo_contratacao") {
     contratacaoAnaliseOpen.value = true;
+  } else if (id === "rescisoes") {
+    router.push({ name: "rescisoes" });
   }
 }
 
@@ -701,9 +707,11 @@ watch(activeTab, (tab) => {
       :can-export="canEdit"
       @reload="handleReload"
       @tour="tourOpen = true"
+      @calculos="calculosOpen = true"
       @toggle-values="toggleShowValues"
       @export="onMenuClick"
     />
+    <CalculosModal v-if="calculosOpen" @close="calculosOpen = false" />
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3 sm:mb-4 sm:gap-4 md:hidden">
       <div class="flex items-center gap-3">
         <h1 class="text-lg font-bold text-zinc-900 sm:text-xl dark:text-zinc-100">Gente &amp; Gestão</h1>

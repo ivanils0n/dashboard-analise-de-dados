@@ -6,6 +6,7 @@ import StateFilter from "@/components/layout/StateFilter.vue";
 import ExpandableText from "@/components/ui/ExpandableText.vue";
 import MultiSelectFilter from "@/components/dashboard/MultiSelectFilter.vue";
 import { useFilters } from "@/composables/useFilters";
+import { dateFilter } from "@/composables/useDateFilter";
 import { getEntriesFor } from "@/lib/store";
 import { hydrateState } from "@/lib/db";
 import { beginLoading, endLoading } from "@/composables/useLoading";
@@ -21,8 +22,13 @@ onActivated(() => {
     .finally(endLoading);
 });
 
+const vigenteYm = computed(() => String(dateFilter.end || dateFilter.start || "").slice(0, 7));
+
 const search = ref("");
-const meses = ref([]);
+const meses = ref(vigenteYm.value ? [vigenteYm.value] : []);
+watch(vigenteYm, (ym) => {
+  meses.value = ym ? [ym] : [];
+});
 const filiais = ref([]);
 const gerentes = ref([]);
 const cargos = ref([]);
@@ -48,12 +54,20 @@ const base = computed(() => {
   });
 });
 
-function uniqueSorted(key) {
+const baseDoMes = computed(() =>
+  meses.value.length ? base.value.filter((r) => meses.value.includes(r.mes)) : base.value
+);
+
+function uniqueSorted(key, fonte = baseDoMes) {
   const set = new Set();
-  base.value.forEach((r) => r[key] && set.add(r[key]));
+  fonte.value.forEach((r) => r[key] && set.add(r[key]));
   return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
-const mesOptions = computed(() => uniqueSorted("mes").reverse());
+const mesOptions = computed(() => {
+  const opcoes = new Set(uniqueSorted("mes", base));
+  if (vigenteYm.value) opcoes.add(vigenteYm.value);
+  return [...opcoes].sort().reverse();
+});
 const filialOptions = computed(() => uniqueSorted("filial"));
 const gerenteOptions = computed(() => uniqueSorted("gerente"));
 const cargoOptions = computed(() => uniqueSorted("cargo"));
@@ -65,32 +79,14 @@ function prune(selected, options) {
     selected.value = selected.value.filter((v) => options.includes(v));
   }
 }
-watch([mesOptions, filialOptions, gerenteOptions, cargoOptions, temaOptions, modalidadeOptions], () => {
-  prune(meses, mesOptions.value);
+// Não podar meses: sem treinamentos no mês vigente a lista deve ficar vazia, não voltar a mostrar todos os meses.
+watch([filialOptions, gerenteOptions, cargoOptions, temaOptions, modalidadeOptions], () => {
   prune(filiais, filialOptions.value);
   prune(gerentes, gerenteOptions.value);
   prune(cargos, cargoOptions.value);
   prune(temas, temaOptions.value);
   prune(modalidades, modalidadeOptions.value);
 });
-
-function previousYm() {
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-let monthDefaulted = false;
-watch(
-  mesOptions,
-  (options) => {
-    if (monthDefaulted || !options.length) return;
-    monthDefaulted = true;
-    const prev = previousYm();
-    if (options.includes(prev)) meses.value = [prev];
-  },
-  { immediate: true }
-);
 
 const rows = computed(() => {
   const q = normalizeText(search.value).trim();
@@ -126,7 +122,8 @@ const summary = computed(() => {
 const hasFilter = computed(
   () =>
     search.value ||
-    meses.value.length ||
+    meses.value.length !== (vigenteYm.value ? 1 : 0) ||
+    (vigenteYm.value && meses.value[0] !== vigenteYm.value) ||
     filiais.value.length ||
     gerentes.value.length ||
     cargos.value.length ||
@@ -135,7 +132,7 @@ const hasFilter = computed(
 );
 function clearFilters() {
   search.value = "";
-  meses.value = [];
+  meses.value = vigenteYm.value ? [vigenteYm.value] : [];
   filiais.value = [];
   gerentes.value = [];
   cargos.value = [];
@@ -181,15 +178,27 @@ const columns = [
     </div>
 
     <section class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div class="flex flex-wrap items-center gap-2 border-b border-zinc-100 p-5 dark:border-zinc-800">
-        <input
-          v-model="search"
-          type="search"
-          class="input-sm w-full sm:w-64"
-          placeholder="Pesquisar colaborador, cargo, tema..."
-          aria-label="Pesquisar treinamentos"
-        />
+      <div class="flex flex-col gap-3 border-b border-zinc-100 p-5 dark:border-zinc-800">
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            v-model="search"
+            type="search"
+            class="input-sm min-w-0 flex-1 basis-64"
+            placeholder="Pesquisar colaborador, cargo, tema..."
+            aria-label="Pesquisar treinamentos"
+          />
+          <button
+            v-if="hasFilter"
+            type="button"
+            class="shrink-0 rounded-lg border border-zinc-300 px-3 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            @click="clearFilters"
+          >
+            Limpar filtros
+          </button>
+        </div>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <MultiSelectFilter
+          block
           v-model="meses"
           :options="mesOptions"
           :format-option="ymLabel"
@@ -199,6 +208,7 @@ const columns = [
           title="Filtrar por um ou mais meses"
         />
         <MultiSelectFilter
+          block
           v-model="filiais"
           :options="filialOptions"
           label="Filial"
@@ -207,6 +217,7 @@ const columns = [
           title="Filtrar por uma ou mais filiais"
         />
         <MultiSelectFilter
+          block
           v-model="gerentes"
           :options="gerenteOptions"
           label="Gerente regional"
@@ -215,6 +226,7 @@ const columns = [
           title="Filtrar por um ou mais gerentes regionais"
         />
         <MultiSelectFilter
+          block
           v-model="cargos"
           :options="cargoOptions"
           label="Cargo"
@@ -223,6 +235,7 @@ const columns = [
           title="Filtrar por um ou mais cargos"
         />
         <MultiSelectFilter
+          block
           v-model="temas"
           :options="temaOptions"
           label="Tema"
@@ -231,6 +244,7 @@ const columns = [
           title="Filtrar por um ou mais temas"
         />
         <MultiSelectFilter
+          block
           v-model="modalidades"
           :options="modalidadeOptions"
           label="Modalidade"
@@ -238,14 +252,7 @@ const columns = [
           plural-label="modalidades"
           title="Filtrar por uma ou mais modalidades"
         />
-        <button
-          v-if="hasFilter"
-          type="button"
-          class="rounded-lg border border-zinc-300 px-3 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          @click="clearFilters"
-        >
-          Limpar filtros
-        </button>
+        </div>
       </div>
 
       <div v-if="rows.length" class="max-h-[calc(100dvh-22rem)] min-h-[16rem] overflow-auto">

@@ -9,8 +9,7 @@ const AUTH_DURATION_MS = 6 * 60 * 60 * 1000;
 
 export const PERFIL_LABELS = {
   admin: "Administrador",
-  analista: "Analista",
-  visitante: "Visitante"
+  analista: "Analista"
 };
 
 export const authState = reactive({
@@ -96,12 +95,13 @@ async function loadProfile() {
     const data = await apiFetch("/api/auth/me");
     const row = data && data.data && data.data.user;
     if (!row || !row.ativo) return null;
+    if (!(row.perfil in PERFIL_LABELS)) return null;
     return {
       id: row.id,
       email: row.email,
       usuario: row.usuario,
       nome: row.nome || row.usuario || "",
-      perfil: row.perfil || "visitante"
+      perfil: row.perfil
     };
   } catch (err) {
     if (err.status !== 401) console.warn("[Auth] Falha ao carregar perfil:", err.message);

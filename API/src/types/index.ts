@@ -1,4 +1,4 @@
-export type Perfil = "admin" | "analista" | "visitante";
+export type Perfil = "admin" | "analista";
 
 export type Bindings = {
   APPS_SCRIPT_URL: string;

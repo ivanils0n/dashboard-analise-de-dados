@@ -5,6 +5,9 @@ import Modal from "@/components/ui/Modal.vue";
 import BarChart from "@/components/charts/BarChart.vue";
 import { STATE_NAMES, STATES } from "@/lib/config";
 import { getEntriesFor } from "@/lib/store";
+import { preencherDiarias } from "@/lib/diariasPreencher";
+import { isAdmin } from "@/lib/auth";
+import { useToast } from "@/composables/useToast";
 import { diariaDivisor } from "@/lib/metrics";
 import { dateFilter } from "@/composables/useDateFilter";
 import { useFilters } from "@/composables/useFilters";
@@ -21,6 +24,15 @@ const { state } = useFilters();
 const estadoSel = ref(!state.current || state.current === "todos" ? "todos" : state.current);
 const estadoOptions = [{ id: "todos", label: "Todos" }, ...STATES.map((s) => ({ id: s, label: s }))];
 const regionalSel = ref("");
+
+const podeAtualizar = isAdmin();
+const { show: toast } = useToast();
+
+function onAtualizar() {
+  if (!podeAtualizar) return;
+  const n = preencherDiarias(estadoSel.value);
+  toast(n ? `${n} diária(s) atualizada(s) com os dados do Headcount.` : "Nenhuma diária com função ou filial vazia encontrada no Headcount.");
+}
 
 const upper = (v, fallback) => String(v || "").trim().toUpperCase() || fallback;
 
@@ -183,9 +195,22 @@ const tables = computed(() => [
 </script>
 
 <template>
-  <Modal title="Análise de Custo da Diária" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen @close="emit('close')">
+  <Modal title="Análise de Custo da Diária" :subtitle="`${escopo} · ${periodo}`" :open="open" fullscreen pdf @close="emit('close')">
     <template #actions>
       <div class="flex flex-wrap items-center gap-2">
+        <button
+          v-if="podeAtualizar"
+          type="button"
+          class="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-600 ring-1 ring-inset ring-zinc-200 transition hover:bg-zinc-50 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+          title="Atualizar diárias: preenche função e filial vazias com os dados do Headcount"
+          aria-label="Atualizar diárias com os dados do Headcount"
+          @click="onAtualizar"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6" />
+            <path d="M16.5 3.5v3.2h-3.2" />
+          </svg>
+        </button>
         <GerenteRegionalFilter
           v-model="regionalSel"
           :options="regionalOptions"

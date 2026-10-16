@@ -232,7 +232,7 @@ export const USERS_COLUMNS: ColumnDef[] = [
   { name: "id", type: "text" },
   { name: "usuario", type: "text", required: true },
   { name: "nome", type: "text", required: true },
-  { name: "perfil", type: "text", required: true, values: ["admin", "analista", "visitante"] },
+  { name: "perfil", type: "text", required: true, values: ["admin", "analista"] },
   { name: "ativo", type: "boolean", notNull: true },
   { name: "senha_hash", type: "text", required: true },
   { name: "criado_em", type: "timestamptz", readOnly: true }

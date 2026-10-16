@@ -19,7 +19,7 @@ import {
 } from "@/lib/absenteismo";
 import { formatDate, ymLabel, normalizeText, nameKey } from "@/lib/utils";
 import { useToast } from "@/composables/useToast";
-import { canEditData } from "@/lib/auth";
+import { canEditData, isAdmin } from "@/lib/auth";
 
 const props = defineProps({
   estado: { type: String, default: "todos" },
@@ -268,11 +268,10 @@ function onSave({ motivo, observacao, advertencia, acidente, cid, diasAtestado, 
   editing.value = null;
 }
 
+const podeAtualizar = isAdmin();
+
 function onAtualizar() {
-  if (!canEdit) {
-    toast("Seu perfil tem acesso somente leitura.");
-    return;
-  }
+  if (!podeAtualizar) return;
   const n = preencherOcorrencias(employees.value, props.ym);
   toast(n ? `${n} ocorrência(s) atualizada(s) com os dados do colaborador.` : "Nenhuma ocorrência com campos vazios.");
 }
@@ -351,6 +350,7 @@ function onClear() {
           {{ ymLabel(ym) }} · {{ rows.length }} colaboradores · {{ canRight ? "deslize para ver todos os dias" : "fim do mês" }}
         </span>
         <button
+          v-if="podeAtualizar"
           type="button"
           class="flex h-8 w-9 items-center justify-center rounded-md text-zinc-600 ring-1 ring-inset ring-zinc-200 transition hover:bg-zinc-50 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-zinc-800"
           title="Atualizar ocorrências: preenche código, setor e filial vazios com os dados do Headcount"

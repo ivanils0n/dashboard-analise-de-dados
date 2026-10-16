@@ -15,7 +15,7 @@ const props = defineProps({
   canExport: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["update:expanded", "reload", "tour", "toggle-values", "export"]);
+const emit = defineEmits(["update:expanded", "reload", "tour", "toggle-values", "export", "calculos"]);
 
 const { state: filters, setState } = useFilters();
 const stateLabel = computed(() => (filters.current && filters.current !== "todos" ? filters.current : "Todos"));
@@ -228,6 +228,27 @@ watch(
     </div>
 
     <div class="mt-4 flex shrink-0 flex-col gap-1 border-t border-zinc-800 pt-4">
+      <button
+        type="button"
+        class="side-btn"
+        :class="expanded && 'side-btn-wide'"
+        title="Cálculos dos indicadores e análises"
+        aria-label="Cálculos dos indicadores e análises"
+        @click="emit('calculos')"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="4" y="2" width="16" height="20" rx="2" />
+          <line x1="8" y1="6" x2="16" y2="6" />
+          <line x1="8" y1="11" x2="8.01" y2="11" />
+          <line x1="12" y1="11" x2="12.01" y2="11" />
+          <line x1="16" y1="11" x2="16.01" y2="11" />
+          <line x1="8" y1="15" x2="8.01" y2="15" />
+          <line x1="12" y1="15" x2="12.01" y2="15" />
+          <line x1="16" y1="15" x2="16.01" y2="15" />
+          <line x1="8" y1="19" x2="12" y2="19" />
+        </svg>
+        <span v-if="expanded">Cálculos</span>
+      </button>
       <button
         type="button"
         data-tour="tour-button"

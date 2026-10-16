@@ -235,8 +235,8 @@ concluídas e seus scripts foram removidos; para uma planilha nova basta
 - `POST /api/cache/refresh` — recarrega o cache (só `admin`).
 - `/api/users` — gestão de usuários (só `admin`).
 
-Formato de resposta `success`/`data`/`error`, com os perfis `admin`, `analista`
-e `visitante`. `senha_hash` nunca é retornado. Não existem as rotas
+Formato de resposta `success`/`data`/`error`, com os perfis `admin` e `analista`.
+`senha_hash` nunca é retornado. Não existem as rotas
 `/api/registro-alteracoes` e `/api/delta/*`.
 
 ## Segurança

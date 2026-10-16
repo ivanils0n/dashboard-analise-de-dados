@@ -9,6 +9,7 @@ const props = defineProps({
   pluralLabel: { type: String, default: "selecionados" },
   title: { type: String, default: "" },
   maxLabel: { type: Number, default: 40 },
+  block: { type: Boolean, default: false },
   formatOption: { type: Function, default: (v) => v }
 });
 
@@ -72,8 +73,8 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocumentClick));
   <div ref="root" class="relative" @keydown.esc="open = false">
     <button
       type="button"
-      class="flex max-w-[14rem] cursor-pointer items-center gap-2 rounded-lg border bg-white px-4 py-2.5 text-[15px] font-medium text-zinc-700 outline-none transition hover:bg-zinc-100 focus:border-accent dark:bg-[#0a0a0a] dark:text-zinc-200 dark:hover:bg-zinc-800"
-      :class="modelValue.length ? 'border-accent' : 'border-zinc-300 dark:border-zinc-700'"
+      class="flex cursor-pointer items-center gap-2 rounded-lg border bg-white px-4 py-2.5 text-[15px] font-medium text-zinc-700 outline-none transition hover:bg-zinc-100 focus:border-accent dark:bg-[#0a0a0a] dark:text-zinc-200 dark:hover:bg-zinc-800"
+      :class="[block ? 'w-full justify-between' : 'max-w-[14rem]', modelValue.length ? 'border-accent' : 'border-zinc-300 dark:border-zinc-700']"
       :aria-label="`Filtrar por ${label.toLowerCase()}`"
       :title="title"
       aria-haspopup="listbox"

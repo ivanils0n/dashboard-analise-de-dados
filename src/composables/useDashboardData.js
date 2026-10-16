@@ -441,6 +441,12 @@ export function useDashboardData(filter) {
     return label;
   }
 
+  // Não usar text.includes(nome): nomes curtos como "ADO" casam dentro de outras palavras (SENADOR).
+  function contemPalavra(text, nome) {
+    const esc = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^A-Z0-9])${esc}([^A-Z0-9]|$)`).test(text);
+  }
+
   function resolveTreinamentoFilialLabel(meta) {
     const text = String((meta && meta.filial) || "").toUpperCase().trim();
     if (!text) return "Sem filial";
@@ -450,8 +456,8 @@ export function useDashboardData(filter) {
       findBranchByShortName(text, meta && meta.estado) ||
       branches.find((b) => normalizeBranchKey(b.shortName) === key) ||
       branches.find((b) => normalizeBranchKey(b.name) === key) ||
-      branches.find((b) => b.shortName && text.includes(String(b.shortName).toUpperCase())) ||
-      branches.find((b) => b.name && text.includes(String(b.name).toUpperCase()));
+      branches.find((b) => b.shortName && contemPalavra(text, String(b.shortName).toUpperCase())) ||
+      branches.find((b) => b.name && contemPalavra(text, String(b.name).toUpperCase()));
     return filialDisplay(match ? String(match.shortName || match.name).toUpperCase() : text, meta && meta.estado);
   }
 
