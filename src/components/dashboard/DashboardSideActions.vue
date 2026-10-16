@@ -4,7 +4,6 @@ import DateRangeFilter from "@/components/dashboard/DateRangeFilter.vue";
 import StateFilter from "@/components/layout/StateFilter.vue";
 import { useFilters } from "@/composables/useFilters";
 import { STATES } from "@/lib/config";
-import { links, loadLinks, openLink } from "@/composables/useLinks";
 
 const props = defineProps({
   expanded: { type: Boolean, default: false },
@@ -39,10 +38,8 @@ function onPointerDownOutside(e) {
 function onKeydown(e) {
   if (e.key === "Escape") stateMenuOpen.value = false;
 }
-const LINK_ICON = ["M2 4h20v12H2z", "M8 20h8", "M12 16v4", "M6 12l3-3 2 2 4-4"];
 
 onMounted(() => {
-  loadLinks();
   ["pointerdown", "mousedown"].forEach((t) => document.addEventListener(t, onPointerDownOutside, true));
   document.addEventListener("keydown", onKeydown);
 });
@@ -228,24 +225,6 @@ watch(
       </template>
     </div>
 
-    <div v-if="links.length" class="mt-4 flex flex-col gap-1 border-t border-zinc-800 pt-4">
-      <p v-if="expanded" class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Relatórios</p>
-      <button
-        v-for="link in links"
-        :key="link.id"
-        type="button"
-        @click="openLink(link)"
-        class="side-btn"
-        :class="expanded && 'side-btn-wide'"
-        :title="link.nome"
-        :aria-label="link.nome"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path v-for="d in LINK_ICON" :key="d" :d="d" />
-        </svg>
-        <span v-if="expanded" class="truncate">{{ link.nome }}</span>
-      </button>
-    </div>
     </div>
 
     <div class="mt-4 flex shrink-0 flex-col gap-1 border-t border-zinc-800 pt-4">

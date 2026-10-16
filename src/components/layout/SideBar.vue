@@ -7,7 +7,6 @@ import UserMenu from "./UserMenu.vue";
 import DashboardTabs from "./DashboardTabs.vue";
 import { useTheme } from "@/composables/useTheme";
 import { sidebarCollapsed, sidebarEffectiveCollapsed as collapsedTarget } from "@/composables/useSidebar";
-import { links, loadLinks, openLink } from "@/composables/useLinks";
 
 const route = useRoute();
 const router = useRouter();
@@ -81,7 +80,6 @@ const visibleItems = computed(() =>
 
 const visibleDetailItems = computed(() => (isVisitor.value ? [] : detailItems));
 
-const LINK_ICON = ["M2 4h20v12H2z", "M8 20h8", "M12 16v4", "M6 12l3-3 2 2 4-4"];
 
 const showStateFilter = computed(() => route.name === "filiais");
 const showDashboardTabs = computed(() => route.name === "dashboard");
@@ -102,7 +100,6 @@ function onPointerDownOutside(e) {
   sidebarCollapsed.value = true;
 }
 onMounted(() => {
-  loadLinks();
   document.addEventListener("keydown", onKeydown);
   ["pointerdown", "mousedown"].forEach((t) => document.addEventListener(t, onPointerDownOutside, true));
 });
@@ -196,21 +193,6 @@ const drawerSections = computed(() =>
                 <path v-for="d in item.paths" :key="d" :d="d" />
               </svg>
               {{ item.label }}
-            </button>
-          </div>
-          <div v-if="links.length" class="flex flex-col gap-1">
-            <p class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Relatórios</p>
-            <button
-              v-for="link in links"
-              :key="link.id"
-              type="button"
-              @click="openLink(link); drawerOpen = false"
-              class="flex items-center gap-3 rounded-lg px-3 py-3 text-[15px] font-semibold text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0">
-                <path v-for="d in LINK_ICON" :key="d" :d="d" />
-              </svg>
-              {{ link.nome }}
             </button>
           </div>
           <div v-if="showStateFilter" class="flex flex-col gap-2">

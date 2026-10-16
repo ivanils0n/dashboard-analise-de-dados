@@ -175,7 +175,6 @@ function edit(id) {
   <div>
     <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Filiais</h1>
-      <Badge tone="accent">{{ total === 1 ? "1 filial" : `${total} filiais` }}</Badge>
     </div>
 
     <section class="mt-8 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">

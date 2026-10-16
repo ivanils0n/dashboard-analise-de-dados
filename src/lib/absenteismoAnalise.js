@@ -58,8 +58,8 @@ function ocorrenciasDoMes(ym, estado, regional = "") {
       observacao: o.meta.observacao || "",
       tipoAcidente: o.meta.acidente ? o.meta.tipoAcidente || null : null,
       aberturaCat: !!(o.meta.acidente && o.meta.aberturaCat),
-      cid: o.meta.motivo === "Atestado" && o.meta.cid ? norm(o.meta.cid) : null,
-      diasAtestado: o.meta.motivo === "Atestado" && Number(o.meta.diasAtestado) > 0 ? Number(o.meta.diasAtestado) : null,
+      cid: o.meta.cid ? norm(o.meta.cid) : null,
+      diasAtestado: (o.meta.motivo === "Atestado" || o.meta.acidente) && Number(o.meta.diasAtestado) > 0 ? Number(o.meta.diasAtestado) : null,
       dias: diasDeAusencia({ motivo: o.meta.motivo, acidente: !!o.meta.acidente })
     }))
     .filter((o) => !regional || o.regional === regional)

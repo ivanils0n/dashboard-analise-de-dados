@@ -103,7 +103,10 @@ const estadoPie = computed(() => a.value.porEstado.map((e) => ({ label: STATE_NA
 const tooltipGrupo = (g) =>
   `${g.ocorrencias} ${g.ocorrencias === 1 ? "ocorrência" : "ocorrências"} · ${nf(g.dias, 1)} dias · ${nf(g.ativos)} ativos · taxa ${fmtPct(g.taxa)}`;
 
-const cidPie = computed(() => a.value.porCid.map((c) => ({ label: c.label, value: c.value })));
+const cidBarData = computed(() =>
+  a.value.porCid.map((c) => ({ label: c.label, value: c.value, tooltipValue: `${c.value} ${c.value === 1 ? "ocorrência" : "ocorrências"}` }))
+);
+const cidHeight = computed(() => Math.max(240, Math.min(380, a.value.porCid.length * 30 + 60)));
 const totalCid = computed(() => a.value.porCid.reduce((s, c) => s + c.value, 0));
 const generoData = computed(() => a.value.porGenero.map((g) => ({ label: g.label, value: g.taxa ?? 0, tooltipValue: tooltipGrupo(g) })));
 const diaMesData = computed(() => a.value.porDiaDoMes.map((d) => ({ label: d.label, value: d.value, tooltipValue: `${d.value} ${d.value === 1 ? "ocorrência" : "ocorrências"}` })));
@@ -133,9 +136,9 @@ function onEstadoClick(i) {
   const e = a.value.porEstado[idx(i)];
   if (e) abrirDetalhe(`Ocorrências — ${STATE_NAMES[e.label] || e.label}`, e.itens);
 }
-function onCidClick(i) {
-  const c = a.value.porCid[idx(i)];
-  if (c) abrirDetalhe(`Atestados — CID ${c.label}`, c.itens);
+function onCidClick({ index }) {
+  const c = a.value.porCid[index];
+  if (c) abrirDetalhe(`Ocorrências — CID ${c.label}`, c.itens);
 }
 function onGeneroClick({ index }) {
   const g = a.value.porGenero[index];
@@ -241,11 +244,11 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
             <section :class="cardCls">
               <header :class="headCls">
                 <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por CID</h3>
-                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Atestados de cada CID (clique para ver os atestados)</p>
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Ocorrências de cada CID (clique para ver as ocorrências)</p>
               </header>
               <div class="p-4">
-                <PieChart v-if="totalCid" :data="cidPie" show-values height="h-72" :center-value="String(totalCid)" center-caption="Atestados" value-format="count" clickable @chart-click="onCidClick" />
-                <p v-else class="flex h-72 items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhum atestado com CID informado neste período.</p>
+                <BarChart v-if="totalCid" :data="cidBarData" show-values :show-trend="false" horizontal align-top virtual :height-px="cidHeight" bars-clickable @bar-click="onCidClick" />
+                <p v-else class="flex h-72 items-center justify-center text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhuma ocorrência com CID informado neste período.</p>
               </div>
             </section>
           </div>
@@ -373,7 +376,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
                 <li
                   v-for="c in a.reincidentes"
                   :key="c.colaborador"
-                  class="flex cursor-pointer items-center gap-3 px-5 py-3 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                  class="flex cursor-pointer items-center gap-3 px-5 py-1.5 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
                   @click="onColabClick(c)"
                 >
                   <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold tabular-nums" :class="c.alerta ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'">
@@ -392,7 +395,7 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
               </ul>
             </section>
 
-            <section :class="cardCls">
+            <section :class="[cardCls, 'flex flex-col']">
               <header :class="headCls">
                 <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Período de experiência</h3>
                 <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -402,8 +405,9 @@ const headCls = "border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800";
                   </template>
                 </p>
               </header>
-              <div class="p-4">
+              <div class="flex flex-1 items-center p-4">
                 <PieChart
+                  class="w-full"
                   :data="experienciaPie"
                   height="h-72"
                   :center-value="String(a.experiencia.emExperiencia.length)"

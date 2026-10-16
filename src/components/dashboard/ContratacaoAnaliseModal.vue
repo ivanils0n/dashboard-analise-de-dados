@@ -165,20 +165,27 @@ const motivoData = computed(() =>
   motivoFatias.value.map((f, i) => ({ label: f.label, value: f.items.length, color: PALETA[i % PALETA.length] }))
 );
 
+const estadoFatias = computed(() => {
+  const map = new Map();
+  vagas.value.forEach((v) => {
+    const uf = String(v.estado || "").toUpperCase();
+    const label = uf ? STATE_NAMES[uf] || uf : "Sem estado";
+    if (!map.has(label)) map.set(label, []);
+    map.get(label).push(v);
+  });
+  return [...map.entries()]
+    .map(([label, items]) => ({ label, items }))
+    .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label, "pt-BR"));
+});
+const estadoData = computed(() =>
+  estadoFatias.value.map((f, i) => ({ label: f.label, value: f.items.length, color: PALETA[i % PALETA.length] }))
+);
+
 const barraDias = (rows, serie = "Tempo médio (dias)") =>
   rows.map((r) => ({
     label: r.label,
     series: [{ label: serie, value: r.tempoMedio === null ? 0 : Number(r.tempoMedio.toFixed(1)), color: "#0284c7" }]
   }));
-const tipoData = computed(() =>
-  tipoRows.value.map((r) => ({
-    label: r.label,
-    series: [
-      { label: "Fechadas", value: r.fechadas, color: COR_FECHADA },
-      { label: "Em aberto", value: r.abertas, color: COR_ABERTA }
-    ]
-  }))
-);
 const funcaoData = computed(() => barraDias(funcaoRows.value));
 
 const grupo = ref(null);
@@ -201,9 +208,9 @@ function onMotivoClick(i) {
   const row = motivoFatias.value[i];
   if (row) abrirGrupo(`Motivo — ${row.label}`, row.items);
 }
-function onTipoClick({ index }) {
-  const row = tipoRows.value[index];
-  if (row) abrirGrupo(`Tipo — ${row.label}`, row.items);
+function onEstadoClick(i) {
+  const row = estadoFatias.value[i];
+  if (row) abrirGrupo(`Estado — ${row.label}`, row.items);
 }
 function onFuncaoClick({ index }) {
   const row = funcaoRows.value[index];
@@ -418,16 +425,6 @@ const totals = computed(() => [
 
           <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
-              <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Por tipo de contratação</h3>
-              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Vagas fechadas e em aberto de cada tipo</p>
-            </header>
-            <div class="p-4">
-              <BarChart :data="tipoData" show-values :show-trend="false" :height-px="288" bars-clickable @bar-click="onTipoClick" />
-            </div>
-          </section>
-
-          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm md:col-span-2 lg:col-span-1 dark:border-zinc-800 dark:bg-zinc-900">
-            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
               <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Motivo da contratação</h3>
               <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Quantidade de vagas por motivo</p>
             </header>
@@ -440,6 +437,24 @@ const totals = computed(() => [
                 value-format="count"
                 clickable
                 @chart-click="onMotivoClick"
+              />
+            </div>
+          </section>
+
+          <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <header class="border-b border-zinc-100 px-5 py-3.5 dark:border-zinc-800">
+              <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Vagas por estado</h3>
+              <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Quantidade de vagas de cada estado</p>
+            </header>
+            <div class="p-4">
+              <PieChart
+                :data="estadoData"
+                height="h-72"
+                :center-value="String(stats.total)"
+                center-caption="Vagas"
+                value-format="count"
+                clickable
+                @chart-click="onEstadoClick"
               />
             </div>
           </section>

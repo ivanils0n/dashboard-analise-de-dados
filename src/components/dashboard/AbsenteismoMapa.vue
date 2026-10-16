@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick, onBeforeUnmount, onMounted } from "vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import OcorrenciaModal from "@/components/dashboard/OcorrenciaModal.vue";
-import { saveOcorrencia, removeOcorrencia, getOcorrencias } from "@/lib/store";
+import { saveOcorrencia, removeOcorrencia, getOcorrencias, preencherOcorrencias } from "@/lib/store";
 import {
   MOTIVOS,
   FLAGS,
@@ -268,6 +268,15 @@ function onSave({ motivo, observacao, advertencia, acidente, cid, diasAtestado, 
   editing.value = null;
 }
 
+function onAtualizar() {
+  if (!canEdit) {
+    toast("Seu perfil tem acesso somente leitura.");
+    return;
+  }
+  const n = preencherOcorrencias(employees.value, props.ym);
+  toast(n ? `${n} ocorrência(s) atualizada(s) com os dados do colaborador.` : "Nenhuma ocorrência com campos vazios.");
+}
+
 function onClear() {
   const { emp, iso } = editing.value;
   removeOcorrencia(iso, emp.nome);
@@ -341,6 +350,18 @@ function onClear() {
         <span class="min-w-0 flex-1 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
           {{ ymLabel(ym) }} · {{ rows.length }} colaboradores · {{ canRight ? "deslize para ver todos os dias" : "fim do mês" }}
         </span>
+        <button
+          type="button"
+          class="flex h-8 w-9 items-center justify-center rounded-md text-zinc-600 ring-1 ring-inset ring-zinc-200 transition hover:bg-zinc-50 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+          title="Atualizar ocorrências: preenche código, setor e filial vazios com os dados do Headcount"
+          aria-label="Atualizar ocorrências"
+          @click="onAtualizar"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6" />
+            <path d="M16.5 3.5v3.2h-3.2" />
+          </svg>
+        </button>
         <button
           v-if="todayInMonth"
           type="button"

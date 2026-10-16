@@ -19,6 +19,7 @@ const sorted = computed(() =>
     .slice()
     .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.colaborador).localeCompare(String(b.colaborador), "pt-BR"))
 );
+const temCid = computed(() => props.rows.some((o) => o.cid));
 const soAtestados = computed(() => props.rows.length > 0 && props.rows.every((o) => o.motivo === "Atestado"));
 const soAcidentes = computed(() => props.rows.length > 0 && props.rows.every((o) => o.acidente));
 const totalDias = computed(() => props.rows.reduce((s, o) => s + (Number(o.diasAtestado) || 0), 0));
@@ -73,7 +74,7 @@ function exportar() {
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Filial</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Estado</th>
                 <th class="whitespace-nowrap px-4 py-2.5 font-semibold">Ocorrência</th>
-                <th v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 font-semibold">CID</th>
+                <th v-if="temCid" class="whitespace-nowrap px-4 py-2.5 font-semibold">CID</th>
                 <th v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Dias</th>
                 <th v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 font-semibold">Tipo de acidente</th>
                 <th v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 font-semibold">CAT</th>
@@ -110,7 +111,7 @@ function exportar() {
                     </span>
                   </span>
                 </td>
-                <td v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.cid || "—" }}</td>
+                <td v-if="temCid" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.cid || "—" }}</td>
                 <td v-if="soAtestados" class="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{{ o.diasAtestado ? fmtDias(o.diasAtestado) : "—" }}</td>
                 <td v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.tipoAcidente || "—" }}</td>
                 <td v-if="soAcidentes" class="whitespace-nowrap px-4 py-2.5 text-zinc-600 dark:text-zinc-300">{{ o.aberturaCat ? "Aberta" : "Não aberta" }}</td>

@@ -56,6 +56,17 @@ const TIPOS_ACIDENTE = ["Trajeto", "Em Atividade"];
 const tipoAcidente = ref("");
 const aberturaCat = ref(false);
 const isAcidente = computed(() => motivo.value === ACIDENTE);
+const dataTermino = ref("");
+const DAY_MS = 86400000;
+const utcDay = (iso) => {
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+};
+const diasAcidente = computed(() => {
+  if (!dataTermino.value || !props.date) return null;
+  const n = Math.round((utcDay(dataTermino.value) - utcDay(props.date)) / DAY_MS) + 1;
+  return n >= 1 ? n : null;
+});
 const isAtestado = computed(() => motivo.value === "Atestado");
 const superiorQuinze = computed(() => isAtestado.value && Number(diasAtestado.value) > LIMITE_DIAS);
 
@@ -73,6 +84,10 @@ watch(
     diasAtestado.value = meta.diasAtestado || 1;
     tipoAcidente.value = meta.tipoAcidente || "";
     aberturaCat.value = !!meta.aberturaCat;
+    dataTermino.value =
+      meta.acidente && Number(meta.diasAtestado) > 0
+        ? new Date(utcDay(props.date) + (Number(meta.diasAtestado) - 1) * DAY_MS).toISOString().slice(0, 10)
+        : "";
   },
   { immediate: true }
 );
@@ -89,10 +104,10 @@ function submit() {
     observacao: obs,
     advertencia: marks.value.advertencia,
     acidente,
-    cid: isAtestado.value ? cid.value.trim().toUpperCase() || CID_PADRAO : null,
+    cid: motivo.value ? cid.value.trim().toUpperCase() || (isAtestado.value ? CID_PADRAO : null) : null,
     tipoAcidente: acidente ? tipoAcidente.value || null : null,
     aberturaCat: acidente ? aberturaCat.value : false,
-    diasAtestado: isAtestado.value ? Math.max(1, Math.floor(Number(diasAtestado.value) || 1)) : null
+    diasAtestado: isAtestado.value ? Math.max(1, Math.floor(Number(diasAtestado.value) || 1)) : acidente ? diasAcidente.value : null
   });
 }
 </script>
@@ -155,16 +170,25 @@ function submit() {
         </div>
       </div>
 
-      <div v-if="isAtestado" class="grid gap-4 sm:grid-cols-2">
-        <div class="flex min-w-0 flex-col gap-1.5">
+      <div class="grid items-end gap-4" :class="isAtestado ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
+        <div v-if="motivo" class="flex min-w-0 flex-col gap-1.5">
           <label for="ocCid" class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">CID</label>
           <input id="ocCid" v-model="cid" type="text" maxlength="10" :class="[inputCls, 'font-semibold uppercase']" :placeholder="CID_PADRAO" />
         </div>
-        <div class="flex min-w-0 flex-col gap-1.5">
+        <div v-if="isAtestado" class="flex min-w-0 flex-col gap-1.5">
           <label for="ocDias" class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Dias de atestado</label>
           <input id="ocDias" v-model.number="diasAtestado" type="number" min="1" step="1" :class="[inputCls, 'font-semibold']" />
           <p v-if="superiorQuinze" class="text-[11px] font-semibold text-orange-500">Superior a {{ LIMITE_DIAS }} dias</p>
         </div>
+        <label
+          v-for="f in FLAGS_CAIXA"
+          :key="f.key"
+          class="flex cursor-pointer select-none items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
+          :class="marks[f.key] ? f.chip + ' border-transparent' : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+        >
+          <input v-model="marks[f.key]" type="checkbox" class="h-4 w-4 shrink-0 cursor-pointer accent-orange-500" />
+          {{ f.label }}
+        </label>
       </div>
 
       <div v-if="isAcidente" class="grid gap-4 sm:grid-cols-2">
@@ -194,18 +218,14 @@ function submit() {
             Abertura de CAT
           </label>
         </div>
-      </div>
-
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label
-          v-for="f in FLAGS_CAIXA"
-          :key="f.key"
-          class="flex cursor-pointer select-none items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-semibold transition"
-          :class="marks[f.key] ? f.chip + ' border-transparent' : 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800'"
-        >
-          <input v-model="marks[f.key]" type="checkbox" class="h-4 w-4 shrink-0 cursor-pointer accent-orange-500" />
-          {{ f.label }}
-        </label>
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <label for="ocTermino" class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Data de término</label>
+          <input id="ocTermino" v-model="dataTermino" type="date" :min="date" :class="[inputCls, 'font-semibold']" />
+        </div>
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Dias de afastamento</span>
+          <div :class="[inputCls, 'font-semibold']">{{ diasAcidente ? `${diasAcidente} ${diasAcidente === 1 ? "dia" : "dias"}` : "—" }}</div>
+        </div>
       </div>
 
       <div class="flex flex-col gap-1.5">

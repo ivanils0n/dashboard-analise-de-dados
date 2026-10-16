@@ -152,10 +152,12 @@ export function getOcorrencias() {
   return data.absenteismo.filter(isOcorrencia);
 }
 
+// Não agrupar por colaborador+data: a planilha pode ter linhas repetidas e todas contam nos KPIs.
+const _matchOcorrencias = (date, colaborador) =>
+  data.absenteismo.filter((e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador));
+
 export function saveOcorrencia({ date, colaborador, codigo, setor, filial, motivo, observacao, estado, advertencia, acidente, cid, diasAtestado, tipoAcidente, aberturaCat }) {
-  const existing = data.absenteismo.find(
-    (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
-  );
+  const matches = _matchOcorrencias(date, colaborador);
   const meta = {
     colaborador,
     codigo: codigo || null,
@@ -172,12 +174,14 @@ export function saveOcorrencia({ date, colaborador, codigo, setor, filial, motiv
     tipoAcidente: tipoAcidente || null,
     aberturaCat: !!aberturaCat
   };
-  if (existing) {
-    const updated = markRaw({ ...existing, meta });
-    const idx = data.absenteismo.indexOf(existing);
-    data.absenteismo[idx] = updated;
+  if (matches.length) {
+    let updated = null;
+    matches.forEach((existing) => {
+      updated = markRaw({ ...existing, meta });
+      data.absenteismo[data.absenteismo.indexOf(existing)] = updated;
+      if (ok()) remote.entryUpdated("absenteismo", updated);
+    });
     bumpList("absenteismo");
-    if (ok()) remote.entryUpdated("absenteismo", updated);
     return updated;
   }
   const entry = markRaw({ id: createId(), date, value: 0, meta });
@@ -187,16 +191,40 @@ export function saveOcorrencia({ date, colaborador, codigo, setor, filial, motiv
   return entry;
 }
 
+export function preencherOcorrencias(employees, ym) {
+  const byName = new Map(employees.map((emp) => [emp.key, emp]));
+  let filled = 0;
+  data.absenteismo.forEach((e, idx) => {
+    if (!isOcorrencia(e) || competenciaYmOf(e) !== ym) return;
+    const emp = byName.get(nameKey(e.meta.colaborador));
+    if (!emp) return;
+    const patch = {};
+    if (!e.meta.codigo && emp.codigo) patch.codigo = emp.codigo;
+    if (!e.meta.setor && emp.setor) patch.setor = emp.setor;
+    if (!e.meta.filial && emp.filial) patch.filial = emp.filial;
+    if (!e.meta.estado && emp.estado) patch.estado = emp.estado;
+    if (!Object.keys(patch).length) return;
+    const updated = markRaw({ ...e, meta: { ...e.meta, ...patch } });
+    data.absenteismo[idx] = updated;
+    if (ok()) remote.entryUpdated("absenteismo", updated);
+    filled++;
+  });
+  if (filled) bumpList("absenteismo");
+  return filled;
+}
+
+const competenciaYmOf = (e) => (e.meta && e.meta.competencia) || String(e.date || "").slice(0, 7);
+
 export function removeOcorrencia(date, colaborador) {
-  const existing = data.absenteismo.find(
-    (e) => isOcorrencia(e) && e.date === date && nameKey(e.meta.colaborador) === nameKey(colaborador)
-  );
-  if (!existing) return;
-  data.absenteismo = data.absenteismo.filter((e) => e.id !== existing.id);
+  const matches = _matchOcorrencias(date, colaborador);
+  if (!matches.length) return;
+  data.absenteismo = data.absenteismo.filter((e) => !matches.includes(e));
   if (ok()) {
-    remote.entriesRemoved("absenteismo", [existing.id], existing.meta.estado, {
-      [existing.id]: { date: existing.date, colaborador }
-    });
+    matches.forEach((existing) =>
+      remote.entriesRemoved("absenteismo", [existing.id], existing.meta.estado, {
+        [existing.id]: { date: existing.date, colaborador }
+      })
+    );
   }
 }
 

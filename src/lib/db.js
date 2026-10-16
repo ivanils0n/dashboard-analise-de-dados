@@ -439,13 +439,20 @@ function mapRemoteCustoFolha(row, impliedState) {
   };
 }
 
+function isoDate(value) {
+  const text = String(value ?? "").trim();
+  const br = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+  return text.slice(0, 10);
+}
+
 function mapRemoteAbsenteismo(row, impliedState) {
   if (row.colaborador) {
     const truthy = (v) => v === true || /^(true|sim|s|1|x)$/i.test(String(v ?? "").trim());
     const motivo = normalizeMotivo(row.motivo);
     const legacyAdv = motivo === "Advertência";
     const legacyAci = motivo === "Acidente de Trabalho";
-    const date = row.data ? String(row.data).slice(0, 10) : String(row.competencia || "").slice(0, 10);
+    const date = row.data ? isoDate(row.data) : isoDate(row.competencia);
     return {
       id: row.id,
       date,
